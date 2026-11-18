@@ -100,6 +100,10 @@ builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
 builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
 builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
 builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
+// ----- Mirroring, protected tags & Git LFS -----
+builder.Services.AddScoped<ProtectedTagService>();
+GitBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
+GitBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -139,6 +143,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.UseWebhookPushCapture();
 app.MapGitHttp();
+GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info/lfs/...
 app.MapCiEndpoints();
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);

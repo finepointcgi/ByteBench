@@ -1,0 +1,60 @@
+@* One mirror's URL, settings and last sync (status, time, message) on the repository mirroring settings page. *@
+<div class="mirror-status">
+    <div class="d-flex align-center gap-2 flex-wrap">
+        <span class="mono gb-truncate mirror-url">@Mirror.Url</span>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StatusColor" Class="ma-0">@StatusText</MudChip>
+        @if (!Mirror.Enabled) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0">Disabled</MudChip> }
+    </div>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+        @string.Join(" · ", Details)
+    </MudText>
+    @if (Mirror.LastMessage != null && Mirror.LastStatus == MirrorSyncStatus.Failed && !Running)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2 mirror-error">@Mirror.LastMessage</MudAlert>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RepositoryMirror Mirror { get; set; } = null!;
+    /// <summary>A sync is running right now (in this process).</summary>
+    [Parameter] public bool Running { get; set; }
+
+    private string StatusText => Running || Mirror.LastStatus == MirrorSyncStatus.Running ? "Syncing…" : Mirror.LastStatus switch
+    {
+        MirrorSyncStatus.Succeeded => "Last sync succeeded",
+        MirrorSyncStatus.Failed => "Last sync failed",
+        _ => "Never synced",
+    };
+
+    private Color StatusColor => Running || Mirror.LastStatus == MirrorSyncStatus.Running ? Color.Info : Mirror.LastStatus switch
+    {
+        MirrorSyncStatus.Succeeded => Color.Success,
+        MirrorSyncStatus.Failed => Color.Error,
+        _ => Color.Default,
+    };
+
+    private IEnumerable<string> Details
+    {
+        get
+        {
+            if (Mirror.Username != null || Mirror.ProtectedSecret != null)
+                yield return Mirror.ProtectedSecret != null ? $"as {Mirror.Username ?? "git"} with a saved token" : $"as {Mirror.Username}";
+            if (Mirror.Direction == MirrorDirection.Pull) yield return $"every {Interval(Mirror.IntervalMinutes)}";
+            else yield return Mirror.Enabled ? "after every push" : "on demand only";
+            if (Mirror.OnlyProtectedBranches) yield return "protected branches and tags";
+            if (Mirror.LastSyncAt is { } at) yield return "last sync " + at.ToLocalTime().ToString("g");
+            if (Mirror.LastStatus == MirrorSyncStatus.Failed && Mirror.LastSuccessAt is { } ok) yield return "last success " + ok.ToLocalTime().ToString("g");
+            if (Mirror.LastStatus == MirrorSyncStatus.Succeeded && Mirror.LastMessage != null) yield return Mirror.LastMessage.TrimEnd('.');
+            if (Mirror.Direction == MirrorDirection.Pull && Mirror.Enabled && Mirror.NextSyncAt is { } next && next > DateTime.UtcNow)
+                yield return "next " + next.ToLocalTime().ToString("t");
+        }
+    }
+
+    private static string Interval(int minutes) => minutes switch
+    {
+        < 60 => $"{minutes} min",
+        _ when minutes % 1440 == 0 => minutes == 1440 ? "day" : $"{minutes / 1440} days",
+        _ when minutes % 60 == 0 => minutes == 60 ? "hour" : $"{minutes / 60} hours",
+        _ => $"{minutes} min",
+    };
+}

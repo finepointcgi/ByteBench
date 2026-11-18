@@ -1,0 +1,324 @@
+@page "/p/{Key}/repos/{Slug}/settings/mirroring"
+@inherits RepoPageBase
+@implements IDisposable
+@using GitBench.Services.Mirroring
+@inject MirrorService Mirrors
+@inject MirrorUrlGuard UrlGuard
+@inject ProjectAccess Access
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Mirroring · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage mirroring." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="mirroring" />
+        <div class="gb-min0">
+            <div class="mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Sync" /> Mirroring</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    A <b>pull mirror</b> keeps this repository a copy of another one: GitBench fetches its branches and tags on an interval,
+                    and nobody can push here while it is on. A <b>push mirror</b> sends this repository's branches and tags to another
+                    one after every push. URLs must be <code>https://</code>, <code>http://</code> or <code>ssh://</code>
+                    @(UrlGuard.AllowPrivateNetworks ? "." : "on a public address (this server blocks private and local networks).")
+                    The password or token is encrypted and never shown again. Git LFS objects aren't mirrored.
+                </MudText>
+            </div>
+
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            @* ---------------- Pull mirror ---------------- *@
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <div class="mi-head">
+                    <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Outlined.CloudDownload" Size="Size.Small" /> Pull mirror
+                    </MudText>
+                    @if (pull != null && pullDraft == null)
+                    {
+                        <div class="d-flex gap-2 flex-wrap">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync"
+                                       Disabled="@IsBusy(pull)" OnClick="() => SyncNow(pull)">Sync now</MudButton>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="EditPull">Edit</MudButton>
+                            <MudTooltip Text="Remove the pull mirror">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                               aria-label="Remove the pull mirror" OnClick="() => Delete(pull)" />
+                            </MudTooltip>
+                        </div>
+                    }
+                </div>
+
+                @if (pullDraft != null)
+                {
+                    <MudGrid Spacing="3" Class="mt-1">
+                        <MudItem xs="12">
+                            <MudTextField T="string" Label="Upstream repository URL" @bind-Value="pullDraft.Url" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Placeholder="https://github.com/example/project.git" Class="gb-mono-input" MaxLength="2048" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Label="Username (optional)" @bind-Value="pullDraft.Username" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Label="Password or access token (optional)" @bind-Value="pullDraft.Secret" InputType="InputType.Password"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" autocomplete="new-password"
+                                          HelperText="@(pull?.ProtectedSecret != null ? "Saved. Leave blank to keep it." : null)" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField T="int" Label="Sync every (minutes)" @bind-Value="pullDraft.IntervalMinutes" Min="Mirrors.MinIntervalMinutes"
+                                             Max="MirrorService.MaxIntervalMinutes" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudCheckBox T="bool" @bind-Value="pullDraft.OnlyProtectedBranches" Color="Color.Primary" Dense="true">
+                                <b>Only protected branches</b> <span class="mud-text-secondary">(branches matching a <a href="@RepoUrls.BranchProtection(Repo)">branch protection</a> rule; tags are always mirrored)</span>
+                            </MudCheckBox>
+                            <MudCheckBox T="bool" @bind-Value="pullDraft.Enabled" Color="Color.Primary" Dense="true">
+                                <b>Enabled</b> <span class="mud-text-secondary">(while enabled, pushes to this repository are refused)</span>
+                            </MudCheckBox>
+                            @if (pull?.ProtectedSecret != null)
+                            {
+                                <MudCheckBox T="bool" @bind-Value="pullDraft.ClearSecret" Color="Color.Primary" Dense="true"><b>Remove the saved password or token</b></MudCheckBox>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                    @if (pull == null)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                            The first sync replaces this repository's branches and tags with the upstream ones (branches that don't exist upstream are deleted).
+                        </MudAlert>
+                    }
+                    <div class="d-flex gap-2 mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(pullDraft.Url) || saving)" OnClick="SavePull">
+                            @(pull == null ? "Set up pull mirror" : "Save")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => pullDraft = null">Cancel</MudButton>
+                    </div>
+                }
+                else if (pull == null)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1 mb-3">This repository isn't mirroring another one.</MudText>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="NewPull">Set up a pull mirror</MudButton>
+                }
+                else
+                {
+                    <MirrorStatus Mirror="pull" Running="@IsBusy(pull)" />
+                }
+            </MudPaper>
+
+            @* ---------------- Push mirrors ---------------- *@
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <div class="mi-head">
+                    <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Outlined.CloudUpload" Size="Size.Small" /> Push mirrors
+                    </MudText>
+                    @if (pushDraft == null && pushes.Count < MirrorService.MaxPushMirrors)
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="NewPush">Add push mirror</MudButton>
+                    }
+                </div>
+
+                @if (pushDraft != null)
+                {
+                    <MudGrid Spacing="3" Class="mt-1 mb-3">
+                        <MudItem xs="12">
+                            <MudTextField T="string" Label="Target repository URL" @bind-Value="pushDraft.Url" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Placeholder="https://git.example.com/backup/project.git" Class="gb-mono-input" MaxLength="2048" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Label="Username (optional)" @bind-Value="pushDraft.Username" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Label="Password or access token (optional)" @bind-Value="pushDraft.Secret" InputType="InputType.Password"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" autocomplete="new-password"
+                                          HelperText="@(EditingPush?.ProtectedSecret != null ? "Saved. Leave blank to keep it." : null)" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudCheckBox T="bool" @bind-Value="pushDraft.OnlyProtectedBranches" Color="Color.Primary" Dense="true">
+                                <b>Only protected branches</b> <span class="mud-text-secondary">(and tags; nothing is deleted on the target)</span>
+                            </MudCheckBox>
+                            <MudCheckBox T="bool" @bind-Value="pushDraft.Enabled" Color="Color.Primary" Dense="true"><b>Push after every push</b></MudCheckBox>
+                        </MudItem>
+                    </MudGrid>
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                        Pushes are forced: the target's branches and tags are overwritten@(pushDraft.OnlyProtectedBranches ? "" : ", and branches that don't exist here are deleted there").
+                    </MudAlert>
+                    <div class="d-flex gap-2 mb-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(pushDraft.Url) || saving)" OnClick="SavePush">
+                            @(editingPushId == null ? "Add push mirror" : "Save")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => { pushDraft = null; editingPushId = null; }">Cancel</MudButton>
+                    </div>
+                }
+
+                @if (pushes.Count == 0 && pushDraft == null)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">No push mirrors.</MudText>
+                }
+                <div class="gb-rows">
+                    @foreach (var m in pushes)
+                    {
+                        <div class="gb-row mi-row" @key="m.Id">
+                            <div class="gb-row-main gb-min0">
+                                <MirrorStatus Mirror="m" Running="@IsBusy(m)" />
+                            </div>
+                            <div class="gb-row-right">
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Sync" Disabled="@IsBusy(m)"
+                                           OnClick="() => SyncNow(m)">Sync now</MudButton>
+                                <MudTooltip Text="Edit">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Variant="Variant.Outlined" Size="Size.Small"
+                                                   aria-label="@($"Edit the push mirror to {m.Url}")" OnClick="() => EditPush(m)" />
+                                </MudTooltip>
+                                <MudTooltip Text="Delete">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                                   aria-label="@($"Delete the push mirror to {m.Url}")" OnClick="() => Delete(m)" />
+                                </MudTooltip>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </MudPaper>
+        </div>
+    </div>
+}
+
+@code {
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private RepositoryMirror? pull;
+    private List<RepositoryMirror> pushes = [];
+    private MirrorInput? pullDraft, pushDraft;
+    private int? editingPushId;
+    private readonly HashSet<int> syncing = [];
+    private bool saving;
+    private Timer? refresh;
+
+    private RepositoryMirror? EditingPush => pushes.FirstOrDefault(p => p.Id == editingPushId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (!perms.Can(Permission.ManageRepositories)) return;
+        await Load();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Background syncs change the status: refresh it every few seconds.
+        if (firstRender) refresh = new Timer(_ => InvokeAsync(RefreshAsync), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (Repo == null || !perms.Can(Permission.ManageRepositories)) return;
+        try
+        {
+            await Load();
+            StateHasChanged();
+        }
+        catch (InvalidOperationException) { /* lost access or the repository is gone */ }
+    }
+
+    private async Task Load()
+    {
+        var all = await Mirrors.ListAsync(Repo!.Id);
+        pull = all.FirstOrDefault(m => m.Direction == MirrorDirection.Pull);
+        pushes = all.Where(m => m.Direction == MirrorDirection.Push).ToList();
+    }
+
+    private bool IsBusy(RepositoryMirror m) => syncing.Contains(m.Id) || Mirrors.IsRunning(m.Id);
+
+    private void NewPull() { Error = null; pullDraft = new MirrorInput { IntervalMinutes = 60 }; }
+
+    private void EditPull()
+    {
+        Error = null;
+        pullDraft = new MirrorInput
+        {
+            Url = pull!.Url, Username = pull.Username, IntervalMinutes = pull.IntervalMinutes, OnlyProtectedBranches = pull.OnlyProtectedBranches, Enabled = pull.Enabled,
+        };
+    }
+
+    private void NewPush() { Error = null; editingPushId = null; pushDraft = new MirrorInput(); }
+
+    private void EditPush(RepositoryMirror m)
+    {
+        Error = null;
+        editingPushId = m.Id;
+        pushDraft = new MirrorInput { Url = m.Url, Username = m.Username, OnlyProtectedBranches = m.OnlyProtectedBranches, Enabled = m.Enabled };
+    }
+
+    private async Task SavePull()
+    {
+        Error = null;
+        saving = true;
+        try
+        {
+            var created = pull == null;
+            await Mirrors.SavePullAsync(Repo!.Id, pullDraft!);
+            Snackbar.Add(created ? "Pull mirror set up. The first sync starts shortly." : "Saved the pull mirror.", Severity.Success);
+            pullDraft = null;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { saving = false; }
+    }
+
+    private async Task SavePush()
+    {
+        Error = null;
+        saving = true;
+        try
+        {
+            await Mirrors.SavePushAsync(Repo!.Id, editingPushId, pushDraft!);
+            Snackbar.Add(editingPushId == null ? "Added the push mirror." : "Saved the push mirror.", Severity.Success);
+            pushDraft = null;
+            editingPushId = null;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { saving = false; }
+    }
+
+    private async Task Delete(RepositoryMirror m)
+    {
+        Error = null;
+        var what = m.Direction == MirrorDirection.Pull ? "the pull mirror" : $"the push mirror to {m.Url}";
+        var consequence = m.Direction == MirrorDirection.Pull ? " The repository keeps its current branches and tags and accepts pushes again." : "";
+        if (!await Dialogs.ConfirmAsync("Remove mirror", $"Remove {what}?{consequence}", "Remove")) return;
+        try
+        {
+            await Mirrors.DeleteAsync(Repo!.Id, m.Id);
+            Snackbar.Add(m.Direction == MirrorDirection.Pull ? "Removed the pull mirror." : "Removed the push mirror.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+
+    private async Task SyncNow(RepositoryMirror m)
+    {
+        Error = null;
+        syncing.Add(m.Id);
+        try
+        {
+            var result = await Mirrors.SyncNowAsync(Repo!.Id, m.Id);
+            if (result == null) Snackbar.Add("A sync of this mirror is already running.", Severity.Info);
+            else if (result.Success) Snackbar.Add("Synced: " + result.Message, Severity.Success);
+            else Snackbar.Add("Sync failed. See the error below.", Severity.Error);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { syncing.Remove(m.Id); }
+    }
+
+    public void Dispose() => refresh?.Dispose();
+}

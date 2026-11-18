@@ -764,6 +764,61 @@ The payload is serialized with the API's camelCase settings and merged into the 
 
 Code: `Services/Releases/` (`ReleaseService`, `ReleaseDownloads`, `TagPushListener`), `Services/Git/GitOps.Tags.cs`, `Api/ReleaseEndpoints.cs`, `Components/Pages/Repositories/Repo{Tags,Releases,Release,ReleaseEdit}.razor`, `Components/Releases/ReleaseCard.razor`, `wwwroot/css/releases.css`. Schema: `Release`, `ReleaseAsset` (migration `Releases`).
 
+## Mirroring, protected tags & Git LFS
+
+### Protected tags
+
+**Settings → Protected tags** (Maintainer+) holds rules per repository. Each rule has a pattern, matched like branch protection patterns: an exact name (`v1.0.0`) or a glob (`v*`, `release/**`). It sets who may create matching tags, **Maintainers and Owners** (the default) or **Developers and above**. It can also **block deletion** and **block moving**, which applies to everyone, Owners included, until the rule is removed or relaxed. When several rules match, the strictest setting wins. Deleting or moving a tag that is not blocked also needs the rule's create role.
+
+- **Git push, HTTP and SSH**: enforced by the shared `ProtectedPushGuard.Policy`, so a refused tag gets `! [remote rejected] v1.0 -> v1.0 (tag 'v1.0' is protected: only Maintainers and Owners can create it)` and nothing is written. Deploy keys count as Developers.
+- **Tags page, release form and API**: `ReleaseService.CreateTagAsync` and `DeleteTagAsync` call `ProtectedTagService.EnsureAllowedAsync`. "Delete release and tag" is refused before anything is deleted.
+- **Audit**: `protected_tag.created`, `protected_tag.updated`, `protected_tag.deleted`.
+
+### Repository mirroring
+
+**Settings → Mirroring** (Maintainer+) has two kinds of mirror:
+
+- **Pull mirror** (at most one per repository): an upstream URL, an optional username plus password or access token, a sync interval (at least `Mirroring:MinIntervalMinutes`, default 5), and an option to mirror **only protected branches** or all of them.
+  - A background service (`MirrorWorker`) runs `git fetch --prune` of `refs/heads/*` and `refs/tags/*` straight into the bare repository when the mirror is due.
+  - With "only protected branches", it fetches just the upstream branches that match a branch protection rule of this repository (tags always), and deletes matching local branches that are gone upstream.
+  - While an enabled pull mirror exists, the repository is **read-only for pushes**: every ref is refused over HTTP and SSH with "this repository is a pull mirror…". Tag create and delete in GitBench and LFS uploads are refused too. The mirror itself writes refs directly, not by pushing.
+  - Push listeners (webhooks, CI, smart commits) don't run for mirrored commits. The repository's push mirrors do run after a sync that changed something.
+- **Push mirrors** (up to 10): after every successful push (`MirrorPushListener`, then the background queue) and on demand, GitBench runs a forced `git push --prune` of `refs/heads/*` and `refs/tags/*` to the target. With "only protected branches" it pushes the matching branches plus tags, and deletes nothing.
+
+Each mirror shows its last sync status, time and message (or git's error), with a **Sync now** button. Pull mirrors also show when they sync next. The page refreshes the status every few seconds.
+
+**How git runs.** The mirror runs git without a shell, through `ArgumentList`, with a timeout (`Mirroring:TimeoutSeconds`, default 600) that kills the process tree. It ignores the system and global git config (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL`), never prompts, and only speaks `http`, `https` and `ssh` (`GIT_ALLOW_PROTOCOL`). Redirects aren't followed.
+
+**Credentials.** Passwords and tokens are encrypted with Data Protection (purpose `GitBench.Mirroring.Credentials.v1`) and never shown again. To keep a saved token, leave the field blank. Changing the URL drops the saved token, so it never follows the URL to another host. For a sync, the token is written to a mode 600 file in a mode 700 temporary folder, and a temporary credential helper (passed in `GIT_CONFIG_*` environment variables) reads it. The token is never in the URL or on the command line, and the folder is deleted afterwards. Any other credential helper (such as a keychain) is turned off, so the token is never stored. Credentials in the URL itself are rejected.
+
+**SSRF guard.** Mirror URLs must be `http://`, `https://` or `ssh://` (use `ssh://git@host/path.git`, not the scp-like `git@host:path`), with no credentials and no option-like host or path. Loopback, private (RFC 1918 / ULA), link-local, CGNAT and cloud-metadata addresses are refused when the mirror is saved and again before every sync. The host is resolved right before git runs, and git is pinned to the checked address (`http.curloptResolve` for HTTP, ssh's `HostName` for SSH), so DNS rebinding can't swap it. Set `Mirroring:AllowPrivateNetworks=true` to allow private addresses. When that is unset, `Webhooks:AllowPrivateNetworks` decides (it is on in `appsettings.Development.json`).
+
+**SSH mirrors** authenticate with the key in `Mirroring:SshKeyFile`. Without one, they can't authenticate. New host keys are trusted on first use and kept in `Mirroring:KnownHostsFile` (default `{ContentRoot}/keys/mirror_known_hosts`). The username and token fields apply only to HTTP(S).
+
+**Not mirrored**: Git LFS objects, pull requests, issues and other refs (`refs/pull/*` and so on).
+
+**Audit**: `mirror.created`, `mirror.updated`, `mirror.deleted`, `mirror.sync_requested`. Sync outcomes are recorded on the mirror and logged.
+
+### Git LFS
+
+GitBench implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) with the `basic` transfer adapter, at the URL git-lfs derives from the clone URL: `/git/{KEY}/{slug}.git/info/lfs/`. Run `git lfs install`, `git lfs track "*.bin"`, then commit and push as usual.
+
+| Endpoint | What it does |
+|---|---|
+| `POST objects/batch` | For `download`, a download action for each object the repository has (else a per-object `404`). For `upload`, an upload action and a verify action, or no action when the repository already has the object |
+| `PUT objects/{oid}` | Upload. The body is streamed to a temporary file and hashed; it is stored only if its SHA-256 equals the oid (else `422`). Over `Lfs:MaxObjectBytes` gives `413` |
+| `GET objects/{oid}` | Download (`?download=name` adds `Content-Disposition: attachment`) |
+| `POST objects/verify` | `200` when the repository has the object with that size, else `404` |
+
+- **Auth** is the same as git over HTTP: Basic with the password or a personal access token, or `Authorization: Bearer gbp_…`. A missing or wrong login gets `401` with `LFS-Authenticate`, so git-lfs uses git's credentials. The batch actions carry a one-hour `Bearer gblfs.…` token (Data Protection), limited to this user, repository and operation, so the password is never echoed back. A browser session can download, for the file viewer's link.
+- **Permissions**: download needs ViewProject (a token needs `read_repository` or `write_repository`). Upload needs PushCode (a token needs `write_repository`), and is refused for archived repositories and pull mirrors. Users who can't see the project get `404`.
+- **Storage**: objects are content-addressed under `Lfs:Root` (default `{ContentRoot}/lfs`, gitignored) as `{oid[0..2]}/{oid[2..4]}/{oid}`, stored once and shared. The `LfsObject` table records which repository has which object. A repository can only download objects that were uploaded to it, even if another repository holds the same content. Uploading content that already exists still needs the full upload, which proves possession.
+- **Repository deletion** deletes the repository's objects unless another repository references them. Objects left behind by a deleted project, and stale temporary files, are removed by a daily sweep (`LfsSweeper`, with a one-day grace period).
+- **File viewer**: an LFS pointer file shows **Stored with Git LFS** with the real size and a **Download** link, or a note when the object was never uploaded.
+- **Not implemented**: the locks API (git-lfs prints a one-time warning and carries on; to silence it, run `git config lfs.<url>.locksverify false`) and `git-lfs-authenticate` over SSH. With an SSH remote, set `lfs.url` to the HTTPS LFS URL.
+
+Code: `Services/Git/ProtectedTagService.cs`, `Services/Mirroring/` (`MirrorService`, `MirrorSyncRunner`, `MirrorGit`, `MirrorUrlGuard`, `MirrorWorker`), `Services/Lfs/` (`LfsEndpoints`, `LfsStorage`), `Components/Pages/Repositories/Repo{ProtectedTags,Mirroring}.razor`, `Components/Repositories/MirrorStatus.razor`. Schema: `ProtectedTagRule`, `RepositoryMirror`, `LfsObject` (migration `MirrorTagsLfs`). Tests: `tests/GitBench.Tests/MirrorTagsLfsTests.cs` (the git-lfs end-to-end test is skipped when `git-lfs` isn't installed).
+
 ## Linked work: sub-tasks, epics and issue links
 
 **Hierarchy.** `Issue.ParentId` links an issue to a parent in the same project, up to three levels: **Epic › Story/Task/Bug/Feature › Sub-task** (`IssueType.Subtask`).
@@ -1047,6 +1102,10 @@ Settings come from these sources; later ones override earlier ones:
 | `Ssh:MaxConnections` / `Ssh:AuthTimeoutSeconds` | 200 / 30 | Simultaneous SSH connections; seconds a connection may take to authenticate |
 | `Ci:*` | see [CI pipelines](#ci-pipelines) | `Enabled`, `MaxConcurrentJobs`, `JobTimeoutMinutes`, `Network`, `Memory`, `Cpus`, `PidsLimit`, `DockerExecutable`, `WorkDirectory`, `MaxLogChars` |
 | `Webhooks:AllowPrivateNetworks` | `false` | Allow webhook targets on private networks |
+| `Mirroring:AllowPrivateNetworks` | follows `Webhooks:AllowPrivateNetworks` | Allow mirror URLs on private networks |
+| `Mirroring:Enabled` / `PollSeconds` / `TimeoutSeconds` / `MinIntervalMinutes` | `true` / 30 / 600 / 5 | Background mirror syncs, how often due pull mirrors are checked, the git timeout and the shortest pull interval |
+| `Mirroring:SshKeyFile` / `KnownHostsFile` | none / `{ContentRoot}/keys/mirror_known_hosts` | Private key and known hosts file for `ssh://` mirrors |
+| `Lfs:Root` / `Lfs:MaxObjectBytes` | `{ContentRoot}/lfs` / 2 GB | Git LFS object store and size limit per object |
 | `Audit:RetentionDays` | 365 | Audit event retention (`0` keeps them forever) |
 | `Ai:Enabled` / `Ai:Model` / `Ai:ApiKey` | `true` / `claude-opus-5-5` / none | AI features. Prefer `ANTHROPIC_API_KEY` for the key |
 | `Logging:*` | | Standard .NET logging. `appsettings.Production.json` switches the console to JSON and keeps EF Core's SQL logging at Warning |

@@ -20,6 +20,8 @@ namespace GitBench.Services.Git;
 /// The bytes read are replayed to http-backend unchanged (gzip bodies are inflated first), so the push itself is not
 /// affected. Repositories without rules skip all of this.
 /// <para>
+/// Protected tags (<see cref="ProtectedTags"/>) and pull mirrors (every ref is refused: the repository follows its
+/// upstream) are decided by the same <see cref="Policy"/>.
 /// The checks are transport-agnostic and shared with git over SSH (<see cref="Ssh.SshGitCommand"/>):
 /// <see cref="ReadCommandsAsync"/> parses the command list, <see cref="Policy.Check"/> decides, <see cref="RefusalReport"/>
 /// builds receive-pack's answer, and the hook environment enables the force-push check.
@@ -44,7 +46,14 @@ internal static class ProtectedPushGuard
     /// </summary>
     public sealed record Policy(IReadOnlyList<BranchProtectionRule> Rules, IReadOnlySet<string> ReleaseTags, bool IsAdmin)
     {
-        public bool IsEmpty => Rules.Count == 0 && ReleaseTags.Count == 0;
+        /// <summary>Protected tag rules (<see cref="ProtectedTags"/>), checked with <see cref="Role"/>.</summary>
+        public IReadOnlyList<ProtectedTagRule> TagRules { get; init; } = [];
+        /// <summary>The pusher's role in the project (deploy keys: Developer); only matters for protected tags.</summary>
+        public ProjectRole Role { get; init; } = ProjectRole.Developer;
+        /// <summary>Set when the repository refuses every push (a pull mirror): the reason.</summary>
+        public string? ReadOnlyReason { get; init; }
+
+        public bool IsEmpty => Rules.Count == 0 && ReleaseTags.Count == 0 && TagRules.Count == 0 && ReadOnlyReason == null;
 
         /// <summary>Which refs are refused (ref → reason) and which protected branches may only fast-forward.</summary>
         public Decision Check(ParsedCommands parsed)
@@ -53,6 +62,13 @@ internal static class ProtectedPushGuard
             var fastForwardOnly = new List<string>();
             foreach (var c in parsed.Commands)
             {
+                if (ReadOnlyReason != null) { refusals[c.Ref] = ReadOnlyReason; continue; }
+                if (c.Ref.StartsWith("refs/tags/", StringComparison.Ordinal))
+                {
+                    var tag = c.Ref["refs/tags/".Length..];
+                    var tagKind = IsZero(c.NewSha) ? RefChangeKind.Delete : IsZero(c.OldSha) ? RefChangeKind.Create : RefChangeKind.Update;
+                    if (ProtectedTags.Refusal(TagRules, tag, tagKind, Role) is { } tagWhy) refusals[c.Ref] = tagWhy;
+                }
                 if (c.Ref.StartsWith("refs/tags/", StringComparison.Ordinal) && IsZero(c.NewSha) && ReleaseTags.Contains(c.Ref["refs/tags/".Length..]))
                     refusals[c.Ref] = $"tag '{c.Ref["refs/tags/".Length..]}' is used by a release: delete the release first";
                 if (!c.Ref.StartsWith("refs/heads/", StringComparison.Ordinal)) continue;
@@ -89,7 +105,19 @@ internal static class ProtectedPushGuard
         await using (var db = await dbFactory.CreateDbContextAsync())
             releaseTags = (await Releases.ReleaseService.ReleaseTagsAsync(db, repositoryId)).ToHashSet(StringComparer.Ordinal);
         var isAdmin = userId != null && rules.Count > 0 && await protection.IsBypassAdminAsync(projectId, userId);
-        return new Policy(rules, releaseTags, isAdmin);
+
+        // Protected tags, and pull mirrors (read-only: only the mirror itself, which doesn't push, updates their refs).
+        List<ProtectedTagRule> tagRules;
+        string? readOnly = null;
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            tagRules = await ProtectedTagService.RulesForAsync(db, repositoryId);
+            if (await Mirroring.MirrorService.IsPullMirrorAsync(db, repositoryId)) readOnly = Mirroring.MirrorService.PullMirrorReadOnlyMessage;
+        }
+        var role = ProjectRole.Developer; // deploy keys push like a Developer
+        if (userId != null && tagRules.Count > 0)
+            role = await services.GetRequiredService<ProjectAccess>().GetRoleAsync(projectId, userId) ?? ProjectRole.Viewer;
+        return new Policy(rules, releaseTags, isAdmin) { TagRules = tagRules, Role = role, ReadOnlyReason = readOnly };
     }
 
     /// <summary>HTTP: reads the commands from the request body, refuses the push or passes it on (with the force-push hook).</summary>

@@ -288,6 +288,28 @@ public class SshTests(SshApp app) : IClassFixture<SshApp>, IDisposable
     }
 
     [SshFact]
+    public async Task Protected_tags_and_pull_mirrors_refuse_pushes()
+    {
+        var (p, r) = await SetupAsync();
+        await using (var s = app.Scope(app.UserId("carol")))
+            await s.Get<ProtectedTagService>().SaveAsync(r.Id, new ProtectedTagRule { Pattern = "v*", CreateRole = ProjectRole.Maintainer });
+        var key = await UserKeyAsync("dan");
+        var dir = await CloneAsync(key, p, r);
+        await GitOkAsync(key, dir, "push", "origin", "HEAD:refs/tags/v1"); // a Maintainer may create it
+        var delete = await GitAsync(key, dir, "push", "origin", ":refs/tags/v1");
+        Assert.False(delete.Ok);
+        Assert.Contains("tag 'v1' is protected and can't be deleted", delete.Output);
+
+        await using (var s = app.Scope(app.UserId("carol")))
+            await s.Get<GitBench.Services.Mirroring.MirrorService>().SavePullAsync(r.Id,
+                new GitBench.Services.Mirroring.MirrorInput { Url = "https://upstream.invalid/upstream.git", Enabled = true });
+        await CommitAsync(dir, "m.txt", "m");
+        var push = await GitAsync(key, dir, "push", "origin", "main");
+        Assert.False(push.Ok);
+        Assert.Contains("pull mirror", push.Output);
+    }
+
+    [SshFact]
     public async Task Deploy_keys_are_limited_to_their_repository_and_read_only_by_default()
     {
         var (p, r) = await SetupAsync();

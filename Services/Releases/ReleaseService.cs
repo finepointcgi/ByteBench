@@ -32,13 +32,15 @@ public sealed record GeneratedNotes(string Markdown, string? PreviousTag, int Co
 /// <item>Viewing tags and published releases: ViewProject. Drafts (and their assets): PushCode.</item>
 /// <item>Creating tags, creating/editing/publishing releases and managing assets: PushCode (Developer+).</item>
 /// <item>Deleting tags and releases: DeleteBranch (Maintainer+). A tag used by a release can't be deleted.</item>
+/// <item>Protected tags (<see cref="ProtectedTagService"/>) apply to creating and deleting tags here too, and pull
+/// mirrors refuse both.</item>
 /// </list>
 /// Archived repositories are read-only. Release assets are stored like issue attachments (<see cref="AttachmentStorage"/>);
 /// rows are deleted before files.
 /// </summary>
 public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access,
     AttachmentStorage files, AuditLog audit, WebhookDispatcher webhooks, PublicBaseUrl baseUrl, IConfiguration config,
-    ILogger<ReleaseService> log)
+    ILogger<ReleaseService> log, ProtectedTagService protectedTags)
 {
     public const int MaxAssetsPerRelease = 50;
     public const long DefaultMaxAssetBytes = 512L * 1024 * 1024;
@@ -59,6 +61,7 @@ public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, Repositor
         if (!GitOps.IsValidTagName(name))
             throw new InvalidOperationException($"'{name}' is not a valid tag name (no spaces, '..', '~^:?*[\\', and it can't start with '-' or end with '.lock').");
         if (string.IsNullOrWhiteSpace(fromRev)) throw new InvalidOperationException("Choose a branch or commit to tag.");
+        await protectedTags.EnsureAllowedAsync(repo, name, RefChangeKind.Create, uid);
         var who = await IdentityAsync(uid);
         var tag = await repos.Git(repo, path => GitOps.CreateTag(path, name, fromRev.Trim(), message, who));
         RaiseTagEvent(repo, WebhookEventNames.TagCreated, tag, uid);
@@ -72,6 +75,7 @@ public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, Repositor
         await using (var db = await dbFactory.CreateDbContextAsync())
             if (await db.Releases.AnyAsync(r => r.RepositoryId == repo.Id && r.TagName == name))
                 throw new InvalidOperationException($"Tag '{name}' is used by a release. Delete the release first.");
+        await protectedTags.EnsureAllowedAsync(repo, name, RefChangeKind.Delete, uid);
         var tag = await repos.Git(repo, path => GitOps.GetTag(path, name)) ?? throw new InvalidOperationException($"Tag '{name}' does not exist.");
         await repos.Git(repo, path => GitOps.DeleteTag(path, name));
         await audit.RecordAsync("tag.deleted", "repository", repo.Id, repo.ProjectId,
@@ -217,6 +221,7 @@ public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, Repositor
         await using var db = await dbFactory.CreateDbContextAsync();
         var release = await db.Releases.Include(r => r.Assets).FirstOrDefaultAsync(r => r.Id == id && r.RepositoryId == repo.Id)
                       ?? throw new InvalidOperationException("Release not found.");
+        if (deleteTag) await protectedTags.EnsureAllowedAsync(repo, release.TagName, RefChangeKind.Delete, uid); // before anything is deleted
         var stored = release.Assets.Select(a => a.StoredName).ToList();
         db.Releases.Remove(release);
         await db.SaveChangesAsync();

@@ -200,7 +200,7 @@ public static class GitHttpEndpoints
     /// cross-site form POST riding the cookie can never write). Scopes are returned when a token was used, else null.
     /// Accounts with two-factor sign-in must use a token: their correct password is refused with a message saying so.
     /// </summary>
-    private static async Task<(User? User, TokenScopes? Scopes, string? Error)> AuthenticateAsync(HttpContext ctx, ILogger logger, bool allowCookie)
+    internal static async Task<(User? User, TokenScopes? Scopes, string? Error)> AuthenticateAsync(HttpContext ctx, ILogger logger, bool allowCookie)
     {
         var users = ctx.RequestServices.GetRequiredService<UserManager<User>>();
         var header = ctx.Request.Headers.Authorization.ToString();
