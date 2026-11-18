@@ -1,0 +1,122 @@
+@* CI secret variables of a project (RepositoryId null) or of one repository. Values are write-only: never shown after saving. *@
+@using GitBench.Services.Ci
+@inject CiVariableService Variables
+@inject IJSRuntime JS
+
+@if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+@if (message != null) { <div class="alert alert-success py-2">@message</div> }
+
+@if (variables.Count == 0 && draft == null)
+{
+    <div class="muted small mb-2">No variables yet.</div>
+}
+else if (variables.Count > 0)
+{
+    <table class="table table-sm align-middle small mb-2">
+        <thead><tr><th>Name</th><th>Value</th><th>Protected</th><th>Updated</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var v in variables)
+            {
+                <tr @key="v.Id">
+                    <td class="mono">@v.Name</td>
+                    <td class="muted">••••••</td>
+                    <td>@(v.IsProtected ? "Yes" : "No")</td>
+                    <td class="muted" title="@v.UpdatedAt.ToString("yyyy-MM-dd HH:mm") UTC (@Display.Ago(v.UpdatedAt))">updated @v.UpdatedAt.ToString("yyyy-MM-dd")@(v.UpdatedBy != null ? " by " + v.UpdatedBy : "")</td>
+                    <td class="text-end text-nowrap">
+                        <button class="btn btn-link btn-sm" @onclick="() => StartEdit(v)">Edit</button>
+                        <button class="btn btn-link btn-sm text-danger" @onclick="() => Delete(v)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (draft != null)
+{
+    <div class="border rounded p-3 mb-2">
+        <div class="row g-2">
+            <div class="col-md-5">
+                <label class="form-label small" for="@($"civ-name-{uid}")">Name</label>
+                <input id="@($"civ-name-{uid}")" class="form-control form-control-sm mono" placeholder="DEPLOY_TOKEN" autocomplete="off"
+                       @bind="draft.Name" @bind:event="oninput" />
+            </div>
+            <div class="col-md-7">
+                <label class="form-label small" for="@($"civ-value-{uid}")">Value</label>
+                @* type=password keeps it off screen while typing; autocomplete off keeps browsers from saving it. *@
+                <input id="@($"civ-value-{uid}")" type="password" class="form-control form-control-sm ci-var-value" autocomplete="new-password"
+                       placeholder="@(draft.Id == null ? "Single line" : "Leave empty to keep the current value")" @bind="draft.Value" />
+            </div>
+        </div>
+        <label class="form-check mt-2 small">
+            <input class="form-check-input" type="checkbox" @bind="draft.IsProtected" />
+            <span class="form-check-label"><b>Protected</b>: only pipelines on protected branches get it (see branch protection)</span>
+        </label>
+        <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(draft.Name)" @onclick="Save">@(draft.Id == null ? "Add variable" : "Save variable")</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="() => draft = null">Cancel</button>
+        </div>
+    </div>
+}
+else
+{
+    <button class="btn btn-outline-primary btn-sm" @onclick="StartAdd">+ Add variable</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    /// <summary>Null: the project's variables (every repository gets them).</summary>
+    [Parameter] public int? RepositoryId { get; set; }
+
+    private readonly string uid = Guid.NewGuid().ToString("N")[..6];
+    private List<CiVariableInfo> variables = [];
+    private Draft? draft;
+    private string? error, message;
+
+    private sealed class Draft
+    {
+        public int? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Value { get; set; }
+        public bool IsProtected { get; set; }
+    }
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private async Task Load()
+    {
+        try { variables = await Variables.ListAsync(ProjectId, RepositoryId); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private void StartAdd() { error = message = null; draft = new Draft(); }
+
+    private void StartEdit(CiVariableInfo v) { error = message = null; draft = new Draft { Id = v.Id, Name = v.Name, IsProtected = v.IsProtected }; }
+
+    private async Task Save()
+    {
+        if (draft == null) return;
+        error = message = null;
+        try
+        {
+            await Variables.SaveAsync(ProjectId, RepositoryId, draft.Id, draft.Name, draft.Value, draft.IsProtected);
+            message = $"Saved {draft.Name.Trim()}.";
+            draft = null; // drops the typed value from memory
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Delete(CiVariableInfo v)
+    {
+        error = message = null;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the CI variable {v.Name}? Pipelines will no longer get it.")) return;
+        try
+        {
+            await Variables.DeleteAsync(ProjectId, RepositoryId, v.Id);
+            message = $"Deleted {v.Name}.";
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

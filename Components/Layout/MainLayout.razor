@@ -52,6 +52,7 @@
             @if (Me.User?.IsAdmin == true)
             {
                 <NavLink class="side-link" href="/admin/audit">🛡️ Audit log</NavLink>
+                <NavLink class="side-link" href="/admin/users">👥 Users</NavLink>
             }
 
             @if (projectKey != null && CurrentProject is { } cp)

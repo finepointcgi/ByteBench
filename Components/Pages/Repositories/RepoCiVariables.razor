@@ -1,0 +1,50 @@
+@page "/p/{Key}/repos/{Slug}/settings/ci-variables"
+@inherits RepoPageBase
+@inject ProjectAccess Access
+
+<PageTitle>CI variables · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage CI variables." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="ci-variables" />
+        <div class="min-w-0">
+            <div class="page-header">
+                <div>
+                    <h2 class="section-title mb-1">🔑 CI variables</h2>
+                    <div class="muted small">
+                        Secret environment variables for this repository's pipelines. They override
+                        <a href="/p/@Repo.Project.Key/settings#ci-variables">project variables</a> with the same name.
+                        Values are encrypted at rest, masked as <code>***</code> in step logs, and never shown again after saving.
+                        <b>Protected</b> variables only reach pipelines on <a href="@RepoUrls.BranchProtection(Repo)">protected branches</a>
+                        (for pull requests, the source branch must be protected).
+                    </div>
+                </div>
+            </div>
+            <div class="card-panel">
+                <CiVariablesEditor ProjectId="Repo.ProjectId" RepositoryId="Repo.Id" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ProjectPermissions perms = ProjectPermissions.None;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+    }
+}

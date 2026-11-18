@@ -2,10 +2,11 @@
 <nav class="settings-nav" aria-label="Repository settings">
     <a class="@(Active == "general" ? "active" : "")" href="@CodeUrls.Settings(Repo)">General</a>
     <a class="@(Active == "branches" ? "active" : "")" href="@RepoUrls.BranchProtection(Repo)">Branch protection</a>
+    <a class="@(Active == "ci-variables" ? "active" : "")" href="@(RepoUrls.Base(Repo) + "/settings/ci-variables")">CI variables</a>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>The current settings page, "general" or "branches".</summary>
+    /// <summary>The current settings page, "general", "branches" or "ci-variables".</summary>
     [Parameter] public string Active { get; set; } = "general";
 }

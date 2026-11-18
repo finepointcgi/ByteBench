@@ -1,0 +1,131 @@
+@page "/account/login-2fa"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@inject SignInManager<User> SignIn
+@inject UserManager<User> Users
+@inject NavigationManager Nav
+@inject ILogger<LoginWith2fa> Log
+@inject GitBench.Services.Audit.AuditLog Audit
+
+<PageTitle>Two-factor sign-in · GitBench</PageTitle>
+
+<h1 class="auth-title">Two-factor sign-in</h1>
+
+@if (user == null)
+{
+    <div class="alert alert-warning auth-alert" role="alert">Your sign-in attempt expired. Please sign in again.</div>
+    <p class="auth-footer"><a href="account/login">Back to sign in</a></p>
+}
+else if (Mode == "recovery")
+{
+    <p class="muted auth-sub">Lost your authenticator? Enter one of the recovery codes you saved when you turned on two-factor sign-in. Each code works once.</p>
+    @if (error != null) { <div class="alert alert-danger auth-alert" role="alert">@error</div> }
+
+    <EditForm Model="RecoveryInput" FormName="recovery" OnValidSubmit="UseRecoveryCode" method="post">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label" for="rc-code">Recovery code</label>
+            <InputText id="rc-code" class="form-control mono" @bind-Value="RecoveryInput!.Code" autocomplete="off" autofocus />
+            <ValidationMessage For="() => RecoveryInput!.Code" class="text-danger small" />
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Sign in</button>
+    </EditForm>
+    <p class="auth-footer muted"><a href="@ModeHref(null)">Use your authenticator app instead</a></p>
+}
+else
+{
+    <p class="muted auth-sub">Enter the 6-digit code from your authenticator app.</p>
+    @if (error != null) { <div class="alert alert-danger auth-alert" role="alert">@error</div> }
+
+    <EditForm Model="CodeInput" FormName="totp" OnValidSubmit="UseAuthenticatorCode" method="post">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label" for="tf-code">Authentication code</label>
+            <InputText id="tf-code" class="form-control mono" @bind-Value="CodeInput!.Code" autocomplete="one-time-code"
+                       inputmode="numeric" placeholder="123456" autofocus />
+            <ValidationMessage For="() => CodeInput!.Code" class="text-danger small" />
+        </div>
+        <div class="form-check mb-3">
+            <InputCheckbox id="tf-remember" class="form-check-input" @bind-Value="CodeInput!.RememberMachine" />
+            <label class="form-check-label" for="tf-remember">Remember this device for 14 days</label>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Verify</button>
+    </EditForm>
+    <p class="auth-footer muted">Don't have your device? <a href="@ModeHref("recovery")">Use a recovery code</a></p>
+}
+
+@code {
+    private User? user;
+    private string? error;
+
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] private bool RememberMe { get; set; }
+    [SupplyParameterFromQuery] private string? Mode { get; set; }
+
+    [SupplyParameterFromForm(FormName = "totp")] private CodeModel? CodeInput { get; set; }
+    [SupplyParameterFromForm(FormName = "recovery")] private RecoveryModel? RecoveryInput { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        CodeInput ??= new();
+        RecoveryInput ??= new();
+        // Set by PasswordSignInAsync when the password was right and the account has two-factor sign-in.
+        user = await SignIn.GetTwoFactorAuthenticationUserAsync();
+    }
+
+    private string ModeHref(string? mode) =>
+        $"account/login-2fa?rememberMe={RememberMe}&returnUrl={Uri.EscapeDataString(AccountUrls.SafeReturnUrl(ReturnUrl))}" + (mode == null ? "" : "&mode=" + mode);
+
+    private async Task UseAuthenticatorCode()
+    {
+        if (user == null) return;
+        var code = CodeInput!.Code.Replace(" ", "").Replace("-", "");
+        var result = await SignIn.TwoFactorAuthenticatorSignInAsync(code, RememberMe, CodeInput.RememberMachine);
+        await Finish(result, "authenticator");
+    }
+
+    private async Task UseRecoveryCode()
+    {
+        if (user == null) return;
+        var code = RecoveryInput!.Code.Replace(" ", "");
+        var result = await SignIn.TwoFactorRecoveryCodeSignInAsync(code);
+        await Finish(result, "recovery_code");
+    }
+
+    private async Task Finish(SignInResult result, string method)
+    {
+        if (result.Succeeded)
+        {
+            Log.LogInformation("User {User} signed in with two-factor ({Method}).", user!.UserName, method);
+            var left = method == "recovery_code" ? await Users.CountRecoveryCodesAsync(user) : (int?)null;
+            await Audit.RecordAsync("auth.sign_in", "user", user.Id, details: new { twoFactor = method, recoveryCodesLeft = left }, actorId: user.Id);
+            Nav.NavigateTo(AccountUrls.SafeReturnUrl(ReturnUrl), forceLoad: true);
+        }
+        else if (result.IsLockedOut)
+        {
+            Log.LogWarning("User {User} is locked out (two-factor step).", user!.UserName);
+            await Audit.RecordAsync("auth.lockout", "user", user.Id, details: new { login = user.UserName, step = "two_factor" }, anonymous: true);
+            error = "This account is locked after too many failed sign-in attempts. Try again in a few minutes.";
+        }
+        else
+        {
+            await Audit.RecordAsync("auth.2fa_failed", "user", user!.Id, details: new { login = user.UserName, method }, anonymous: true);
+            error = method == "recovery_code" ? "That recovery code is invalid or was already used." : "That code is invalid. Check your authenticator app and try again.";
+        }
+    }
+
+    private sealed class CodeModel
+    {
+        [Required(ErrorMessage = "Enter the code from your authenticator app.")]
+        [StringLength(7, MinimumLength = 6, ErrorMessage = "The code has 6 digits.")]
+        public string Code { get; set; } = "";
+        public bool RememberMachine { get; set; }
+    }
+
+    private sealed class RecoveryModel
+    {
+        [Required(ErrorMessage = "Enter a recovery code.")]
+        [StringLength(20)]
+        public string Code { get; set; } = "";
+    }
+}

@@ -144,6 +144,10 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             }
 
             var repoPath = storage.PathFor(p.Repository.Project.Key, p.Repository.Slug);
+            // CI secret variables (decrypted once per pipeline; protected ones only for protected branches).
+            CiResolvedVariables variables;
+            using (var scope = scopes.CreateScope())
+                variables = await scope.ServiceProvider.GetRequiredService<CiVariableService>().ResolveAsync(p.Repository.ProjectId, p.RepositoryId, p.Ref);
             var status = p.Jobs.ToDictionary(j => j.Name, j => PipelineStatus.Queued);
             var pending = p.Jobs.OrderBy(j => j.Order).ToList();
             var runningJobs = new Dictionary<Task<PipelineStatus>, PipelineJob>();
@@ -166,7 +170,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                     {
                         pending.Remove(job);
                         status[job.Name] = PipelineStatus.Running;
-                        runningJobs[RunJobAsync(p, job, repoPath, cts.Token)] = job;
+                        runningJobs[RunJobAsync(p, job, repoPath, variables, cts.Token)] = job;
                     }
                 }
                 if (runningJobs.Count == 0)
@@ -193,7 +197,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         finally { queue.Unregister(id); }
     }
 
-    private async Task<PipelineStatus> RunJobAsync(Pipeline p, PipelineJob job, string repoPath, CancellationToken ct)
+    private async Task<PipelineStatus> RunJobAsync(Pipeline p, PipelineJob job, string repoPath, CiResolvedVariables variables, CancellationToken ct)
     {
         await Task.Yield();
         try { await jobSlots.WaitAsync(ct); }
@@ -233,7 +237,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                         await SetStepAsync(step.Id, ct.IsCancellationRequested ? PipelineStatus.Canceled : PipelineStatus.Skipped, finished: true);
                     continue;
                 }
-                result = await RunStepAsync(p, job, step, workspace, timeout, ct);
+                result = await RunStepAsync(p, job, step, workspace, variables, timeout, ct);
                 Publish(p);
             }
         }
@@ -253,10 +257,10 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     }
 
     private async Task<PipelineStatus> RunStepAsync(Pipeline p, PipelineJob job, PipelineStep step, string workspace,
-        CancellationTokenSource timeout, CancellationToken canceled)
+        CiResolvedVariables variables, CancellationTokenSource timeout, CancellationToken canceled)
     {
         await SetStepAsync(step.Id, PipelineStatus.Running, started: true);
-        var buffer = new LogBuffer(Options.MaxLogChars);
+        var buffer = new LogBuffer(Options.MaxLogChars, new CiSecretMasker(variables.Values.Values));
         await using (var db = await dbFactory.CreateDbContextAsync(CancellationToken.None))
         {
             if (!await db.PipelineStepLogs.AnyAsync(l => l.StepId == step.Id))
@@ -267,6 +271,8 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         }
         buffer.Append($"$ {step.Run.TrimEnd().Replace("\n", "\n$ ")}");
         buffer.Append($"[gitbench] image {job.Image}");
+        foreach (var note in variables.Notes) buffer.Append(note);
+        if (variables.Values.Count > 0) buffer.Append($"[gitbench] CI variables: {string.Join(", ", variables.Values.Keys.Order(StringComparer.Ordinal))}");
         Publish(p);
 
         using var flushStop = new CancellationTokenSource();
@@ -281,6 +287,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             catch (OperationCanceledException) { }
         });
 
+        var envFile = variables.Values.Count > 0 ? WriteEnvFile(step.Id, variables.Values) : null;
         var spec = new CiContainerSpec($"gitbench-ci-{step.Id}", job.Image, step.Run, workspace, new Dictionary<string, string>
         {
             ["CI"] = "true",
@@ -290,7 +297,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             ["GITBENCH_REF"] = p.Ref,
             ["GITBENCH_COMMIT_SHA"] = p.CommitSha,
             ["GITBENCH_REPOSITORY"] = $"{p.Repository.Project.Key}/{p.Repository.Slug}",
-        });
+        }, envFile);
 
         PipelineStatus status;
         int? exit = null;
@@ -321,6 +328,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         }
         finally
         {
+            if (envFile != null) DeleteEnvFile(envFile);
             flushStop.Cancel();
             await flusher;
         }
@@ -329,6 +337,31 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         await SetStepAsync(step.Id, status, finished: true, exitCode: exit);
         if (canceled.IsCancellationRequested) throw new OperationCanceledException(canceled);
         return status == PipelineStatus.Passed ? PipelineStatus.Passed : PipelineStatus.Failed;
+    }
+
+    /// <summary>
+    /// Writes the CI variables to a temp file for <c>docker run --env-file</c>: outside the mounted workspace, created
+    /// with mode 600 (owner only) inside a mode-700 folder, and deleted as soon as the step ends (and at startup, with
+    /// the work directory). Values are single-line (enforced by <see cref="CiVariableService"/>), as the format requires.
+    /// </summary>
+    private string WriteEnvFile(int stepId, IReadOnlyDictionary<string, string> values)
+    {
+        var dir = Path.Combine(WorkRoot, "env");
+        if (OperatingSystem.IsWindows()) Directory.CreateDirectory(dir);
+        else Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var path = Path.Combine(dir, $"step-{stepId}-{Guid.NewGuid():N}.env");
+        var fileOptions = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+        if (!OperatingSystem.IsWindows()) fileOptions.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using var w = new StreamWriter(path, new UTF8Encoding(false), fileOptions);
+        foreach (var (name, value) in values)
+            if (value.IndexOfAny(['\r', '\n']) < 0) w.Write($"{name}={value}\n");
+        return path;
+    }
+
+    private void DeleteEnvFile(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception ex) { log.LogWarning(ex, "Could not delete CI env file {Path}", path); }
     }
 
     private async Task DeleteWorkspaceAsync(string workspace, string image)
@@ -478,7 +511,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     private void Publish(Pipeline p) => live.Publish(new PipelineChanged(p.Id, p.RepositoryId));
 
     /// <summary>Thread-safe step log capped at a size; past the cap, output is dropped and a note is added once.</summary>
-    private sealed class LogBuffer(int maxChars)
+    private sealed class LogBuffer(int maxChars, CiSecretMasker masker)
     {
         private readonly StringBuilder sb = new();
         private readonly Lock gate = new();
@@ -511,7 +544,8 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
 
         public (string Text, bool Truncated) Snapshot()
         {
-            lock (gate) { dirty = false; return (sb.ToString(), truncated); }
+            // Masking the whole text (not each chunk) also catches a secret value that arrived in pieces.
+            lock (gate) { dirty = false; return (masker.Mask(sb.ToString()), truncated); }
         }
 
         private static string StripAnsi(string s) =>

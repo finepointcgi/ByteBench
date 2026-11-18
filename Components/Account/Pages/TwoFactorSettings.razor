@@ -1,0 +1,220 @@
+@page "/account/two-factor"
+@attribute [Authorize]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@using QRCoder
+@inject SignInManager<User> SignIn
+@inject UserManager<User> Users
+@inject NavigationManager Nav
+@inject GitBench.Services.Audit.AuditLog Audit
+
+<PageTitle>Two-factor sign-in · GitBench</PageTitle>
+
+<div class="profile-page">
+    <div class="profile-head">
+        <a class="auth-back" href="account/profile">← Back to your profile</a>
+        <h1 class="auth-title mb-0">Two-factor sign-in</h1>
+        <p class="muted small mb-0">
+            Protect your account with a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator,
+            1Password, Authy, …) in addition to your password.
+        </p>
+    </div>
+
+    <StatusMessage Success="@success" Errors="errors" />
+
+    @if (recoveryCodes != null)
+    {
+        <section class="profile-section">
+            <h2 class="profile-section-title">Your recovery codes</h2>
+            <div class="alert alert-warning">
+                <b>Save these codes now.</b> They are shown only once. If you lose your device, each code signs you in once instead of an authenticator code.
+            </div>
+            <pre id="recovery-codes" class="mono recovery-codes">@string.Join("\n", recoveryCodes)</pre>
+            <button type="button" class="btn btn-outline-secondary btn-sm"
+                    onclick="navigator.clipboard.writeText(document.getElementById('recovery-codes').textContent); this.textContent='Copied';">Copy codes</button>
+        </section>
+    }
+
+    @if (user != null && !enabled)
+    {
+        <section class="profile-section">
+            <h2 class="profile-section-title">Set up your authenticator app</h2>
+            <ol class="small">
+                <li>Scan this QR code with your authenticator app, or enter the key manually.</li>
+                <li>Enter the 6-digit code the app shows to finish.</li>
+            </ol>
+            <div class="d-flex flex-wrap gap-4 align-items-start mb-3">
+                @if (qrSvg != null)
+                {
+                    <div class="totp-qr" role="img" aria-label="QR code for your authenticator app">@((MarkupString)qrSvg)</div>
+                }
+                <div>
+                    <div class="small muted mb-1">Manual entry key</div>
+                    <code class="mono d-block mb-2 totp-key">@FormatKey(sharedKey)</code>
+                    <div class="small muted">Account: @user.UserName · Type: time-based · 6 digits</div>
+                </div>
+            </div>
+
+            <EditForm Model="EnableInput" FormName="enable-2fa" OnValidSubmit="Enable" method="post">
+                <DataAnnotationsValidator />
+                <div class="mb-3" style="max-width:240px">
+                    <label class="form-label" for="tf-verify">Verification code</label>
+                    <InputText id="tf-verify" class="form-control mono" @bind-Value="EnableInput!.Code" autocomplete="one-time-code" inputmode="numeric" placeholder="123456" />
+                    <ValidationMessage For="() => EnableInput!.Code" class="text-danger small" />
+                </div>
+                <button type="submit" class="btn btn-primary">Turn on two-factor sign-in</button>
+            </EditForm>
+        </section>
+    }
+    else if (user != null)
+    {
+        <section class="profile-section">
+            <h2 class="profile-section-title">Status</h2>
+            <p><span class="badge text-bg-success">On</span> You sign in with your password and a code from your authenticator app.</p>
+            <p class="small muted">
+                Git over HTTP and the REST API need a <a href="account/profile#tokens">personal access token</a>; your password alone is refused for git.
+            </p>
+        </section>
+
+        <section class="profile-section">
+            <h2 class="profile-section-title">Recovery codes</h2>
+            <p class="small">You have <b>@codesLeft</b> unused recovery code@(codesLeft == 1 ? "" : "s"). Generating new codes makes the old ones stop working.</p>
+            <form method="post" @formname="regenerate-codes" @onsubmit="Regenerate">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn-outline-secondary"
+                        onclick="return confirm('Generate new recovery codes? Your current codes will stop working.');">Generate new recovery codes</button>
+            </form>
+        </section>
+
+        <section class="profile-section">
+            <h2 class="profile-section-title">Turn off two-factor sign-in</h2>
+            <p class="small muted">Your account will be protected by your password only. Your authenticator key and recovery codes will stop working.</p>
+            <EditForm Model="DisableInput" FormName="disable-2fa" OnValidSubmit="Disable" method="post">
+                <DataAnnotationsValidator />
+                <div class="mb-3" style="max-width:320px">
+                    <label class="form-label" for="tf-password">Confirm with your password</label>
+                    <InputText id="tf-password" type="password" class="form-control" @bind-Value="DisableInput!.Password" autocomplete="current-password" />
+                    <ValidationMessage For="() => DisableInput!.Password" class="text-danger small" />
+                </div>
+                <button type="submit" class="btn btn-outline-danger">Turn off</button>
+            </EditForm>
+        </section>
+    }
+</div>
+
+@code {
+    private const int RecoveryCodeCount = 10;
+
+    private User? user;
+    private bool enabled;
+    private int codesLeft;
+    private string sharedKey = "";
+    private string? qrSvg, success;
+    private string[]? recoveryCodes;
+    private readonly List<string> errors = [];
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "enable-2fa")] private EnableModel? EnableInput { get; set; }
+    [SupplyParameterFromForm(FormName = "disable-2fa")] private DisableModel? DisableInput { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        EnableInput ??= new();
+        DisableInput ??= new();
+        user = await Users.GetUserAsync(HttpContext.User);
+        if (user is null)
+        {
+            await SignIn.SignOutAsync();
+            Nav.NavigateTo("account/login", forceLoad: true);
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        enabled = await Users.GetTwoFactorEnabledAsync(user!);
+        if (enabled)
+        {
+            codesLeft = await Users.CountRecoveryCodesAsync(user!);
+            return;
+        }
+        var key = await Users.GetAuthenticatorKeyAsync(user!);
+        if (string.IsNullOrEmpty(key))
+        {
+            // First visit: create a key. That rotates the security stamp, so re-issue our own cookie to stay signed in.
+            await Users.ResetAuthenticatorKeyAsync(user!);
+            await SignIn.RefreshSignInAsync(user!);
+            key = await Users.GetAuthenticatorKeyAsync(user!);
+        }
+        sharedKey = key ?? "";
+        var label = Uri.EscapeDataString("GitBench:" + (user!.UserName ?? ""));
+        var uri = $"otpauth://totp/{label}?secret={sharedKey}&issuer=GitBench&digits=6";
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(uri, QRCodeGenerator.ECCLevel.M);
+        qrSvg = new SvgQRCode(data).GetGraphic(5);
+    }
+
+    private async Task Enable()
+    {
+        if (user is null) return;
+        var code = EnableInput!.Code.Replace(" ", "").Replace("-", "");
+        EnableInput = new();
+        if (!await Users.VerifyTwoFactorTokenAsync(user, Users.Options.Tokens.AuthenticatorTokenProvider, code))
+        {
+            errors.Add("That code is invalid. Check that your device's clock is correct and enter the current code.");
+            return;
+        }
+        await Users.SetTwoFactorEnabledAsync(user, true);
+        recoveryCodes = (await Users.GenerateNewTwoFactorRecoveryCodesAsync(user, RecoveryCodeCount))?.ToArray();
+        await SignIn.RefreshSignInAsync(user);
+        await Audit.RecordAsync("user.2fa_enabled", "user", user.Id, actorId: user.Id);
+        success = "Two-factor sign-in is on.";
+        await LoadAsync();
+    }
+
+    private async Task Regenerate()
+    {
+        if (user is null || !await Users.GetTwoFactorEnabledAsync(user)) return;
+        recoveryCodes = (await Users.GenerateNewTwoFactorRecoveryCodesAsync(user, RecoveryCodeCount))?.ToArray();
+        await Audit.RecordAsync("user.2fa_recovery_codes_regenerated", "user", user.Id, actorId: user.Id);
+        success = "New recovery codes were generated. The old ones no longer work.";
+        await LoadAsync();
+    }
+
+    private async Task Disable()
+    {
+        if (user is null) return;
+        var ok = await Users.CheckPasswordAsync(user, DisableInput!.Password);
+        DisableInput = new(); // never echo passwords back
+        if (!ok)
+        {
+            errors.Add("Incorrect password.");
+            return;
+        }
+        await TwoFactor.ResetAsync(Users, user);
+        await SignIn.RefreshSignInAsync(user);
+        await SignIn.ForgetTwoFactorClientAsync();
+        await Audit.RecordAsync("user.2fa_disabled", "user", user.Id, actorId: user.Id);
+        success = "Two-factor sign-in is off.";
+        await LoadAsync();
+    }
+
+    private static string FormatKey(string key) =>
+        string.Join(" ", Enumerable.Range(0, (key.Length + 3) / 4).Select(i => key.Substring(i * 4, Math.Min(4, key.Length - i * 4)))).ToLowerInvariant();
+
+    private sealed class EnableModel
+    {
+        [Required(ErrorMessage = "Enter the code from your authenticator app.")]
+        [StringLength(7, MinimumLength = 6, ErrorMessage = "The code has 6 digits.")]
+        public string Code { get; set; } = "";
+    }
+
+    private sealed class DisableModel
+    {
+        [Required(ErrorMessage = "Enter your password.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

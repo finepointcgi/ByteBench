@@ -494,3 +494,9 @@ a.tree-commit:hover { color: var(--accent); }
 .audit-table { font-size: 13px; }
 .audit-table td { vertical-align: top; }
 .audit-details { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: #f6f7f9; border-radius: 6px; padding: 8px; margin: 4px 0 0; max-width: 640px; }
+/* ----- Admin, 2FA & CI secrets ----- */
+/* The QR code keeps its own white quiet zone so scanners read it in dark mode too. */
+.totp-qr svg { width: 180px; height: 180px; display: block; border-radius: 6px; }
+.totp-key { font-size: 15px; letter-spacing: .04em; word-break: break-all; }
+.recovery-codes { columns: 2; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 14px; }
+.ci-var-value { font-family: var(--bs-font-monospace); }

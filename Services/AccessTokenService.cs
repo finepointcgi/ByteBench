@@ -58,6 +58,7 @@ public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory, Audit
         await using var db = await dbFactory.CreateDbContextAsync();
         var token = await db.PersonalAccessTokens.Include(t => t.User).FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null);
         if (token == null || !token.IsActive(now)) return null;
+        if (token.User.LockoutEnd > now || token.User.DeactivatedAt != null) return null; // locked or deactivated account
         token.LastUsedAt = now;
         await db.SaveChangesAsync();
         return token;
@@ -87,6 +88,9 @@ public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory, Audit
         foreach (var t in candidates)
             if (CryptographicOperations.FixedTimeEquals(t.TokenHash, hash) && t.IsActive(now)) match = t;
         if (match == null) return null;
+        // Locked or deactivated accounts can't use their tokens either.
+        var owner = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => new { u.LockoutEnd, u.DeactivatedAt }).FirstOrDefaultAsync();
+        if (owner == null || owner.LockoutEnd > now || owner.DeactivatedAt != null) return null;
 
         match.LastUsedAt = now;
         await db.SaveChangesAsync();

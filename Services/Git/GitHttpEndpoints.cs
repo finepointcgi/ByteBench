@@ -98,11 +98,11 @@ public static partial class GitHttpEndpoints
         }
 
         // Authenticate before looking the repo up so unauthenticated callers can't probe for repos.
-        var (user, tokenScopes) = await AuthenticateAsync(ctx, logger, allowCookie: service == UploadPack);
+        var (user, tokenScopes, authError) = await AuthenticateAsync(ctx, logger, allowCookie: service == UploadPack);
         if (user is null)
         {
             ctx.Response.Headers.WWWAuthenticate = $"Basic realm=\"{Realm}\", charset=\"UTF-8\"";
-            await WritePlain(ctx, StatusCodes.Status401Unauthorized, "Authentication required.");
+            await WritePlain(ctx, StatusCodes.Status401Unauthorized, authError ?? "Authentication required.");
             return;
         }
 
@@ -226,8 +226,9 @@ public static partial class GitHttpEndpoints
     /// one of that user's personal access tokens (<c>gbp_…</c>, unrevoked and unexpired). Failures count toward
     /// lockout. For read-only upload-pack, an existing cookie session is also accepted (Basic for push only, so a
     /// cross-site form POST riding the cookie can never write). Scopes are returned when a token was used, else null.
+    /// Accounts with two-factor sign-in must use a token: their correct password is refused with a message saying so.
     /// </summary>
-    private static async Task<(User? User, TokenScopes? Scopes)> AuthenticateAsync(HttpContext ctx, ILogger logger, bool allowCookie)
+    private static async Task<(User? User, TokenScopes? Scopes, string? Error)> AuthenticateAsync(HttpContext ctx, ILogger logger, bool allowCookie)
     {
         var users = ctx.RequestServices.GetRequiredService<UserManager<User>>();
         var header = ctx.Request.Headers.Authorization.ToString();
@@ -236,9 +237,9 @@ public static partial class GitHttpEndpoints
         {
             string decoded;
             try { decoded = Encoding.UTF8.GetString(Convert.FromBase64String(header[6..].Trim())); }
-            catch (FormatException) { return (null, null); }
+            catch (FormatException) { return (null, null, null); }
             var sep = decoded.IndexOf(':');
-            if (sep <= 0) return (null, null);
+            if (sep <= 0) return (null, null, null);
             var login = decoded[..sep];
             var password = decoded[(sep + 1)..];
 
@@ -247,12 +248,12 @@ public static partial class GitHttpEndpoints
             if (user is null)
             {
                 logger.LogInformation("Git auth failed: unknown user {Login} from {Ip}", login, ctx.Connection.RemoteIpAddress);
-                return (null, null);
+                return (null, null, null);
             }
-            if (await users.IsLockedOutAsync(user))
+            if (await users.IsLockedOutAsync(user) || user.DeactivatedAt != null)
             {
                 logger.LogWarning("Git auth rejected: user {User} is locked out", user.UserName);
-                return (null, null);
+                return (null, null, null);
             }
 
             TokenScopes? scopes = null;
@@ -266,18 +267,25 @@ public static partial class GitHttpEndpoints
             {
                 await users.AccessFailedAsync(user);
                 logger.LogInformation("Git auth failed: bad password or token for {User} from {Ip}", user.UserName, ctx.Connection.RemoteIpAddress);
-                return (null, null);
+                return (null, null, null);
+            }
+            else if (await users.GetTwoFactorEnabledAsync(user))
+            {
+                // Like GitHub: with two-factor sign-in on, the password alone isn't enough; git needs a token.
+                logger.LogInformation("Git auth refused: {User} has two-factor sign-in and used a password", user.UserName);
+                return (null, null, "Password authentication is not supported for accounts with two-factor sign-in. " +
+                    "Use a personal access token as the password (Profile → Access tokens).");
             }
             if (await users.GetAccessFailedCountAsync(user) > 0) await users.ResetAccessFailedCountAsync(user);
-            return (user, scopes);
+            return (user, scopes, null);
         }
 
         if (allowCookie && ctx.User.Identity?.IsAuthenticated == true)
         {
             var user = await users.GetUserAsync(ctx.User);
-            if (user is not null && !await users.IsLockedOutAsync(user)) return (user, null);
+            if (user is not null && !await users.IsLockedOutAsync(user)) return (user, null, null);
         }
-        return (null, null);
+        return (null, null, null);
     }
 
     private static async Task NotifyPushListenersAsync(HttpContext ctx, ILogger logger, int repositoryId, int userId)

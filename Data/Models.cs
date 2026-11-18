@@ -8,7 +8,7 @@ public enum IssuePriority { Lowest, Low, Medium, High, Highest }
 public enum IssueType { Task, Bug, Feature, Story, Epic, Subtask }
 
 /// <summary>An account. Id, UserName, Email and PasswordHash come from ASP.NET Core Identity.</summary>
-public class User : IdentityUser<int>
+public partial class User : IdentityUser<int>
 {
     [Required, MaxLength(80)] public string DisplayName { get; set; } = "";
     [MaxLength(9)] public string Color { get; set; } = "#6366f1";
@@ -727,4 +727,37 @@ public class AuditEvent
     public int? ProjectId { get; set; }
     /// <summary>JSON object with event-specific details.</summary>
     public string? Details { get; set; }
+}
+
+// ----- Admin, 2FA & CI secrets -----
+
+public partial class User
+{
+    /// <summary>
+    /// Set when a site admin deactivates the account (it is then locked indefinitely and its access tokens are revoked).
+    /// Cleared when an admin unlocks it.
+    /// </summary>
+    public DateTime? DeactivatedAt { get; set; }
+}
+
+/// <summary>
+/// A CI secret variable, injected into pipeline step containers as an environment variable. Belongs to a project
+/// (<see cref="RepositoryId"/> null: every repository in it) or to one repository, which overrides a project variable
+/// with the same name. The value is encrypted with ASP.NET Core Data Protection and never shown again after saving.
+/// </summary>
+public class CiVariable
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public int? RepositoryId { get; set; }
+    /// <summary>Environment variable name: letters, digits and underscores, not starting with a digit.</summary>
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    /// <summary>The value, protected by <see cref="GitBench.Services.Ci.CiVariableService"/> (Data Protection).</summary>
+    [Required] public string EncryptedValue { get; set; } = "";
+    /// <summary>Only exposed to pipelines whose branch is protected (see <see cref="GitBench.Services.BranchProtectionService"/>).</summary>
+    public bool IsProtected { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public int? UpdatedById { get; set; }
+    public User? UpdatedBy { get; set; }
 }
