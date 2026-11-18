@@ -14,6 +14,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<Activity> Activities => Set<Activity>();
     public DbSet<Repository> Repositories => Set<Repository>();
+    public DbSet<PullRequest> PullRequests => Set<PullRequest>();
+    public DbSet<PullRequestComment> PullRequestComments => Set<PullRequestComment>();
+    public DbSet<PullRequestReview> PullRequestReviews => Set<PullRequestReview>();
+    public DbSet<PullRequestActivity> PullRequestActivities => Set<PullRequestActivity>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -30,5 +34,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         b.Entity<Label>().HasIndex(l => new { l.ProjectId, l.Name }).IsUnique();
         b.Entity<Repository>().HasIndex(r => new { r.ProjectId, r.Slug }).IsUnique();
+
+        // ----- Pull requests -----
+        b.Entity<PullRequest>().HasIndex(p => new { p.RepositoryId, p.Number }).IsUnique();
+        b.Entity<PullRequest>().HasOne(p => p.Repository).WithMany().HasForeignKey(p => p.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequest>().HasOne(p => p.Author).WithMany().HasForeignKey(p => p.AuthorId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PullRequest>().HasOne(p => p.MergedBy).WithMany().HasForeignKey(p => p.MergedById).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<PullRequest>().HasMany(p => p.Comments).WithOne().HasForeignKey(c => c.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequest>().HasMany(p => p.Reviews).WithOne().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequest>().HasMany(p => p.Activities).WithOne().HasForeignKey(a => a.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestComment>().HasOne(c => c.Author).WithMany().HasForeignKey(c => c.AuthorId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PullRequestReview>().HasIndex(r => new { r.PullRequestId, r.UserId }).IsUnique();
+        b.Entity<PullRequestReview>().HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestActivity>().HasOne(a => a.Actor).WithMany().HasForeignKey(a => a.ActorId).OnDelete(DeleteBehavior.Restrict);
     }
 }

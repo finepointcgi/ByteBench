@@ -1,0 +1,422 @@
+@page "/p/{Key}/repos/{Slug}/pull-requests/{Number:int}"
+@inject PullRequestService PRs
+@inject RepositoryService Repos
+@inject CurrentUser Me
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This pull request does not exist." />
+}
+else if (pr != null)
+{
+    var repo = pr.Repository;
+    <div class="breadcrumbs">
+        <a href="/p/@repo.Project.Key/issues">@repo.Project.Name</a> /
+        <a href="@RepoUrls.Base(repo)">@repo.Name</a> /
+        <a href="@RepoUrls.RepoPullRequests(repo)">Pull requests</a> /
+        <span class="mono">#@pr.Number</span>
+    </div>
+
+    <div class="issue-header">
+        @if (editingTitle)
+        {
+            <div class="d-flex gap-2 flex-grow-1">
+                <input class="form-control form-control-lg" @bind="titleDraft" maxlength="200" />
+                <button class="btn btn-primary" @onclick="SaveTitle">Save</button>
+                <button class="btn btn-outline-secondary" @onclick="() => editingTitle = false">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <h1>@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></h1>
+            @if (pr.AuthorId == Me.Id && pr.State == PullRequestState.Open)
+            {
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</button>
+            }
+        }
+    </div>
+    <div class="issue-subhead">
+        <PrStateBadge State="pr.State" />
+        <span class="muted">
+            <b>@pr.Author.DisplayName</b>
+            @if (pr.State == PullRequestState.Merged)
+            {
+                <span>'s changes were merged by <b>@pr.MergedBy?.DisplayName</b> @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt) ·</span>
+            }
+            else
+            {
+                <span> @(pr.State == PullRequestState.Open ? "wants to merge" : "proposed merging") @(changes?.Commits.Count ?? 0) commit@((changes?.Commits.Count ?? 0) == 1 ? "" : "s") ·</span>
+            }
+        </span>
+        <a class="branch-pill mono" href="@RepoUrls.Source(repo, pr.SourceBranch)">@pr.SourceBranch</a>
+        <span class="muted">→</span>
+        <a class="branch-pill mono" href="@RepoUrls.Source(repo, pr.TargetBranch)">@pr.TargetBranch</a>
+    </div>
+
+    <div class="tabs">
+        <a class="tab @(CurrentTab == "overview" ? "active" : "")" href="@TabUrl(null)">Overview</a>
+        <a class="tab @(CurrentTab == "commits" ? "active" : "")" href="@TabUrl("commits")">Commits <span class="count">@(changes?.Commits.Count ?? 0)</span></a>
+        <a class="tab @(CurrentTab == "files" ? "active" : "")" href="@TabUrl("files")">Files changed <span class="count">@(changes?.Files.Count ?? 0)</span></a>
+    </div>
+
+    @if (actionError != null)
+    {
+        <div class="alert alert-danger py-2">@actionError</div>
+    }
+
+    <div class="detail-grid">
+        <div class="min-w-0">
+            @if (CurrentTab == "commits")
+            {
+                @if (changes == null) { <div class="empty">The commits for this pull request are no longer available.</div> }
+                else { <CommitList Commits="changes.Commits" Repo="repo" Users="usersByEmail" /> }
+            }
+            else if (CurrentTab == "files")
+            {
+                @if (changes == null) { <div class="empty">The changes for this pull request are no longer available.</div> }
+                else
+                {
+                    <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="true" OnComment="AddInlineComment"
+                              Repo="repo" ViewRef="@changes.HeadSha" />
+                }
+            }
+            else
+            {
+                <!-- Description -->
+                <div class="comment-card">
+                    <div class="comment-head">
+                        <Avatar User="pr.Author" Size="22" /> <b>@pr.Author.DisplayName</b>
+                        <span class="muted small">opened @Display.Ago(pr.CreatedAt)</span>
+                        @if (pr.AuthorId == Me.Id && !editingDesc)
+                        {
+                            <button class="btn btn-link btn-sm ms-auto" @onclick="() => { descDraft = pr.Description; editingDesc = true; }">Edit</button>
+                        }
+                    </div>
+                    <div class="comment-body">
+                        @if (editingDesc)
+                        {
+                            <MarkdownEditor @bind-Value="descDraft" Rows="8" />
+                            <div class="mt-2 d-flex gap-2">
+                                <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
+                            </div>
+                        }
+                        else if (string.IsNullOrWhiteSpace(pr.Description))
+                        {
+                            <span class="muted fst-italic">No description provided.</span>
+                        }
+                        else
+                        {
+                            <div class="markdown">@Display.Markdown(pr.Description)</div>
+                        }
+                    </div>
+                </div>
+
+                <h2 class="section-title mt-4">Activity</h2>
+                <div class="timeline">
+                    @foreach (var entry in Timeline)
+                    {
+                        if (entry is PullRequestComment c)
+                        {
+                            <div class="comment-card" @key="c">
+                                <div class="comment-head">
+                                    <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
+                                    <span class="muted small">
+                                        @if (c.IsInline)
+                                        {
+                                            <span>commented on <a href="@TabUrl("files")" class="mono">@c.FilePath:@(c.Line ?? c.OldLine)</a>&nbsp;</span>
+                                        }
+                                        else { <span>commented&nbsp;</span> }
+                                        @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")
+                                    </span>
+                                    @if (c.AuthorId == Me.Id && editingCommentId != c.Id)
+                                    {
+                                        <span class="ms-auto">
+                                            <button class="btn btn-link btn-sm" @onclick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }">Edit</button>
+                                            <button class="btn btn-link btn-sm text-danger" @onclick="() => DeleteComment(c)">Delete</button>
+                                        </span>
+                                    }
+                                </div>
+                                <div class="comment-body">
+                                    @if (editingCommentId == c.Id)
+                                    {
+                                        <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" />
+                                        <div class="mt-2 d-flex gap-2">
+                                            <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
+                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="markdown">@Display.Markdown(c.Body)</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else if (entry is PullRequestActivity a)
+                        {
+                            <div class="activity-line" @key="a">
+                                <Avatar User="a.Actor" Size="18" />
+                                <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                                <span class="muted">@Display.Ago(a.CreatedAt)</span>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div class="comment-card mt-3">
+                    <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
+                    <div class="comment-body">
+                        <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
+                        <div class="mt-2">
+                            <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Sidebar -->
+        <aside class="side-panel">
+            <div class="field">
+                <label>Merge</label>
+                @if (pr.State == PullRequestState.Open)
+                {
+                    <div class="merge-status @MergeCss">@MergeText</div>
+                    @if (mergeStatus?.Check == MergeCheck.Conflicts && mergeStatus.ConflictPaths.Count > 0)
+                    {
+                        <ul class="conflict-list mono">
+                            @foreach (var p in mergeStatus.ConflictPaths) { <li>@p</li> }
+                        </ul>
+                    }
+                    <select class="form-select form-select-sm mt-2" @bind="strategy" disabled="@(!CanMerge)">
+                        <option value="merge">Merge commit</option>
+                        <option value="ff">Fast-forward if possible</option>
+                    </select>
+                    <label class="form-check mt-2 small">
+                        <input class="form-check-input" type="checkbox" @bind="deleteSource" disabled="@(!CanMerge || pr.SourceBranch == repo.DefaultBranch)" />
+                        <span class="form-check-label">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
+                    </label>
+                    <button class="btn btn-success btn-sm w-100 mt-2" disabled="@(!CanMerge || busy)" @onclick="Merge">Merge</button>
+                    <button class="btn btn-outline-danger btn-sm w-100 mt-2" disabled="@busy" @onclick="Decline">Decline</button>
+                }
+                else if (pr.State == PullRequestState.Merged)
+                {
+                    <div class="merge-status good">
+                        Merged into <span class="mono">@pr.TargetBranch</span> by <b>@pr.MergedBy?.DisplayName</b>
+                        @if (pr.MergeCommitSha != null)
+                        {
+                            <div class="mt-1"><a class="sha-pill mono" href="@RepoUrls.Commit(repo, pr.MergeCommitSha)">@pr.MergeCommitSha[..7]</a></div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="merge-status neutral">Declined @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt).</div>
+                    <button class="btn btn-outline-secondary btn-sm w-100 mt-2" disabled="@busy" @onclick="Reopen">Reopen</button>
+                }
+            </div>
+
+            <div class="field">
+                <label>Reviewers</label>
+                @if (pr.Reviews.Count == 0)
+                {
+                    <div class="muted small">No reviews yet.</div>
+                }
+                @foreach (var r in pr.Reviews.OrderBy(r => r.CreatedAt))
+                {
+                    <div class="reviewer" @key="r.Id">
+                        <Avatar User="r.User" Size="22" ShowName />
+                        @if (r.State == ReviewState.Approved) { <span class="review-chip approved ms-auto">✓ Approved</span> }
+                        else { <span class="review-chip changes ms-auto">✎ Changes requested</span> }
+                    </div>
+                }
+                @if (pr.State == PullRequestState.Open && pr.AuthorId != Me.Id)
+                {
+                    var mine = pr.Reviews.FirstOrDefault(r => r.UserId == Me.Id)?.State;
+                    <div class="d-flex gap-2 mt-2">
+                        @if (mine == ReviewState.Approved)
+                        {
+                            <button class="btn btn-outline-success btn-sm flex-fill" @onclick="() => Review(null)">Unapprove</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-success btn-sm flex-fill" @onclick="() => Review(ReviewState.Approved)">✓ Approve</button>
+                        }
+                        @if (mine == ReviewState.ChangesRequested)
+                        {
+                            <button class="btn btn-outline-warning btn-sm flex-fill" @onclick="() => Review(null)">Withdraw</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-outline-warning btn-sm flex-fill" @onclick="() => Review(ReviewState.ChangesRequested)">Request changes</button>
+                        }
+                    </div>
+                }
+                else if (pr.State == PullRequestState.Open)
+                {
+                    <div class="muted small mt-1">You can't review your own pull request.</div>
+                }
+            </div>
+
+            <div class="field">
+                <label>Linked issues</label>
+                @if (linked.Count == 0)
+                {
+                    <div class="muted small">None. Mention <code>@repo.Project.Key-123</code> in the title, branch or commits.</div>
+                }
+                @foreach (var i in linked)
+                {
+                    <a class="linked-issue" href="/p/@i.Project.Key/issues/@i.Number" @key="i.Id">
+                        <span title="@i.Type">@i.Type.Icon()</span>
+                        <span class="mono">@i.Key</span>
+                        <span class="linked-title">@i.Title</span>
+                        <StatusBadge Status="i.Status" />
+                    </a>
+                }
+            </div>
+
+            <div class="field muted small">
+                Created @pr.CreatedAt.ToLocalTime().ToString("g")<br />
+                Updated @Display.Ago(pr.UpdatedAt)
+                @if (changes != null)
+                {
+                    <br /><span>@changes.Ahead ahead, @changes.Behind behind @pr.TargetBranch</span>
+                }
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public string Slug { get; set; } = "";
+    [Parameter] public int Number { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    private PullRequest? pr;
+    private CompareResult? changes;
+    private MergeStatus? mergeStatus;
+    private List<Issue> linked = [];
+    private Dictionary<string, User> usersByEmail = [];
+    private bool notFound, busy, editingTitle, editingDesc, deleteSource;
+    private string strategy = "merge";
+    private string titleDraft = "";
+    private string? descDraft, newComment, commentEditDraft, actionError;
+    private int? editingCommentId;
+    private MarkdownEditor? commentEditor;
+    private string? loadedFor;
+
+    private string CurrentTab => Tab is "commits" or "files" ? Tab : "overview";
+    private string TabUrl(string? tab) => RepoUrls.PullRequest(pr!) + (tab == null ? "" : "?tab=" + tab);
+    private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean;
+
+    private string MergeCss => mergeStatus?.Check switch
+    {
+        MergeCheck.Clean => "good",
+        MergeCheck.Conflicts or MergeCheck.MissingBranch => "bad",
+        _ => "neutral",
+    };
+
+    private string MergeText => mergeStatus?.Check switch
+    {
+        MergeCheck.Clean => mergeStatus.CanFastForward ? "✓ Ready to merge (can fast-forward)." : "✓ Ready to merge. No conflicts.",
+        MergeCheck.Conflicts => "⚠ This pull request has conflicts and can't be merged. Resolve them locally and push.",
+        MergeCheck.UpToDate => "Nothing to merge: " + mergeStatus.Message,
+        MergeCheck.MissingBranch => "⚠ " + mergeStatus.Message,
+        _ => "Checking…",
+    };
+
+    private IEnumerable<object> Timeline => pr!.Comments.Select(c => (when: c.CreatedAt, item: (object)c))
+        .Concat(pr.Activities.Where(a => a.Text != "opened this pull request").Select(a => (when: a.CreatedAt, item: (object)a)))
+        .OrderBy(x => x.when).Select(x => x.item);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var id = $"{Key}/{Slug}/{Number}".ToLowerInvariant();
+        if (id == loadedFor) return; // tab switches only change the query string
+        loadedFor = id;
+        if (usersByEmail.Count == 0) usersByEmail = await Repos.GetUsersByEmailAsync();
+        await Reload(full: true);
+    }
+
+    private async Task Reload(bool full)
+    {
+        pr = await PRs.GetAsync(Key, Slug, Number);
+        notFound = pr == null;
+        if (pr == null) return;
+        if (full)
+        {
+            changes = await PRs.GetChangesAsync(pr);
+            mergeStatus = pr.State == PullRequestState.Open ? await PRs.CheckMergeAsync(pr) : null;
+            linked = await PRs.GetLinkedIssuesAsync(pr, changes?.Commits);
+        }
+    }
+
+    private async Task Run(Func<Task> action, bool full)
+    {
+        busy = true;
+        actionError = null;
+        try
+        {
+            await action();
+            await Reload(full);
+        }
+        catch (InvalidOperationException ex) { actionError = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private Task Merge() => Run(async () =>
+    {
+        var outcome = await PRs.MergeAsync(pr!.Id, Me.User!, deleteSource, strategy == "ff");
+        if (!outcome.Success)
+        {
+            actionError = outcome.Error;
+            if (outcome.ConflictPaths.Count > 0) actionError += " Conflicting files: " + string.Join(", ", outcome.ConflictPaths);
+        }
+    }, full: true);
+
+    private Task Decline() => Run(() => PRs.DeclineAsync(pr!.Id, Me.Id), full: true);
+    private Task Reopen() => Run(() => PRs.ReopenAsync(pr!.Id, Me.Id), full: true);
+    private Task Review(ReviewState? state) => Run(() => PRs.SetReviewAsync(pr!.Id, Me.Id, state), full: false);
+
+    private Task SaveTitle() => Run(async () =>
+    {
+        await PRs.UpdateAsync(pr!.Id, Me.Id, titleDraft, pr.Description);
+        editingTitle = false;
+    }, full: true); // the title can add or remove linked issues
+
+    private Task SaveDesc() => Run(async () =>
+    {
+        await PRs.UpdateAsync(pr!.Id, Me.Id, pr.Title, descDraft);
+        editingDesc = false;
+    }, full: false);
+
+    private async Task AddComment()
+    {
+        if (string.IsNullOrWhiteSpace(newComment)) return;
+        await Run(() => PRs.AddCommentAsync(pr!.Id, Me.Id, newComment), full: false);
+        newComment = null;
+        commentEditor?.ShowWrite();
+    }
+
+    private Task AddInlineComment(DiffView.InlineCommentRequest req) =>
+        Run(() => PRs.AddCommentAsync(pr!.Id, Me.Id, req.Body, req.Path, req.Line, req.OldLine), full: false);
+
+    private async Task SaveCommentEdit(PullRequestComment c)
+    {
+        if (string.IsNullOrWhiteSpace(commentEditDraft)) return;
+        await Run(() => PRs.EditCommentAsync(c.Id, Me.Id, commentEditDraft), full: false);
+        editingCommentId = null;
+    }
+
+    private async Task DeleteComment(PullRequestComment c)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this comment?")) return;
+        await Run(() => PRs.DeleteCommentAsync(c.Id, Me.Id), full: false);
+    }
+}

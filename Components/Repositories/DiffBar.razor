@@ -1,0 +1,23 @@
+@* Five-block additions/deletions bar, GitHub/Bitbucket style. *@
+<span class="diff-bar" title="+@Additions −@Deletions">
+    @for (var i = 0; i < 5; i++)
+    {
+        <span class="@(i < adds ? "a" : i < adds + dels ? "d" : "n")"></span>
+    }
+</span>
+
+@code {
+    [Parameter] public int Additions { get; set; }
+    [Parameter] public int Deletions { get; set; }
+
+    private int adds, dels;
+
+    protected override void OnParametersSet()
+    {
+        var total = Additions + Deletions;
+        if (total == 0) { adds = dels = 0; return; }
+        adds = (int)Math.Round(5.0 * Additions / total);
+        if (Additions > 0 && adds == 0) adds = 1;
+        dels = Deletions > 0 ? 5 - adds : 0;
+    }
+}

@@ -485,7 +485,7 @@ $RECYCLE.BIN/
 gitbench.db*
 
 # Hosted bare git repositories
-repos/
+/repos/
 
 # Agent worktrees
 .claude/worktrees/

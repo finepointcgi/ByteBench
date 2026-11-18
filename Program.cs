@@ -42,6 +42,8 @@ builder.Services.ConfigureApplicationCookie(o =>
 builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddSingleton<RepoStorage>();
+builder.Services.AddScoped<RepositoryService>();
+builder.Services.AddScoped<PullRequestService>();
 
 var app = builder.Build();
 
@@ -50,6 +52,7 @@ using (var scope = app.Services.CreateScope())
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
     using var db = factory.CreateDbContext();
     SeedData.Initialize(db);
+    RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
 }
 
 if (!app.Environment.IsDevelopment())

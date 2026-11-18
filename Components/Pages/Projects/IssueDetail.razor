@@ -211,6 +211,7 @@ else if (issue != null && project != null)
                 <label>Due date</label>
                 <input type="date" class="form-control form-control-sm" value="@issue.DueDate?.ToString("yyyy-MM-dd")" @onchange="SetDue" />
             </div>
+            <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
             <div class="field muted small">
                 Reporter: <Avatar User="issue.Reporter" Size="18" ShowName /><br />
                 Created @issue.CreatedAt.ToLocalTime().ToString("g")<br />

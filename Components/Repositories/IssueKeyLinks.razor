@@ -1,0 +1,10 @@
+@* Small chips linking to every issue key of the project mentioned in Text (Jira-style smart links). *@
+@foreach (var n in IssueKeys.Numbers(ProjectKey, [Text]))
+{
+    <a class="issue-key-chip mono" href="/p/@ProjectKey/issues/@n">@ProjectKey-@n</a>
+}
+
+@code {
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public string? Text { get; set; }
+}

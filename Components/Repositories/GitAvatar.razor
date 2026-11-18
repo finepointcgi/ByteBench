@@ -1,0 +1,23 @@
+@* Avatar for a Git author: the matching GitBench user (by e-mail) if there is one, otherwise neutral initials. *@
+@if (Users != null && Email != null && Users.TryGetValue(Email, out var user))
+{
+    <Avatar User="user" Size="Size" ShowName="ShowName" />
+}
+else
+{
+    <span class="avatar git-avatar" title="@Name &lt;@Email&gt;" style="width:@(Size)px;height:@(Size)px;font-size:@(Size * 0.4)px">@Initials</span>
+    @if (ShowName)
+    {
+        <span class="avatar-name">@Name</span>
+    }
+}
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public string? Email { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, User>? Users { get; set; }
+    [Parameter] public int Size { get; set; } = 22;
+    [Parameter] public bool ShowName { get; set; }
+
+    private string Initials => string.Concat(Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0]))) is { Length: > 0 } s ? s : "?";
+}

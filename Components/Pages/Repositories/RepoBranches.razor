@@ -1,0 +1,123 @@
+@page "/p/{Key}/repos/{Slug}/branches"
+@inherits RepoPageBase
+@inject PullRequestService PRs
+@inject IJSRuntime JS
+
+<PageTitle>Branches · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="branches" />
+
+    <div class="repo-toolbar">
+        <input class="form-control form-control-sm branch-name-input mono" placeholder="new-branch-name" @bind="newName" @bind:event="oninput" />
+        <span class="muted small">from</span>
+        <select class="form-select form-select-sm ref-select" @bind="fromRef">
+            @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
+        </select>
+        <button class="btn btn-sm btn-primary" disabled="@string.IsNullOrWhiteSpace(newName)" @onclick="Create">Create branch</button>
+        <span class="ms-auto muted small">Ahead/behind relative to <span class="mono">@Repo.DefaultBranch</span></span>
+    </div>
+    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+
+    <div class="issue-list">
+        @foreach (var b in branches)
+        {
+            var pr = openPrs.FirstOrDefault(p => p.SourceBranch == b.Name);
+            var max = Math.Max(1, branches.Max(x => Math.Max(x.Ahead, x.Behind)));
+            <div class="branch-row" @key="b.Name">
+                <div class="issue-main">
+                    <div class="issue-title">
+                        <a class="mono" href="@RepoUrls.Source(Repo, b.Name)">@b.Name</a>
+                        @if (b.IsDefault) { <span class="count">default</span> }
+                        <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@b.Name" />
+                    </div>
+                    @if (b.Tip is { } t)
+                    {
+                        <div class="issue-meta">
+                            Updated @Display.Ago(t.When.UtcDateTime) by <b>@t.AuthorName</b> ·
+                            <a href="@RepoUrls.Commit(Repo, t.Sha)">@t.MessageShort</a>
+                        </div>
+                    }
+                </div>
+                @if (!b.IsDefault)
+                {
+                    <div class="ahead-behind" title="@b.Behind behind, @b.Ahead ahead of @Repo.DefaultBranch">
+                        <div class="ab-side behind"><span>@b.Behind</span><div class="ab-bar" style="width:@(b.Behind * 100 / max)%"></div></div>
+                        <div class="ab-side ahead"><div class="ab-bar" style="width:@(b.Ahead * 100 / max)%"></div><span>@b.Ahead</span></div>
+                    </div>
+                }
+                else
+                {
+                    <div class="ahead-behind muted small text-center">default branch</div>
+                }
+                <div class="branch-actions">
+                    @if (pr != null)
+                    {
+                        <a href="@RepoUrls.PullRequest(pr)" class="text-nowrap"><PrStateBadge State="pr.State" /> #@pr.Number</a>
+                    }
+                    else if (!b.IsDefault && b.Ahead > 0)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, b.Name, Repo.DefaultBranch)">Create PR</a>
+                    }
+                    @if (!b.IsDefault)
+                    {
+                        <button class="btn btn-sm btn-outline-danger" title="Delete branch" @onclick="() => Delete(b.Name)">Delete</button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<BranchDivergence> branches = [];
+    private List<PullRequest> openPrs = [];
+    private string? newName, fromRef, message;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        branches = await Git(path => GitOps.ListBranchesWithDivergence(path, Repo!.DefaultBranch));
+        openPrs = await PRs.ListAsync(Repo!.ProjectId, PullRequestState.Open, Repo.Id);
+        if (fromRef == null || branches.All(b => b.Name != fromRef)) fromRef = Repo.DefaultBranch;
+    }
+
+    private async Task Create()
+    {
+        Error = message = null;
+        var name = newName!.Trim();
+        var from = fromRef ?? Repo!.DefaultBranch;
+        try
+        {
+            await Git(path => GitOps.CreateBranch(path, name, from));
+            message = $"Created branch '{name}' from '{from}'.";
+            newName = null;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+
+    private async Task Delete(string name)
+    {
+        Error = message = null;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete branch '{name}'? Commits only on this branch become unreachable.")) return;
+        try
+        {
+            await Git(path => GitOps.DeleteBranch(path, name, Repo!.DefaultBranch));
+            message = $"Deleted branch '{name}'.";
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+}

@@ -1,0 +1,66 @@
+@page "/p/{Key}/repos/{Slug}/commits/{Sha}"
+@inherits RepoPageBase
+
+<PageTitle>@detail?.Commit.MessageShort · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="commits" />
+
+    @if (detail == null)
+    {
+        <div class="empty">Commit <span class="mono">@Sha</span> was not found in this repository.</div>
+    }
+    else
+    {
+        var c = detail.Commit;
+        <div class="card-panel commit-card">
+            <div class="d-flex gap-3 align-items-start">
+                <div class="flex-grow-1 min-w-0">
+                    <h2 class="commit-title">@c.MessageShort</h2>
+                    @if (c.Body != null)
+                    {
+                        <pre class="commit-body">@c.Body</pre>
+                    }
+                    <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@c.Message" />
+                </div>
+                <a class="btn btn-sm btn-outline-secondary text-nowrap" href="@RepoUrls.Source(Repo, c.Sha)">Browse files</a>
+            </div>
+            <div class="commit-meta">
+                <GitAvatar Name="@c.AuthorName" Email="@c.AuthorEmail" Users="UsersByEmail" Size="22" ShowName />
+                <span class="muted">committed @Display.Ago(c.When.UtcDateTime) · @c.When.ToLocalTime().ToString("MMM d, yyyy HH:mm")</span>
+                <span class="ms-auto muted small">
+                    @(c.ParentShas.Count == 1 ? "parent" : c.ParentShas.Count > 1 ? "parents" : "root commit")
+                    @foreach (var p in c.ParentShas)
+                    {
+                        <text> </text><a class="sha-pill mono" href="@RepoUrls.Commit(Repo, p)">@p[..7]</a>
+                    }
+                    · commit <span class="sha-pill mono" title="@c.Sha">@c.Sha</span>
+                </span>
+            </div>
+        </div>
+
+        @if (c.ParentShas.Count > 1)
+        {
+            <div class="muted small mb-2">Showing changes against the first parent.</div>
+        }
+        <DiffView Files="detail.Files" Repo="Repo" ViewRef="@c.Sha" EmptyText="This commit has no file changes." />
+    }
+}
+
+@code {
+    [Parameter] public string Sha { get; set; } = "";
+
+    private CommitDetail? detail;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        var sha = Sha;
+        detail = await Git(path => GitOps.GetCommitDetail(path, sha));
+    }
+}

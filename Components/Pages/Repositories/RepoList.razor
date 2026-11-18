@@ -1,0 +1,116 @@
+@page "/p/{Key}/repos"
+@inject IssueService Issues
+@inject RepositoryService Repos
+@inject CurrentUser Me
+@inject NavigationManager Nav
+
+<PageTitle>Repositories · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Repositories</h1>
+            <div class="muted">@project.Name</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary" href="@RepoUrls.PullRequests(project.Key)">Pull requests</a>
+            <button class="btn btn-primary" @onclick="() => { creating = !creating; error = null; }">+ Create repository</button>
+        </div>
+    </div>
+
+    @if (creating)
+    {
+        <div class="card-panel narrow mb-3">
+            <h2 class="section-title">Create repository</h2>
+            <div class="mb-3">
+                <label class="form-label">Name</label>
+                <input class="form-control" @bind="name" @bind:event="oninput" @bind:after="NameChanged" placeholder="e.g. Web App" maxlength="100" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Slug</label>
+                <div class="input-group">
+                    <span class="input-group-text mono">@project.Key /</span>
+                    <input class="form-control mono" @bind="slug" @bind:event="oninput" @bind:after="() => slugEdited = true" maxlength="100" />
+                    <span class="input-group-text mono">.git</span>
+                </div>
+                <div class="form-text">Lowercase letters, digits, '.', '_' and '-'. Used in URLs and the clone address.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description <span class="muted">(optional)</span></label>
+                <input class="form-control" @bind="description" />
+            </div>
+            <div class="muted small mb-3">The repository starts with a <code>README.md</code> on the <code>main</code> branch.</div>
+            @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">Create repository</button>
+                <button class="btn btn-outline-secondary" @onclick="() => creating = false">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <div class="issue-list">
+        @if (repos.Count == 0)
+        {
+            <div class="empty">No repositories yet. Create one to start hosting code for @project.Key.</div>
+        }
+        @foreach (var r in repos)
+        {
+            <a class="issue-row repo-row" href="@RepoUrls.Base(r.Repository)" @key="r.Repository.Id">
+                <span class="repo-icon sm">⌥</span>
+                <div class="issue-main">
+                    <div class="issue-title">@r.Repository.Name <span class="muted mono small">@project.Key/@r.Repository.Slug</span></div>
+                    <div class="issue-meta">
+                        @(r.Repository.Description ?? "No description")
+                        · created @Display.Ago(r.Repository.CreatedAt)
+                    </div>
+                </div>
+                <div class="issue-right">
+                    @if (r.OpenPullRequests > 0)
+                    {
+                        <span class="count" title="Open pull requests">⇄ @r.OpenPullRequests open</span>
+                    }
+                    <span class="muted small mono">⑂ @r.Repository.DefaultBranch</span>
+                </div>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private List<RepoSummary> repos = [];
+    private bool notFound, creating, busy, slugEdited;
+    private string? name, slug, description, error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project != null) repos = await Repos.GetRepositoriesAsync(project.Id);
+    }
+
+    private void NameChanged()
+    {
+        if (!slugEdited || string.IsNullOrEmpty(slug)) { slug = RepositoryService.Slugify(name ?? ""); slugEdited = false; }
+    }
+
+    private async Task Create()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var repo = await Repos.CreateAsync(project!.Id, name ?? "", slug, description, Me.User!);
+            Nav.NavigateTo(RepoUrls.Base(repo));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}
