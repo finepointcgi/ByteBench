@@ -79,6 +79,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Release> Releases => Set<Release>();
     public DbSet<ReleaseAsset> ReleaseAssets => Set<ReleaseAsset>();
 
+    // ----- SSH -----
+    public DbSet<SshKey> SshKeys => Set<SshKey>();
+
+    private static void ConfigureSsh(ModelBuilder b)
+    {
+        b.Entity<SshKey>().HasIndex(k => k.Fingerprint).IsUnique(); // one owner per key, users and deploy keys alike
+        b.Entity<SshKey>().HasIndex(k => k.UserId);
+        b.Entity<SshKey>().HasIndex(k => k.RepositoryId);
+        b.Entity<SshKey>().HasOne(k => k.User).WithMany().HasForeignKey(k => k.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SshKey>().HasOne(k => k.Repository).WithMany().HasForeignKey(k => k.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SshKey>().HasOne(k => k.CreatedBy).WithMany().HasForeignKey(k => k.CreatedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
     private static void ConfigureReleases(ModelBuilder b)
     {
         b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.TagName }).IsUnique();
@@ -237,5 +250,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureEmailAndPreferences(b);
         ConfigureAdminSecurity(b);
         ConfigureReleases(b);
+        ConfigureSsh(b);
     }
 }

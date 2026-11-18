@@ -207,6 +207,14 @@
         }
     </section>
 
+    <section class="profile-section" id="ssh-keys">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">SSH keys</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Use git over SSH with a key instead of a password or token. Add the public key of each computer you push from.
+        </MudText>
+        <MudButton Href="account/ssh-keys" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.VpnKey">Manage SSH keys</MudButton>
+    </section>
+
     <form class="profile-signout" method="post" action="account/logout">
         <AntiforgeryToken />
         <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Logout">Sign out</MudButton>

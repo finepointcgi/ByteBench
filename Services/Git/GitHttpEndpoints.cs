@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using GitBench.Data;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
@@ -20,18 +19,11 @@ namespace GitBench.Services.Git;
 /// clone/fetch need ViewProject, push needs PushCode (and a token needs the WriteRepository scope). A user who
 /// can't view the project gets 404, so the repository's existence isn't revealed.
 /// </summary>
-public static partial class GitHttpEndpoints
+public static class GitHttpEndpoints
 {
     private const string Realm = "GitBench";
     private const string UploadPack = "git-upload-pack";
     private const string ReceivePack = "git-receive-pack";
-
-    [GeneratedRegex("^[A-Za-z][A-Za-z0-9]{1,9}$")]
-    private static partial Regex ProjectKeyPattern();
-
-    // Mirrors Repository.Slug validation; ".." is excluded separately.
-    [GeneratedRegex("^[a-z0-9][a-z0-9._-]{0,99}$")]
-    private static partial Regex SlugPattern();
 
     public static IEndpointRouteBuilder MapGitHttp(this IEndpointRouteBuilder app)
     {
@@ -84,7 +76,7 @@ public static partial class GitHttpEndpoints
         // Strict path validation: "{KEY}/{slug}.git", nothing that could climb out of the repo root.
         if (!repo.EndsWith(".git", StringComparison.Ordinal)) { await NotFound(ctx); return; }
         var slug = repo[..^4];
-        if (!ProjectKeyPattern().IsMatch(projectKey) || !SlugPattern().IsMatch(slug) || slug.Contains(".."))
+        if (!GitRepoLookup.IsValid(projectKey, slug))
         {
             await NotFound(ctx);
             return;
@@ -108,20 +100,7 @@ public static partial class GitHttpEndpoints
 
         var storage = ctx.RequestServices.GetRequiredService<RepoStorage>();
         var dbFactory = ctx.RequestServices.GetRequiredService<IDbContextFactory<AppDbContext>>();
-        var upperKey = projectKey.ToUpperInvariant();
-        RepoInfo? found;
-        await using (var db = await dbFactory.CreateDbContextAsync(ctx.RequestAborted))
-        {
-            found = await db.Repositories.AsNoTracking()
-                .Where(r => r.Project.Key.ToUpper() == upperKey && r.Slug == slug)
-                .Select(r => new RepoInfo(r.Id, r.Project.Key, r.Slug, r.ProjectId, r.IsArchived))
-                .FirstOrDefaultAsync(ctx.RequestAborted);
-            // A renamed repository keeps answering at its old slug (RepositoryRedirect).
-            found ??= await db.RepositoryRedirects.AsNoTracking()
-                .Where(r => r.Repository.Project.Key.ToUpper() == upperKey && r.OldSlug == slug)
-                .Select(r => new RepoInfo(r.Repository.Id, r.Repository.Project.Key, r.Repository.Slug, r.Repository.ProjectId, r.Repository.IsArchived))
-                .FirstOrDefaultAsync(ctx.RequestAborted);
-        }
+        var found = await GitRepoLookup.FindAsync(dbFactory, projectKey, slug, ctx.RequestAborted);
         if (found is null) { await NotFound(ctx); return; }
 
         // Project permissions. Not viewable → 404 so the repo's existence isn't revealed.
@@ -154,13 +133,8 @@ public static partial class GitHttpEndpoints
             }
         }
 
-        var root = Path.TrimEndingDirectorySeparator(storage.Root) + Path.DirectorySeparatorChar;
-        var diskPath = Path.GetFullPath(storage.PathFor(found.Key, found.Slug));
-        if (!diskPath.StartsWith(root, StringComparison.Ordinal) || !Directory.Exists(diskPath))
+        if (GitRepoLookup.DiskPath(storage, found, logger) is not { } diskPath)
         {
-            if (!Directory.Exists(diskPath))
-                logger.LogWarning("Repository {Key}/{Slug} (id {Id}) is in the database but missing on disk at {Path}",
-                    found.Key, found.Slug, found.Id, diskPath);
             await NotFound(ctx);
             return;
         }
@@ -191,7 +165,7 @@ public static partial class GitHttpEndpoints
         if (isPush && !isProbe && exitCode == 0 && ctx.Response.StatusCode == StatusCodes.Status200OK)
         {
             logger.LogInformation("Push to {Key}/{Slug} by {User}", found.Key, found.Slug, user.UserName);
-            await NotifyPushListenersAsync(ctx, logger, found.Id, user.Id);
+            await GitRepoLookup.NotifyPushListenersAsync(ctx.RequestServices, logger, found.Id, user.Id);
         }
         else if (exitCode != 0)
         {
@@ -200,9 +174,7 @@ public static partial class GitHttpEndpoints
         }
     }
 
-    private sealed record RepoInfo(int Id, string Key, string Slug, int ProjectId, bool IsArchived);
-
-    private const string ArchivedMessage = "This repository is archived and read-only. A Maintainer can unarchive it in the repository settings.";
+    private const string ArchivedMessage = GitRepoLookup.ArchivedMessage;
 
     /// <summary>
     /// Refuses a push to an archived repository. On the ref advertisement git prints an <c>ERR</c> packet as
@@ -286,25 +258,6 @@ public static partial class GitHttpEndpoints
             if (user is not null && !await users.IsLockedOutAsync(user)) return (user, null, null);
         }
         return (null, null, null);
-    }
-
-    private static async Task NotifyPushListenersAsync(HttpContext ctx, ILogger logger, int repositoryId, int userId)
-    {
-        var listeners = ctx.RequestServices.GetServices<IGitPushListener>();
-        // The push is already committed; don't let a client disconnect cancel the notifications.
-        var ct = ctx.RequestServices.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
-        foreach (var listener in listeners)
-        {
-            try
-            {
-                await listener.OnPushAsync(repositoryId, userId, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "IGitPushListener {Listener} failed for repository {RepositoryId}",
-                    listener.GetType().FullName, repositoryId);
-            }
-        }
     }
 
     /// <summary>Keep git responses raw: no HTML status-code pages, no caching.</summary>

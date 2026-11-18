@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"   # only reachable from this host; the proxy (or an SSH tunnel) exposes it
+      - "2222:2222"             # git over SSH (the TLS proxy doesn't carry it). For git@host:KEY/repo.git URLs use "22:2222" + Ssh__PublicPort
+
     environment:
       # Absolute URL used in API responses, webhooks and e-mails.
       PublicBaseUrl: "https://gitbench.example.com"
@@ -24,6 +26,10 @@ services:
       # Security__HttpsRedirection: "false"
       # CI pipelines (see README "CI in the container"): off unless you give GitBench a Docker daemon.
       Ci__Enabled: "false"
+      # Git over SSH is on in the image (port 2222, host key in the gitbench-keys volume). Clone URLs show:
+      # Ssh__PublicHost: "gitbench.example.com"
+      # Ssh__PublicPort: "22"                  # when the host maps its port 22 to 2222
+      # Ssh__Enabled: "false"                  # HTTPS only
       # Ci__Enabled: "true"
       # Ci__WorkDirectory: "/data/ci"          # must be the same path on the host when using the host's socket
       # Secrets come from the environment (or an env_file), never from appsettings.json:
@@ -32,7 +38,7 @@ services:
       - gitbench-db:/data/db
       - gitbench-repos:/data/repos
       - gitbench-attachments:/data/attachments
-      - gitbench-keys:/data/keys
+      - gitbench-keys:/data/keys               # Data Protection key ring and the SSH host key
       # CI option A (host daemon; anyone who can push can then control the host, see README):
       # - /var/run/docker.sock:/var/run/docker.sock
       # - /data/ci:/data/ci

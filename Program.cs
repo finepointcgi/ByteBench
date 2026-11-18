@@ -9,6 +9,7 @@ using GitBench.Api;
 using GitBench.Services.Audit;
 using GitBench.Services.Releases;
 using GitBench.Services.Hosting;
+using GitBench.Services.Ssh;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -89,6 +90,7 @@ builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Pr
 // Re-check cookies against the security stamp every minute, so an admin's "sign out" or lock takes effect quickly.
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 builder.Services.AddReleases(); // tags, releases, assets, source archives
+builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

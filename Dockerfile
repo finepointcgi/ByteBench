@@ -46,13 +46,17 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     Git__RepositoryRoot=/data/repos \
     Attachments__Root=/data/attachments \
     DataProtection__KeysPath=/data/keys \
+    Ssh__Enabled=true \
+    Ssh__Port=2222 \
+    Ssh__HostKeyPath=/data/keys/ssh_host_rsa_key \
     Ci__Enabled=false \
     Security__HttpsRedirection=false \
     Seed__DemoData=false \
     DOTNET_gcServer=0
 
 USER app
-EXPOSE 8080
+# 8080: HTTP (behind the TLS proxy). 2222: git over SSH (host key in the /data/keys volume).
+EXPOSE 8080 2222
 VOLUME ["/data/db", "/data/repos", "/data/attachments", "/data/keys"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

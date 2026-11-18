@@ -861,3 +861,40 @@ public class ReleaseAsset
     public int DownloadCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- SSH -----
+
+/// <summary>
+/// An OpenSSH public key that authenticates git over SSH (<see cref="GitBench.Services.Ssh.SshGitServer"/>). Either a
+/// user's key (<see cref="UserId"/> set: acts as that user, with their project permissions) or a repository's deploy key
+/// (<see cref="RepositoryId"/> set: only that repository, read-only unless <see cref="CanWrite"/>). Both kinds share this
+/// table so a <see cref="Fingerprint"/> is unique across all users and deploy keys.
+/// </summary>
+public class SshKey
+{
+    public int Id { get; set; }
+    /// <summary>The owner of a user key; null for a deploy key.</summary>
+    public int? UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>The repository of a deploy key; null for a user key.</summary>
+    public int? RepositoryId { get; set; }
+    public Repository? Repository { get; set; }
+    /// <summary>Deploy keys only: may push (subject to branch protection, like a Developer).</summary>
+    public bool CanWrite { get; set; }
+    [Required, MaxLength(100)] public string Title { get; set; } = "";
+    /// <summary>The key type, e.g. <c>ssh-ed25519</c>, <c>ecdsa-sha2-nistp256</c> or <c>ssh-rsa</c>.</summary>
+    [Required, MaxLength(40)] public string KeyType { get; set; } = "";
+    /// <summary>The public key blob in base64, as in an <c>authorized_keys</c> line.</summary>
+    [Required, MaxLength(4096)] public string PublicKey { get; set; } = "";
+    /// <summary><c>SHA256:</c> + unpadded base64 of the SHA-256 of the key blob (as <c>ssh-keygen -l</c> prints it).</summary>
+    [Required, MaxLength(64)] public string Fingerprint { get; set; } = "";
+    /// <summary>Who added the key. For a deploy key, pushes run their push listeners (webhooks, CI, smart commits) as this user.</summary>
+    public int? CreatedById { get; set; }
+    public User? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ExpiresAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+
+    public bool IsDeployKey => RepositoryId != null;
+    public bool IsExpired(DateTime utcNow) => ExpiresAt != null && ExpiresAt <= utcNow;
+}

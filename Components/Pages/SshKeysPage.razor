@@ -1,0 +1,146 @@
+@page "/account/ssh-keys"
+@attribute [Authorize]
+@using GitBench.Components.Repositories
+@using GitBench.Services.Ssh
+@using Microsoft.Extensions.Options
+@inject SshKeyService Keys
+@inject CurrentUser Me
+@inject IOptions<SshOptions> SshOptions
+@inject SshGitServer SshServer
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>SSH keys · GitBench</PageTitle>
+
+<div class="page-header">
+    <div class="gb-min0">
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="d-flex align-center gap-2"><MudIcon Icon="@Icons.Material.Outlined.VpnKey" /> SSH keys</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Add the public key of each computer you push from to use git over SSH without a password or token.
+            A key acts as you, with your project permissions; two-factor sign-in doesn't apply to SSH keys.
+        </MudText>
+    </div>
+    <MudButton Href="/account/profile" Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Profile</MudButton>
+</div>
+
+@if (!SshOptions.Value.Enabled)
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">Git over SSH is turned off on this server (<code>Ssh:Enabled</code>). You can still add keys; they work once an administrator turns it on.</MudAlert>
+}
+
+<MudPaper Outlined="true" Class="pa-5 mb-4">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mb-2">Add a key</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Paste the contents of your <code>.pub</code> file, e.g. <code>~/.ssh/id_ed25519.pub</code>. No key yet? Run
+        <code>ssh-keygen -t ed25519 -C "you@example.com"</code>. Supported: ed25519 (recommended), ECDSA and RSA (2048 bits or more).
+    </MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+    <MudGrid Spacing="3">
+        <MudItem xs="12">
+            <MudTextField T="string" Label="Key" @bind-Value="keyText" Lines="4" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… you@laptop" Class="gb-mono-input" Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" sm="7">
+            <MudTextField T="string" Label="Title" @bind-Value="title" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100"
+                          HelperText="Optional; defaults to the key's comment" />
+        </MudItem>
+        <MudItem xs="12" sm="5">
+            <MudDatePicker Label="Expires (optional)" @bind-Date="expires" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                           MinDate="DateTime.Today.AddDays(1)" Placeholder="Never" />
+        </MudItem>
+    </MudGrid>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="mt-4" StartIcon="@Icons.Material.Filled.Add"
+               Disabled="@(string.IsNullOrWhiteSpace(keyText) || busy)" OnClick="Add">Add key</MudButton>
+</MudPaper>
+
+<div class="gb-rows mb-4">
+    @if (keys == null)
+    {
+        <div class="empty">Loading…</div>
+    }
+    else if (keys.Count == 0)
+    {
+        <div class="empty">You haven't added any SSH keys yet.</div>
+    }
+    else
+    {
+        var now = DateTime.UtcNow;
+        @foreach (var k in keys)
+        {
+            <div class="gb-row" @key="k.Id">
+                <MudIcon Icon="@Icons.Material.Outlined.VpnKey" Size="Size.Small" Class="mud-text-secondary" />
+                <div class="gb-row-main gb-min0">
+                    <div class="gb-row-title">
+                        @k.Title
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0 ml-2">@SshPublicKey.ShortType(k.KeyType)</MudChip>
+                        @if (k.IsExpired(now)) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Expired</MudChip> }
+                    </div>
+                    <div class="gb-row-meta">
+                        <span class="mono">@k.Fingerprint</span><br />
+                        Added @k.CreatedAt.ToLocalTime().ToString("d") ·
+                        Last used @(k.LastUsedAt?.ToLocalTime().ToString("g") ?? "never") ·
+                        @(k.ExpiresAt is { } e ? $"expires {e.ToLocalTime():d}" : "never expires")
+                    </div>
+                </div>
+                <div class="gb-row-right">
+                    <MudTooltip Text="Delete key">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                       aria-label="@($"Delete the SSH key {k.Title}")" OnClick="() => Delete(k)" />
+                    </MudTooltip>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (SshServer.HostKeyFingerprint is { } hostKey)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Clone with <code>git clone ssh://git@@@Host:@SshOptions.Value.EffectivePublicPort/KEY/repository.git</code>.
+        The first time, check that ssh shows this server's host key fingerprint: <span class="mono">@hostKey</span> (RSA).
+    </MudText>
+}
+
+@code {
+    private List<SshKey>? keys;
+    private string? keyText, title, error;
+    private DateTime? expires;
+    private bool busy;
+
+    private string Host => SshOptions.Value.PublicHost is { Length: > 0 } h ? h : new Uri(Nav.BaseUri).Host;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await Load();
+    }
+
+    private async Task Load() => keys = await Keys.ListUserKeysAsync(Me.Id);
+
+    private async Task Add()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            // The picker gives a local date: the key works through the end of that day.
+            DateTime? expiresUtc = expires is { } d ? d.Date.AddDays(1).ToUniversalTime() : null;
+            var key = await Keys.AddUserKeyAsync(Me.Id, title ?? "", keyText ?? "", expiresUtc);
+            Snackbar.Add($"Added the SSH key '{key.Title}'.", Severity.Success);
+            keyText = title = null;
+            expires = null;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Delete(SshKey k)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete SSH key", $"Delete the SSH key '{k.Title}' ({k.Fingerprint})? git can no longer use it.")) return;
+        await Keys.DeleteUserKeyAsync(Me.Id, k.Id);
+        Snackbar.Add($"Deleted the SSH key '{k.Title}'.", Severity.Success);
+        await Load();
+    }
+}
