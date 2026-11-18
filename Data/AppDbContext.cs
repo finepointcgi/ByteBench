@@ -305,6 +305,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureBoards(b);
         ConfigureMirrorTagsLfs(b);
         ConfigureRoadmapDashboards(b);
+        ConfigureAutomation(b);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
@@ -371,5 +372,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<DashboardHome>().HasIndex(h => h.DashboardId);
         b.Entity<DashboardHome>().HasOne<User>().WithMany().HasForeignKey(h => h.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<DashboardHome>().HasOne<Dashboard>().WithMany().HasForeignKey(h => h.DashboardId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    // ----- Automation -----
+    public DbSet<AutomationRule> AutomationRules => Set<AutomationRule>();
+    public DbSet<AutomationRun> AutomationRuns => Set<AutomationRun>();
+
+    private static void ConfigureAutomation(ModelBuilder b)
+    {
+        b.Entity<AutomationRule>().HasIndex(r => r.ProjectId);
+        b.Entity<AutomationRule>().HasIndex(r => r.GroupId);
+        b.Entity<AutomationRule>().HasOne(r => r.Project).WithMany().HasForeignKey(r => r.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<AutomationRule>().HasOne(r => r.Group).WithMany().HasForeignKey(r => r.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<AutomationRule>().HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<AutomationRule>().ToTable(t => t.HasCheckConstraint("CK_AutomationRules_Scope", "(\"ProjectId\" IS NULL) <> (\"GroupId\" IS NULL)"));
+        b.Entity<AutomationRun>().HasIndex(r => new { r.RuleId, r.StartedAt });
+        b.Entity<AutomationRun>().HasOne(r => r.Rule).WithMany().HasForeignKey(r => r.RuleId).OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -10,6 +10,7 @@ using GitBench.Services.Audit;
 using GitBench.Services.Releases;
 using GitBench.Services.Hosting;
 using GitBench.Services.Ssh;
+using GitBench.Services.Automation;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -107,6 +108,7 @@ builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git
 builder.Services.AddScoped<ProtectedTagService>();
 GitBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
 GitBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
+builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

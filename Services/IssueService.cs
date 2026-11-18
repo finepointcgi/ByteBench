@@ -120,7 +120,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     public async Task<List<User>> GetUsersAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // the AI bot is not assignable
+        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName && u.UserName != Automation.AutomationBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // bots are not assignable
     }
 
     // ---------- Issues ----------
@@ -259,6 +259,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
         var wasClosed = issue.Status.IsClosed();
         var before = IssueSnapshot.Of(issue);
+        var fieldsBefore = Automation.IssueFieldState.Of(issue);
         var (parentBefore, typeBefore) = (issue.ParentId, issue.Type);
         var beforeWorkflowStatusId = issue.WorkflowStatusId;
         var text = await change(issue, db);
@@ -274,7 +275,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await db.SaveChangesAsync();
         await notifications.OnIssueUpdatedAsync(issueId, actorId, before);
         await notifications.OnHierarchyChangedAsync(hierarchy, actorId);
-        await webhooks.IssueUpdatedAsync(issueId, actorId, text);
+        await webhooks.IssueUpdatedAsync(issueId, actorId, text, fieldsBefore.Diff(issue));
     }
 
     /// <summary>Sets the status category: the issue keeps its workflow status if it's in that category, else gets the category's first one.</summary>

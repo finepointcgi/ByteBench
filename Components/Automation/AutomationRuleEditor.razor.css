@@ -1,0 +1,12 @@
+.auto-section { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--mud-palette-lines-default); }
+.auto-step { display: flex; align-items: center; gap: 6px; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; color: var(--mud-palette-text-secondary); }
+.auto-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.auto-num-badge {
+    display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
+    font-size: 12px; font-weight: 600; background: var(--mud-palette-primary); color: var(--mud-palette-primary-text);
+}
+.auto-smart { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 12px; font-size: 12px; }
+.auto-editor ::deep .auto-select { min-width: 160px; max-width: 220px; }
+.auto-editor ::deep .auto-select-wide { min-width: 220px; max-width: 420px; }
+.auto-editor ::deep .auto-num { max-width: 150px; }
+.auto-editor ::deep .auto-title { font-weight: 600; margin-bottom: 8px; }

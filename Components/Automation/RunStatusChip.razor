@@ -1,0 +1,13 @@
+<MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0" Color="@Color(Status)">@AutomationText.Status(Status)</MudChip>
+
+@code {
+    [Parameter] public AutomationRunStatus Status { get; set; }
+
+    private static MudBlazor.Color Color(AutomationRunStatus s) => s switch
+    {
+        AutomationRunStatus.Success => MudBlazor.Color.Success,
+        AutomationRunStatus.Failure => MudBlazor.Color.Error,
+        AutomationRunStatus.NoActions => MudBlazor.Color.Default,
+        _ => MudBlazor.Color.Warning,
+    };
+}

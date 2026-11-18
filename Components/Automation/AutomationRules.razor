@@ -1,0 +1,271 @@
+@implements IDisposable
+@inject AutomationService Rules
+@inject AutomationConditions ConditionRegistry
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject LiveEvents Live
+@inject NavigationManager Nav
+
+@* Rules list, rule editor and per-rule log for a project or a group (?log={id} shows a rule's log). *@
+<div class="auto-page">
+    <div class="page-header">
+        <MudText Typo="Typo.h5" HtmlTag="h1">@(logRule != null ? $"Log · {logRule.Name}" : "Automation")</MudText>
+        @if (logRule != null)
+        {
+            <MudButton Href="@BaseHref" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Rules</MudButton>
+        }
+        else if (BackHref != null)
+        {
+            <MudButton Href="@BackHref" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Settings</MudButton>
+        }
+    </div>
+
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="auto-narrow mb-3">@error</MudAlert> }
+
+    @if (logRule != null)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @AutomationText.Trigger(logRule.Trigger, RuleDefinition.Parse(logRule.Definition).Trigger) · runs as @AutomationText.RunAs(logRule.RunAs).
+            The latest 100 runs, newest first.
+        </MudText>
+        <MudPaper Outlined="true" Class="auto-log">
+            @if (runs.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary pa-4">This rule hasn't run yet.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>When</th><th>Trigger</th><th>Issue</th><th>Result</th><th>Actions</th><th>Time</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in runs)
+                        {
+                            <tr @key="r.Id">
+                                <td class="nowrap">@r.StartedAt.ToLocalTime().ToString("g")</td>
+                                <td>@r.Trigger@if (r.Depth > 0) { <span class="mud-text-secondary"> (from a rule, depth @r.Depth)</span> }</td>
+                                <td class="nowrap mono">
+                                    @if (AutomationText.IssueUrl(r.IssueKey) is { } url) { <a href="@url">@r.IssueKey</a> }
+                                    else { <span class="mud-text-secondary">—</span> }
+                                </td>
+                                <td><RunStatusChip Status="r.Status" /></td>
+                                <td>
+                                    @if (r.Actions != null) { <div class="auto-lines">@r.Actions</div> }
+                                    @if (r.Message != null) { <div class="@(r.Status == AutomationRunStatus.Failure ? "auto-error" : "mud-text-secondary")">@r.Message</div> }
+                                </td>
+                                <td class="nowrap">@r.DurationMs ms</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudPaper>
+    }
+    else if (editing)
+    {
+        <AutomationRuleEditor Owner="Owner" Options="options!" Rule="editRule" Name="@draftName" Trigger="draftTrigger" Definition="draft"
+                              OnSaved="Saved" OnCancel="CancelEdit" />
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary auto-narrow mb-3">
+            Rules run in the background when something happens: <b>when</b> a trigger fires, <b>if</b> the conditions hold,
+            <b>then</b> the actions run in order, by default as <i>@AutomationBot.DisplayName</i>, through the same checks and
+            workflow transitions as a person. Changes made by rules don't trigger other rules unless a rule allows it
+            (at most 3 rules deep), and each rule runs at most 100 times an hour.
+        </MudText>
+        <div class="d-flex flex-wrap gap-2 mb-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="() => StartNew(null)">New rule</MudButton>
+            <MudMenu Label="Start from a template" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoAwesome"
+                     EndIcon="@Icons.Material.Filled.ArrowDropDown" AriaLabel="Start from a template">
+                @foreach (var t in AutomationService.Templates)
+                {
+                    <MudMenuItem OnClick="() => StartNew(t)">
+                        <div class="auto-template"><b>@t.Name</b><span class="mud-text-secondary">@t.Description</span></div>
+                    </MudMenuItem>
+                }
+            </MudMenu>
+        </div>
+
+        @if (loaded && list.Count == 0)
+        {
+            <MudPaper Outlined="true" Class="auto-narrow pa-6 mb-4 auto-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.Bolt" Size="Size.Large" Class="mud-text-secondary" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">No rules yet. Create one, or start from a template.</MudText>
+            </MudPaper>
+        }
+        @foreach (var s in list)
+        {
+            var r = s.Rule;
+            <MudPaper Outlined="true" Class="auto-narrow pa-4 mb-3" @key="r.Id">
+                <div class="auto-row">
+                    <MudSwitch T="bool" Value="r.IsEnabled" ValueChanged="on => Toggle(r, on)" Color="Color.Primary" aria-label="@($"Enable {r.Name}")" />
+                    <div class="auto-info">
+                        <div class="auto-name">@r.Name</div>
+                        <div class="auto-sub">
+                            <MudIcon Icon="@Icons.Material.Outlined.Bolt" Size="Size.Small" Class="auto-icon" />
+                            @AutomationText.Trigger(r.Trigger, s.Definition.Trigger)
+                            · @Count(s.Definition.Conditions.Count, "condition") · @Count(s.Definition.Actions.Count, "action")
+                            @if (r.RunAs == AutomationRunAs.RuleAuthor) { <span> · runs as @(r.Author?.DisplayName ?? "its author")</span> }
+                            @if (r.AllowRuleTriggers) { <span> · may trigger other rules</span> }
+                        </div>
+                        <div class="auto-sub">
+                            @if (s.LastRun is { } last)
+                            {
+                                <span>Last run @Display.Ago(last.StartedAt):</span> <RunStatusChip Status="last.Status" />
+                            }
+                            else { <span>Never run</span> }
+                        </div>
+                    </div>
+                    <div class="auto-actions">
+                        <MudTooltip Text="Log">
+                            <MudIconButton Icon="@Icons.Material.Outlined.History" Size="Size.Small" Href="@($"{BaseHref}?log={r.Id}")" aria-label="@($"Log of {r.Name}")" />
+                        </MudTooltip>
+                        <MudTooltip Text="Edit">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" OnClick="() => StartEdit(s)" aria-label="@($"Edit {r.Name}")" />
+                        </MudTooltip>
+                        <MudTooltip Text="Delete">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => Delete(r)" aria-label="@($"Delete {r.Name}")" />
+                        </MudTooltip>
+                    </div>
+                </div>
+            </MudPaper>
+        }
+
+        @if (inherited.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="auto-title mt-6">From groups</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">These group rules also run in this project. Manage them on the group's Automation page.</MudText>
+            @foreach (var r in inherited)
+            {
+                <MudPaper Outlined="true" Class="auto-narrow pa-3 mb-2" @key="r.Id">
+                    <div class="auto-name">@r.Name @if (!r.IsEnabled) { <span class="mud-text-secondary">(disabled)</span> }</div>
+                    <div class="auto-sub">
+                        @AutomationText.Trigger(r.Trigger, RuleDefinition.Parse(r.Definition).Trigger) ·
+                        <a href="@($"/g/{r.Group!.FullPath}/-/automation")">@r.Group!.Name</a>
+                    </div>
+                </MudPaper>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RuleOwner Owner { get; set; }
+    /// <summary>The URL of this list (log links add <c>?log=</c>).</summary>
+    [Parameter, EditorRequired] public string BaseHref { get; set; } = "";
+    [Parameter] public string? BackHref { get; set; }
+    [SupplyParameterFromQuery(Name = "log")] public int? LogRuleId { get; set; }
+
+    private List<RuleSummary> list = [];
+    private List<AutomationRule> inherited = [];
+    private EditorOptions? options;
+    private bool loaded, editing;
+    private string? error;
+    private AutomationRule? logRule;
+    private List<AutomationRun> runs = [];
+    private IDisposable? sub;
+
+    // Editor state
+    private AutomationRule? editRule;
+    private string draftName = "";
+    private AutomationTrigger draftTrigger;
+    private RuleDefinition draft = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        error = null;
+        try
+        {
+            if (LogRuleId is { } id)
+            {
+                logRule = await Rules.GetAsync(id);
+                runs = await Rules.GetRunsAsync(id);
+            }
+            else
+            {
+                logRule = null;
+                await LoadList();
+            }
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender) return;
+        sub = Live.Subscribe<AutomationRunLogged>(e => InvokeAsync(async () =>
+        {
+            try
+            {
+                if (logRule?.Id == e.RuleId) runs = await Rules.GetRunsAsync(e.RuleId);
+                else if (logRule == null && !editing && list.Any(s => s.Rule.Id == e.RuleId)) list = await Rules.ListAsync(Owner);
+                else return;
+                StateHasChanged();
+            }
+            catch (InvalidOperationException) { /* rule deleted or access lost */ }
+        }));
+    }
+
+    private async Task LoadList()
+    {
+        list = await Rules.ListAsync(Owner);
+        inherited = Owner.ProjectId is { } pid ? await Rules.InheritedAsync(pid) : [];
+        loaded = true;
+    }
+
+    private static string Count(int n, string word) => $"{n} {word}{(n == 1 ? "" : "s")}";
+
+    private async Task StartNew(RuleTemplate? template)
+    {
+        options ??= await Rules.GetEditorOptionsAsync(Owner);
+        editRule = null;
+        draftName = template?.Name ?? "";
+        draftTrigger = template?.Trigger ?? AutomationTrigger.IssueCreated;
+        draft = template?.Build(options) ?? new RuleDefinition();
+        editing = true;
+    }
+
+    private async Task StartEdit(RuleSummary s)
+    {
+        options ??= await Rules.GetEditorOptionsAsync(Owner);
+        editRule = s.Rule;
+        draftName = s.Rule.Name;
+        draftTrigger = s.Rule.Trigger;
+        draft = s.Definition.Clone();
+        editing = true;
+    }
+
+    private async Task Saved(AutomationRule rule)
+    {
+        Snackbar.Add($"Rule \"{rule.Name}\" saved.", Severity.Success);
+        editing = false;
+        await LoadList();
+    }
+
+    private void CancelEdit() => editing = false;
+
+    private async Task Toggle(AutomationRule r, bool on)
+    {
+        try
+        {
+            await Rules.SetEnabledAsync(r.Id, on);
+            Snackbar.Add($"\"{r.Name}\" {(on ? "enabled" : "disabled")}.", Severity.Success);
+            await LoadList();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Delete(AutomationRule r)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete rule?", $"Delete \"{r.Name}\" and its log? This can't be undone.")) return;
+        try
+        {
+            await Rules.DeleteAsync(r.Id);
+            Snackbar.Add($"\"{r.Name}\" deleted.", Severity.Success);
+            await LoadList();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    public void Dispose() => sub?.Dispose();
+}

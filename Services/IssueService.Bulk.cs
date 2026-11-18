@@ -109,12 +109,13 @@ public partial class IssueService
 
         // ----- Apply -----
         var now = DateTime.UtcNow;
-        var changed = new List<(Issue Issue, IssueSnapshot Before, string Text)>();
+        var changed = new List<(Issue Issue, IssueSnapshot Before, string Text, Automation.IssueFieldState Fields)>();
         await using (var tx = await db.Database.BeginTransactionAsync())
         {
             foreach (var i in issues)
             {
                 var before = IssueSnapshot.Of(i);
+                var fieldsBefore = Automation.IssueFieldState.Of(i);
                 var wasClosed = i.Status.IsClosed();
                 var parts = new List<string>();
                 // Through the project's workflow: a category picks its first status (unless the issue is already in it), and
@@ -154,7 +155,7 @@ public partial class IssueService
                 i.UpdatedAt = now;
                 var text = string.Join(", ", parts);
                 db.Activities.Add(new Activity { IssueId = i.Id, ActorId = actorId, Text = text, CreatedAt = now });
-                changed.Add((i, before, text));
+                changed.Add((i, before, text, fieldsBefore));
             }
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -163,7 +164,7 @@ public partial class IssueService
         if (changed.Count > 0)
         {
             await notifications.OnIssuesBulkChangedAsync(actorId, [], changed.Select(c => (c.Issue.Id, c.Before)).ToList());
-            foreach (var c in changed) await webhooks.IssueUpdatedAsync(c.Issue.Id, actorId, c.Text);
+            foreach (var c in changed) await webhooks.IssueUpdatedAsync(c.Issue.Id, actorId, c.Text, c.Fields.Diff(c.Issue));
         }
         return new(changed.Count, issues.Count - changed.Count, 0);
     }

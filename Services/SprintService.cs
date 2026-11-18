@@ -323,7 +323,7 @@ public class SprintService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcc
     {
         live.Publish([new SprintChanged(projectId), new BoardChanged(projectId), new ActivityChanged(),
             .. texts.Keys.Select(id => (LiveEvent)new IssueChanged(projectId, id))]);
-        foreach (var (id, text) in texts) await webhooks.IssueUpdatedAsync(id, actorId, text);
+        foreach (var (id, text) in texts) await webhooks.IssueUpdatedAsync(id, actorId, text, Automation.IssueFieldChanges.Sprint);
     }
 
     private void Publish(int projectId) => live.Publish(new SprintChanged(projectId), new BoardChanged(projectId));

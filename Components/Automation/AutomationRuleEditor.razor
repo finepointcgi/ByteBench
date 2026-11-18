@@ -1,0 +1,340 @@
+@inject AutomationService Rules
+@inject AutomationConditions ConditionRegistry
+
+@* Builds a rule: When (trigger) → If (conditions) → Then (actions), plus options. Edits a copy until saved. *@
+<div class="auto-editor">
+<MudPaper Outlined="true" Class="auto-narrow pa-5 mb-4">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="auto-title">@(Rule == null ? "New rule" : "Edit rule")</MudText>
+    <MudStack Spacing="3">
+        <div class="d-flex flex-wrap gap-3 align-center">
+            <MudTextField T="string" Label="Name" @bind-Value="name" Immediate="true" MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="flex-grow-1" id="rule-name" />
+            <MudCheckBox T="bool" @bind-Value="enabled" Color="Color.Primary" Dense="true" Label="Enabled" />
+        </div>
+
+        @* ----- When ----- *@
+        <div class="auto-section">
+            <div class="auto-step"><MudIcon Icon="@Icons.Material.Outlined.Bolt" Size="Size.Small" /> When</div>
+            <MudSelect T="AutomationTrigger" @bind-Value="trigger" Label="Trigger" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select-wide">
+                @foreach (var t in Enum.GetValues<AutomationTrigger>())
+                {
+                    <MudSelectItem T="AutomationTrigger" Value="t">@AutomationEngine.TriggerLabel(t)</MudSelectItem>
+                }
+            </MudSelect>
+            @switch (trigger)
+            {
+                case AutomationTrigger.IssueTransitioned:
+                    <div class="auto-inline">
+                        <MudSelect T="string" @bind-Value="Definition.Trigger.FromStatus" Label="From" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true"
+                                   Placeholder="Any status" OuterClass="auto-select">
+                            @foreach (var s in Options.Statuses) { <MudSelectItem T="string" Value="s">@s</MudSelectItem> }
+                        </MudSelect>
+                        <MudSelect T="string" @bind-Value="Definition.Trigger.ToStatus" Label="To" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true"
+                                   Placeholder="Any status" OuterClass="auto-select">
+                            @foreach (var s in Options.Statuses) { <MudSelectItem T="string" Value="s">@s</MudSelectItem> }
+                        </MudSelect>
+                    </div>
+                    break;
+                case AutomationTrigger.FieldChanged:
+                    <div class="auto-inline">
+                        @foreach (var f in new[] { IssueField.Assignee, IssueField.Priority, IssueField.Labels, IssueField.Sprint })
+                        {
+                            <MudCheckBox T="bool" Value="Definition.Trigger.Fields.HasFlag(f)" ValueChanged="on => SetField(f, on)" Dense="true" Color="Color.Primary" Label="@f.ToString()" />
+                        }
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">None ticked: any of them. Status changes use “Issue transitioned”.</MudText>
+                    break;
+                case AutomationTrigger.Scheduled:
+                    <div class="auto-inline">
+                        <MudSelect T="ScheduleKind" @bind-Value="Definition.Trigger.Schedule" Label="Repeat" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                            <MudSelectItem T="ScheduleKind" Value="ScheduleKind.Daily">Daily</MudSelectItem>
+                            <MudSelectItem T="ScheduleKind" Value="ScheduleKind.Weekly">Weekly</MudSelectItem>
+                            <MudSelectItem T="ScheduleKind" Value="ScheduleKind.EveryHours">Every N hours</MudSelectItem>
+                        </MudSelect>
+                        @if (Definition.Trigger.Schedule == ScheduleKind.Weekly)
+                        {
+                            <MudSelect T="DayOfWeek" @bind-Value="Definition.Trigger.DayOfWeek" Label="On" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                @foreach (var d in Enum.GetValues<DayOfWeek>()) { <MudSelectItem T="DayOfWeek" Value="d">@d</MudSelectItem> }
+                            </MudSelect>
+                        }
+                        @if (Definition.Trigger.Schedule == ScheduleKind.EveryHours)
+                        {
+                            <MudNumericField T="int" @bind-Value="Definition.Trigger.Hours" Label="Hours" Min="1" Max="168" Variant="Variant.Outlined" Margin="Margin.Dense" Class="auto-num" />
+                        }
+                        else
+                        {
+                            <MudTextField T="string" @bind-Value="Definition.Trigger.TimeOfDay" Label="At (UTC, HH:mm)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="auto-num" />
+                        }
+                        <MudSelect T="ScheduleScope" @bind-Value="Definition.Trigger.Scope" Label="Run on" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select-wide">
+                            <MudSelectItem T="ScheduleScope" Value="ScheduleScope.OpenIssues">Each open issue that meets the conditions (up to @TriggerOptions.MaxScheduledIssues)</MudSelectItem>
+                            <MudSelectItem T="ScheduleScope" Value="ScheduleScope.NoIssue">Once, without an issue</MudSelectItem>
+                        </MudSelect>
+                    </div>
+                    break;
+                case AutomationTrigger.PullRequestOpened or AutomationTrigger.PullRequestMerged or AutomationTrigger.PullRequestDeclined
+                    or AutomationTrigger.PipelineFailed or AutomationTrigger.PipelinePassed:
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Runs on each issue whose key appears in the pull request's title or source branch (pipelines: the branch and its pull request).
+                        Without linked issues it runs once with no issue, so only notifications and webhooks act.
+                    </MudText>
+                    break;
+                case AutomationTrigger.Manual:
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Developers run it from the <b>Automation</b> menu on an issue's page.</MudText>
+                    break;
+            }
+        </div>
+
+        @* ----- If ----- *@
+        <div class="auto-section">
+            <div class="auto-step"><MudIcon Icon="@Icons.Material.Outlined.FilterAlt" Size="Size.Small" /> If</div>
+            @if (Definition.Conditions.Count > 1)
+            {
+                <MudSelect T="bool" @bind-Value="Definition.MatchAll" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select" Label="Match">
+                    <MudSelectItem T="bool" Value="true">All conditions</MudSelectItem>
+                    <MudSelectItem T="bool" Value="false">Any condition</MudSelectItem>
+                </MudSelect>
+            }
+            @if (Definition.Conditions.Count == 0) { <MudText Typo="Typo.caption" Class="mud-text-secondary">No conditions: always run.</MudText> }
+            @foreach (var c in Definition.Conditions)
+            {
+                var impl = ConditionRegistry.Find(c.Field);
+                var op = impl?.Operators.FirstOrDefault(o => o.Key == c.Operator);
+                <div class="auto-inline auto-row-item" @key="c">
+                    <MudSelect T="string" Value="c.Field" ValueChanged="f => SetConditionField(c, f)" Label="Field" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                        @foreach (var x in ConditionRegistry.All) { <MudSelectItem T="string" Value="x.Field">@x.Label</MudSelectItem> }
+                    </MudSelect>
+                    @if (impl != null)
+                    {
+                        <MudSelect T="string" @bind-Value="c.Operator" Label="Operator" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                            @foreach (var o in impl.Operators) { <MudSelectItem T="string" Value="o.Key">@o.Label</MudSelectItem> }
+                        </MudSelect>
+                        @if (op?.NeedsValue != false)
+                        {
+                            @switch (impl.ValueKind)
+                            {
+                                case ConditionValueKind.IssueType:
+                                    <MudSelect T="string" @bind-Value="c.Value" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                        @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem T="string" Value="t.ToString()">@t</MudSelectItem> }
+                                    </MudSelect>
+                                    break;
+                                case ConditionValueKind.Priority:
+                                    <MudSelect T="string" @bind-Value="c.Value" Label="Priority" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                        @foreach (var p in Enum.GetValues<IssuePriority>()) { <MudSelectItem T="string" Value="p.ToString()">@p</MudSelectItem> }
+                                    </MudSelect>
+                                    break;
+                                case ConditionValueKind.Status:
+                                    <MudSelect T="string" @bind-Value="c.Value" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                        @foreach (var s in Options.Statuses) { <MudSelectItem T="string" Value="s">@s</MudSelectItem> }
+                                    </MudSelect>
+                                    break;
+                                case ConditionValueKind.StatusCategory:
+                                    <MudSelect T="string" @bind-Value="c.Value" Label="Category" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                        @foreach (var s in Enum.GetValues<IssueStatus>()) { <MudSelectItem T="string" Value="s.ToString()">@s.Name()</MudSelectItem> }
+                                    </MudSelect>
+                                    break;
+                                case ConditionValueKind.Label:
+                                    <MudSelect T="string" @bind-Value="c.Value" Label="Label" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                        @foreach (var l in Options.Labels) { <MudSelectItem T="string" Value="l">@l</MudSelectItem> }
+                                    </MudSelect>
+                                    break;
+                                case ConditionValueKind.User:
+                                    <MudSelect T="string" @bind-Value="c.Value" Label="User" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                        @foreach (var u in Options.Users) { <MudSelectItem T="string" Value="u.Id.ToString()">@u.Name</MudSelectItem> }
+                                    </MudSelect>
+                                    break;
+                                case ConditionValueKind.Text:
+                                    <MudTextField T="string" @bind-Value="c.Value" Label="Text" Variant="Variant.Outlined" Margin="Margin.Dense" Class="auto-select" />
+                                    break;
+                            }
+                        }
+                    }
+                    <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove condition" OnClick="() => Definition.Conditions.Remove(c)" />
+                </div>
+            }
+            <div>
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddCondition"
+                           Disabled="@(Definition.Conditions.Count >= RuleDefinition.MaxConditions)">Add condition</MudButton>
+            </div>
+        </div>
+
+        @* ----- Then ----- *@
+        <div class="auto-section">
+            <div class="auto-step"><MudIcon Icon="@Icons.Material.Outlined.PlayArrow" Size="Size.Small" /> Then</div>
+            @for (var idx = 0; idx < Definition.Actions.Count; idx++)
+            {
+                var a = Definition.Actions[idx];
+                var index = idx;
+                <MudPaper Outlined="true" Class="pa-3 auto-action" @key="a">
+                    <div class="auto-inline">
+                        <span class="auto-num-badge">@(index + 1)</span>
+                        <MudSelect T="AutomationActionType" @bind-Value="a.Type" Label="Action" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select-wide">
+                            @foreach (var t in Enum.GetValues<AutomationActionType>()) { <MudSelectItem T="AutomationActionType" Value="t">@AutomationActions.Describe(t)</MudSelectItem> }
+                        </MudSelect>
+                        <span class="flex-grow-1"></span>
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" aria-label="Move up" Disabled="@(index == 0)" OnClick="() => Move(index, -1)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" aria-label="Move down" Disabled="@(index == Definition.Actions.Count - 1)" OnClick="() => Move(index, 1)" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Remove action" OnClick="() => Definition.Actions.Remove(a)" />
+                    </div>
+                    <div class="auto-inline mt-2">
+                        @switch (a.Type)
+                        {
+                            case AutomationActionType.Transition or AutomationActionType.TransitionParent:
+                                <MudSelect T="string" @bind-Value="a.Status" Label="@(a.Type == AutomationActionType.TransitionParent ? "Move the parent to" : "Move to")"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                    @foreach (var s in Options.Statuses) { <MudSelectItem T="string" Value="s">@s</MudSelectItem> }
+                                </MudSelect>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    @(a.Type == AutomationActionType.TransitionParent ? "Only when all of the parent's children are done. " : "")The workflow's transitions apply.
+                                </MudText>
+                                break;
+                            case AutomationActionType.Assign:
+                                <MudSelect T="AssignMode" @bind-Value="a.Assign" Label="Assign to" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select-wide">
+                                    @foreach (var m in Enum.GetValues<AssignMode>()) { <MudSelectItem T="AssignMode" Value="m">@AutomationText.Assign(m)</MudSelectItem> }
+                                </MudSelect>
+                                @if (a.Assign == AssignMode.User) { <UserSelect @bind-Value="a.UserId" Users="Options.Users" /> }
+                                break;
+                            case AutomationActionType.SetPriority:
+                                <MudSelect T="IssuePriority?" @bind-Value="a.Priority" Label="Priority" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                    @foreach (var p in Enum.GetValues<IssuePriority>()) { <MudSelectItem T="IssuePriority?" Value="p">@p</MudSelectItem> }
+                                </MudSelect>
+                                break;
+                            case AutomationActionType.AddLabel or AutomationActionType.RemoveLabel:
+                                <MudSelect T="string" @bind-Value="a.Label" Label="Label" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                    @foreach (var l in Options.Labels) { <MudSelectItem T="string" Value="l">@l</MudSelectItem> }
+                                </MudSelect>
+                                break;
+                            case AutomationActionType.Comment:
+                                <MudTextField T="string" @bind-Value="a.Text" Label="Comment (Markdown, smart values)" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
+                                break;
+                            case AutomationActionType.CreateSubtask:
+                                <MudTextField T="string" @bind-Value="a.Text" Label="Sub-task title (smart values)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
+                                break;
+                            case AutomationActionType.LinkIssue:
+                                <MudSelect T="IssueLinkRelation" @bind-Value="a.LinkType" Label="This issue" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                    @foreach (var r in Enum.GetValues<IssueLinkRelation>()) { <MudSelectItem T="IssueLinkRelation" Value="r">@LinkedWorkService.Phrase(r)</MudSelectItem> }
+                                </MudSelect>
+                                <MudTextField T="string" @bind-Value="a.IssueKey" Label="Issue key (e.g. WEB-3 or {{issue.parent.key}})" Variant="Variant.Outlined" Margin="Margin.Dense" Class="auto-select-wide" />
+                                break;
+                            case AutomationActionType.Notify:
+                                <MudSelect T="NotifyTarget" @bind-Value="a.Notify" Label="Notify" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+                                    @foreach (var n in Enum.GetValues<NotifyTarget>()) { <MudSelectItem T="NotifyTarget" Value="n">@AutomationText.Notify(n)</MudSelectItem> }
+                                </MudSelect>
+                                @if (a.Notify == NotifyTarget.User) { <UserSelect @bind-Value="a.UserId" Users="Options.Users" /> }
+                                <MudTextField T="string" @bind-Value="a.Text" Label="Message (smart values; default: issue key and title)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
+                                break;
+                            case AutomationActionType.SendWebhook:
+                                <MudTextField T="string" @bind-Value="a.Url" Label="URL" Placeholder="https://example.com/hooks/gitbench" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">POSTs the rule, issue, pull request and initiator as JSON (event <code>automation</code>, unsigned).</MudText>
+                                break;
+                        }
+                    </div>
+                </MudPaper>
+            }
+            <div>
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddAction"
+                           Disabled="@(Definition.Actions.Count >= RuleDefinition.MaxActions)">Add action</MudButton>
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@(showSmart ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)"
+                           aria-expanded="@(showSmart ? "true" : "false")" OnClick="() => showSmart = !showSmart">Smart values</MudButton>
+            </div>
+            @if (showSmart)
+            {
+                <div class="auto-smart">
+                    @foreach (var (name, description) in SmartValues.Names)
+                    {
+                        <div><code>{{@name}}</code> <span class="mud-text-secondary">@description</span></div>
+                    }
+                </div>
+            }
+        </div>
+
+        @* ----- Options ----- *@
+        <div class="auto-section">
+            <div class="auto-step"><MudIcon Icon="@Icons.Material.Outlined.Tune" Size="Size.Small" /> Options</div>
+            <MudSelect T="AutomationRunAs" @bind-Value="runAs" Label="Run as" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select-wide">
+                <MudSelectItem T="AutomationRunAs" Value="AutomationRunAs.AutomationBot">@AutomationBot.DisplayName (acts only inside this @(Owner.ProjectId != null ? "project" : "group's projects"))</MudSelectItem>
+                <MudSelectItem T="AutomationRunAs" Value="AutomationRunAs.RuleAuthor">Me (my permissions at the time each rule runs)</MudSelectItem>
+            </MudSelect>
+            <MudCheckBox T="bool" @bind-Value="allowRuleTriggers" Color="Color.Primary" Dense="true"
+                         Label="Allow this rule's changes to trigger other rules (up to 3 rules deep)" />
+        </div>
+
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(busy || string.IsNullOrWhiteSpace(name))" OnClick="Save">
+                @(Rule == null ? "Create rule" : "Save rule")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="OnCancel">Cancel</MudButton>
+        </div>
+    </MudStack>
+</MudPaper>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RuleOwner Owner { get; set; }
+    [Parameter, EditorRequired] public EditorOptions Options { get; set; } = null!;
+    /// <summary>The rule being edited; null for a new one.</summary>
+    [Parameter] public AutomationRule? Rule { get; set; }
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public AutomationTrigger Trigger { get; set; }
+    [Parameter, EditorRequired] public RuleDefinition Definition { get; set; } = new();
+    [Parameter] public EventCallback<AutomationRule> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private bool enabled = true, allowRuleTriggers, busy, showSmart;
+    private AutomationRunAs runAs;
+    private string name = "";
+    private AutomationTrigger trigger;
+    private string? error;
+    private AutomationRule? initializedFor;
+    private bool initialized;
+
+    protected override void OnParametersSet()
+    {
+        if (initialized && initializedFor == Rule) return;
+        initialized = true;
+        initializedFor = Rule;
+        name = Name;
+        trigger = Trigger;
+        enabled = Rule?.IsEnabled ?? true;
+        runAs = Rule?.RunAs ?? AutomationRunAs.AutomationBot;
+        allowRuleTriggers = Rule?.AllowRuleTriggers ?? false;
+    }
+
+    private void SetField(IssueField f, bool on) =>
+        Definition.Trigger.Fields = on ? Definition.Trigger.Fields | f : Definition.Trigger.Fields & ~f;
+
+    private void SetConditionField(ConditionDef c, string field)
+    {
+        c.Field = field;
+        c.Operator = ConditionRegistry.Find(field)?.Operators.FirstOrDefault()?.Key ?? "is";
+        c.Value = null;
+    }
+
+    private void AddCondition()
+    {
+        var first = ConditionRegistry.All[0];
+        Definition.Conditions.Add(new ConditionDef { Field = first.Field, Operator = first.Operators[0].Key });
+    }
+
+    private void AddAction() => Definition.Actions.Add(new ActionDef { Type = AutomationActionType.Comment });
+
+    private void Move(int index, int delta)
+    {
+        var to = index + delta;
+        if (to < 0 || to >= Definition.Actions.Count) return;
+        (Definition.Actions[index], Definition.Actions[to]) = (Definition.Actions[to], Definition.Actions[index]);
+    }
+
+    private async Task Save()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var saved = await Rules.SaveAsync(Owner, Rule?.Id, name, enabled, trigger, Definition, runAs, allowRuleTriggers);
+            await OnSaved.InvokeAsync(saved);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

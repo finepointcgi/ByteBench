@@ -168,3 +168,7 @@ a.gb-issue-row.gb-kb-selected { box-shadow: inset 3px 0 0 var(--mud-palette-prim
 .gb-group-row:last-child { border-bottom: none; }
 .gb-group-row-main { flex: 1; min-width: 0; }
 .gb-group-meta { color: var(--muted); font-size: 12.5px; }
+
+/* ----- Automation (menu items live in popovers, so global) ----- */
+.auto-template { display: flex; flex-direction: column; gap: 2px; max-width: 420px; white-space: normal; }
+.auto-template span { font-size: 12px; }

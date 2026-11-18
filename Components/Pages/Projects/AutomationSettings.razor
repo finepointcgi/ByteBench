@@ -1,0 +1,35 @@
+@page "/p/{Key}/settings/automation"
+@using GitBench.Services.Automation
+@using GitBench.Components.Automation
+@inject IssueService Issues
+@inject ProjectAccess Access
+
+<PageTitle>Automation · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && perms.Role < ProjectRole.Maintainer)
+{
+    <Forbidden Message="Only Maintainers and Owners can manage this project's automation rules." BackHref="@($"/p/{Key}/settings")" />
+}
+else if (project != null)
+{
+    <AutomationRules Owner="RuleOwner.Project(project.Id)" BaseHref="@($"/p/{project.Key}/settings/automation")" BackHref="@($"/p/{project.Key}/settings")" />
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project != null) perms = await Access.GetPermissionsAsync(project.Id);
+    }
+}

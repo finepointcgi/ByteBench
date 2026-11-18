@@ -24,7 +24,7 @@ public static class PipelineUrls
 /// </summary>
 public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbContextFactory<AppDbContext> dbFactory,
     RepoStorage storage, LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options,
-    Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, ILogger<CiRunner> log) : BackgroundService
+    Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, ILogger<CiRunner> log, Automation.AutomationQueue automation) : BackgroundService
 {
     private SemaphoreSlim jobSlots = null!;
     private readonly List<Task> active = [];
@@ -399,6 +399,8 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         log.LogInformation("Pipeline {Id} ({Key}/{Slug} {Ref}) finished: {Status}", id, p.Repository.Project.Key, p.Repository.Slug, p.Ref, status);
         if (status is PipelineStatus.Failed or PipelineStatus.Error) await NotifyFailedAsync(p);
         RaiseWebhook(p);
+        if (status is PipelineStatus.Passed or PipelineStatus.Failed or PipelineStatus.Error) // automation: "pipeline passed/failed" triggers
+            automation.Enqueue(new(Automation.AutomationEventKind.PipelineCompleted, p.TriggeredById ?? 0) { PipelineId = p.Id, PipelinePassed = status == PipelineStatus.Passed });
     }
 
     /// <summary>Sends the <c>pipeline.completed</c> webhook event for a finished pipeline.</summary>
