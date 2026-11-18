@@ -29,7 +29,7 @@ public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory)
     {
         name = name.Trim();
         if (name.Length is 0 or > 100) throw new InvalidOperationException("Name is required (max 100 characters).");
-        scopes &= TokenScopes.ReadRepository | TokenScopes.WriteRepository;
+        scopes &= TokenScopes.ReadRepository | TokenScopes.WriteRepository | TokenScopes.ReadApi | TokenScopes.WriteApi;
         if (scopes == TokenScopes.None) throw new InvalidOperationException("Choose at least one scope.");
         if (expiresAtUtc != null && expiresAtUtc <= DateTime.UtcNow) throw new InvalidOperationException("The expiry date must be in the future.");
 
@@ -43,6 +43,23 @@ public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory)
         db.PersonalAccessTokens.Add(token);
         await db.SaveChangesAsync();
         return (token, plaintext);
+    }
+
+    /// <summary>
+    /// For <c>Authorization: Bearer</c> (REST API): the active token matching <paramref name="presented"/>, with its user,
+    /// or null. The token is looked up by its SHA-256 hash, so it doesn't reveal anything to timing. Updates LastUsedAt.
+    /// </summary>
+    public async Task<PersonalAccessToken?> FindActiveAsync(string presented)
+    {
+        if (!presented.StartsWith(TokenPrefix, StringComparison.Ordinal)) return null;
+        var hash = Hash(presented);
+        var now = DateTime.UtcNow;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var token = await db.PersonalAccessTokens.Include(t => t.User).FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null);
+        if (token == null || !token.IsActive(now)) return null;
+        token.LastUsedAt = now;
+        await db.SaveChangesAsync();
+        return token;
     }
 
     public async Task RevokeAsync(int userId, int tokenId)

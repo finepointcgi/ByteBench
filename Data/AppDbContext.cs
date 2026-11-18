@@ -25,6 +25,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
 
+    // ----- Webhooks & API -----
+    public DbSet<Webhook> Webhooks => Set<Webhook>();
+    public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b); // Identity tables (AspNetUsers, AspNetRoles, …)
@@ -76,5 +80,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<ProjectMember>().HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PersonalAccessToken>().HasIndex(t => t.UserId);
         b.Entity<PersonalAccessToken>().HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- Webhooks & API -----
+        b.Entity<PersonalAccessToken>().HasIndex(t => t.TokenHash); // Bearer tokens are looked up by hash
+        b.Entity<Webhook>().HasIndex(w => w.ProjectId);
+        b.Entity<Webhook>().HasOne<Project>().WithMany().HasForeignKey(w => w.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Webhook>().HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<WebhookDelivery>().HasIndex(d => new { d.WebhookId, d.CreatedAt });
+        b.Entity<WebhookDelivery>().HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
     }
 }

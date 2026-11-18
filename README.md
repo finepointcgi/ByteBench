@@ -149,6 +149,8 @@ Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls
 | `Services/CurrentUser.cs` | The signed-in `User` for the current circuit/request |
 | `Services/ProjectAccess.cs` | Roles, permissions and project visibility: the single authorization point |
 | `Services/MemberService.cs` / `Services/AccessTokenService.cs` | Project membership; personal access tokens |
+| `Api/` | REST API (`/api/v1`): endpoints, DTOs, auth filter, paging, OpenAPI |
+| `Services/Webhooks/` | Outgoing webhooks: dispatcher, worker, sender (SSRF guard), push capture, notifier |
 | `Components/Account/` | Login, register and profile pages (static SSR), `RedirectToLogin` |
 | `Services/Display.cs` | Formatting helpers and safe Markdown rendering (Markdig, raw HTML disabled) |
 | `Components/Pages/Projects/` | Issue list, board, issue detail, new issue, milestones, settings |
@@ -244,6 +246,131 @@ sqlite3 gitbench.db "select Feature, count(*), sum(InputTokens), sum(OutputToken
 
 Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions), `AiReviewLogic.cs` (pure functions: skipping, chunking, prompts, validation, summary), `AiReviewQueue.cs` (queue, worker, push listener), `AiClient.Structured.cs` (generic `CompleteJsonAsync<T>` structured-output helper) and `AiBot.cs`.
 
+
+## REST API & webhooks
+
+### REST API (`/api/v1`)
+
+Minimal APIs in `Api/`. A short reference page is at `/developers/api` (the **API** link in the top bar), and the full OpenAPI 3.1 document is at **`/api/v1/openapi.json`**.
+
+**Authentication.** Send a personal access token as a bearer token. A signed-in browser session (cookie) works too, so the UI can call the API.
+
+```bash
+curl -H "Authorization: Bearer gbp_…" http://localhost:5108/api/v1/user
+```
+
+| Scope | Allows |
+|---|---|
+| `read_api` | GET requests |
+| `write_api` | Every request (also reads) |
+| `read_repository` / `write_repository` | Git over HTTP only; they don't grant API access |
+
+- Create tokens under **Profile → Access tokens** and tick the API scopes. A token without an API scope gets `403` from the API, and an API-only token gets `403` from git.
+- Missing, invalid, expired or revoked tokens get `401` with `WWW-Authenticate: Bearer`.
+- Cookie-authenticated writes must send `Content-Type: application/json` or an `X-Requested-With` header. A cross-site HTML form can do neither, so this blocks CSRF.
+
+**Permissions** are the usual project roles, checked through `ProjectAccess` and the services:
+
+- A project you can't see answers `404`, the same as a project that doesn't exist.
+- A visible project where you lack the permission answers `403`. For example, a Viewer creating an issue, or a Developer merging.
+
+**Conventions:**
+
+- JSON is camelCase. Enums are camelCase strings (`inProgress`, `merged`). Timestamps are ISO 8601 UTC and due dates are `yyyy-MM-dd`.
+- Responses are DTO records (`Api/ApiDtos.cs`); EF entities are never serialized.
+- Errors are RFC 9457 problem details (`application/problem+json`): `400` bad input or JSON, `401`, `403`, `404`, `409` merge conflict or already merged, `415` non-JSON body, `422` validation.
+- Lists take `?page=` (default 1) and `?perPage=` (default 30, max 100). They return `X-Total-Count` and a `Link` header with `first`/`prev`/`next`/`last`.
+
+| Method | Path (under `/api/v1`) | Notes |
+|---|---|---|
+| GET | `/user` | You, with the token's scopes |
+| GET | `/projects`, `/projects/{key}` | Includes your role |
+| GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status name; `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
+| POST | `/projects/{key}/issues` | `{title, description?, type?, priority?, status?, assignee?, labels?: [names], milestoneId?, storyPoints?, dueDate?}`; returns `201` |
+| GET / PATCH | `/projects/{key}/issues/{number}` | PATCH changes only the fields you send; `null` clears a field and `labels` replaces the set. Each change is logged in the issue's activity |
+| GET / POST | `/projects/{key}/issues/{number}/comments` | `{body}` |
+| GET | `/projects/{key}/labels`, `/projects/{key}/milestones` | |
+| GET | `/projects/{key}/repos`, `/projects/{key}/repos/{slug}` | |
+| GET | `/projects/{key}/repos/{slug}/branches` | |
+| GET | `/projects/{key}/repos/{slug}/commits` | `?ref=` branch, tag or SHA (default branch if omitted), `?path=` |
+| GET | `/projects/{key}/repos/{slug}/raw/{path}` | `?ref=`. Served as `text/plain` or `application/octet-stream` (never HTML), with an `ETag`. 20 MB limit |
+| GET | `/projects/{key}/pull-requests` | Across repositories; `?state=open` (default), `merged`, `declined` or `all`; `?repo=` |
+| GET / POST | `/projects/{key}/repos/{slug}/pull-requests` | POST `{title, sourceBranch, targetBranch, description?}` |
+| GET | `/projects/{key}/repos/{slug}/pull-requests/{number}` | |
+| POST | `/projects/{key}/repos/{slug}/pull-requests/{number}/merge` | Optional `{deleteSourceBranch, fastForward}`. Conflicts return `409` with `conflictPaths` |
+| GET / POST | `/projects/{key}/repos/{slug}/pull-requests/{number}/comments` | `{body, path?, line?, oldLine?}` (with `path`, it's an inline comment) |
+
+Writes go through `IssueService` and `PullRequestService`, so activity, notifications, live updates, AI review and webhooks behave exactly as in the UI. Links in responses use the request's host, or the `PublicBaseUrl` setting if it is set.
+
+### Webhooks
+
+Each project can POST events to other services. Maintainers and Owners manage webhooks at **Settings → Webhooks** (`/p/{KEY}/settings/webhooks`).
+
+They require `Permission.ManageRepositories`. Webhooks are integration settings at the same level as repositories (GitLab also gives them to Maintainers), and payloads only contain data that a Maintainer can already read.
+
+**On the settings page** you can:
+
+- Set a URL, a secret, the events and an Active flag.
+- Leave the secret blank and GitBench generates one. The secret is shown once and masked afterwards. **New secret** rotates it.
+- Use **Send test ping**.
+- Look at the last 25 deliveries: status, duration, attempts, the payload and the first 4 KB of the response. Each has a **Redeliver** button, which resends the same body under the same delivery id with `X-GitBench-Redelivery: true`.
+
+| Event | When |
+|---|---|
+| `push` | A git push moved a ref. One event per ref: `ref`, `before`, `after`, `created`, `deleted`, `repository`, `commits` (newest first, up to 20), `totalCommits`, `headCommit`, `compareUrl` |
+| `issue.created` / `issue.updated` / `issue.commented` | `issue` (plus `change`, the activity text, for updates; plus `comment` for comments) |
+| `pull_request.opened` / `.merged` / `.declined` | `pullRequest` and `repository` |
+| `pull_request.updated` | Same, plus `action`: `edited`, `reopened`, `approved`, `changes_requested` or `review_dismissed` |
+| `pull_request.commented` | `pullRequest`, `repository` and `comment` |
+| `pipeline.completed` | Raised by CI code, not by GitBench itself (see below) |
+| `ping` | Only from **Send test ping**. Always sent, even to an inactive hook |
+
+**Payload and headers.** Every body is JSON that starts with `event`, `deliveryId`, `timestamp`, `project` and `sender`, followed by the event's own fields. Each request carries these headers:
+
+- `X-GitBench-Event`
+- `X-GitBench-Delivery` (a GUID)
+- `X-GitBench-Hook-ID`
+- `X-GitBench-Signature-256: sha256=<hex HMAC-SHA256(secret, raw body)>`
+
+Verify the signature on the raw body bytes and compare in constant time:
+
+```python
+import hashlib, hmac
+
+def verify(secret: str, body: bytes, header: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header or "")
+```
+
+```csharp
+var expected = "sha256=" + Convert.ToHexStringLower(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), body));
+var ok = CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(header ?? ""));
+```
+
+**Delivery** (`Services/Webhooks/`):
+
+- Events are written to an in-memory `Channel` and sent by a background worker (`WebhookWorker`), so a request never waits for a receiver. Up to 8 deliveries run in parallel.
+- Each attempt has a 10 s timeout. Network errors, timeouts and 5xx responses are retried up to 3 times, after 1 s, 5 s and 15 s.
+- 4xx responses, redirects (which are never followed) and blocked addresses fail at once.
+- Every delivery is stored in `WebhookDeliveries` with its status code, duration, attempts, error and the first 4 KB of the response.
+- After 20 failed deliveries in a row, the hook is turned off and the page shows *Disabled after 20 failures*. Ticking **Active** again resets the counter.
+- Deliveries left pending by a restart are resent on startup.
+
+**SSRF protection:**
+
+- Only `http`/`https` URLs are accepted, without credentials in the URL.
+- DNS is resolved when the request is sent. The socket connects only to an address that passed the check, so DNS rebinding can't swap it.
+- These are rejected: loopback, private (RFC 1918, ULA), link-local (including the `169.254.169.254` metadata address), CGNAT, multicast/reserved, IPv4-mapped/NAT64/6to4 forms of those, and `localhost`.
+- No proxy is used and redirects aren't followed.
+- To allow private targets, set `Webhooks:AllowPrivateNetworks` to `true`. It defaults to `false`. `appsettings.Development.json` turns it on so you can test against a local listener. Leave it off in production.
+
+**Raising events from other code.** `WebhookDispatcher` is a singleton and its `Enqueue` method is the public entry point. It never blocks and never throws for delivery problems:
+
+```csharp
+dispatcher.Enqueue(projectId, "pipeline.completed", new { pipeline = new { id, status, @ref, sha, webUrl } }, senderUserId);
+```
+
+The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Other push listeners can inject `PushCapture` to get them too.
 
 ## Next steps
 

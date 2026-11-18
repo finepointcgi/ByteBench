@@ -1,0 +1,79 @@
+@page "/developers/api"
+@inject NavigationManager Nav
+
+<PageTitle>REST API · GitBench</PageTitle>
+
+<div class="page-header"><h1>REST API</h1></div>
+
+<div class="card-panel narrow mb-4">
+    <p>
+        GitBench has a JSON REST API at <code>@BaseUrl/api/v1</code>. The full description is an OpenAPI document:
+        <a href="/api/v1/openapi.json" target="_blank" rel="noopener"><code>/api/v1/openapi.json</code></a>
+        (load it into Swagger UI, Postman or a client generator).
+    </p>
+
+    <h2 class="section-title mt-3">Authentication</h2>
+    <p>
+        Create a personal access token under <a href="account/profile#tokens" @onclick="OpenProfile" @onclick:preventDefault>Profile → Access tokens</a>
+        with the <code>read_api</code> scope (GET requests) or <code>write_api</code> (everything), and send it as a bearer token.
+        Your project roles still apply: a project you can't see answers <code>404</code>, and a missing permission answers <code>403</code>.
+    </p>
+    <pre class="mono small border rounded p-2">curl -H "Authorization: Bearer gbp_…" @BaseUrl/api/v1/user</pre>
+    <p class="small muted">In the browser, your signed-in session works too. Writes made with the session must send JSON (or an <code>X-Requested-With</code> header).</p>
+
+    <h2 class="section-title mt-3">Conventions</h2>
+    <ul class="small">
+        <li>camelCase JSON; enums are camelCase strings (e.g. <code>inProgress</code>); timestamps are ISO 8601 UTC.</li>
+        <li>Lists take <code>?page=</code> and <code>?perPage=</code> (default 30, max 100) and return <code>X-Total-Count</code> and <code>Link</code> headers.</li>
+        <li>Errors are <a href="https://www.rfc-editor.org/rfc/rfc9457" target="_blank" rel="noopener">problem details</a>: <code>{ "status", "title", "detail" }</code>.</li>
+    </ul>
+
+    <h2 class="section-title mt-3">Endpoints</h2>
+    <table class="table table-sm small mb-0">
+        <tbody>
+            @foreach (var (method, path, what) in Endpoints)
+            {
+                <tr><td class="mono">@method</td><td class="mono">@path</td><td>@what</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<div class="card-panel narrow mb-4">
+    <h2 class="section-title">Webhooks</h2>
+    <p class="mb-0">
+        Maintainers can send events (pushes, issues, pull requests, pipelines) to other services from a project's
+        <b>Settings → Webhooks</b>. Each delivery is signed with <code>X-GitBench-Signature-256</code>; see the README for how to verify it.
+    </p>
+</div>
+
+@code {
+    private string BaseUrl => Nav.BaseUri.TrimEnd('/');
+
+    private static readonly (string, string, string)[] Endpoints =
+    [
+        ("GET", "/user", "You"),
+        ("GET", "/projects", "Projects you can see"),
+        ("GET", "/projects/{key}", "A project"),
+        ("GET", "/projects/{key}/issues", "Issues (?status=, ?assignee=, ?label=, ?milestone=, ?q=, ?sort=)"),
+        ("POST", "/projects/{key}/issues", "Create an issue"),
+        ("GET", "/projects/{key}/issues/{number}", "An issue"),
+        ("PATCH", "/projects/{key}/issues/{number}", "Update an issue"),
+        ("GET POST", "/projects/{key}/issues/{number}/comments", "Issue comments"),
+        ("GET", "/projects/{key}/labels", "Labels"),
+        ("GET", "/projects/{key}/milestones", "Milestones"),
+        ("GET", "/projects/{key}/repos", "Repositories"),
+        ("GET", "/projects/{key}/repos/{slug}", "A repository"),
+        ("GET", "/projects/{key}/repos/{slug}/branches", "Branches"),
+        ("GET", "/projects/{key}/repos/{slug}/commits", "Commits (?ref=, ?path=)"),
+        ("GET", "/projects/{key}/repos/{slug}/raw/{path}", "Raw file content (?ref=)"),
+        ("GET", "/projects/{key}/pull-requests", "Pull requests across repositories (?state=, ?repo=)"),
+        ("GET POST", "/projects/{key}/repos/{slug}/pull-requests", "List (?state=) or open pull requests"),
+        ("GET", "/projects/{key}/repos/{slug}/pull-requests/{number}", "A pull request"),
+        ("POST", "/projects/{key}/repos/{slug}/pull-requests/{number}/merge", "Merge"),
+        ("GET POST", "/projects/{key}/repos/{slug}/pull-requests/{number}/comments", "Pull request comments"),
+    ];
+
+    // Profile is static SSR; force a full page load from interactive pages.
+    private void OpenProfile() => Nav.NavigateTo("account/profile#tokens", forceLoad: true);
+}

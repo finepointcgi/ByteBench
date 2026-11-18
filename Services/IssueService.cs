@@ -20,7 +20,7 @@ public class IssueFilter
 /// Projects, issues, comments, labels and milestones. Reads only return projects the acting user can view and
 /// writes check <see cref="ProjectAccess"/> first (throwing <see cref="ForbiddenException"/>).
 /// </summary>
-public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications)
+public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications, Webhooks.WebhookNotifier webhooks)
 {
     // ---------- Projects ----------
 
@@ -200,6 +200,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         await tx.CommitAsync();
         issue.Project = project;
         await notifications.OnIssueCreatedAsync(issue.Id, actorId);
+        await webhooks.IssueCreatedAsync(issue.Id, actorId);
         return issue;
     }
 
@@ -220,6 +221,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         db.Activities.Add(new Activity { IssueId = issueId, ActorId = actorId, Text = text });
         await db.SaveChangesAsync();
         await notifications.OnIssueUpdatedAsync(issueId, actorId, before);
+        await webhooks.IssueUpdatedAsync(issueId, actorId, text);
     }
 
     public Task SetStatusAsync(int issueId, IssueStatus status, int actorId) =>
@@ -263,6 +265,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         await db.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();
         await notifications.OnIssueCommentedAsync(issueId, c.Id, authorId, body);
+        await webhooks.IssueCommentedAsync(issueId, c.Id, authorId);
         return c;
     }
 

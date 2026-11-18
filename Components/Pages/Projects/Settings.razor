@@ -81,6 +81,15 @@ else if (project != null)
 
     <AiReviewSettings Project="project" />
 
+    @if (perms.Can(GitBench.Services.Webhooks.WebhookService.RequiredPermission))
+    {
+        <div class="card-panel narrow mb-4">
+            <h2 class="section-title">Webhooks</h2>
+            <p class="small muted mb-2">Notify other services about pushes, issues, pull requests and pipelines in this project.</p>
+            <a class="btn btn-outline-primary btn-sm" href="/p/@project.Key/settings/webhooks">Manage webhooks</a>
+        </div>
+    }
+
     @if (perms.Can(Permission.DeleteProject))
     {
         <div class="card-panel narrow danger-zone">
