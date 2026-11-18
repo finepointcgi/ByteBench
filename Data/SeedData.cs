@@ -41,14 +41,14 @@ public static class SeedData
         var perf = new Label { Name = "performance", Color = "#facc15" };
 
         var now = DateTime.UtcNow;
-        var s1 = new Milestone { Title = "Sprint 1", StartDate = now.AddDays(-21).Date, DueDate = now.AddDays(-7).Date, IsClosed = true };
-        var s2 = new Milestone { Title = "Sprint 2", StartDate = now.AddDays(-7).Date, DueDate = now.AddDays(7).Date, Description = "Board polish and notifications." };
+        var alpha = new Milestone { Title = "v0.8 Alpha", StartDate = now.AddDays(-21).Date, DueDate = now.AddDays(-7).Date, IsClosed = true };
+        var beta = new Milestone { Title = "v0.9 Beta", StartDate = now.AddDays(-7).Date, DueDate = now.AddDays(7).Date, Description = "Beta for early users: board polish and notifications." };
         var v1 = new Milestone { Title = "v1.0 Release", DueDate = now.AddDays(30).Date, Description = "First public release." };
 
         var web = new Project
         {
             Key = "WEB", Name = "Web Platform", Description = "Customer-facing web application and APIs.",
-            Labels = [bug, enh, docs, ui, backend, perf], Milestones = [s1, s2, v1],
+            Labels = [bug, enh, docs, ui, backend, perf], Milestones = [alpha, beta, v1],
             Visibility = ProjectVisibility.Internal,
             Members =
             [
@@ -88,15 +88,15 @@ public static class SeedData
             return i;
         }
 
-        Make(web, "Set up project skeleton and CI pipeline", IssueType.Task, IssueStatus.Done, IssuePriority.High, alice, alice, s1, 3,
+        Make(web, "Set up project skeleton and CI pipeline", IssueType.Task, IssueStatus.Done, IssuePriority.High, alice, alice, alpha, 3,
             "Create the solution layout, add GitHub Actions build, and wire up linting.");
-        Make(web, "Login page rejects valid emails with a plus sign", IssueType.Bug, IssueStatus.Done, IssuePriority.Highest, carol, bob, s1, 2,
+        Make(web, "Login page rejects valid emails with a plus sign", IssueType.Bug, IssueStatus.Done, IssuePriority.Highest, carol, bob, alpha, 2,
             "### Steps to reproduce\n1. Go to `/login`\n2. Enter `user+tag@example.com`\n3. Submit\n\n**Expected:** login succeeds\n\n**Actual:** *Invalid email* error.", bug, backend);
-        var kanban = Make(web, "Drag-and-drop Kanban board", IssueType.Feature, IssueStatus.InProgress, IssuePriority.High, alice, alice, s2, 8,
+        var kanban = Make(web, "Drag-and-drop Kanban board", IssueType.Feature, IssueStatus.InProgress, IssuePriority.High, alice, alice, beta, 8,
             "As a team member I want to drag issues between columns so that updating status is quick.\n\n- [x] Columns per status\n- [x] Drag between columns\n- [ ] Reorder within a column\n- [ ] Swimlanes by assignee", enh, ui);
-        Make(web, "Email notifications when assigned", IssueType.Story, IssueStatus.Todo, IssuePriority.Medium, bob, carol, s2, 5,
+        Make(web, "Email notifications when assigned", IssueType.Story, IssueStatus.Todo, IssuePriority.Medium, bob, carol, beta, 5,
             "Send an email to the assignee whenever an issue is assigned to them.", enh, backend);
-        Make(web, "Issue list is slow with 10k+ issues", IssueType.Bug, IssueStatus.InReview, IssuePriority.High, dan, bob, s2, 3,
+        Make(web, "Issue list is slow with 10k+ issues", IssueType.Bug, IssueStatus.InReview, IssuePriority.High, dan, bob, beta, 3,
             "Rendering the list takes ~4s. Add pagination or virtualization and an index on `UpdatedAt`.", bug, perf);
         Make(web, "Write API documentation", IssueType.Task, IssueStatus.Backlog, IssuePriority.Low, alice, null, v1, 3,
             "Document all REST endpoints with examples.", docs);
@@ -104,14 +104,14 @@ public static class SeedData
         Make(web, "Markdown preview in comment editor", IssueType.Feature, IssueStatus.Backlog, IssuePriority.Medium, bob, null, v1, 2, null, enh, ui);
         Make(web, "Public release", IssueType.Epic, IssueStatus.Backlog, IssuePriority.Highest, alice, alice, v1, null,
             "Umbrella epic for everything required to ship v1.0.");
-        Make(web, "Avatar images broken on Safari", IssueType.Bug, IssueStatus.Todo, IssuePriority.Medium, dan, dan, s2, 1, null, bug, ui);
+        Make(web, "Avatar images broken on Safari", IssueType.Bug, IssueStatus.Todo, IssuePriority.Medium, dan, dan, beta, 1, null, bug, ui);
 
         // ----- Linked work: an epic with children, sub-tasks and a "blocks" link -----
         Issue Web(string title) => db.Issues.Local.First(i => i.Project == web && i.Title == title);
         var release = Web("Public release");
         foreach (var t in new[] { "Drag-and-drop Kanban board", "Write API documentation", "Dark mode" }) Web(t).Parent = release;
-        Make(web, "Drag between columns", IssueType.Subtask, IssueStatus.Done, IssuePriority.High, alice, alice, s2, 3, null).Parent = kanban;
-        Make(web, "Reorder cards within a column", IssueType.Subtask, IssueStatus.Todo, IssuePriority.Medium, alice, bob, s2, 2,
+        Make(web, "Drag between columns", IssueType.Subtask, IssueStatus.Done, IssuePriority.High, alice, alice, beta, 3, null).Parent = kanban;
+        Make(web, "Reorder cards within a column", IssueType.Subtask, IssueStatus.Todo, IssuePriority.Medium, alice, bob, beta, 2,
             "Persist the new position when a card is dropped between two others.").Parent = kanban;
         db.IssueLinks.Add(new IssueLink { SourceIssue = Web("Avatar images broken on Safari"), TargetIssue = Web("Dark mode"), Type = IssueLinkType.Blocks, CreatedAt = now.AddDays(-1) });
 
