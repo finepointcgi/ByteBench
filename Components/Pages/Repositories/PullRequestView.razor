@@ -396,12 +396,22 @@ else if (pr != null)
     // ----- Live updates -----
     // Reload replaces `pr` (and, when the state changed, diff/merge status); drafts and editing flags are separate
     // fields, and DiffView keeps its own inline-comment drafts, so unsaved edits survive.
-    private IDisposable? liveSubscription;
+    private IDisposable? liveSubscription, pipelineSubscription;
 
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender) liveSubscription = Live.Subscribe<PullRequestChanged>(OnPullRequestChanged);
+        if (!firstRender) return;
+        liveSubscription = Live.Subscribe<PullRequestChanged>(OnPullRequestChanged);
+        pipelineSubscription = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
     }
+
+    // A pipeline in this PR's repository changed: re-evaluate the merge gate (its pipeline check may have flipped).
+    private Task OnPipelineChanged(PipelineChanged e) =>
+        pr == null || pr.RepositoryId != e.RepositoryId || pr.State != PullRequestState.Open ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            gate = await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id);
+            StateHasChanged();
+        });
 
     private Task OnPullRequestChanged(PullRequestChanged e) => pr?.Id != e.PullRequestId ? Task.CompletedTask : InvokeAsync(async () =>
     {
@@ -412,7 +422,7 @@ else if (pr != null)
         StateHasChanged();
     });
 
-    public void Dispose() => liveSubscription?.Dispose();
+    public void Dispose() { liveSubscription?.Dispose(); pipelineSubscription?.Dispose(); }
 
     private async Task Run(Func<Task> action, bool full)
     {
