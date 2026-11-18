@@ -5,7 +5,8 @@
 @inherits RepoPageBase
 @inject ReleaseService Releases
 @inject ProjectAccess Access
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>@(release?.Title ?? "Release") · @Repo?.Name</PageTitle>
 
@@ -17,19 +18,21 @@ else if (Repo != null && release != null)
 {
     <RepoHeader Repo="Repo" Active="releases" />
 
-    <div class="breadcrumbs mb-2"><a href="@ReleaseUrls.List(Repo)">Releases</a> / <span class="mono">@release.TagName</span></div>
-    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
-    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+    <div class="rel-breadcrumbs mb-2 small"><a href="@ReleaseUrls.List(Repo)">Releases</a> / <span class="mono">@release.TagName</span></div>
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
     <ReleaseCard Repo="Repo" Release="release" IsLatest="isLatest" CanDeleteAssets="CanEdit" OnDeleteAsset="DeleteAsset">
         @if (CanEdit)
         {
             <span class="rel-actions">
-                @if (release.IsDraft) { <button class="btn btn-sm btn-primary" disabled="@busy" @onclick="Publish">Publish</button> }
-                <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.Edit(Repo, release.Id)">Edit</a>
+                @if (release.IsDraft)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Publish" Disabled="@busy" OnClick="Publish">Publish</MudButton>
+                }
+                <MudButton Href="@ReleaseUrls.Edit(Repo, release.Id)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit">Edit</MudButton>
                 @if (perms.Can(Permission.DeleteBranch))
                 {
-                    <button class="btn btn-sm btn-outline-danger" disabled="@busy" @onclick="Delete">Delete</button>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete" Disabled="@busy" OnClick="Delete">Delete</MudButton>
                 }
             </span>
         }
@@ -37,12 +40,16 @@ else if (Repo != null && release != null)
 
     @if (CanEdit)
     {
-        <div class="card-panel rel-upload">
-            <label class="btn btn-outline-secondary btn-sm mb-0 @(busy ? "disabled" : "")">
-                @(busy ? "Uploading…" : "📎 Upload assets")
-                <InputFile OnChange="Upload" multiple class="d-none" disabled="@busy" />
-            </label>
-            <span class="muted small ms-2">Binaries, packages or checksums: up to @AttachmentFormat.Size(Releases.MaxAssetBytes) per file, @ReleaseService.MaxAssetsPerRelease per release.</span>
+        <div class="rel-upload-wrap">
+        <MudPaper Outlined="true" Class="rel-upload pa-4">
+            <MudButton HtmlTag="label" Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy"
+                       StartIcon="@(busy ? null : Icons.Material.Filled.AttachFile)">
+                @if (busy) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" Style="width:14px;height:14px" /> }
+                @(busy ? "Uploading…" : "Upload assets")
+                <InputFile OnChange="Upload" multiple class="rel-upload-input" disabled="@busy" />
+            </MudButton>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Binaries, packages or checksums: up to @AttachmentFormat.Size(Releases.MaxAssetBytes) per file, @ReleaseService.MaxAssetsPerRelease per release.</MudText>
+        </MudPaper>
         </div>
     }
 }
@@ -52,7 +59,6 @@ else if (Repo != null && release != null)
 
     private Release? release;
     private bool loaded, isLatest, busy;
-    private string? message;
     private ProjectPermissions perms = ProjectPermissions.None;
     private bool CanEdit => perms.Can(Permission.PushCode) && Repo?.IsArchived == false;
 
@@ -72,12 +78,12 @@ else if (Repo != null && release != null)
 
     private async Task Publish()
     {
-        Error = message = null;
+        Error = null;
         busy = true;
         try
         {
             await Releases.PublishAsync(Repo!, Id);
-            message = "Release published.";
+            Snackbar.Add("Release published.", Severity.Success);
             await Load();
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }
@@ -86,11 +92,23 @@ else if (Repo != null && release != null)
 
     private async Task Delete()
     {
-        Error = message = null;
+        Error = null;
         var deleteTag = false;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the release '{release!.Title}' and its {release.Assets.Count} asset(s)? This can't be undone.")) return;
+        var text = $"Delete the release '{release!.Title}' and its {release.Assets.Count} asset(s)? This can't be undone.";
         if (perms.Can(Permission.DeleteBranch))
-            deleteTag = await JS.InvokeAsync<bool>("confirm", $"Also delete the tag '{release.TagName}'? Press Cancel to keep the tag.");
+        {
+            // One dialog for both questions: delete the release with or without its tag, or cancel.
+            var choice = await Dialogs.ShowMessageBoxAsync(
+                new MessageBoxOptions
+                {
+                    Title = "Delete release", Message = text + $" You can also delete the tag '{release.TagName}'.",
+                    YesText = "Delete release and tag", NoText = "Delete release only", CancelText = "Cancel",
+                },
+                new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+            if (choice == null) return;
+            deleteTag = choice == true;
+        }
+        else if (!await Dialogs.ConfirmAsync("Delete release", text)) return;
         busy = true;
         try
         {
@@ -103,7 +121,7 @@ else if (Repo != null && release != null)
 
     private async Task Upload(InputFileChangeEventArgs e)
     {
-        Error = message = null;
+        Error = null;
         busy = true;
         var done = new List<string>();
         try
@@ -121,19 +139,19 @@ else if (Repo != null && release != null)
         finally
         {
             busy = false;
-            if (done.Count > 0) message = $"Uploaded {string.Join(", ", done)}.";
+            if (done.Count > 0) Snackbar.Add($"Uploaded {string.Join(", ", done)}.", Severity.Success);
             await Load();
         }
     }
 
     private async Task DeleteAsset(ReleaseAsset a)
     {
-        Error = message = null;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the asset '{a.FileName}'?")) return;
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Delete asset", $"Delete the asset '{a.FileName}'?")) return;
         try
         {
             await Releases.DeleteAssetAsync(Repo!, a.Id);
-            message = $"Deleted {a.FileName}.";
+            Snackbar.Add($"Deleted {a.FileName}.", Severity.Success);
             await Load();
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }

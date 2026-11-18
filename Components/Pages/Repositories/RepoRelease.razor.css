@@ -1,0 +1,8 @@
+.rel-breadcrumbs { color: var(--mud-palette-text-secondary); overflow-wrap: anywhere; }
+/* Rendered here but placed inside ReleaseCard's meta line (ChildContent), so this scope applies. */
+.rel-actions { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.rel-upload-wrap ::deep .rel-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.rel-upload-wrap ::deep .rel-upload-input { display: none; }
+@media (max-width: 600px) {
+    .rel-actions { margin-left: 0; width: 100%; margin-top: 6px; }
+}

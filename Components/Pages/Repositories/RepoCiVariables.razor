@@ -19,22 +19,20 @@ else if (Repo != null)
 
     <div class="settings-layout">
         <RepoSettingsNav Repo="Repo" Active="ci-variables" />
-        <div class="min-w-0">
-            <div class="page-header">
-                <div>
-                    <h2 class="section-title mb-1">🔑 CI variables</h2>
-                    <div class="muted small">
-                        Secret environment variables for this repository's pipelines. They override
-                        <a href="/p/@Repo.Project.Key/settings#ci-variables">project variables</a> with the same name.
-                        Values are encrypted at rest, masked as <code>***</code> in step logs, and never shown again after saving.
-                        <b>Protected</b> variables only reach pipelines on <a href="@RepoUrls.BranchProtection(Repo)">protected branches</a>
-                        (for pull requests, the source branch must be protected).
-                    </div>
-                </div>
+        <div class="gb-min0">
+            <div class="mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Key" /> CI variables</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Secret environment variables for this repository's pipelines. They override
+                    <a href="/p/@Repo.Project.Key/settings#ci-variables">project variables</a> with the same name.
+                    Values are encrypted at rest, masked as <code>***</code> in step logs, and never shown again after saving.
+                    <b>Protected</b> variables only reach pipelines on <a href="@RepoUrls.BranchProtection(Repo)">protected branches</a>
+                    (for pull requests, the source branch must be protected).
+                </MudText>
             </div>
-            <div class="card-panel">
+            <MudPaper Outlined="true" Class="pa-4">
                 <CiVariablesEditor ProjectId="Repo.ProjectId" RepositoryId="Repo.Id" />
-            </div>
+            </MudPaper>
         </div>
     </div>
 }
