@@ -44,3 +44,8 @@
     .il-page ::deep .il-filters > .mud-input-control.il-search { flex-basis: 100%; max-width: none; }
     .il-row ::deep .il-row-check { margin-right: -14px; }
 }
+
+/* Advanced (GQL) mode */
+.il-page ::deep .il-advanced { flex-direction: column; align-items: stretch; }
+.il-advanced-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.il-advanced-actions .il-muted { flex: 1 1 auto; }

@@ -11,6 +11,7 @@ using GitBench.Services.Releases;
 using GitBench.Services.Hosting;
 using GitBench.Services.Ssh;
 using GitBench.Services.Automation;
+using GitBench.Services.Query;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -111,6 +112,7 @@ builder.Services.AddScoped<ProtectedTagService>();
 GitBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
 GitBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
+builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -156,6 +158,7 @@ app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();
+app.MapIssueCsvExport(); // /p/{key}/issues/export.csv, /issues/export.csv
 GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 app.MapReleases();
 app.MapGitBenchHealth(); // /health/live, /health/ready

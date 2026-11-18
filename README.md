@@ -632,6 +632,7 @@ curl -H "Authorization: Bearer gbp_…" http://localhost:5108/api/v1/user
 | GET | `/projects`, `/projects/{key}` | Includes your role |
 | GET | `/groups`, `/groups/{group}`, `/groups/{group}/subgroups`, `/groups/{group}/projects`, `/groups/{group}/issues` | `{group}` is an id or URL-encoded full path; see [Groups](#groups) |
 | GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status category; `?workflowStatus=` a workflow status id (see `/workflow`; without `?status=` it matches open and closed issues); `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?sprint=` id, `none` or `active`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
+| GET | `/search/issues` | `?gql=` a GQL query across every project you can view, paginated; see [Advanced search](#advanced-search-gql--csv-importexport) |
 | POST | `/projects/{key}/issues` | `{title, description?, type?, priority?, status?, assignee?, labels?: [names], milestoneId?, storyPoints?, dueDate?}`; returns `201` |
 | GET / PATCH | `/projects/{key}/issues/{number}` | PATCH changes only the fields you send; `null` clears a field and `labels` replaces the set. Each change is logged in the issue's activity |
 | GET / POST | `/projects/{key}/issues/{number}/comments` | `{body}` |
@@ -934,6 +935,89 @@ Users with EditIssues get checkboxes on the issue list (plus "select all on this
 
 Code: `Services/Attachments/`, `Api/AttachmentEndpoints.cs`, `Services/IssueFilterQuery.cs`, `Services/SavedFilterService.cs`, `Services/IssueService.Bulk.cs`, `Services/NotificationService.Bulk.cs`, `Components/Shared/{AttachmentsPanel,MarkdownEditor,SavedFiltersMenu,StarredFiltersNav,BulkActionBar}.razor`, `Components/Pages/Projects/SavedFilters.razor`, `wwwroot/js/attachments.js`, `wwwroot/css/attachments-filters.css`. Schema: `Attachment`, `SavedFilter`, `SavedFilterStar` (migration `AttachmentsFilters`).
 
+## Advanced search (GQL) & CSV import/export
+
+### GitBench Query Language (GQL)
+
+A JQL-style query language for issues, e.g.
+
+```
+project = WEB AND status in ("In Progress", Blocked) AND assignee = currentUser() AND labels = bug AND created >= -14d ORDER BY priority DESC, updated DESC
+```
+
+**Where:** the **Advanced** button on a project's issue list switches it to a GQL editor (the basic filter is converted to the equivalent query; **Switch to basic** goes back). Results are limited to that project and use the normal list rows and bulk edit. `/issues/search` searches every project you can view. The API has `GET /api/v1/search/issues?gql=` with the usual `page`/`perPage` paging, `X-Total-Count` and `Link` headers; a query error is a `400` problem with `position` (0-based), `length` and `reason`.
+
+**Editor:** autocomplete (fields, operators valid for the field, and values: workflow statuses, users, labels, milestones, sprints, projects, epics, date shortcuts) at the caret; Up/Down/Enter/Tab pick, Esc closes, Enter (or Ctrl+Enter while the list is open) runs, Ctrl+Space asks for suggestions. Syntax errors are checked as you type, and errors from running (an unknown user or status) are shown with the offending text underlined and the column.
+
+**Grammar** (keywords are case-insensitive):
+
+```
+query   := [or] [ORDER BY sort ("," sort)*]
+or      := and (OR and)*
+and     := not (AND not)*
+not     := NOT not | "(" or ")" | clause
+clause  := field ( ("=" | "!=" | "~" | "!~" | "<" | ">" | "<=" | ">=") value
+                 | [NOT] IN "(" value ("," value)* ")"
+                 | IS [NOT] (EMPTY | NULL) )
+value   := "quoted" | 'quoted' | word | function "(" [value ("," value)*] ")"
+sort    := field [ASC | DESC]
+```
+
+- Precedence: `NOT` binds tightest, then `AND`, then `OR`; use parentheses otherwise. `= EMPTY` / `!= EMPTY` mean `is EMPTY` / `is not EMPTY`.
+- Quote values with spaces or that are keywords (`"In Progress"`, `"and"`); `\"` and `\\` escape inside quotes. Field names can be quoted too (`"story points" > 3`).
+- `~` matches when every word appears (case-insensitive, `%` and `_` are literal). `!=` and `not in` also match issues where the field is empty (`assignee != bob` includes unassigned issues).
+- Limits: 4000 characters, 100 conditions, 32 levels of nesting, 200 values in a list.
+
+| Field (aliases) | Operators | Values |
+|---|---|---|
+| `project` | `= != in` | key or name (only projects you can view) |
+| `key` (`issueKey`, `issue`) | `= != in < > <= >=` | `WEB-12`; `<`/`>` compare numbers within that project |
+| `summary` (`title`), `description` | `~ !~ = !=`, `is` (description) | text |
+| `text` | `~ !~` | title, description and comments |
+| `comment` | `~ !~` | comment text |
+| `type` (`issuetype`) | `= != in` | Task, Bug, Feature, Story, Epic, Subtask (`"sub-task"`) |
+| `status` | `= != in` | workflow status name in any searched project (a category name also works) |
+| `statusCategory` (`category`) | `= != in` | Backlog, `"To Do"`, `"In Progress"`, `"In Review"`, Done |
+| `priority` | `= != in < > <= >=` | Lowest … Highest |
+| `assignee`, `reporter`, `watcher` | `= != in`, `is` (not reporter) | username, email, display name or `currentUser()` |
+| `labels` (`label`) | `= != in is` | label names (`=` means "has the label") |
+| `milestone` (`fixVersion`) | `= != in is` | title |
+| `sprint` | `= != in is` | name, id, `openSprints()` (active), `futureSprints()`, `closedSprints()` |
+| `parent` | `= != in is` | issue key |
+| `epic` (`epicLink`) | `= != in is` | epic key: its children and their sub-tasks |
+| `created`, `updated`, `resolved` (`closed`), `due` (`dueDate`) | `= != < > <= >=`, `is` (resolved, due) | see dates |
+| `storyPoints` (`points`, `"story points"`) | `= != in < > <= >= is` | whole numbers |
+
+**Dates** are UTC: `2026-01-31` (as a whole day: `=` matches that day, `<=` includes it), `"2026-01-31 14:30"`, relative offsets from now (`-7d`, `-2w`, `+1M`, `-1w2d`; units `y M w d h m`) and functions `now()`, `startOfDay()`, `endOfDay()`, `startOfWeek()` (Monday), `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `startOfYear()`, `endOfYear()`, each with an optional offset (`startOfWeek(-1w)`). The `endOf…` functions are the start of the next period.
+
+**Sorting:** `ORDER BY` any field except `text`, `comment`, `labels`, `watcher`, `parent` and `epic`; the default is `updated DESC`, and issue id breaks ties so pages are stable.
+
+**Saved filters** store GQL as `gql=<query>` in their query string (the list's URL is `/p/WEB/issues?gql=…`), so older query-string filters keep working and the Filters menu, stars and sidebar handle both. **Manage filters** shows the query of a GQL filter.
+
+**Security:** the parser builds an AST that is translated to an EF Core `IQueryable<Issue>`; values are always EF parameters, never SQL text. Every query is first limited to `ProjectAccess.VisibleProjectIdsAsync` (and to the project on a project page), and names (projects, statuses, sprints, issue keys) are only resolved within those projects, so an error for a private project reads the same as for one that doesn't exist.
+
+**For other code** (`Services/Query/`):
+
+- `GqlService.ApplyAsync(db, source, gql, scope?, userId?)` filters and orders any `IQueryable<Issue>` of your context; `SearchAsync`/`SearchIdsAsync` run a query; `MatchesAsync(issueId or issue, gql, userId?)` evaluates it against one issue (automation rules); `ValidateAsync` returns the `GqlException` (with `Position`, `Length`, `Reason`) or null; `FromFilterAsync` converts a basic `IssueFilter`.
+- **New fields:** implement `IQueryField` (usually by deriving from `QueryField`, which has helpers for dates, users and EF-parameterized comparisons via `Gx`) and return it from an `IQueryFieldProvider` registered with `services.AddSingleton<IQueryFieldProvider, MyFields>()`. `GqlFieldRegistry` merges all providers (a duplicate name or alias is a startup error); autocomplete and the editor's field list pick new fields up automatically.
+
+### CSV export
+
+**⋮ → Export CSV…** on the issue list (basic filters or GQL) and **Export CSV** on `/issues/search` let you pick columns (key, project, title, type, status, status category, priority, assignee, reporter, labels, milestone, sprint, parent, story points, due date, created, updated, resolved, description) and download `GET /p/{key}/issues/export.csv?<the list's query>&columns=…` or `GET /issues/export.csv?gql=…&columns=…`. Files are UTF-8 with a BOM, at most 10,000 rows, and cells that start like a spreadsheet formula (`= + - @`, tab, CR) are prefixed with `'`, like the audit export. People are exported as usernames, labels comma-separated, dates as `yyyy-MM-dd` and times as ISO 8601 UTC.
+
+### CSV import
+
+**⋮ → Import CSV…** (`/p/{key}/import`, Maintainer+):
+
+1. **Upload** a CSV (UTF-8; the first row names the columns). Limits: `CsvImport:MaxBytes` (default 2 MB) and `CsvImport:MaxRows` (default 1000).
+2. **Map columns** to title (required), description, type, priority, status, assignee (username or email of someone who can view the project), labels (comma- or semicolon-separated, existing project or group labels), story points (0–100), due date (`yyyy-MM-dd`), parent and key. Headers are matched automatically (the export's headers map one to one).
+3. **Preview** shows every row with its errors (unknown status, label or user, bad numbers or dates, a sub-task without a parent, broken hierarchy rules, duplicate keys…). Import is disabled while any row has an error.
+4. **Import** creates all issues in one transaction: if anything fails, nothing is imported. **Parent** is either an existing issue of the project (`WEB-12`) or the **Key** of another row in the file, so an exported epic with its stories re-imports with the hierarchy intact. A leading `'` added by the export's formula escaping is removed.
+
+Each issue gets the activity "imported from CSV", and the import is audited as `issue.imported` (file name, count, first and last key). Imports don't send notifications or webhooks; open lists and boards refresh live.
+
+Code: `Services/Query/` (`GqlSyntax.cs` tokenizer/AST/parser, `GqlFieldModel.cs` field interfaces and helpers, `BuiltInQueryFields.cs`, `GqlService.cs`, `Csv.cs`, `CsvImportService.cs`, `QuerySetup.cs`), `Api/GqlSearchEndpoints.cs`, `Components/Query/{GqlEditor,CsvExportDialog}.razor`, `Components/Pages/IssueSearchPage.razor`, `Components/Pages/Projects/ImportCsv.razor`, `wwwroot/js/gql-editor.js`. No schema changes. Tests: `GqlTests.cs`, `CsvTests.cs`.
+
 ## Workflows & audit log
 
 ### Custom workflows
@@ -963,7 +1047,7 @@ Each project has its own **workflow**: an ordered list of statuses (name, colour
   - `branch_protection.created`, `branch_protection.updated`, `branch_protection.deleted`, `pull_request.merged_bypassing_protection`
   - `webhook.created`, `webhook.updated`, `webhook.secret_rotated`, `webhook.deleted`
   - `workflow.status_added`, `workflow.status_updated`, `workflow.status_reordered`, `workflow.status_deleted`, `workflow.transitions_changed`
-  - `issue.deleted`, `audit.exported`
+  - `issue.deleted`, `issue.imported` (CSV import), `audit.exported`
   - `release.created`, `release.published`, `release.deleted`, `tag.deleted` (also when a push deletes a tag)
   - `automation.rule_created`, `automation.rule_updated`, `automation.rule_enabled`, `automation.rule_disabled`, `automation.rule_deleted`
   - There is no UI for changing the site-admin flag, so there's no event for it yet.

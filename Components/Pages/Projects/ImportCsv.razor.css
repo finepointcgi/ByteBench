@@ -1,0 +1,6 @@
+::deep .ci-title { font-weight: 600; }
+.ci-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; }
+.ci-page ::deep .ci-map-select { margin: 0; }
+.ci-page ::deep .ci-table { overflow-x: auto; }
+.ci-page ::deep .ci-table tr.ci-bad td { background: rgba(var(--mud-palette-error-rgb), .06); }
+.ci-page ::deep .ci-table tr.ci-errors td { color: var(--mud-palette-error); font-size: 12px; border-top: none; }

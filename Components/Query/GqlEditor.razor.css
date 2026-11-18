@@ -1,0 +1,24 @@
+.gql-editor { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.gql-input-row { display: flex; align-items: flex-start; gap: 8px; }
+.gql-input-row ::deep .gql-input { flex: 1 1 auto; margin: 0; }
+.gql-input-row ::deep .gql-input textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.gql-input-row ::deep .gql-run { flex: none; margin-top: 2px; }
+.gql-hint { font-size: 12px; }
+.gql-hint code { font-size: 12px; }
+.gql-error { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--mud-palette-error); }
+.gql-error-code {
+    display: block; margin-top: 2px; white-space: pre-wrap; word-break: break-word; color: var(--mud-palette-text-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+}
+.gql-error-code mark {
+    background: rgba(var(--mud-palette-error-rgb), .18); color: inherit; border-radius: 2px;
+    text-decoration: underline wavy var(--mud-palette-error); text-underline-offset: 3px;
+}
+.gql-help { display: grid; gap: 2px; font-size: 12px; padding: 8px; border: 1px solid var(--mud-palette-lines-default); border-radius: 6px; max-height: 260px; overflow: auto; }
+.gql-help-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; align-items: baseline; }
+.gql-help-ops { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--mud-palette-text-secondary); }
+
+@media (max-width: 600px) {
+    .gql-input-row { flex-direction: column; align-items: stretch; }
+    .gql-help-row { grid-template-columns: 1fr; }
+}

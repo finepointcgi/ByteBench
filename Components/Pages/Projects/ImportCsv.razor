@@ -1,0 +1,206 @@
+@page "/p/{Key}/import"
+@using GitBench.Services.Query
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject CsvImportService Importer
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<PageTitle>Import issues · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !canImport)
+{
+    <Forbidden Message="Importing issues needs the Maintainer role." BackHref="@($"/p/{project.Key}/issues")" />
+}
+else if (project != null)
+{
+<div class="ci-page">
+    <MudText Typo="Typo.h5" Class="ci-title">Import issues from CSV</MudText>
+    <MudText Class="mud-text-secondary mb-4" Typo="Typo.body2">
+        Into @project.Name. The first row names the columns. At most @Importer.Limits.MaxRows.ToString("N0") rows and @(Importer.Limits.MaxBytes / 1024) KB;
+        all rows are imported together, or none.
+    </MudText>
+
+    @* 1. Upload *@
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">1. Choose a file</MudText>
+        <div class="d-flex align-center gap-3 flex-wrap">
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnFile" Accept=".csv,text/csv">
+                <CustomContent>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="@context.OpenFilePickerAsync">Choose CSV…</MudButton>
+                </CustomContent>
+            </MudFileUpload>
+            @if (table != null)
+            {
+                <span><b>@fileName</b> <span class="mud-text-secondary">· @table.Rows.Count row@(table.Rows.Count == 1 ? "" : "s"), @table.Headers.Count columns</span></span>
+            }
+        </div>
+        @if (fileError != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@fileError</MudAlert> }
+    </MudPaper>
+
+    @if (table != null)
+    {
+        @* 2. Mapping *@
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">2. Map columns</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Assignees by username or email; labels separated by commas; dates as 2026-01-31. Parent is an issue key of @project.Key, or the Key of another row in this file.
+            </MudText>
+            <div class="ci-map">
+                @foreach (var field in Enum.GetValues<CsvImportField>())
+                {
+                    <MudSelect T="int" Value="@(map.TryGetValue(field, out var col) ? col : -1)" ValueChanged="c => SetMap(field, c)" Label="@FieldName(field)"
+                               Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" OuterClass="ci-map-select" Required="@(field == CsvImportField.Title)">
+                        <MudSelectItem T="int" Value="-1">(not imported)</MudSelectItem>
+                        @for (var i = 0; i < table.Headers.Count; i++)
+                        {
+                            var index = i;
+                            <MudSelectItem T="int" Value="index">@(table.Headers[index].Length > 0 ? table.Headers[index] : $"Column {index + 1}")</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            </div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="Preview" Disabled="@(busy || !map.ContainsKey(CsvImportField.Title))"
+                       StartIcon="@Icons.Material.Outlined.Preview">Preview</MudButton>
+        </MudPaper>
+    }
+
+    @if (preview != null)
+    {
+        @* 3. Preview & import *@
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <div class="d-flex align-center gap-3 flex-wrap mb-3">
+                <MudText Typo="Typo.subtitle1">3. Preview</MudText>
+                @if (preview.ErrorRows > 0)
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined">@preview.ErrorRows row@(preview.ErrorRows == 1 ? "" : "s") with errors</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Outlined">All @preview.Rows.Count rows are valid</MudChip>
+                }
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || preview.ErrorRows > 0)" OnClick="Import" StartIcon="@Icons.Material.Filled.FileUpload">
+                    Import @preview.Rows.Count issue@(preview.Rows.Count == 1 ? "" : "s")
+                </MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Hover="true" Class="ci-table">
+                <thead>
+                    <tr><th>Row</th><th>Title</th><th>Type</th><th>Priority</th><th>Status</th><th>Assignee</th><th>Labels</th><th>Points</th><th>Due</th><th>Parent</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in preview.Rows.Take(MaxPreviewRows))
+                    {
+                        <tr class="@(r.IsValid ? "" : "ci-bad")">
+                            <td>@r.Line@(r.Key != null ? $" · {r.Key}" : "")</td>
+                            <td>@r.Title</td>
+                            <td>@r.Type</td>
+                            <td>@r.Priority</td>
+                            <td>@r.Status?.Name</td>
+                            <td>@r.Assignee?.UserName</td>
+                            <td>@string.Join(", ", r.Labels.Select(l => l.Name))</td>
+                            <td>@r.StoryPoints</td>
+                            <td>@r.DueDate?.ToString("yyyy-MM-dd")</td>
+                            <td>@r.ParentKey</td>
+                        </tr>
+                        @if (!r.IsValid)
+                        {
+                            <tr class="ci-bad ci-errors"><td></td><td colspan="9">@string.Join(" ", r.Errors)</td></tr>
+                        }
+                    }
+                </tbody>
+            </MudSimpleTable>
+            @if (preview.Rows.Count > MaxPreviewRows)
+            {
+                var hiddenErrors = preview.Rows.Skip(MaxPreviewRows).Count(r => !r.IsValid);
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">
+                    …and @(preview.Rows.Count - MaxPreviewRows) more rows@(hiddenErrors > 0 ? $" ({hiddenErrors} with errors, e.g. row {preview.Rows.Skip(MaxPreviewRows).First(r => !r.IsValid).Line}: {preview.Rows.Skip(MaxPreviewRows).First(r => !r.IsValid).Errors[0]})" : "").
+                </MudText>
+            }
+        </MudPaper>
+    }
+    @if (importError != null) { <MudAlert Severity="Severity.Error" Class="mb-3">@importError</MudAlert> }
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private const int MaxPreviewRows = 200;
+    private Project? project;
+    private bool notFound, canImport, busy;
+    private CsvTable? table;
+    private string? fileName, fileError, importError;
+    private Dictionary<CsvImportField, int> map = [];
+    private CsvImportPreview? preview;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project != null) canImport = (await Access.GetRoleAsync(project.Id)) >= ProjectRole.Maintainer;
+    }
+
+    private static string FieldName(CsvImportField f) => f switch
+    {
+        CsvImportField.Key => "Key (for parent links in the file)",
+        CsvImportField.StoryPoints => "Story points",
+        CsvImportField.DueDate => "Due date",
+        _ => f.ToString(),
+    };
+
+    private async Task OnFile(IBrowserFile? file)
+    {
+        (table, preview, fileError, importError) = (null, null, null, null);
+        if (file == null) return;
+        if (file.Size > Importer.Limits.MaxBytes) { fileError = $"The file is larger than {Importer.Limits.MaxBytes / 1024} KB."; return; }
+        try
+        {
+            await using var stream = file.OpenReadStream(Importer.Limits.MaxBytes);
+            table = await Importer.ReadAsync(stream);
+            fileName = file.Name;
+            map = CsvImportService.GuessMapping(table.Headers);
+        }
+        catch (InvalidOperationException ex) { fileError = ex.Message; }
+        catch (IOException ex) { fileError = "The file couldn't be read: " + ex.Message; }
+    }
+
+    private void SetMap(CsvImportField field, int column)
+    {
+        if (column < 0) map.Remove(field); else map[field] = column;
+        preview = null;
+    }
+
+    private async Task Preview()
+    {
+        if (project == null || table == null) return;
+        busy = true;
+        importError = null;
+        try { preview = await Importer.PreviewAsync(project.Id, table, map); }
+        catch (InvalidOperationException ex) { importError = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Import()
+    {
+        if (project == null || table == null || preview == null) return;
+        if (!await Dialogs.ShowMessageBoxAsync("Import issues", $"Create {preview.Rows.Count} issues in {project.Key}? They can only be removed one by one or with bulk delete.",
+                yesText: "Import", cancelText: "Cancel") == true) return;
+        busy = true;
+        importError = null;
+        try
+        {
+            var result = await Importer.ImportAsync(project.Id, table, map, fileName);
+            Snackbar.Add($"Imported {result.Count} issue{(result.Count == 1 ? "" : "s")} ({result.Keys[0]}{(result.Count > 1 ? $" … {result.Keys[^1]}" : "")}).", Severity.Success);
+            Nav.NavigateTo($"/p/{project.Key}/issues?gql={Uri.EscapeDataString($"key >= {result.Keys[0]} AND key <= {result.Keys[^1]} ORDER BY key")}");
+        }
+        catch (InvalidOperationException ex) { importError = ex.Message; }
+        catch (DbUpdateException) { importError = "The import failed while saving, so nothing was imported."; }
+        finally { busy = false; }
+    }
+}

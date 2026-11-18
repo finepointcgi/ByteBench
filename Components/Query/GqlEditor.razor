@@ -1,0 +1,139 @@
+@using GitBench.Services.Query
+@implements IAsyncDisposable
+@inject GqlService Gql
+@inject IJSRuntime JS
+
+@* The GQL query box: autocomplete (wwwroot/js/gql-editor.js), Enter runs, syntax errors are checked as you type and
+   shown with the offending text highlighted. Errors from running the query (unknown values…) come in through Error. *@
+<div class="gql-editor" @ref="root">
+    <div class="gql-input-row">
+        <MudTextField T="string" Value="Value" ValueChanged="OnChanged" Immediate="true" Lines="2" Sizing="InputSizing.Auto" MaxLines="6"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="@Placeholder" Class="gql-input" Error="@(Shown != null)"
+                      aria-label="GQL query" MaxLength="@GqlLexer.MaxLength" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search" OnClick="() => Run(Value ?? string.Empty)" Class="gql-run">Search</MudButton>
+    </div>
+    @if (Shown is { } e)
+    {
+        var text = ErrorText ?? "";
+        var start = Math.Min(e.Position, text.Length);
+        var len = Math.Min(e.Length, Math.Max(0, text.Length - start));
+        <div class="gql-error" role="alert">
+            <MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Size="Size.Small" Color="Color.Error" />
+            <div>
+                <div>@e.Reason <span class="mud-text-secondary">(column @(e.Position + 1))</span></div>
+                <code class="gql-error-code">@text[..start]<mark>@(len > 0 ? text.Substring(start, len) : " ")</mark>@text[(start + len)..]</code>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="gql-hint mud-text-secondary">
+            e.g. <code>status in ("In Progress", Blocked) AND assignee = currentUser() ORDER BY priority DESC</code> ·
+            Enter runs · Ctrl+Space suggests ·
+            <a href="#" @onclick="ToggleHelp" @onclick:preventDefault="true">@(help ? "Hide fields" : "Fields & functions")</a>
+        </div>
+    }
+    @if (help)
+    {
+        <div class="gql-help">
+            @foreach (var f in Gql.Fields.Fields)
+            {
+                <div class="gql-help-row">
+                    <code>@f.Name</code>
+                    <span class="mud-text-secondary">@f.Description</span>
+                    <span class="gql-help-ops">@string.Join(" ", f.Operators.Select(o => o.Text()))</span>
+                </div>
+            }
+            <div class="gql-help-row"><code>functions</code><span class="mud-text-secondary">currentUser(), now(), startOfDay/Week/Month/Year(), endOf…(), openSprints(), futureSprints(), closedSprints(); relative dates -7d, -2w, -1M, -4h</span></div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    /// <summary>Raised by Enter or the Search button with the query text.</summary>
+    [Parameter] public EventCallback<string> OnRun { get; set; }
+    /// <summary>Projects the suggestions come from (null: every visible project).</summary>
+    [Parameter] public IReadOnlyCollection<int>? Scope { get; set; }
+    /// <summary>An error from running <see cref="ErrorQuery"/> (e.g. an unknown user).</summary>
+    [Parameter] public GqlException? Error { get; set; }
+    [Parameter] public string? ErrorQuery { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "project = WEB AND status = \"In Progress\" ORDER BY updated DESC";
+
+    private ElementReference root;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<GqlEditor>? self;
+    private GqlException? syntaxError;
+    private bool help;
+
+    /// <summary>The syntax error of the text as typed, else the run error if it is for the current text.</summary>
+    private GqlException? Shown => syntaxError ?? (Error != null && ErrorQuery == Value ? Error : null);
+    private string? ErrorText => Value;
+
+    protected override void OnParametersSet() => syntaxError = Check(Value);
+
+    private static GqlException? Check(string? text)
+    {
+        try { GqlParser.Parse(text ?? ""); return null; }
+        catch (GqlException ex) { return ex; }
+    }
+
+    private async Task OnChanged(string? v)
+    {
+        Value = v;
+        syntaxError = Check(v);
+        await ValueChanged.InvokeAsync(v);
+    }
+
+    private void ToggleHelp() => help = !help;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        self = DotNetObjectReference.Create(this);
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/gql-editor.js");
+            await module.InvokeVoidAsync("attach", root, self);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>Focuses the editor with the caret at the end.</summary>
+    public async Task FocusAsync()
+    {
+        if (module == null) return;
+        try { await module.InvokeVoidAsync("focusEnd", root); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public Task<GqlCompletion> Complete(string text, int caret) => Gql.CompleteAsync(text, caret, Scope);
+
+    [JSInvokable]
+    public async Task Run(string text)
+    {
+        if (text != Value) await OnChanged(text);
+        syntaxError = Check(text);
+        if (syntaxError == null) await OnRun.InvokeAsync(text);
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module != null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("detach", root);
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
+        self?.Dispose();
+    }
+}
