@@ -21,6 +21,7 @@ public static class PipelineFormat
         PipelineTrigger.PullRequest => "pull request",
         PipelineTrigger.Manual => "manual run",
         PipelineTrigger.Retry => "re-run",
+        PipelineTrigger.Schedule => "schedule",
         _ => p.Trigger.ToString(),
     };
 }

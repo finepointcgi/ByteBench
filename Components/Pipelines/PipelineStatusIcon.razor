@@ -1,4 +1,4 @@
-@* Pipeline/job/step status: check passed, cross failed or error, clock queued, spinner running, block canceled, dash skipped. *@
+@* Pipeline/job/step status: check passed, cross failed or error, clock queued, spinner running, block canceled, dash skipped, play manual. *@
 @if (Href != null)
 {
     <a class="ci-icon ci-@Css" href="@Href" title="@Tooltip" aria-label="@Tooltip">@Glyph@if (ShowLabel) {<span class="ci-label">@Label</span>}</a>
@@ -31,6 +31,7 @@ else
         PipelineStatus.Failed or PipelineStatus.Error => Icons.Material.Filled.Cancel,
         PipelineStatus.Canceled => Icons.Material.Outlined.Block,
         PipelineStatus.Skipped => Icons.Material.Outlined.RemoveCircleOutline,
+        PipelineStatus.Manual => Icons.Material.Outlined.PlayCircleOutline,
         _ => Icons.Material.Outlined.Schedule,
     };
 }

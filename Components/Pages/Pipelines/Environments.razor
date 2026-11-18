@@ -1,0 +1,211 @@
+@page "/p/{Key}/repos/{Slug}/environments"
+@inherits RepoPageBase
+@inject CiEnvironmentService EnvironmentsService
+@inject PipelineService Pipelines
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Environments · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="environments" />
+
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        A job with <span class="mono">environment: { name: production, url: … }</span> in <span class="mono">@CiFile.FileName</span> records a deployment
+        each time it runs. <b>Protected</b> environments can only be deployed by Maintainers: their jobs wait for a Maintainer to run them.
+    </MudText>
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+    @if (perms.Can(Permission.ManageRepositories))
+    {
+        <div class="d-flex align-center flex-wrap gap-3 mb-3">
+            <MudTextField T="string" @bind-Value="newName" Placeholder="New environment, e.g. production" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          aria-label="New environment name" MaxLength="64" Style="max-width: 320px" />
+            <MudCheckBox T="bool" @bind-Value="newProtected" Color="Color.Warning" Dense="true">Protected</MudCheckBox>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Disabled="@(string.IsNullOrWhiteSpace(newName) || busy)"
+                       OnClick="Create">Add environment</MudButton>
+            <span class="mud-text-secondary small">Add one ahead of time to protect it before its first deployment.</span>
+        </div>
+    }
+
+    @if (list.Count == 0)
+    {
+        <div class="gb-rows"><div class="empty">No environments yet. They appear when a job that names one runs.</div></div>
+    }
+    @foreach (var info in list)
+    {
+        var e = info.Environment;
+        <MudPaper Outlined="true" Class="pa-4 mb-3" @key="e.Id">
+            <div class="d-flex align-center flex-wrap gap-2">
+                <MudIcon Icon="@Icons.Material.Outlined.Cloud" />
+                <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold">@e.Name</MudText>
+                @if (e.IsProtected) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.Lock" Class="ma-0">Protected</MudChip> }
+                @if (e.ExternalUrl != null) { <a href="@e.ExternalUrl" target="_blank" rel="noopener noreferrer" class="small">@e.ExternalUrl <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Style="font-size: 13px" /></a> }
+                <div class="ml-auto d-flex align-center gap-2">
+                    @if (perms.Can(Permission.ManageRepositories))
+                    {
+                        <MudSwitch T="bool" Value="e.IsProtected" ValueChanged="v => SetProtected(e, v)" Color="Color.Warning" Label="Protected" Class="ma-0" />
+                        <MudTooltip Text="Delete environment">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Size="Size.Small" aria-label="@($"Delete {e.Name}")" OnClick="() => Delete(e)" />
+                        </MudTooltip>
+                    }
+                </div>
+            </div>
+            <div class="mt-2 small">
+                @if (info.Current is { } cur)
+                {
+                    <span>Current: </span><a class="sha-pill" href="@RepoUrls.Commit(Repo, cur.CommitSha)" title="@cur.CommitSha">@cur.CommitSha[..7]</a>
+                    <span> on <a class="branch-pill" href="@RepoUrls.Source(Repo, cur.Ref)">@cur.Ref</a></span>
+                    <span> · <a href="@PipelineUrls.Detail(Repo, cur.PipelineId)">pipeline #@cur.PipelineId</a></span>
+                    <span class="mud-text-secondary"> · deployed @Display.Ago(cur.FinishedAt ?? cur.CreatedAt)@(cur.User != null ? $" by {cur.User.DisplayName}" : "")</span>
+                }
+                else { <span class="mud-text-secondary">Nothing deployed successfully yet.</span> }
+                @if (info.Latest is { } latest && latest.Id != info.Current?.Id)
+                {
+                    <div class="mt-1">Latest: <PipelineStatusIcon Status="latest.Status" ShowLabel="true" /> <a href="@PipelineUrls.Detail(Repo, latest.PipelineId)">pipeline #@latest.PipelineId</a></div>
+                }
+            </div>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Class="mt-2 px-0"
+                       StartIcon="@(history.ContainsKey(e.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                       OnClick="() => ToggleHistory(e)">History (@info.Count)</MudButton>
+            @if (history.TryGetValue(e.Id, out var rows))
+            {
+                <div class="gb-rows mt-1">
+                    @foreach (var d in rows)
+                    {
+                        <div class="gb-row" @key="d.Id">
+                            <PipelineStatusIcon Status="d.Status" />
+                            <div class="gb-row-main gb-min0">
+                                <div class="gb-row-meta">
+                                    <a class="sha-pill" href="@RepoUrls.Commit(Repo, d.CommitSha)">@d.CommitSha[..7]</a>
+                                    <a class="branch-pill" href="@RepoUrls.Source(Repo, d.Ref)">@d.Ref</a>
+                                    · <a href="@PipelineUrls.Detail(Repo, d.PipelineId)">#@d.PipelineId @d.Job.Name</a>
+                                    · @Display.Ago(d.CreatedAt)@(d.User != null ? $" by {d.User.DisplayName}" : "")
+                                </div>
+                            </div>
+                            @if (Pipelines.Enabled && PipelineService.CanRun(d.Job, perms, protectedEnvs) && d.Status != PipelineStatus.Running
+                                 && d.Job.Status is not (PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual))
+                            {
+                                <div class="gb-row-right">
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Replay" Disabled="busy"
+                                               OnClick="() => Redeploy(d)">Redeploy</MudButton>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private List<CiEnvironmentInfo> list = [];
+    private readonly Dictionary<int, List<Deployment>> history = [];
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private HashSet<string> protectedEnvs = [];
+    private bool busy;
+    private IDisposable? sub;
+    private int reloadPending;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        await LoadAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+    }
+
+    private async Task OnPipelineChanged(PipelineChanged e)
+    {
+        if (Repo == null || e.RepositoryId != Repo.Id) return;
+        if (Interlocked.Exchange(ref reloadPending, 1) == 1) return;
+        await Task.Delay(1000);
+        Interlocked.Exchange(ref reloadPending, 0);
+        await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
+    private async Task LoadAsync()
+    {
+        list = await EnvironmentsService.ListAsync(Repo!);
+        protectedEnvs = list.Where(i => i.Environment.IsProtected).Select(i => i.Environment.Name).ToHashSet();
+        foreach (var id in history.Keys.ToList()) history[id] = await EnvironmentsService.HistoryAsync(Repo!, id);
+    }
+
+    private string? newName;
+    private bool newProtected = true;
+
+    private async Task Create()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            var env = await EnvironmentsService.CreateAsync(Repo!, newName ?? "", newProtected);
+            Snackbar.Add($"Added the environment {env.Name}.", Severity.Success);
+            newName = null;
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task ToggleHistory(CiEnvironment e)
+    {
+        if (!history.Remove(e.Id)) history[e.Id] = await EnvironmentsService.HistoryAsync(Repo!, e.Id);
+    }
+
+    private async Task SetProtected(CiEnvironment e, bool value)
+    {
+        Error = null;
+        try
+        {
+            await EnvironmentsService.SetProtectedAsync(Repo!, e.Id, value);
+            Snackbar.Add(value ? $"{e.Name} is protected: only Maintainers can deploy to it." : $"{e.Name} is no longer protected.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+
+    private async Task Delete(CiEnvironment e)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete environment", $"Delete '{e.Name}' and its deployment history? Pipelines are kept, and the environment comes back the next time a job deploys to it.")) return;
+        Error = null;
+        try
+        {
+            await EnvironmentsService.DeleteAsync(Repo!, e.Id);
+            history.Remove(e.Id);
+            Snackbar.Add($"Deleted the environment {e.Name}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+
+    private async Task Redeploy(Deployment d)
+    {
+        if (!await Dialogs.ConfirmAsync("Redeploy", $"Run job '{d.Job.Name}' of pipeline #{d.PipelineId} ({d.CommitSha[..7]}) again?", "Redeploy")) return;
+        Error = null;
+        busy = true;
+        try
+        {
+            await Pipelines.RetryJobAsync(Repo!, d.PipelineId, d.JobId);
+            Snackbar.Add($"Redeploying {d.CommitSha[..7]}.", Severity.Success);
+            Nav.NavigateTo(PipelineUrls.Detail(Repo!, d.PipelineId));
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    public void Dispose() => sub?.Dispose();
+}

@@ -13,18 +13,24 @@ public static class PipelineUrls
     public static string Detail(Repository r, int pipelineId) => $"{RepoUrls.Base(r)}/pipelines/{pipelineId}";
     public static string Detail(string projectKey, string slug, int pipelineId) => $"/p/{projectKey}/repos/{slug}/pipelines/{pipelineId}";
     public static string RawLog(Repository r, int pipelineId, int stepId) => $"{Detail(r, pipelineId)}/steps/{stepId}/log";
+    public static string Schedules(Repository r) => RepoUrls.Base(r) + "/pipelines/schedules";
+    public static string Environments(Repository r) => RepoUrls.Base(r) + "/environments";
 }
 
 /// <summary>
 /// Background worker that runs queued pipelines. Pipelines run concurrently; jobs across all pipelines share
-/// <see cref="CiOptions.MaxConcurrentJobs"/> slots. Within a pipeline a job starts once every job it <c>needs</c> has
-/// passed, and is skipped if one of them didn't. Each job gets a fresh export of the commit's tree, and its steps run
-/// one after another in Docker containers that mount it at <c>/workspace</c>; the first failing step fails the job.
+/// <see cref="CiOptions.MaxConcurrentJobs"/> slots. Within a pipeline, <see cref="CiJobGraph"/> decides: a job starts
+/// once every job it <c>needs</c> has passed (or failed with <c>allow_failure</c>), and is skipped if one didn't; manual
+/// jobs and jobs for protected environments wait in <see cref="PipelineStatus.Manual"/> until someone runs them
+/// (<see cref="PipelineService.PlayJobAsync"/>), which resumes the pipeline. Each job gets a fresh export of the commit's
+/// tree plus the artifacts of its needs and its restored cache, and its steps run one after another in Docker containers
+/// that mount it at <c>/workspace</c>; the first failing step fails the job. Afterwards its cache and artifacts are saved.
 /// Logs stream into the database about once a second, with a <see cref="PipelineChanged"/> event each time.
 /// </summary>
 public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbContextFactory<AppDbContext> dbFactory,
     RepoStorage storage, LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options,
-    Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, ILogger<CiRunner> log, Automation.AutomationQueue automation) : BackgroundService
+    Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, CiArtifactStore artifacts, CiCacheStore caches,
+    CiDeploymentRecorder deployments, ILogger<CiRunner> log, Automation.AutomationQueue automation) : BackgroundService
 {
     private SemaphoreSlim jobSlots = null!;
     private readonly List<Task> active = [];
@@ -117,22 +123,31 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         }
     }
 
+    /// <summary>What every job of one pipeline run shares.</summary>
+    private sealed record RunContext(Pipeline Pipeline, string RepoPath, CiResolvedVariables Variables,
+        IReadOnlyDictionary<string, string> PipelineVariables, bool ProtectedBranch);
+
     private async Task RunPipelineAsync(int id, CancellationToken stoppingToken)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         queue.Register(id, cts); // before leaving Queued, so a cancel can always find us (see PipelineService.CancelAsync)
+        var finished = false;
         try
         {
             Pipeline? p;
             await using (var db = await dbFactory.CreateDbContextAsync(stoppingToken))
             {
+                // A pipeline can run more than once: after a manual job is played or a job is retried, it is queued again.
+                // A fork PR pipeline waiting for a Maintainer's approval never starts (PipelineService.ApproveAsync enqueues it).
+                var now = DateTime.UtcNow;
                 var started = await db.Pipelines.Where(x => x.Id == id && x.Status == PipelineStatus.Queued && !x.AwaitingApproval)
                     .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Running)
-                        .SetProperty(x => x.StartedAt, DateTime.UtcNow), stoppingToken);
+                        .SetProperty(x => x.StartedAt, x => x.StartedAt ?? now)
+                        .SetProperty(x => x.FinishedAt, (DateTime?)null), stoppingToken);
                 if (started == 0) return; // canceled while queued, or already handled
                 p = await db.Pipelines.AsNoTracking().Include(x => x.Repository).ThenInclude(r => r.Project)
                     .Include(x => x.Jobs).ThenInclude(j => j.Steps)
-                    .FirstAsync(x => x.Id == id, stoppingToken);
+                    .AsSplitQuery().FirstAsync(x => x.Id == id, stoppingToken);
             }
             Publish(p);
 
@@ -146,59 +161,126 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             var repoPath = storage.PathFor(p.Repository.Project.Key, p.Repository.Slug);
             // CI secret variables (decrypted once per pipeline; protected ones only for protected branches).
             CiResolvedVariables variables;
+            bool protectedBranch;
             using (var scope = scopes.CreateScope())
-                variables = await scope.ServiceProvider.GetRequiredService<CiVariableService>().ResolveAsync(p.Repository.ProjectId, p.RepositoryId, p.Ref, p.IsForkPullRequest);
-            var status = p.Jobs.ToDictionary(j => j.Name, j => PipelineStatus.Queued);
-            var pending = p.Jobs.OrderBy(j => j.Order).ToList();
-            var runningJobs = new Dictionary<Task<PipelineStatus>, PipelineJob>();
-
-            while (pending.Count > 0 || runningJobs.Count > 0)
             {
-                var before = pending.Count;
-                foreach (var job in pending.ToList())
+                // A fork PR pipeline gets no CI variables, and its Ref (refs/pull/{n}/head) is never treated as protected.
+                variables = await scope.ServiceProvider.GetRequiredService<CiVariableService>()
+                    .ResolveAsync(p.Repository.ProjectId, p.RepositoryId, p.Ref, p.IsForkPullRequest);
+                protectedBranch = CiCacheStore.UsesProtectedScope(p,
+                    !p.IsForkPullRequest && (await scope.ServiceProvider.GetRequiredService<BranchProtectionService>().ForBranchAsync(p.RepositoryId, p.Ref)).IsProtected);
+            }
+            // Nor any extra (schedule) variables: those belong to the upstream.
+            var run = new RunContext(p, repoPath, variables,
+                p.IsForkPullRequest ? new Dictionary<string, string>() : CiJobExtras.ParseVariables(p.VariablesJson), protectedBranch);
+
+            var protectedEnvs = await deployments.ProtectedNamesAsync(p.RepositoryId);
+            var jobs = p.Jobs.ToDictionary(j => j.Name);
+            var states = p.Jobs.OrderBy(j => j.Order).ToDictionary(j => j.Name, j => StateOf(j, protectedEnvs));
+            var runningJobs = new Dictionary<Task<PipelineStatus>, PipelineJob>();
+            Task? wake = null;
+
+            while (true)
+            {
+                var changed = false;
+                foreach (var (name, action) in CiJobGraph.Next(states.Values, cts.IsCancellationRequested))
                 {
-                    var needs = job.NeedsList.Select(n => status.GetValueOrDefault(n, PipelineStatus.Passed)).ToList();
-                    if (cts.IsCancellationRequested || needs.Any(s => IsDone(s) && s != PipelineStatus.Passed))
+                    var job = jobs[name];
+                    switch (action)
                     {
-                        var final = cts.IsCancellationRequested ? PipelineStatus.Canceled : PipelineStatus.Skipped;
-                        await SetJobAsync(job.Id, final, finished: true, steps: final);
-                        status[job.Name] = final;
-                        pending.Remove(job);
-                        Publish(p);
-                    }
-                    else if (needs.All(s => s == PipelineStatus.Passed))
-                    {
-                        pending.Remove(job);
-                        status[job.Name] = PipelineStatus.Running;
-                        runningJobs[RunJobAsync(p, job, repoPath, variables, cts.Token)] = job;
+                        case CiJobAction.Start:
+                            states[name] = states[name] with { Status = PipelineStatus.Running };
+                            runningJobs[RunJobAsync(run, job, cts.Token)] = job;
+                            break;
+                        case CiJobAction.WaitForManual:
+                            await SetJobManualAsync(job.Id, states[name].NeedsApproval);
+                            states[name] = states[name] with { Status = PipelineStatus.Manual };
+                            changed = true;
+                            break;
+                        default:
+                            var final = action == CiJobAction.Skip ? PipelineStatus.Skipped : PipelineStatus.Canceled;
+                            await SetJobAsync(job.Id, final, finished: true, steps: final);
+                            states[name] = states[name] with { Status = final };
+                            changed = true;
+                            break;
                     }
                 }
-                if (runningJobs.Count == 0)
+                if (changed) { Publish(p); continue; } // a newly skipped job may skip more
+                if (runningJobs.Count == 0) break;
+
+                if (cts.IsCancellationRequested) wake = null;
+                else wake ??= queue.WaitForWakeAsync(id, cts.Token);
+                var waitOn = runningJobs.Keys.Cast<Task>().ToList();
+                if (wake != null) waitOn.Add(wake);
+                var done = await Task.WhenAny(waitOn);
+                if (done == wake)
                 {
-                    if (pending.Count == 0) break;
-                    if (pending.Count == before)
+                    // A manual job was played or a job retried while we run: pick up the jobs that changed.
+                    wake = null;
+                    if (cts.IsCancellationRequested) continue;
+                    protectedEnvs = await deployments.ProtectedNamesAsync(p.RepositoryId);
+                    await using var db = await dbFactory.CreateDbContextAsync(CancellationToken.None);
+                    var fresh = await db.PipelineJobs.AsNoTracking().Include(j => j.Steps).Where(j => j.PipelineId == id).ToListAsync(CancellationToken.None);
+                    foreach (var j in fresh.Where(j => states.ContainsKey(j.Name) && states[j.Name].Status != PipelineStatus.Running))
                     {
-                        // No progress possible (can't happen for a validated file, which has no cycles): give up on the rest.
-                        foreach (var job in pending) { await SetJobAsync(job.Id, PipelineStatus.Skipped, finished: true, steps: PipelineStatus.Skipped); status[job.Name] = PipelineStatus.Skipped; }
-                        break;
+                        jobs[j.Name] = j;
+                        states[j.Name] = StateOf(j, protectedEnvs);
                     }
-                    continue; // newly skipped jobs may unblock (skip) more pending ones
+                    continue;
                 }
-                var done = await Task.WhenAny(runningJobs.Keys);
-                status[runningJobs[done].Name] = await done;
-                runningJobs.Remove(done);
+                var finishedJob = (Task<PipelineStatus>)done;
+                states[runningJobs[finishedJob].Name] = states[runningJobs[finishedJob].Name] with { Status = await finishedJob };
+                runningJobs.Remove(finishedJob);
             }
 
-            var result = cts.IsCancellationRequested ? PipelineStatus.Canceled
-                : status.Values.All(s => s == PipelineStatus.Passed) ? PipelineStatus.Passed
-                : PipelineStatus.Failed;
+            var result = CiJobGraph.Result(states.Values, cts.IsCancellationRequested);
             await FinishPipelineAsync(id, result, stoppingToken.IsCancellationRequested ? "Interrupted by a server shutdown." : null);
+            finished = !cts.IsCancellationRequested;
         }
         finally { queue.Unregister(id); }
+
+        // A job may have been played just as we finished (after our last look at the database): run it.
+        if (finished) await ResumeIfPlayedAsync(id);
     }
 
-    private async Task<PipelineStatus> RunJobAsync(Pipeline p, PipelineJob job, string repoPath, CiResolvedVariables variables, CancellationToken ct)
+    private static CiJobState StateOf(PipelineJob j, HashSet<string> protectedEnvs) =>
+        new(j.Name, j.NeedsList.ToList(), j.Status, j.IsManual, j.AllowFailure,
+            NeedsApproval: j.RequiresApproval || j.EnvironmentName != null && protectedEnvs.Contains(j.EnvironmentName),
+            Played: j.PlayedAt != null);
+
+    /// <summary>Queues a finished pipeline again if one of its jobs is ready to start (played or retried).</summary>
+    private async Task ResumeIfPlayedAsync(int id)
     {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var p = await db.Pipelines.AsNoTracking().Include(x => x.Jobs).FirstOrDefaultAsync(x => x.Id == id);
+            if (p == null || !p.IsFinished) return;
+            var protectedEnvs = await deployments.ProtectedNamesAsync(p.RepositoryId);
+            var ready = CiJobGraph.Next(p.Jobs.Select(j => StateOf(j, protectedEnvs)).ToList(), canceled: false)
+                .Any(a => a.Action == CiJobAction.Start);
+            if (!ready) return;
+            var requeued = await db.Pipelines.Where(x => x.Id == id && x.Status != PipelineStatus.Queued && x.Status != PipelineStatus.Running)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Queued));
+            if (requeued > 0) queue.Enqueue(id);
+        }
+        catch (Exception ex) { log.LogWarning(ex, "Could not check pipeline {Id} for played jobs", id); }
+    }
+
+    /// <summary>The CI_PIPELINE_SOURCE value for a trigger.</summary>
+    public static string SourceName(PipelineTrigger t) => t switch
+    {
+        PipelineTrigger.Push => "push",
+        PipelineTrigger.PullRequest => "pull_request",
+        PipelineTrigger.Manual => "manual",
+        PipelineTrigger.Retry => "retry",
+        PipelineTrigger.Schedule => "schedule",
+        _ => t.ToString().ToLowerInvariant(),
+    };
+
+    private async Task<PipelineStatus> RunJobAsync(RunContext run, PipelineJob job, CancellationToken ct)
+    {
+        var (p, repoPath, variables) = (run.Pipeline, run.RepoPath, run.Variables);
         await Task.Yield();
         try { await jobSlots.WaitAsync(ct); }
         catch (OperationCanceledException)
@@ -210,20 +292,29 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
 
         var workspace = Path.Combine(WorkRoot, $"p{p.Id}-j{job.Id}-{Guid.NewGuid().ToString("N")[..8]}");
         var steps = job.Steps.OrderBy(s => s.Order).ToList();
+        var extras = CiJobExtras.Parse(job.ExtrasJson);
         var result = PipelineStatus.Passed;
+        int? deploymentId = null;
+        PipelineStep? lastStarted = null;
         try
         {
             await SetJobAsync(job.Id, PipelineStatus.Running, started: true);
             Publish(p);
+            deploymentId = await deployments.StartAsync(p, job, job.PlayedById ?? p.TriggeredById);
 
+            var preNotes = new List<string>();
             try
             {
                 await Task.Run(() => CiWorkspace.Export(repoPath, p.CommitSha, workspace), ct);
+                // Artifacts of the needed jobs, then the cache (after the checkout, so the key can hash its files).
+                preNotes.AddRange(await artifacts.RestoreNeedsAsync(p, job, workspace));
+                if (extras.Cache is { } cache)
+                    preNotes.AddRange(await caches.RestoreAsync(p.RepositoryId, CiCacheKey.Resolve(cache.Key, workspace), run.ProtectedBranch, workspace));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                log.LogWarning(ex, "Could not export {Sha} for pipeline {Id}", p.CommitSha, p.Id);
-                await FailStepAsync(steps[0], $"Could not check out commit {p.CommitSha[..7]}: {ex.Message}");
+                log.LogWarning(ex, "Could not prepare the workspace of job {Job} in pipeline {Id}", job.Id, p.Id);
+                await FailStepAsync(steps[0], $"Could not prepare the workspace for commit {p.CommitSha[..7]}: {ex.Message}");
                 result = PipelineStatus.Failed;
             }
 
@@ -237,9 +328,35 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                         await SetStepAsync(step.Id, ct.IsCancellationRequested ? PipelineStatus.Canceled : PipelineStatus.Skipped, finished: true);
                     continue;
                 }
-                result = await RunStepAsync(p, job, step, workspace, variables, timeout, ct);
+                lastStarted = step;
+                result = await RunStepAsync(run, job, step, workspace, timeout, ct, step == steps[0] ? preNotes : []);
                 Publish(p);
             }
+
+            // Cache (on success) and artifacts (per artifacts.when); notes go to the last step's log.
+            var postNotes = new List<string>();
+            try
+            {
+                if (result == PipelineStatus.Passed && extras.Cache is { } c)
+                    postNotes.AddRange(await caches.SaveAsync(p.RepositoryId, CiCacheKey.Resolve(c.Key, workspace), run.ProtectedBranch, workspace, c.Paths));
+                if (extras.Artifacts is { } a && CiArtifactStore.ShouldCollect(a.When, result == PipelineStatus.Passed) && Directory.Exists(workspace))
+                {
+                    var (ok, notes) = await artifacts.SaveAsync(p, job, workspace, a);
+                    postNotes.AddRange(notes);
+                    if (!ok && result == PipelineStatus.Passed)
+                    {
+                        postNotes.Add("[gitbench] The job failed because its artifacts could not be saved.");
+                        result = PipelineStatus.Failed;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogWarning(ex, "Saving the cache or artifacts of job {Job} failed", job.Id);
+                postNotes.Add($"[gitbench] Could not save the cache or artifacts: {ex.Message}");
+                if (extras.Artifacts != null && result == PipelineStatus.Passed) result = PipelineStatus.Failed;
+            }
+            if (postNotes.Count > 0 && lastStarted != null) await AppendLogAsync(lastStarted.Id, postNotes, run.Variables);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -249,6 +366,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         finally
         {
             await SetJobAsync(job.Id, result, finished: true);
+            if (deploymentId is { } d) await deployments.FinishAsync(d, result);
             Publish(p);
             jobSlots.Release();
             await DeleteWorkspaceAsync(workspace, job.Image);
@@ -256,9 +374,21 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         return result;
     }
 
-    private async Task<PipelineStatus> RunStepAsync(Pipeline p, PipelineJob job, PipelineStep step, string workspace,
-        CiResolvedVariables variables, CancellationTokenSource timeout, CancellationToken canceled)
+    /// <summary>Adds lines to a finished step's log (masked like the rest).</summary>
+    private async Task AppendLogAsync(int stepId, IEnumerable<string> lines, CiResolvedVariables variables)
     {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var log = await db.PipelineStepLogs.FirstOrDefaultAsync(l => l.StepId == stepId);
+        if (log == null) return;
+        var masker = new CiSecretMasker(variables.Values.Values);
+        log.Text = masker.Mask(log.Text + "\n" + string.Join("\n", lines));
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<PipelineStatus> RunStepAsync(RunContext run, PipelineJob job, PipelineStep step, string workspace,
+        CancellationTokenSource timeout, CancellationToken canceled, IReadOnlyList<string> preNotes)
+    {
+        var (p, variables) = (run.Pipeline, run.Variables);
         await SetStepAsync(step.Id, PipelineStatus.Running, started: true);
         var buffer = new LogBuffer(Options.MaxLogChars, new CiSecretMasker(variables.Values.Values));
         await using (var db = await dbFactory.CreateDbContextAsync(CancellationToken.None))
@@ -273,6 +403,9 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         buffer.Append($"[gitbench] image {job.Image}");
         foreach (var note in variables.Notes) buffer.Append(note);
         if (variables.Values.Count > 0) buffer.Append($"[gitbench] CI variables: {string.Join(", ", variables.Values.Keys.Order(StringComparer.Ordinal))}");
+        if (run.PipelineVariables.Count > 0) buffer.Append($"[gitbench] Pipeline variables: {string.Join(", ", run.PipelineVariables.Keys.Order(StringComparer.Ordinal))}");
+        if (job.EnvironmentName != null) buffer.Append($"[gitbench] Deploying to environment '{job.EnvironmentName}'.");
+        foreach (var note in preNotes) buffer.Append(note);
         Publish(p);
 
         using var flushStop = new CancellationTokenSource();
@@ -287,8 +420,11 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             catch (OperationCanceledException) { }
         });
 
-        var envFile = variables.Values.Count > 0 ? WriteEnvFile(step.Id, variables.Values) : null;
-        var spec = new CiContainerSpec($"gitbench-ci-{step.Id}", job.Image, step.Run, workspace, new Dictionary<string, string>
+        // Secret CI variables, then the pipeline's own (schedule) variables, which win on a clash.
+        var fileValues = new Dictionary<string, string>(variables.Values, StringComparer.Ordinal);
+        foreach (var (k, v) in run.PipelineVariables) fileValues[k] = v;
+        var envFile = fileValues.Count > 0 ? WriteEnvFile(step.Id, fileValues) : null;
+        var env = new Dictionary<string, string>
         {
             ["CI"] = "true",
             ["GITBENCH_CI"] = "true",
@@ -297,7 +433,12 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             ["GITBENCH_REF"] = p.Ref,
             ["GITBENCH_COMMIT_SHA"] = p.CommitSha,
             ["GITBENCH_REPOSITORY"] = $"{p.Repository.Project.Key}/{p.Repository.Slug}",
-        }, envFile);
+            ["GITBENCH_PIPELINE_SOURCE"] = SourceName(p.Trigger),
+            ["CI_PIPELINE_SOURCE"] = SourceName(p.Trigger),
+        };
+        if (job.EnvironmentName != null) env["CI_ENVIRONMENT_NAME"] = job.EnvironmentName;
+        if (job.EnvironmentUrl != null) env["CI_ENVIRONMENT_URL"] = job.EnvironmentUrl;
+        var spec = new CiContainerSpec($"gitbench-ci-{step.Id}", job.Image, step.Run, workspace, env, envFile);
 
         PipelineStatus status;
         int? exit = null;
@@ -397,10 +538,18 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         }
         Publish(p);
         log.LogInformation("Pipeline {Id} ({Key}/{Slug} {Ref}) finished: {Status}", id, p.Repository.Project.Key, p.Repository.Slug, p.Ref, status);
+        if (status == PipelineStatus.Manual) return; // blocked on a manual job: not completed yet, so no webhook or notification
         if (status is PipelineStatus.Failed or PipelineStatus.Error) await NotifyFailedAsync(p);
         RaiseWebhook(p);
         if (status is PipelineStatus.Passed or PipelineStatus.Failed or PipelineStatus.Error) // automation: "pipeline passed/failed" triggers
             automation.Enqueue(new(Automation.AutomationEventKind.PipelineCompleted, p.TriggeredById ?? 0) { PipelineId = p.Id, PipelinePassed = status == PipelineStatus.Passed });
+    }
+
+    private async Task SetJobManualAsync(int jobId, bool requiresApproval)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.PipelineJobs.Where(j => j.Id == jobId).ExecuteUpdateAsync(s => s
+            .SetProperty(j => j.Status, PipelineStatus.Manual).SetProperty(j => j.RequiresApproval, requiresApproval));
     }
 
     /// <summary>Sends the <c>pipeline.completed</c> webhook event for a finished pipeline.</summary>

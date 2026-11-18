@@ -135,10 +135,19 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     /// given, waits (Queued, not enqueued) until a Maintainer approves it (<see cref="PipelineService.ApproveAsync"/>).
     /// </summary>
     public async Task<int?> CreateAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? userId,
-        int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default, bool forkPullRequest = false, int? approvedById = null)
+        int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default, bool forkPullRequest = false, int? approvedById = null,
+        int? scheduleId = null, IReadOnlyDictionary<string, string>? variables = null)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var commit = await Task.Run(() => GitOps.GetCommit(path, sha), ct);
+
+        // rules/only: the jobs that run on this branch. None at all: no pipeline (an error for manual runs).
+        var (jobs, jobsError) = def.Definition?.ForBranch(branch) ?? ([], null);
+        if (def.Definition != null && jobsError == null && jobs.Count == 0)
+        {
+            if (dedupe) return null;
+            throw new InvalidOperationException($"No job in {CiFile.FileName} runs on branch '{branch}' (see the jobs' rules).");
+        }
 
         Pipeline p;
         await CreateGate.WaitAsync(ct);
@@ -152,13 +161,20 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
                 TriggeredById = userId, CommitMessage = Truncate(commit?.MessageShort, 200), CreatedAt = DateTime.UtcNow,
                 IsForkPullRequest = forkPullRequest, AwaitingApproval = forkPullRequest && approvedById == null,
                 ApprovedById = forkPullRequest ? approvedById : null, ApprovedAt = forkPullRequest && approvedById != null ? DateTime.UtcNow : null,
+                // A fork PR pipeline never carries extra variables (it gets no CI or schedule variables of the upstream).
+                ScheduleId = scheduleId, VariablesJson = forkPullRequest ? null : CiJobExtras.SerializeVariables(variables),
             };
-            if (def.Definition is { } d)
+            if (def.Definition != null && jobsError == null)
             {
                 var order = 0;
-                foreach (var j in d.Jobs)
+                foreach (var j in jobs)
                 {
-                    var job = new PipelineJob { Name = j.Name, Image = j.Image, Needs = string.Join(",", j.Needs), Order = order++ };
+                    var job = new PipelineJob
+                    {
+                        Name = j.Name, Image = j.Image, Needs = string.Join(",", j.Needs), Order = order++,
+                        IsManual = j.When == CiJobWhen.Manual, AllowFailure = j.AllowFailure,
+                        EnvironmentName = j.Environment?.Name, EnvironmentUrl = j.Environment?.Url, ExtrasJson = CiJobExtras.Serialize(j),
+                    };
                     var n = 0;
                     foreach (var s in j.Steps) job.Steps.Add(new PipelineStep { Order = n++, Name = s.Name, Run = s.Run });
                     p.Jobs.Add(job);
@@ -167,7 +183,7 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
             else
             {
                 p.Status = PipelineStatus.Error;
-                p.Error = def.Error;
+                p.Error = jobsError ?? def.Error;
                 p.FinishedAt = p.CreatedAt;
             }
 

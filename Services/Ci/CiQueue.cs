@@ -16,8 +16,26 @@ public class CiQueue
 
     public void Enqueue(int pipelineId) => channel.Writer.TryWrite(pipelineId);
 
+    private readonly ConcurrentDictionary<int, SemaphoreSlim> wakes = new();
+
     internal void Register(int pipelineId, CancellationTokenSource cts) => running[pipelineId] = cts;
-    internal void Unregister(int pipelineId) => running.TryRemove(pipelineId, out _);
+    internal void Unregister(int pipelineId)
+    {
+        running.TryRemove(pipelineId, out _);
+        wakes.TryRemove(pipelineId, out _);
+    }
+
+    /// <summary>Completes when <see cref="Wake"/> is called for the pipeline (a job was played or retried while it runs).</summary>
+    internal Task WaitForWakeAsync(int pipelineId, CancellationToken ct) =>
+        wakes.GetOrAdd(pipelineId, _ => new SemaphoreSlim(0)).WaitAsync(ct);
+
+    /// <summary>Tells a running pipeline to re-read its jobs. False if it isn't running here.</summary>
+    public bool Wake(int pipelineId)
+    {
+        if (!running.ContainsKey(pipelineId)) return false;
+        wakes.GetOrAdd(pipelineId, _ => new SemaphoreSlim(0)).Release();
+        return true;
+    }
 
     /// <summary>Signals a running pipeline to stop (its containers are killed). False if it isn't running here.</summary>
     public bool TryCancelRunning(int pipelineId)

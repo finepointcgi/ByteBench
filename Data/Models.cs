@@ -391,11 +391,11 @@ public class PullRequestReviewer
 
 // ----- Pipelines -----
 
-/// <summary>Status of a pipeline, job or step. <see cref="Skipped"/> is used for jobs and steps only.</summary>
-public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, Skipped }
+/// <summary>Status of a pipeline, job or step. <see cref="Skipped"/> is used for jobs and steps only. <see cref="Manual"/>: a job waits for someone to run it; a pipeline is blocked by such a job (see CI extras).</summary>
+public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, Skipped, Manual }
 
 /// <summary>What started a pipeline.</summary>
-public enum PipelineTrigger { Push, PullRequest, Manual, Retry }
+public enum PipelineTrigger { Push, PullRequest, Manual, Retry, Schedule }
 
 /// <summary>One CI run of <c>.gitbench-ci.yml</c> at a commit on a branch. Run by <see cref="GitBench.Services.Ci.CiRunner"/>.</summary>
 public partial class Pipeline
@@ -422,7 +422,7 @@ public partial class Pipeline
     public bool IsFinished => Status is not (PipelineStatus.Queued or PipelineStatus.Running);
 }
 
-public class PipelineJob
+public partial class PipelineJob
 {
     public int Id { get; set; }
     public int PipelineId { get; set; }
@@ -1721,4 +1721,121 @@ public partial class Project
 {
     /// <summary>Working hours in a day for time tracking ("1d"). A week is 5 days.</summary>
     [Range(1, 24)] public int HoursPerDay { get; set; } = 8;
+}
+
+// ----- CI extras -----
+
+public partial class Pipeline
+{
+    /// <summary>The schedule that started this pipeline (<see cref="PipelineTrigger.Schedule"/>).</summary>
+    public int? ScheduleId { get; set; }
+    /// <summary>Extra (non-secret) variables for every job, as a JSON object: a schedule's variables.</summary>
+    public string? VariablesJson { get; set; }
+}
+
+public partial class PipelineJob
+{
+    /// <summary><c>when: manual</c> (after rules): waits in <see cref="PipelineStatus.Manual"/> until someone runs it.</summary>
+    public bool IsManual { get; set; }
+    /// <summary>A failure (or a manual job left waiting) doesn't fail or block the pipeline.</summary>
+    public bool AllowFailure { get; set; }
+    /// <summary>Set by the runner when the job targets a protected environment: only Maintainers can run it.</summary>
+    public bool RequiresApproval { get; set; }
+    /// <summary><c>environment.name</c>: running the job records a <see cref="Deployment"/>.</summary>
+    [MaxLength(64)] public string? EnvironmentName { get; set; }
+    [MaxLength(500)] public string? EnvironmentUrl { get; set; }
+    /// <summary>The job's <c>artifacts</c> and <c>cache</c> settings as JSON (<c>CiJobExtras</c>).</summary>
+    public string? ExtrasJson { get; set; }
+    /// <summary>Who last clicked Run (manual job) or Retry; deployments are recorded as this user.</summary>
+    public int? PlayedById { get; set; }
+    public User? PlayedBy { get; set; }
+    public DateTime? PlayedAt { get; set; }
+}
+
+/// <summary>A job's artifacts: one zip under <c>Ci:ArtifactsRoot</c>.</summary>
+public class PipelineArtifact
+{
+    public int Id { get; set; }
+    public int JobId { get; set; }
+    public PipelineJob Job { get; set; } = null!;
+    public int PipelineId { get; set; }
+    public int RepositoryId { get; set; }
+    /// <summary>File name under the artifacts root (<c>{repoId}/{guid}.zip</c>).</summary>
+    [Required, MaxLength(200)] public string StoredName { get; set; } = "";
+    public long SizeBytes { get; set; }
+    public int FileCount { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Null: never expires.</summary>
+    public DateTime? ExpiresAt { get; set; }
+    /// <summary>Pinned: not deleted when it expires.</summary>
+    public bool Keep { get; set; }
+}
+
+/// <summary>A saved cache (zip under <c>Ci:CacheRoot</c>) for a repository, key and scope.</summary>
+public class CiCacheEntry
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    /// <summary>The resolved key (after hashFiles).</summary>
+    [Required, MaxLength(200)] public string Key { get; set; } = "";
+    /// <summary>Written by a pipeline on a protected branch. Unprotected branches neither read nor write these.</summary>
+    public bool IsProtected { get; set; }
+    [Required, MaxLength(200)] public string StoredName { get; set; } = "";
+    public long SizeBytes { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastUsedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>A cron schedule that runs a repository's pipeline on a branch, as its owner.</summary>
+public class PipelineSchedule
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    [Required, MaxLength(200)] public string Description { get; set; } = "";
+    [Required, MaxLength(100)] public string Cron { get; set; } = "";
+    [Required, MaxLength(250)] public string Branch { get; set; } = "";
+    /// <summary>Variables for the pipeline (JSON object). Not secret: shown to Maintainers.</summary>
+    public string? VariablesJson { get; set; }
+    public bool Active { get; set; } = true;
+    /// <summary>Pipelines run as this user (the last person who saved the schedule).</summary>
+    public int? OwnerId { get; set; }
+    public User? Owner { get; set; }
+    public DateTime? NextRunAt { get; set; }
+    public DateTime? LastRunAt { get; set; }
+    public int? LastPipelineId { get; set; }
+    /// <summary>Why the last run didn't start a pipeline, if it didn't.</summary>
+    [MaxLength(500)] public string? LastError { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>A deployment target of a repository, created when a job first names it in <c>environment:</c>.</summary>
+public class CiEnvironment
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    [Required, MaxLength(64)] public string Name { get; set; } = "";
+    [MaxLength(500)] public string? ExternalUrl { get; set; }
+    /// <summary>Only Maintainers can run jobs that deploy here; such jobs always wait for their approval.</summary>
+    public bool IsProtected { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>One run of a job that targets an environment.</summary>
+public class Deployment
+{
+    public int Id { get; set; }
+    public int EnvironmentId { get; set; }
+    public CiEnvironment Environment { get; set; } = null!;
+    public int PipelineId { get; set; }
+    public int JobId { get; set; }
+    public PipelineJob Job { get; set; } = null!;
+    [Required, MaxLength(40)] public string CommitSha { get; set; } = "";
+    [Required, MaxLength(250)] public string Ref { get; set; } = "";
+    public int? UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>Running, then Passed, Failed or Canceled.</summary>
+    public PipelineStatus Status { get; set; } = PipelineStatus.Running;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? FinishedAt { get; set; }
 }

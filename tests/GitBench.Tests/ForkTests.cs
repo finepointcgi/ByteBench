@@ -346,3 +346,145 @@ public class ForkPipelineTests(CiApp app) : IClassFixture<CiApp>
         }
     }
 }
+
+/// <summary>Fork PR pipelines that use CI extras (artifacts, cache, manual jobs), with a docker CLI that doesn't exist.</summary>
+public class ForkPipelineExtrasTests(CiNoDockerApp app) : IClassFixture<CiNoDockerApp>
+{
+    private const string ExtrasYaml = """
+        jobs:
+          build:
+            cache: { key: deps, paths: [cache/] }
+            artifacts: { paths: [dist/] }
+            steps: [ { run: "mkdir -p dist cache && echo x > dist/out" } ]
+          deploy:
+            needs: [build]
+            when: manual
+            allow_failure: false
+            environment: { name: production }
+            steps: [ { run: echo deploy } ]
+        """;
+
+    private async Task<(Repository Upstream, PullRequest Pr)> ForkPrAsync()
+    {
+        var upstreamProject = await app.CreateProjectAsync("carol", ProjectVisibility.Internal, ("dan", ProjectRole.Developer));
+        var upstream = await app.CreateRepoAsync(upstreamProject.Id, "carol");
+        var bobs = await app.CreateProjectAsync("bob");
+        Repository fork;
+        await using (var s = app.Scope(app.UserId("bob")))
+        {
+            var f = await s.Get<ForkService>().ForkAsync(upstream, bobs.Id, null, null, app.User("bob"));
+            fork = (await s.Get<RepositoryService>().GetRepositoryAsync(bobs.Key, f.Slug))!;
+        }
+        app.Commit(fork, "feature/ci", CiFile.FileName, ExtrasYaml);
+        PullRequest pr;
+        await using (var s = app.Scope(app.UserId("bob")))
+            pr = await s.Get<ForkService>().CreatePullRequestAsync(fork, "feature/ci", upstream, "main", "CI from fork", null, app.UserId("bob"));
+        return (upstream, pr);
+    }
+
+    private async Task<Pipeline> WaitForPipelineAsync(Func<Pipeline, bool> match)
+    {
+        for (var i = 0; i < 200; i++)
+        {
+            await using (var db = app.Db())
+            {
+                var p = (await db.Pipelines.AsNoTracking().Include(x => x.Jobs).ToListAsync()).FirstOrDefault(match);
+                if (p != null) return p;
+            }
+            await Task.Delay(50);
+        }
+        throw new Xunit.Sdk.XunitException("The pipeline didn't show up.");
+    }
+
+    private async Task<Pipeline> ReloadAsync(int id)
+    {
+        await using var db = app.Db();
+        return await db.Pipelines.AsNoTracking().Include(x => x.Jobs).FirstAsync(x => x.Id == id);
+    }
+
+    [Fact]
+    public async Task Fork_PR_pipeline_with_artifacts_cache_and_manual_jobs_still_waits_for_approval()
+    {
+        var (upstream, pr) = await ForkPrAsync();
+        var p = await WaitForPipelineAsync(x => x.PullRequestId == pr.Id);
+        Assert.True(p.IsForkPullRequest);
+        Assert.True(p.AwaitingApproval);
+        Assert.Null(p.VariablesJson);
+        var deploy = p.Jobs.Single(j => j.Name == "deploy");
+        Assert.True(deploy.IsManual);
+        Assert.Equal("production", deploy.EnvironmentName);
+        Assert.NotNull(p.Jobs.Single(j => j.Name == "build").ExtrasJson);
+
+        // Even when queued again (as a played manual job or a retry would), the runner leaves it alone: with this
+        // app's missing docker CLI, starting it would end it in Error at once.
+        app.Services.GetRequiredService<CiQueue>().Enqueue(p.Id);
+        await Task.Delay(1500);
+        var still = await ReloadAsync(p.Id);
+        Assert.Equal(PipelineStatus.Queued, still.Status);
+        Assert.Null(still.StartedAt);
+        Assert.True(still.AwaitingApproval);
+
+        // Playing its manual job is no way around the approval: the job isn't waiting yet.
+        await using (var s = app.Scope(app.UserId("carol")))
+            await Assert.ThrowsAsync<InvalidOperationException>(() => s.Get<PipelineService>().PlayJobAsync(upstream, p.Id, deploy.Id));
+
+        // Approved: the runner picks it up (and stops at the missing docker).
+        await using (var s = app.Scope(app.UserId("carol")))
+            await s.Get<PipelineService>().ApproveAsync(upstream, p.Id);
+        for (var i = 0; i < 100 && (await ReloadAsync(p.Id)).Status == PipelineStatus.Queued; i++) await Task.Delay(50);
+        var ran = await ReloadAsync(p.Id);
+        Assert.Equal(PipelineStatus.Error, ran.Status);
+        Assert.NotNull(ran.StartedAt);
+    }
+
+    [Fact]
+    public async Task Rerunning_a_fork_PR_pipeline_keeps_the_fork_flag_and_never_carries_variables()
+    {
+        var (upstream, pr) = await ForkPrAsync();
+        var p = await WaitForPipelineAsync(x => x.PullRequestId == pr.Id);
+        // Even if a fork pipeline somehow carried pipeline (schedule) variables, a re-run doesn't pass them on.
+        await using (var db = app.Db())
+            await db.Pipelines.Where(x => x.Id == p.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.VariablesJson, "{\"MODE\":\"nightly\"}"));
+
+        int byDeveloper, byMaintainer;
+        await using (var s = app.Scope(app.UserId("dan")))
+            byDeveloper = await s.Get<PipelineService>().RerunAsync(upstream, p.Id);
+        await using (var s = app.Scope(app.UserId("carol")))
+            byMaintainer = await s.Get<PipelineService>().RerunAsync(upstream, p.Id);
+
+        var dev = await ReloadAsync(byDeveloper);
+        Assert.True(dev.IsForkPullRequest);
+        Assert.True(dev.AwaitingApproval); // a Developer's re-run still waits
+        Assert.Null(dev.ApprovedById);
+        Assert.Null(dev.VariablesJson);
+
+        var maintainer = await ReloadAsync(byMaintainer);
+        Assert.True(maintainer.IsForkPullRequest);
+        Assert.False(maintainer.AwaitingApproval); // a Maintainer's re-run is their approval
+        Assert.Equal(app.UserId("carol"), maintainer.ApprovedById);
+        Assert.Null(maintainer.VariablesJson);
+    }
+
+    [Fact]
+    public async Task Fork_pipelines_never_use_the_protected_cache_scope()
+    {
+        var fork = new Pipeline { IsForkPullRequest = true };
+        var normal = new Pipeline();
+        Assert.False(CiCacheStore.UsesProtectedScope(fork, refIsProtected: true));
+        Assert.False(CiCacheStore.UsesProtectedScope(fork, refIsProtected: false));
+        Assert.True(CiCacheStore.UsesProtectedScope(normal, refIsProtected: true));
+        Assert.False(CiCacheStore.UsesProtectedScope(normal, refIsProtected: false));
+
+        // CiTriggerService drops variables for a fork PR pipeline at creation, too.
+        var (upstream, pr) = await ForkPrAsync();
+        var existing = await WaitForPipelineAsync(x => x.PullRequestId == pr.Id);
+        await using var s = app.Scope(system: true);
+        var triggers = s.Get<CiTriggerService>();
+        var def = (await triggers.LoadDefinitionAsync(upstream, existing.CommitSha))!;
+        var id = await triggers.CreateAsync(upstream, existing.Ref, existing.CommitSha, PipelineTrigger.PullRequest, app.UserId("bob"), pr.Id, def,
+            dedupe: false, forkPullRequest: true, variables: new Dictionary<string, string> { ["MODE"] = "nightly" });
+        var created = await ReloadAsync(id!.Value);
+        Assert.True(created.AwaitingApproval);
+        Assert.Null(created.VariablesJson);
+    }
+}

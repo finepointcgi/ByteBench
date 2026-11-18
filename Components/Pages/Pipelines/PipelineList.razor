@@ -28,6 +28,10 @@ else if (Repo != null)
             </MudSelect>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Disabled="@busy" OnClick="Run">Run pipeline</MudButton>
         }
+        @if (perms.Can(Permission.ManageRepositories))
+        {
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Schedule" Href="@PipelineUrls.Schedules(Repo)">Schedules</MudButton>
+        }
         <span class="toolbar-note muted small">Pipelines run <span class="mono">@CiFile.FileName</span> from the repository root.</span>
     </div>
     @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }

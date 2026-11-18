@@ -12,12 +12,17 @@ public sealed record PipelinePage(List<Pipeline> Items, int Total, int Page, int
     public int Pages => Math.Max(1, (Total + PageSize - 1) / PageSize);
 }
 
+/// <summary>An artifact as the pipeline page shows it.</summary>
+public sealed record PipelineArtifactInfo(PipelineArtifact Artifact, string JobName);
+
 /// <summary>
 /// Pipeline reads and actions for the UI (scoped). Reads need ViewProject (otherwise they come back empty);
-/// "Run pipeline", "Re-run" and "Cancel" need PushCode.
+/// "Run pipeline", "Re-run", "Cancel", running a manual job, retrying a job and keeping artifacts need PushCode.
+/// Running or retrying a job that deploys to a protected environment needs ManageRepositories (Maintainer+).
 /// </summary>
 public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, CiTriggerService triggers,
-    CiQueue queue, RepoStorage storage, LiveEvents live)
+    CiQueue queue, RepoStorage storage, LiveEvents live, CiStorage ciStorage, CiArtifactStore artifactStore,
+    CiDeploymentRecorder deployments)
 {
     public bool Enabled => triggers.Enabled;
 
@@ -121,7 +126,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         await using var db = await dbFactory.CreateDbContextAsync();
         var old = await db.Pipelines.FirstOrDefaultAsync(p => p.Id == pipelineId && p.RepositoryId == repo.Id)
             ?? throw new InvalidOperationException("Pipeline not found.");
-        return await CreateManualAsync(repo, old.Ref, old.CommitSha, PipelineTrigger.Retry, old.PullRequestId, old.IsForkPullRequest);
+        return await CreateManualAsync(repo, old.Ref, old.CommitSha, PipelineTrigger.Retry, old.PullRequestId, old.IsForkPullRequest, old.VariablesJson);
     }
 
     /// <summary>Cancels a queued or running pipeline (running containers are killed). Needs PushCode.</summary>
@@ -132,15 +137,15 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         if (!await db.Pipelines.AnyAsync(p => p.Id == pipelineId && p.RepositoryId == repo.Id))
             throw new InvalidOperationException("Pipeline not found.");
 
-        // Still queued: cancel in the database; the runner skips anything that is no longer Queued.
+        // Still queued, or blocked on a manual job: cancel in the database; the runner skips anything that is no longer Queued.
         var now = DateTime.UtcNow;
-        var canceled = await db.Pipelines.Where(p => p.Id == pipelineId && p.Status == PipelineStatus.Queued)
+        var canceled = await db.Pipelines.Where(p => p.Id == pipelineId && (p.Status == PipelineStatus.Queued || p.Status == PipelineStatus.Manual))
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PipelineStatus.Canceled).SetProperty(p => p.FinishedAt, now));
         if (canceled > 0)
         {
             await db.PipelineSteps.Where(s => s.Job.PipelineId == pipelineId && s.Status == PipelineStatus.Queued)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Canceled).SetProperty(x => x.FinishedAt, now));
-            await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && j.Status == PipelineStatus.Queued)
+            await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && (j.Status == PipelineStatus.Queued || j.Status == PipelineStatus.Manual))
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Canceled).SetProperty(x => x.FinishedAt, now));
             live.Publish(new PipelineChanged(pipelineId, repo.Id));
             return;
@@ -149,7 +154,156 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
             throw new InvalidOperationException("This pipeline is not running.");
     }
 
-    private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null, bool forkPullRequest = false)
+    // ----------------------------------------------------------------- CI extras: manual jobs, retries, artifacts, schedules
+
+    /// <summary>
+    /// "Run" on a job waiting in Manual: it is queued and the pipeline resumes. Needs PushCode; if the job deploys to a
+    /// protected environment, ManageRepositories (the click is the Maintainer's approval).
+    /// </summary>
+    public async Task PlayJobAsync(Repository repo, int pipelineId, int jobId)
+    {
+        await access.RequireAsync(repo.ProjectId, Permission.PushCode);
+        EnsureEnabled();
+        var job = await LoadJobAsync(repo, pipelineId, jobId);
+        if (job.Status != PipelineStatus.Manual) throw new InvalidOperationException($"Job '{job.Name}' isn't waiting to be run.");
+        await RequireEnvironmentAccessAsync(repo, job);
+
+        var me = await access.ResolveUserIdAsync();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var n = await db.PipelineJobs.Where(j => j.Id == jobId && j.Status == PipelineStatus.Manual)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued)
+                .SetProperty(j => j.PlayedById, me).SetProperty(j => j.PlayedAt, DateTime.UtcNow));
+        if (n == 0) throw new InvalidOperationException($"Job '{job.Name}' isn't waiting to be run.");
+        await ResumeAsync(repo, pipelineId);
+    }
+
+    /// <summary>
+    /// Runs a finished job again in the same pipeline (its logs and artifacts are replaced; jobs that already ran after
+    /// it are left as they are). Used for "Retry" and an environment's "Redeploy". Needs PushCode, and ManageRepositories
+    /// for a protected environment.
+    /// </summary>
+    public async Task RetryJobAsync(Repository repo, int pipelineId, int jobId)
+    {
+        await access.RequireAsync(repo.ProjectId, Permission.PushCode);
+        EnsureEnabled();
+        var job = await LoadJobAsync(repo, pipelineId, jobId);
+        if (job.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual)
+            throw new InvalidOperationException($"Job '{job.Name}' hasn't finished yet.");
+        await RequireEnvironmentAccessAsync(repo, job);
+
+        var me = await access.ResolveUserIdAsync();
+        await artifactStore.DeleteForJobAsync(jobId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var now = DateTime.UtcNow;
+        var n = await db.PipelineJobs.Where(j => j.Id == jobId && j.Status != PipelineStatus.Queued && j.Status != PipelineStatus.Running && j.Status != PipelineStatus.Manual)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued)
+                .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null)
+                .SetProperty(j => j.PlayedById, me).SetProperty(j => j.PlayedAt, now));
+        if (n == 0) throw new InvalidOperationException($"Job '{job.Name}' hasn't finished yet.");
+        await db.PipelineSteps.Where(s => s.JobId == jobId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Queued).SetProperty(x => x.ExitCode, (int?)null)
+                .SetProperty(x => x.StartedAt, (DateTime?)null).SetProperty(x => x.FinishedAt, (DateTime?)null));
+        await db.PipelineStepLogs.Where(l => db.PipelineSteps.Any(s => s.Id == l.StepId && s.JobId == jobId))
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.Text, "").SetProperty(l => l.Truncated, false));
+        await ResumeAsync(repo, pipelineId);
+    }
+
+    /// <summary>Wakes the pipeline if it is running here, otherwise queues it again.</summary>
+    private async Task ResumeAsync(Repository repo, int pipelineId)
+    {
+        if (!queue.Wake(pipelineId))
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var requeued = await db.Pipelines.Where(p => p.Id == pipelineId && p.Status != PipelineStatus.Queued && p.Status != PipelineStatus.Running)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, PipelineStatus.Queued).SetProperty(p => p.Error, (string?)null));
+            if (requeued > 0) queue.Enqueue(pipelineId);
+        }
+        live.Publish(new PipelineChanged(pipelineId, repo.Id));
+    }
+
+    private async Task<PipelineJob> LoadJobAsync(Repository repo, int pipelineId, int jobId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.PipelineJobs.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == jobId && j.PipelineId == pipelineId && j.Pipeline.RepositoryId == repo.Id)
+            ?? throw new InvalidOperationException("Job not found.");
+    }
+
+    /// <summary>Jobs that deploy to a protected environment can only be run by Maintainers and Owners.</summary>
+    private async Task RequireEnvironmentAccessAsync(Repository repo, PipelineJob job)
+    {
+        var isProtected = job.RequiresApproval
+            || job.EnvironmentName != null && (await deployments.ProtectedNamesAsync(repo.Id)).Contains(job.EnvironmentName);
+        if (isProtected && !await access.CanAsync(repo.ProjectId, Permission.ManageRepositories))
+            throw new ForbiddenException($"Only Maintainers can run jobs that deploy to the protected environment '{job.EnvironmentName}'.");
+    }
+
+    /// <summary>True if the acting user may run (or retry) <paramref name="job"/>, for showing its buttons.</summary>
+    public static bool CanRun(PipelineJob job, ProjectPermissions perms, ISet<string> protectedEnvironments) =>
+        perms.Can(Permission.PushCode) && (!(job.RequiresApproval || job.EnvironmentName != null && protectedEnvironments.Contains(job.EnvironmentName))
+            || perms.Can(Permission.ManageRepositories));
+
+    /// <summary>The repository's protected environment names (for <see cref="CanRun"/>).</summary>
+    public Task<HashSet<string>> ProtectedEnvironmentsAsync(Repository repo) => deployments.ProtectedNamesAsync(repo.Id);
+
+    /// <summary>The pipeline's artifacts, one per job that saved some.</summary>
+    public async Task<List<PipelineArtifactInfo>> ListArtifactsAsync(Repository repo, int pipelineId)
+    {
+        if (!await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return [];
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return (await db.PipelineArtifacts.AsNoTracking().Include(a => a.Job)
+                .Where(a => a.PipelineId == pipelineId && a.RepositoryId == repo.Id).ToListAsync())
+            .OrderBy(a => a.Job.Order).Select(a => new PipelineArtifactInfo(a, a.Job.Name)).ToList();
+    }
+
+    /// <summary>A job's artifact and the path of its zip, if the user can view it and the file still exists.</summary>
+    public async Task<(PipelineArtifact Artifact, string JobName, string Path)?> GetArtifactAsync(Repository repo, int pipelineId, int jobId)
+    {
+        if (!await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return null;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var a = await db.PipelineArtifacts.AsNoTracking().Include(x => x.Job)
+            .FirstOrDefaultAsync(x => x.JobId == jobId && x.PipelineId == pipelineId && x.RepositoryId == repo.Id);
+        if (a == null) return null;
+        var path = ciStorage.ArtifactPath(a.StoredName);
+        return File.Exists(path) ? (a, a.Job.Name, path) : null;
+    }
+
+    /// <summary>The files in a job's artifact zip.</summary>
+    public async Task<List<(string Path, long Size)>> ListArtifactFilesAsync(Repository repo, int pipelineId, int jobId)
+    {
+        if (await GetArtifactAsync(repo, pipelineId, jobId) is not { } a) return [];
+        return await Task.Run(() => CiArtifacts.ListZip(a.Path));
+    }
+
+    /// <summary>"Keep": a kept artifact is not deleted when it expires. Needs PushCode.</summary>
+    public async Task SetArtifactKeepAsync(Repository repo, int artifactId, bool keep)
+    {
+        await access.RequireAsync(repo.ProjectId, Permission.PushCode);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var n = await db.PipelineArtifacts.Where(a => a.Id == artifactId && a.RepositoryId == repo.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Keep, keep));
+        if (n == 0) throw new InvalidOperationException("Those artifacts no longer exist.");
+    }
+
+    /// <summary>
+    /// Starts a scheduled pipeline (internal: the caller checked that the schedule's owner may push). Returns the new
+    /// pipeline's id; throws if the branch or the pipeline file is missing.
+    /// </summary>
+    internal async Task<int> RunScheduledAsync(Repository repo, PipelineSchedule schedule, int ownerId)
+    {
+        EnsureEnabled();
+        var path = storage.PathFor(repo.Project.Key, repo.Slug);
+        var sha = await Task.Run(() => GitOps.BranchExists(path, schedule.Branch) ? GitOps.ResolveSha(path, schedule.Branch) : null)
+            ?? throw new InvalidOperationException($"Branch '{schedule.Branch}' does not exist.");
+        var def = await triggers.LoadDefinitionAsync(repo, sha)
+            ?? throw new InvalidOperationException($"There is no {CiFile.FileName} at the root of '{schedule.Branch}' ({sha[..7]}).");
+        return await triggers.CreateAsync(repo, schedule.Branch, sha, PipelineTrigger.Schedule, ownerId, null, def, dedupe: false,
+                   scheduleId: schedule.Id, variables: CiJobExtras.ParseVariables(schedule.VariablesJson))
+               ?? throw new InvalidOperationException("The pipeline could not be created.");
+    }
+
+    private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null,
+        bool forkPullRequest = false, string? variablesJson = null)
     {
         var def = await triggers.LoadDefinitionAsync(repo, sha)
             ?? throw new InvalidOperationException($"There is no {CiFile.FileName} at the root of '{branch}' ({sha[..7]}).");
@@ -162,7 +316,8 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         var userId = await access.ResolveUserIdAsync();
         // Re-running a fork PR's pipeline: a Maintainer's re-run counts as their approval; anyone else's waits for one.
         int? approvedBy = forkPullRequest && await access.CanAsync(repo.ProjectId, Permission.MergePullRequest) ? userId : null;
-        return await triggers.CreateAsync(repo, branch, sha, trigger, userId, prId, def, dedupe: false, forkPullRequest: forkPullRequest, approvedById: approvedBy)
+        return await triggers.CreateAsync(repo, branch, sha, trigger, userId, prId, def, dedupe: false, forkPullRequest: forkPullRequest, approvedById: approvedBy,
+                   variables: forkPullRequest ? null : CiJobExtras.ParseVariables(variablesJson))
             ?? throw new InvalidOperationException("The pipeline could not be created.");
     }
 

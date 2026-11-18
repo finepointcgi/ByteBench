@@ -1,0 +1,93 @@
+@* Jobs as a graph: one column per stage (depth in the needs graph), lines from each need to the job that needs it.
+   Cards have a fixed size so the connector lines can be computed here, without JavaScript. *@
+@using GitBench.Services.Ci
+
+<div class="ci-graph-scroll">
+    <div class="ci-graph" style="width: @(Width)px; height: @(Height)px">
+        <svg class="ci-graph-lines" width="@Width" height="@Height" aria-hidden="true">
+            @foreach (var job in Pipeline.Jobs)
+            {
+                foreach (var need in job.NeedsList)
+                {
+                    if (!pos.TryGetValue(need, out var from) || !pos.TryGetValue(job.Name, out var to)) continue;
+                    var x1 = X(from.Col) + CardW; var y1 = Y(from.Row) + CardH / 2;
+                    var x2 = X(to.Col); var y2 = Y(to.Row) + CardH / 2;
+                    var mid = (x1 + x2) / 2;
+                    <path d="M @x1 @y1 C @mid @y1, @mid @y2, @x2 @y2" />
+                }
+            }
+        </svg>
+        @foreach (var job in Pipeline.Jobs)
+        {
+            var at = pos[job.Name];
+            var canRun = PipelineService.CanRun(job, Perms, ProtectedEnvironments);
+            <div class="ci-node ci-node-@job.Status.ToString().ToLowerInvariant() @(job.Id == SelectedJobId ? "selected" : "")" @key="job.Id"
+                 style="left: @(X(at.Col))px; top: @(Y(at.Row))px; width: @(CardW)px; height: @(CardH)px">
+                <button type="button" class="ci-node-main" @onclick="() => OnSelect.InvokeAsync(job)" title="@($"{job.Name}: {job.Status}")">
+                    <PipelineStatusIcon Status="job.Status" />
+                    <span class="ci-node-text">
+                        <span class="ci-node-name">@job.Name</span>
+                        <span class="ci-node-sub">
+                            @if (job.Status == PipelineStatus.Manual) { <span>@(job.RequiresApproval ? "needs approval" : "manual")</span> }
+                            else if (job.StartedAt != null) { <span>@PipelineFormat.Duration(job.StartedAt, job.FinishedAt)</span> }
+                            else if (job.IsManual) { <span>manual</span> }
+                            @if (job.AllowFailure && !job.IsManual) { <span> · may fail</span> }
+                            @if (job.EnvironmentName != null) { <span> · <MudIcon Icon="@Icons.Material.Outlined.Cloud" Style="font-size: 12px; vertical-align: -2px" /> @job.EnvironmentName</span> }
+                        </span>
+                    </span>
+                </button>
+                @if (canRun && Enabled && job.Status == PipelineStatus.Manual)
+                {
+                    <MudTooltip Text="@(job.RequiresApproval ? $"Approve and run (deploys to protected {job.EnvironmentName})" : "Run this job")">
+                        <MudIconButton Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" Color="Color.Primary" Disabled="Busy"
+                                       aria-label="@($"Run {job.Name}")" OnClick="() => OnPlay.InvokeAsync(job)" />
+                    </MudTooltip>
+                }
+                else if (canRun && Enabled && Pipeline.Status != PipelineStatus.Running && job.Status is PipelineStatus.Passed or PipelineStatus.Failed or PipelineStatus.Canceled or PipelineStatus.Error)
+                {
+                    <MudTooltip Text="Retry this job">
+                        <MudIconButton Icon="@Icons.Material.Filled.Replay" Size="Size.Small" Disabled="Busy"
+                                       aria-label="@($"Retry {job.Name}")" OnClick="() => OnRetry.InvokeAsync(job)" />
+                    </MudTooltip>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Pipeline Pipeline { get; set; } = null!;
+    [Parameter] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
+    [Parameter] public ISet<string> ProtectedEnvironments { get; set; } = new HashSet<string>();
+    [Parameter] public bool Enabled { get; set; } = true;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public int? SelectedJobId { get; set; }
+    [Parameter] public EventCallback<PipelineJob> OnSelect { get; set; }
+    [Parameter] public EventCallback<PipelineJob> OnPlay { get; set; }
+    [Parameter] public EventCallback<PipelineJob> OnRetry { get; set; }
+
+    private const int CardW = 210, CardH = 50, ColGap = 56, RowGap = 12;
+    private Dictionary<string, (int Col, int Row)> pos = [];
+    private int Width, Height;
+
+    private static int X(int col) => col * (CardW + ColGap);
+    private static int Y(int row) => row * (CardH + RowGap);
+
+    protected override void OnParametersSet()
+    {
+        var stages = CiJobGraph.Stages(Pipeline.Jobs.Select(j => (j.Name, j.NeedsList)));
+        pos = [];
+        var rows = new Dictionary<int, int>();
+        foreach (var j in Pipeline.Jobs.OrderBy(j => j.Order))
+        {
+            var col = stages.GetValueOrDefault(j.Name);
+            var row = rows.GetValueOrDefault(col);
+            rows[col] = row + 1;
+            pos[j.Name] = (col, row);
+        }
+        var cols = rows.Count == 0 ? 1 : rows.Keys.Max() + 1;
+        var maxRows = rows.Count == 0 ? 1 : rows.Values.Max();
+        Width = cols * CardW + (cols - 1) * ColGap;
+        Height = maxRows * CardH + (maxRows - 1) * RowGap;
+    }
+}

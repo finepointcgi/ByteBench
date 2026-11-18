@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GitBench.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261118195824_Waves23")]
+    [Migration("20261118201122_Waves23")]
     partial class Waves23
     {
         /// <inheritdoc />
@@ -562,6 +562,80 @@ namespace GitBench.Data.Migrations
                     b.ToTable("BranchProtectionRules");
                 });
 
+            modelBuilder.Entity("GitBench.Data.CiCacheEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsProtected")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastUsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StoredName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoredName")
+                        .IsUnique();
+
+                    b.HasIndex("RepositoryId", "IsProtected", "Key")
+                        .IsUnique();
+
+                    b.ToTable("CiCacheEntries");
+                });
+
+            modelBuilder.Entity("GitBench.Data.CiEnvironment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsProtected")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("CiEnvironments");
+                });
+
             modelBuilder.Entity("GitBench.Data.CiVariable", b =>
                 {
                     b.Property<int>("Id")
@@ -818,6 +892,56 @@ namespace GitBench.Data.Migrations
                     b.HasIndex("DashboardId");
 
                     b.ToTable("DashboardHomes");
+                });
+
+            modelBuilder.Entity("GitBench.Data.Deployment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CommitSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EnvironmentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("JobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("PipelineId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("EnvironmentId", "Id");
+
+                    b.ToTable("Deployments");
                 });
 
             modelBuilder.Entity("GitBench.Data.DirectorySyncRun", b =>
@@ -1460,6 +1584,9 @@ namespace GitBench.Data.Migrations
                     b.Property<int>("RepositoryId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("ScheduleId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("TEXT");
 
@@ -1472,11 +1599,16 @@ namespace GitBench.Data.Migrations
                     b.Property<int?>("TriggeredById")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("VariablesJson")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ApprovedById");
 
                     b.HasIndex("PullRequestId");
+
+                    b.HasIndex("ScheduleId");
 
                     b.HasIndex("Status");
 
@@ -1489,11 +1621,77 @@ namespace GitBench.Data.Migrations
                     b.ToTable("Pipelines");
                 });
 
+            modelBuilder.Entity("GitBench.Data.PipelineArtifact", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FileCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("JobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Keep")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StoredName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("JobId")
+                        .IsUnique();
+
+                    b.HasIndex("PipelineId");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("StoredName")
+                        .IsUnique();
+
+                    b.ToTable("PipelineArtifacts");
+                });
+
             modelBuilder.Entity("GitBench.Data.PipelineJob", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AllowFailure")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EnvironmentName")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EnvironmentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtrasJson")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("TEXT");
@@ -1502,6 +1700,9 @@ namespace GitBench.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsManual")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1519,6 +1720,15 @@ namespace GitBench.Data.Migrations
                     b.Property<int>("PipelineId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("PlayedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PlayedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("TEXT");
 
@@ -1529,7 +1739,69 @@ namespace GitBench.Data.Migrations
 
                     b.HasIndex("PipelineId");
 
+                    b.HasIndex("PlayedById");
+
                     b.ToTable("PipelineJobs");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PipelineSchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Cron")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("LastPipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("OwnerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VariablesJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("Active", "NextRunAt");
+
+                    b.ToTable("PipelineSchedules");
                 });
 
             modelBuilder.Entity("GitBench.Data.PipelineStep", b =>
@@ -3340,6 +3612,24 @@ namespace GitBench.Data.Migrations
                     b.Navigation("Repository");
                 });
 
+            modelBuilder.Entity("GitBench.Data.CiCacheEntry", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.CiEnvironment", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.CiVariable", b =>
                 {
                     b.HasOne("GitBench.Data.Project", null)
@@ -3454,6 +3744,38 @@ namespace GitBench.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.Deployment", b =>
+                {
+                    b.HasOne("GitBench.Data.CiEnvironment", "Environment")
+                        .WithMany()
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.PipelineJob", "Job")
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Pipeline", null)
+                        .WithMany()
+                        .HasForeignKey("PipelineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Environment");
+
+                    b.Navigation("Job");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GitBench.Data.ExternalGroupMembership", b =>
@@ -3721,6 +4043,11 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.PipelineSchedule", null)
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("GitBench.Data.User", "TriggeredBy")
                         .WithMany()
                         .HasForeignKey("TriggeredById")
@@ -3733,6 +4060,23 @@ namespace GitBench.Data.Migrations
                     b.Navigation("TriggeredBy");
                 });
 
+            modelBuilder.Entity("GitBench.Data.PipelineArtifact", b =>
+                {
+                    b.HasOne("GitBench.Data.PipelineJob", "Job")
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Job");
+                });
+
             modelBuilder.Entity("GitBench.Data.PipelineJob", b =>
                 {
                     b.HasOne("GitBench.Data.Pipeline", "Pipeline")
@@ -3741,7 +4085,32 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.User", "PlayedBy")
+                        .WithMany()
+                        .HasForeignKey("PlayedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Pipeline");
+
+                    b.Navigation("PlayedBy");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PipelineSchedule", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Repository");
                 });
 
             modelBuilder.Entity("GitBench.Data.PipelineStep", b =>

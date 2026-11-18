@@ -504,3 +504,6 @@ gitbench.db*
 
 # Git LFS objects (Lfs:Root)
 /lfs/
+# CI artifacts and caches (Ci:ArtifactsRoot, Ci:CacheRoot)
+/ci-artifacts/
+/ci-cache/

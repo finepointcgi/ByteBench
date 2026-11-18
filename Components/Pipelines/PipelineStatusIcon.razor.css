@@ -6,5 +6,6 @@ a.ci-icon:hover { text-decoration: none; filter: brightness(0.85); }
 .ci-failed, .ci-error { color: var(--mud-palette-error); }
 .ci-running, .ci-queued { color: var(--mud-palette-warning); }
 .ci-canceled, .ci-skipped { color: var(--mud-palette-text-secondary); }
+.ci-manual { color: var(--mud-palette-info); }
 .ci-spinner { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: ci-spin 0.8s linear infinite; }
 @keyframes ci-spin { to { transform: rotate(360deg); } }
