@@ -559,6 +559,59 @@ namespace GitBench.Data.Migrations
                     b.ToTable("BranchProtectionRules");
                 });
 
+            modelBuilder.Entity("GitBench.Data.ChatUserLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalUserId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalUserName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nonce")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TeamId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Nonce")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("Provider", "TeamId", "ExternalUserId")
+                        .IsUnique()
+                        .HasFilter("\"RevokedAt\" IS NULL");
+
+                    b.ToTable("ChatUserLinks");
+                });
+
             modelBuilder.Entity("GitBench.Data.CiCacheEntry", b =>
                 {
                     b.Property<int>("Id")
@@ -1492,6 +1545,9 @@ namespace GitBench.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("ActorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ChatPending")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("CreatedAt")
@@ -3148,6 +3204,9 @@ namespace GitBench.Data.Migrations
                     b.Property<DateTime?>("LastEmailAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("SlackDmEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("UserId");
 
                     b.ToTable("UserNotificationSettings");
@@ -3198,6 +3257,10 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ChatSettings")
+                        .HasMaxLength(8000)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("ConsecutiveFailures")
                         .HasColumnType("INTEGER");
 
@@ -3218,7 +3281,14 @@ namespace GitBench.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("LastDeliveryAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("ProjectId")
@@ -3226,7 +3296,7 @@ namespace GitBench.Data.Migrations
 
                     b.Property<string>("Secret")
                         .IsRequired()
-                        .HasMaxLength(1000)
+                        .HasMaxLength(8000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Url")
@@ -3671,6 +3741,17 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ChatUserLink", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GitBench.Data.CiCacheEntry", b =>

@@ -36,18 +36,23 @@ public sealed class WebhookSender : IDisposable
     public WebhookSender(IOptionsMonitor<WebhookOptions> options)
     {
         this.options = options;
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            UseProxy = false,
-            UseCookies = false,
-            ConnectTimeout = Timeout,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-            ConnectCallback = ConnectAsync,
-        };
-        client = new HttpClient(handler) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+        client = new HttpClient(CreateGuardedHandler()) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("GitBench-Hookshot/1.0");
     }
+
+    /// <summary>
+    /// A handler with the same SSRF protection as webhook deliveries (checked addresses at connect time, no proxy, no
+    /// redirects), for other outgoing integrations such as Slack and Teams.
+    /// </summary>
+    public SocketsHttpHandler CreateGuardedHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        UseProxy = false,
+        UseCookies = false,
+        ConnectTimeout = Timeout,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+        ConnectCallback = ConnectAsync,
+    };
 
     public static string Sign(string secret, byte[] body) =>
         "sha256=" + Convert.ToHexStringLower(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), body));

@@ -10,7 +10,8 @@ public sealed record CiEnvironmentInfo(CiEnvironment Environment, Deployment? Cu
 /// Records deployments for the runner (singleton, no permission checks): a job with <c>environment:</c> creates the
 /// environment on first use and a <see cref="Deployment"/> each time it runs.
 /// </summary>
-public class CiDeploymentRecorder(IDbContextFactory<AppDbContext> dbFactory, ILogger<CiDeploymentRecorder> log)
+public class CiDeploymentRecorder(IDbContextFactory<AppDbContext> dbFactory, ILogger<CiDeploymentRecorder> log,
+    Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl)
 {
     /// <summary>Names of the repository's protected environments.</summary>
     public async Task<HashSet<string>> ProtectedNamesAsync(int repositoryId)
@@ -62,6 +63,43 @@ public class CiDeploymentRecorder(IDbContextFactory<AppDbContext> dbFactory, ILo
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Deployments.Where(d => d.Id == deploymentId)
             .ExecuteUpdateAsync(s => s.SetProperty(d => d.Status, status).SetProperty(d => d.FinishedAt, DateTime.UtcNow));
+        await RaiseWebhookAsync(db, deploymentId);
+    }
+
+    /// <summary>Sends the <c>deployment.completed</c> webhook event (also what Slack/Teams integrations announce).</summary>
+    private async Task RaiseWebhookAsync(AppDbContext db, int deploymentId)
+    {
+        try
+        {
+            var d = await db.Deployments.AsNoTracking().Include(x => x.Environment).Include(x => x.User).Include(x => x.Job)
+                .FirstOrDefaultAsync(x => x.Id == deploymentId);
+            if (d == null) return;
+            var repo = await db.Repositories.AsNoTracking().Include(r => r.Project).FirstAsync(r => r.Id == d.Environment.RepositoryId);
+            var url = baseUrl.Value;
+            webhooks.Enqueue(repo.ProjectId, Webhooks.WebhookEventNames.DeploymentCompleted, new
+            {
+                deployment = new
+                {
+                    id = d.Id,
+                    environment = d.Environment.Name,
+                    environmentUrl = d.Environment.ExternalUrl,
+                    status = d.Status.ToString().ToLowerInvariant(),
+                    @ref = d.Ref,
+                    commitSha = d.CommitSha,
+                    job = d.Job.Name,
+                    pipelineId = d.PipelineId,
+                    createdAt = Api.Dto.Utc(d.CreatedAt),
+                    finishedAt = Api.Dto.Utc(d.FinishedAt),
+                    url = url + PipelineUrls.Environments(repo),
+                    pipelineUrl = url + PipelineUrls.Detail(repo, d.PipelineId),
+                },
+                repository = new { id = repo.Id, slug = repo.Slug, name = repo.Name },
+            }, d.UserId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "Could not raise deployment.completed for deployment {Id}", deploymentId);
+        }
     }
 }
 

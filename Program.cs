@@ -82,6 +82,7 @@ builder.Services.AddCiPipelines(builder.Configuration);
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
+GitBench.Services.ChatIntegrations.ChatServiceCollectionExtensions.AddChatIntegrations(builder.Services, builder.Configuration); // Slack & Teams (on the webhook pipeline), Slack app
 builder.Services.AddScoped<LinkedWorkService>(); // linked work: sub-tasks, epics, issue links
 builder.Services.AddGitBenchApi();
 // Attachments, saved filters & bulk edit
@@ -166,6 +167,7 @@ app.MapGitHttp();
 GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info/lfs/...
 app.MapCiEndpoints();
 app.MapGitBenchApi();
+GitBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // /integrations/slack/{commands,interactivity,events}
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();

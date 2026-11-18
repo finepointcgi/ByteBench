@@ -339,6 +339,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureCustomFieldsTime(b);
         ConfigureCiExtras(b);
         ConfigureWebEditor(b);
+        ConfigureChatIntegrations(b);
     }
 
     // ----- Forks -----
@@ -535,5 +536,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<EditorWorkspaceChange>().HasOne<EditorWorkspace>().WithMany(w => w.Changes).HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectEditorSettings>().HasKey(s => s.ProjectId);
         b.Entity<ProjectEditorSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    // ----- Chat integrations -----
+    public DbSet<ChatUserLink> ChatUserLinks => Set<ChatUserLink>();
+
+    private static void ConfigureChatIntegrations(ModelBuilder b)
+    {
+        b.Entity<ChatUserLink>().HasIndex(l => new { l.Provider, l.TeamId, l.ExternalUserId }).IsUnique().HasFilter("\"RevokedAt\" IS NULL");
+        b.Entity<ChatUserLink>().HasIndex(l => l.Nonce).IsUnique();
+        b.Entity<ChatUserLink>().HasIndex(l => l.UserId);
+        b.Entity<ChatUserLink>().HasOne(l => l.User).WithMany().HasForeignKey(l => l.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

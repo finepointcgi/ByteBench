@@ -26,7 +26,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
     {
         await access.RequireAsync(projectId, RequiredPermission);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var hooks = await db.Webhooks.AsNoTracking().Where(h => h.ProjectId == projectId).OrderBy(h => h.Id).ToListAsync();
+        var hooks = await db.Webhooks.AsNoTracking().Where(h => h.ProjectId == projectId && h.Kind == WebhookKind.Generic).OrderBy(h => h.Id).ToListAsync();
         foreach (var h in hooks) h.Secret = secrets.Mask(h.Secret);
         return hooks;
     }
@@ -42,7 +42,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
         var hook = new Webhook { ProjectId = projectId, CreatedById = actor, IsActive = active };
         Apply(hook, url, secret, events, generateSecret: true);
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (await db.Webhooks.CountAsync(h => h.ProjectId == projectId) >= MaxHooksPerProject)
+        if (await db.Webhooks.CountAsync(h => h.ProjectId == projectId && h.Kind == WebhookKind.Generic) >= MaxHooksPerProject)
             throw new InvalidOperationException($"A project can have at most {MaxHooksPerProject} webhooks.");
         var plaintext = hook.Secret;
         hook.Secret = secrets.Protect(plaintext);
@@ -59,7 +59,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
     {
         await access.RequireAsync(projectId, RequiredPermission);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var hook = await db.Webhooks.FirstOrDefaultAsync(h => h.Id == hookId && h.ProjectId == projectId)
+        var hook = await db.Webhooks.FirstOrDefaultAsync(h => h.Id == hookId && h.ProjectId == projectId && h.Kind == WebhookKind.Generic)
                    ?? throw new InvalidOperationException("Webhook not found.");
         var storedSecret = hook.Secret;
         Apply(hook, url, newSecret, events, generateSecret: false);
@@ -80,7 +80,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
         var secret = NewSecret();
         var stored = secrets.Protect(secret);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var n = await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId)
+        var n = await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId && h.Kind == WebhookKind.Generic)
             .ExecuteUpdateAsync(s => s.SetProperty(h => h.Secret, stored));
         if (n == 0) throw new InvalidOperationException("Webhook not found.");
         await audit.RecordAsync("webhook.secret_rotated", "webhook", hookId, projectId);
@@ -91,8 +91,8 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
     {
         await access.RequireAsync(projectId, RequiredPermission);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var url = await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId).Select(h => h.Url).FirstOrDefaultAsync();
-        await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId).ExecuteDeleteAsync();
+        var url = await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId && h.Kind == WebhookKind.Generic).Select(h => h.Url).FirstOrDefaultAsync();
+        await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId && h.Kind == WebhookKind.Generic).ExecuteDeleteAsync();
         if (url != null) await audit.RecordAsync("webhook.deleted", "webhook", hookId, projectId, new { host = Audit.AuditLog.SafeUrl(url) });
     }
 
@@ -117,7 +117,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
         await access.RequireAsync(projectId, RequiredPermission);
         await using var db = await dbFactory.CreateDbContextAsync();
         var ok = await db.WebhookDeliveries.AnyAsync(d => d.Id == deliveryRowId
-            && db.Webhooks.Any(h => h.Id == d.WebhookId && h.ProjectId == projectId));
+            && db.Webhooks.Any(h => h.Id == d.WebhookId && h.ProjectId == projectId && h.Kind == WebhookKind.Generic));
         if (!ok) throw new InvalidOperationException("Delivery not found.");
         dispatcher.EnqueueRedelivery(deliveryRowId);
     }
@@ -126,7 +126,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
     {
         await access.RequireAsync(projectId, RequiredPermission);
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (!await db.Webhooks.AnyAsync(h => h.Id == hookId && h.ProjectId == projectId))
+        if (!await db.Webhooks.AnyAsync(h => h.Id == hookId && h.ProjectId == projectId && h.Kind == WebhookKind.Generic))
             throw new InvalidOperationException("Webhook not found.");
     }
 

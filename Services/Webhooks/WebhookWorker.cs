@@ -14,13 +14,18 @@ namespace GitBench.Services.Webhooks;
 /// After <see cref="WebhookService.MaxConsecutiveFailures"/> failed deliveries in a row, the hook is deactivated.
 /// </summary>
 public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender sender, IDbContextFactory<AppDbContext> dbFactory,
-    PublicBaseUrl baseUrl, WebhookSecrets secrets, ILogger<WebhookWorker> log) : BackgroundService
+    PublicBaseUrl baseUrl, WebhookSecrets secrets, ILogger<WebhookWorker> log, IEnumerable<IWebhookTransport> transports) : BackgroundService
 {
     public const int MaxConcurrent = 8;
     /// <summary>Waits before retries 1, 2 and 3.</summary>
     public static readonly TimeSpan[] Backoff = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)];
 
     private readonly SemaphoreSlim slots = new(MaxConcurrent);
+    private readonly IReadOnlyList<IWebhookTransport> transports = transports.ToList();
+
+    /// <summary>The transport for a chat hook (Slack, Teams); null for generic webhooks.</summary>
+    private IWebhookTransport? TransportFor(Webhook hook) =>
+        hook.Kind == WebhookKind.Generic ? null : transports.FirstOrDefault(t => t.Handles(hook.Kind));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -78,7 +83,20 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
                 if (hooks.Count == 0) return [];
                 var envelope = await EnvelopeBaseAsync(db, e.ProjectId, e.SenderId, ct);
                 foreach (var hook in hooks)
-                    rows.Add(NewDelivery(hook.Id, e.Event, Build(envelope, e.Event, e.Timestamp, e.Payload, out var id), id));
+                {
+                    var body = BuildObject(envelope, e.Event, e.Timestamp, e.Payload, out var id);
+                    if (hook.Kind == WebhookKind.Generic) { rows.Add(NewDelivery(hook.Id, e.Event, body.ToJsonString(Dto.Json), id)); continue; }
+                    if (TransportFor(hook) is not { } transport) continue;
+                    try
+                    {
+                        foreach (var m in await transport.BuildAsync(db, hook, e.Event, body, ct))
+                            rows.Add(NewDelivery(hook.Id, m.Event, m.Body, Guid.NewGuid().ToString()));
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        log.LogError(ex, "Could not build the {Kind} message for hook {HookId} ({Event})", hook.Kind, hook.Id, e.Event);
+                    }
+                }
                 break;
             }
             case WebhookPingJob p:
@@ -95,7 +113,13 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
                         ["events"] = new JsonArray([.. WebhookEventNames.Parse(hook.Events).Select(x => (JsonNode)JsonValue.Create(x)!)]),
                     },
                 };
-                rows.Add(NewDelivery(hook.Id, WebhookEventNames.Ping, Build(envelope, WebhookEventNames.Ping, DateTimeOffset.UtcNow, payload, out var id), id));
+                var pingBody = BuildObject(envelope, WebhookEventNames.Ping, DateTimeOffset.UtcNow, payload, out var id);
+                if (hook.Kind == WebhookKind.Generic) rows.Add(NewDelivery(hook.Id, WebhookEventNames.Ping, pingBody.ToJsonString(Dto.Json), id));
+                else if (TransportFor(hook) is { } transport)
+                {
+                    var test = transport.BuildTest(hook, pingBody);
+                    rows.Add(NewDelivery(hook.Id, test.Event, test.Body, id));
+                }
                 break;
             }
             case WebhookRedeliverJob r:
@@ -125,7 +149,7 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
     }
 
     /// <summary>The JSON body: event, deliveryId, timestamp, project, sender, then the event's own properties.</summary>
-    private static string Build((JsonNode? Project, JsonNode? Sender) common, string eventName, DateTimeOffset timestamp, JsonObject payload, out string deliveryId)
+    private static JsonObject BuildObject((JsonNode? Project, JsonNode? Sender) common, string eventName, DateTimeOffset timestamp, JsonObject payload, out string deliveryId)
     {
         deliveryId = Guid.NewGuid().ToString();
         var body = new JsonObject
@@ -138,7 +162,7 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
         };
         foreach (var (key, value) in payload)
             if (!body.ContainsKey(key)) body[key] = value?.DeepClone();
-        return body.ToJsonString(Dto.Json);
+        return body;
     }
 
     private async Task DeliverAsync(int deliveryRowId, CancellationToken ct)
@@ -156,14 +180,30 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
         WebhookAttempt attempt;
         var attempts = 0;
         string? secret = null;
-        try { secret = secrets.Reveal(hook.Secret); }
-        catch (System.Security.Cryptography.CryptographicException ex)
+        var transport = TransportFor(hook);
+        if (hook.Kind == WebhookKind.Generic)
         {
-            log.LogError(ex, "Webhook {HookId}: the secret can't be decrypted (Data Protection keys changed?)", hook.Id);
+            try { secret = secrets.Reveal(hook.Secret); }
+            catch (System.Security.Cryptography.CryptographicException ex)
+            {
+                log.LogError(ex, "Webhook {HookId}: the secret can't be decrypted (Data Protection keys changed?)", hook.Id);
+            }
         }
         while (true)
         {
             attempts++;
+            if (hook.Kind != WebhookKind.Generic)
+            {
+                // Chat integrations: the transport formats nothing here (the body is stored), it only sends.
+                attempt = transport == null
+                    ? new WebhookAttempt(false, null, $"{hook.Kind} integrations aren't available on this server.", null, 0, Retryable: false)
+                    : await transport.SendAsync(hook, delivery, ct);
+                if (attempt.Success || !attempt.Retryable || attempts > Backoff.Length) break;
+                log.LogInformation("{Kind} integration {HookId} delivery {Delivery} attempt {N} failed ({Error}); retrying",
+                    hook.Kind, hook.Id, delivery.DeliveryId, attempts, attempt.Error);
+                await Task.Delay(Backoff[attempts - 1], ct);
+                continue;
+            }
             if (secret == null)
             {
                 attempt = new WebhookAttempt(false, null, "The webhook's secret can't be decrypted (the server's Data Protection keys changed). Rotate the secret with New secret.", null, 0, false);

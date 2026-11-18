@@ -1,0 +1,69 @@
+@page "/integrations/slack/link"
+@attribute [Authorize]
+@using GitBench.Services.ChatIntegrations
+@inject SlackAccountLinks Links
+@inject CurrentUser Me
+
+<PageTitle>Link Slack · GitBench</PageTitle>
+
+<div class="slack-link-page">
+    <MudPaper Outlined="true" Class="pa-5 slack-link-panel">
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="mb-3">Link your Slack account</MudText>
+        @if (done)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3">
+                Linked. You can go back to Slack: <code>/gitbench</code> commands now run as <b>@Me.User?.UserName</b>, with your GitBench permissions.
+            </MudAlert>
+            <MudButton Href="/account/notifications" Variant="Variant.Outlined" Size="Size.Small">Notification preferences</MudButton>
+        }
+        else if (request == null)
+        {
+            <MudAlert Severity="Severity.Warning">This link is invalid or has expired. Run <code>/gitbench link</code> in Slack to get a new one.</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body1" Class="mb-2">
+                Slack user <b>@(request.SlackUserName is { } n ? "@" + n : request.SlackUserId)</b> (workspace <span class="mono">@request.TeamId</span>)
+                wants to act as your GitBench account <b>@Me.User?.UserName</b>.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+                Slash commands, buttons and link previews from that Slack account will see and do what you can in GitBench.
+                Only continue if you started this from Slack yourself. You can unlink any time with <code>/gitbench unlink</code>
+                or on your notification preferences page.
+            </MudText>
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@busy" OnClick="Link">Link account</MudButton>
+                <MudButton Href="/" Variant="Variant.Outlined">Cancel</MudButton>
+            </div>
+        }
+    </MudPaper>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "t")] public string? Token { get; set; }
+
+    private SlackLinkRequest? request;
+    private bool busy, done;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        request = Links.Read(Token);
+    }
+
+    private async Task Link()
+    {
+        if (Token == null || !Me.IsSignedIn) return;
+        busy = true;
+        error = null;
+        try
+        {
+            await Links.LinkAsync(Token, Me.Id);
+            done = true;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        busy = false;
+    }
+}
