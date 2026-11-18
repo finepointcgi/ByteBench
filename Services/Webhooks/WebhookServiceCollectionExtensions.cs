@@ -15,6 +15,7 @@ public static class WebhookServiceCollectionExtensions
         services.AddHostedService<WebhookWorker>();
         services.AddScoped<WebhookService>();
         services.AddScoped<WebhookNotifier>();
+        services.AddSingleton<WebhookPushEvents>();
         services.AddScoped<PushCapture>();
         services.AddScoped<IGitPushListener, WebhookPushListener>();
         return services;

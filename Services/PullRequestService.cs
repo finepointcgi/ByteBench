@@ -9,7 +9,7 @@ public record PullRequestCounts(int Open, int Merged, int Declined);
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
 public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
     MergeGate gate, ReviewerService reviewers, BranchProtectionService protection, Webhooks.WebhookNotifier webhooks,
-    Audit.AuditLog audit)
+    Audit.AuditLog audit, Webhooks.WebhookPushEvents pushEvents)
 {
     // ---------- Queries ----------
 
@@ -187,12 +187,15 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         if (bypassed) Log(db, pr, actor.Id, "bypassed branch protection on `" + pr.TargetBranch + "` to merge", now.AddMilliseconds(-1));
         if (bypassed) await audit.RecordAsync("pull_request.merged_bypassing_protection", "pull_request", pr.Id, pr.Repository.ProjectId, new { repository = pr.Repository.Slug, pr.Number, pr.TargetBranch, outcome.MergeCommitSha }, actor.Id);
 
+        // The merge moved the target branch (and may delete the source branch): report them like a git push would.
+        var pushed = new List<Webhooks.PushedRef> { Webhooks.WebhookPushEvents.Branch(pr.TargetBranch, outcome.TargetSha, outcome.MergeCommitSha) };
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
         {
             try
             {
                 await repos.Git(pr.Repository, path => GitOps.DeleteBranch(path, pr.SourceBranch, pr.Repository.DefaultBranch));
                 Log(db, pr, actor.Id, $"deleted the source branch `{pr.SourceBranch}`", now.AddMilliseconds(1));
+                pushed.Add(Webhooks.WebhookPushEvents.Branch(pr.SourceBranch, outcome.SourceSha, null));
             }
             catch (InvalidOperationException) { /* already gone: nothing to do */ }
         }
@@ -208,6 +211,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
         await db.SaveChangesAsync();
         await notifications.OnPullRequestMergedAsync(prId, actor.Id);
+        await pushEvents.SendAsync(pr.RepositoryId, pushed, actor.Id);
         await webhooks.PullRequestMergedAsync(prId, actor.Id);
         return outcome;
     }
