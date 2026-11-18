@@ -7,7 +7,7 @@ namespace GitBench.Services;
 public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
-public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos)
+public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, NotificationService notifications)
 {
     // ---------- Queries ----------
 
@@ -118,6 +118,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         db.PullRequests.Add(pr);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
+        await notifications.OnPullRequestCreatedAsync(pr.Id, authorId);
         return pr;
     }
 
@@ -127,12 +128,14 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         if (title.Length is 0 or > 200) throw new InvalidOperationException("Title is required (max 200 characters).");
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.FindAsync(prId) ?? throw new InvalidOperationException("Pull request not found.");
+        var oldDescription = pr.Description;
         description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         if (pr.Title != title) Log(db, pr, actorId, $"changed the title from ~~{pr.Title}~~ to **{title}**");
         else if (pr.Description != description) Log(db, pr, actorId, "updated the description");
         pr.Title = title;
         pr.Description = description;
         await db.SaveChangesAsync();
+        await notifications.OnPullRequestUpdatedAsync(prId, actorId, oldDescription);
     }
 
     /// <summary>Merges the PR inside the bare repo; on success records state, activity and linked-issue activity.</summary>
@@ -181,6 +184,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         }
 
         await db.SaveChangesAsync();
+        await notifications.OnPullRequestMergedAsync(prId, actor.Id);
         return outcome;
     }
 
@@ -197,6 +201,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         pr.ClosedAt = DateTime.UtcNow;
         Log(db, pr, actorId, "declined this pull request");
         await db.SaveChangesAsync();
+        await notifications.OnPullRequestDeclinedAsync(prId, actorId);
     }
 
     public async Task ReopenAsync(int prId, int actorId)
@@ -216,6 +221,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         pr.SourceCommitSha = pr.TargetCommitSha = null;
         Log(db, pr, actorId, "reopened this pull request");
         await db.SaveChangesAsync();
+        await notifications.OnPullRequestReopenedAsync(prId, actorId);
     }
 
     // ---------- Comments & reviews ----------
@@ -232,6 +238,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         db.PullRequestComments.Add(c);
         await db.PullRequests.Where(p => p.Id == prId).ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();
+        await notifications.OnPullRequestCommentedAsync(prId, c.Id, authorId, c.Body);
         return c;
     }
 
@@ -240,12 +247,15 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.PullRequestComments.Where(c => c.Id == commentId && c.AuthorId == authorId).ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Body, body.Trim()).SetProperty(c => c.EditedAt, DateTime.UtcNow));
+        await notifications.OnPullRequestCommentChangedAsync(await db.PullRequestComments.Where(c => c.Id == commentId).Select(c => (int?)c.PullRequestId).FirstOrDefaultAsync());
     }
 
     public async Task DeleteCommentAsync(int commentId, int authorId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
+        var prId = await db.PullRequestComments.Where(c => c.Id == commentId && c.AuthorId == authorId).Select(c => (int?)c.PullRequestId).FirstOrDefaultAsync();
         await db.PullRequestComments.Where(c => c.Id == commentId && c.AuthorId == authorId).ExecuteDeleteAsync();
+        await notifications.OnPullRequestCommentChangedAsync(prId);
     }
 
     /// <summary>Sets (or with null, withdraws) the user's review verdict. Authors can't review their own PR.</summary>
@@ -274,6 +284,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         }
         Log(db, pr, userId, text);
         await db.SaveChangesAsync();
+        await notifications.OnPullRequestReviewedAsync(prId, userId, state);
     }
 
     private static void Log(AppDbContext db, PullRequest pr, int actorId, string text, DateTime? at = null)

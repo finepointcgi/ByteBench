@@ -3,6 +3,9 @@
 @inject CurrentUser Me
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject NotificationService Notifications
+@inject LiveEvents Live
+@implements IDisposable
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -32,6 +35,7 @@ else if (issue != null && project != null)
                 @issue.Title <span class="muted mono">@issue.Key</span>
             </h1>
             <div class="d-flex gap-2">
+                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
                 <button class="btn btn-outline-secondary btn-sm" @onclick="StartEditTitle">Edit title</button>
                 @if (issue.Status.IsClosed())
                 {
@@ -92,7 +96,7 @@ else if (issue != null && project != null)
                 {
                     if (entry is Comment c)
                     {
-                        <div class="comment-card" @key="c">
+                        <div class="comment-card" @key="(1, c.Id)">
                             <div class="comment-head">
                                 <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
                                 <span class="muted small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
@@ -122,7 +126,7 @@ else if (issue != null && project != null)
                     }
                     else if (entry is Activity a)
                     {
-                        <div class="activity-line" @key="a">
+                        <div class="activity-line" @key="(2, a.Id)">
                             <Avatar User="a.Actor" Size="18" />
                             <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
                             <span class="muted">@Display.Ago(a.CreatedAt)</span>
@@ -255,7 +259,40 @@ else if (issue != null && project != null)
     {
         issue = await Issues.GetIssueAsync(Key, Number);
         notFound = issue == null;
+        if (issue != null)
+        {
+            watching = await Notifications.IsWatchingIssueAsync(Me.Id, issue.Id);
+            watcherCount = await Notifications.CountIssueWatchersAsync(issue.Id);
+        }
     }
+
+    // ----- Watching -----
+    private bool watching;
+    private int watcherCount;
+
+    private async Task ToggleWatch()
+    {
+        await Notifications.SetIssueWatchAsync(Me.Id, issue!.Id, !watching);
+        await Reload();
+    }
+
+    // ----- Live updates -----
+    // Reload replaces only `issue`; the drafts (titleDraft, descDraft, newComment, commentEditDraft) and editing
+    // flags are separate fields, so someone else's change never clobbers what this user is typing.
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<IssueChanged>(OnIssueChanged);
+    }
+
+    private Task OnIssueChanged(IssueChanged e) => issue?.Id != e.IssueId ? Task.CompletedTask : InvokeAsync(async () =>
+    {
+        await Reload();
+        StateHasChanged();
+    });
+
+    public void Dispose() => liveSubscription?.Dispose();
 
     private async Task Change(Func<Issue, AppDbContext, Task<string?>> change)
     {

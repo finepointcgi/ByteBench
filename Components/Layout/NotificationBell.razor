@@ -1,0 +1,91 @@
+@implements IDisposable
+@inject NotificationService Notifications
+@inject LiveEvents Live
+@inject CurrentUser Me
+@inject NavigationManager Nav
+
+<div class="notif-bell">
+    <button type="button" class="notif-bell-btn" @onclick="Toggle" title="Notifications"
+            aria-label="@($"Notifications, {unread} unread")" aria-expanded="@(open ? "true" : "false")">
+        <span aria-hidden="true">🔔</span>
+        @if (unread > 0)
+        {
+            <span class="notif-badge">@(unread > 99 ? "99+" : unread.ToString())</span>
+        }
+    </button>
+    @if (open)
+    {
+        <div class="notif-backdrop" @onclick="() => open = false"></div>
+        <div class="notif-dropdown" role="menu">
+            <div class="notif-dropdown-head">
+                <b>Notifications</b>
+                <button type="button" class="btn btn-link btn-sm ms-auto p-0" disabled="@(unread == 0)" @onclick="MarkAllRead">Mark all read</button>
+            </div>
+            @if (latest.Count == 0)
+            {
+                <div class="notif-empty muted">You're all caught up.</div>
+            }
+            @foreach (var n in latest)
+            {
+                <a class="notif-item @(n.IsRead ? "" : "unread")" href="@n.Url" @key="n.Id"
+                   @onclick="() => Open(n)" @onclick:preventDefault>
+                    <Avatar User="n.Actor" Size="24" />
+                    <span class="notif-text">
+                        <b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind)
+                        <span class="notif-title">@n.Title</span>
+                        <span class="muted small d-block">@Display.Ago(n.CreatedAt)</span>
+                    </span>
+                    @if (!n.IsRead) { <span class="notif-dot" title="Unread"></span> }
+                </a>
+            }
+            <a class="notif-all" href="/notifications" @onclick="() => open = false">View all notifications</a>
+        </div>
+    }
+</div>
+
+@code {
+    private int unread;
+    private bool open;
+    private List<Notification> latest = [];
+    private IDisposable? subscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Me.IsSignedIn) unread = await Notifications.GetUnreadCountAsync(Me.Id);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Subscribe only once interactive (never during prerendering), so Dispose always pairs with it.
+        if (firstRender && Me.IsSignedIn)
+            subscription = Live.Subscribe<NotificationsChanged>(e => e.UserId == Me.Id ? InvokeAsync(RefreshAsync) : Task.CompletedTask);
+    }
+
+    private async Task RefreshAsync()
+    {
+        unread = await Notifications.GetUnreadCountAsync(Me.Id);
+        if (open) latest = await Notifications.GetLatestAsync(Me.Id);
+        StateHasChanged();
+    }
+
+    private async Task Toggle()
+    {
+        open = !open;
+        if (open) latest = await Notifications.GetLatestAsync(Me.Id);
+    }
+
+    private async Task Open(Notification n)
+    {
+        open = false;
+        if (!n.IsRead) await Notifications.MarkReadAsync(Me.Id, n.Id);
+        Nav.NavigateTo(n.Url);
+    }
+
+    private async Task MarkAllRead()
+    {
+        await Notifications.MarkAllReadAsync(Me.Id);
+        await RefreshAsync();
+    }
+
+    public void Dispose() => subscription?.Dispose();
+}

@@ -1,0 +1,101 @@
+@page "/notifications"
+@implements IDisposable
+@inject NotificationService Notifications
+@inject LiveEvents Live
+@inject CurrentUser Me
+@inject NavigationManager Nav
+
+<PageTitle>Notifications · GitBench</PageTitle>
+
+<div class="page-header">
+    <h1>Notifications</h1>
+    <button class="btn btn-outline-secondary btn-sm" disabled="@(unreadCount == 0)" @onclick="MarkAllRead">Mark all read</button>
+</div>
+
+<div class="tabs">
+    <a class="tab @(UnreadOnly ? "" : "active")" href="/notifications">All</a>
+    <a class="tab @(UnreadOnly ? "active" : "")" href="/notifications?filter=unread">Unread <span class="count">@unreadCount</span></a>
+</div>
+
+@if (result != null)
+{
+    <div class="notif-list">
+        @if (result.Items.Count == 0)
+        {
+            <div class="empty">@(UnreadOnly ? "No unread notifications." : "No notifications yet.")</div>
+        }
+        @foreach (var n in result.Items)
+        {
+            <div class="notif-row @(n.IsRead ? "" : "unread")" @key="n.Id">
+                <Avatar User="n.Actor" Size="28" />
+                <a class="notif-text" href="@n.Url" @onclick="() => Open(n)" @onclick:preventDefault>
+                    <b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind)
+                    <span class="notif-title">@n.Title</span>
+                </a>
+                <span class="muted small ms-auto text-nowrap">@Display.Ago(n.CreatedAt)</span>
+                @if (!n.IsRead)
+                {
+                    <button class="btn btn-link btn-sm" @onclick="() => MarkRead(n)">Mark read</button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (result.Pages > 1)
+    {
+        <nav class="pager">
+            @if (result.Page > 1) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(result.Page - 1)">← Newer</a> }
+            <span class="muted small">Page @result.Page of @result.Pages · @result.Total total</span>
+            @if (result.Page < result.Pages) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(result.Page + 1)">Older →</a> }
+        </nav>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "filter")] public string? Filter { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private NotificationPage? result;
+    private int unreadCount;
+    private IDisposable? subscription;
+
+    private bool UnreadOnly => Filter == "unread";
+
+    private string PageUrl(int p) => "/notifications?" + (UnreadOnly ? "filter=unread&" : "") + "page=" + p;
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            subscription = Live.Subscribe<NotificationsChanged>(e => e.UserId == Me.Id
+                ? InvokeAsync(async () => { await Load(); StateHasChanged(); })
+                : Task.CompletedTask);
+    }
+
+    private async Task Load()
+    {
+        result = await Notifications.GetPageAsync(Me.Id, UnreadOnly, PageNumber ?? 1);
+        unreadCount = await Notifications.GetUnreadCountAsync(Me.Id);
+    }
+
+    private async Task Open(Notification n)
+    {
+        if (!n.IsRead) await Notifications.MarkReadAsync(Me.Id, n.Id);
+        Nav.NavigateTo(n.Url);
+    }
+
+    private async Task MarkRead(Notification n)
+    {
+        await Notifications.MarkReadAsync(Me.Id, n.Id);
+        await Load();
+    }
+
+    private async Task MarkAllRead()
+    {
+        await Notifications.MarkAllReadAsync(Me.Id);
+        await Load();
+    }
+
+    public void Dispose() => subscription?.Dispose();
+}

@@ -443,3 +443,39 @@ a.tree-commit:hover { color: var(--accent); }
     .clone-box input { width: 220px; }
     .diff-thread { padding-left: 14px; }
 }
+
+/* ----- Notifications, watching & mentions ----- */
+.notif-bell { position: relative; }
+.notif-bell-btn {
+    position: relative; background: transparent; border: 1px solid #3a3456; color: #fff; border-radius: 999px;
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.notif-bell-btn:hover, .notif-bell-btn[aria-expanded="true"] { background: #24203a; }
+.notif-badge {
+    position: absolute; top: -5px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.notif-backdrop { position: fixed; inset: 0; z-index: 20; }
+.notif-dropdown {
+    position: absolute; right: 0; top: 42px; width: 380px; max-width: calc(100vw - 24px); z-index: 21;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .18); overflow: hidden;
+}
+.notif-dropdown-head { display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.notif-empty { padding: 24px; text-align: center; }
+.notif-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; color: var(--text); border-bottom: 1px solid var(--border); }
+.notif-item:hover { background: #f6f5fb; text-decoration: none; color: var(--text); }
+.notif-item.unread, .notif-row.unread { background: #faf8ff; }
+.notif-text { flex: 1; min-width: 0; color: var(--text); }
+.notif-text:hover { text-decoration: none; }
+.notif-title { color: var(--accent); }
+.notif-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 6px; flex: none; }
+.notif-all { display: block; text-align: center; padding: 8px; font-weight: 600; }
+.notif-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.notif-list .empty { border: none; }
+.notif-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.notif-row:last-child { border-bottom: none; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
+.watch-btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); white-space: nowrap; }
+.watch-btn.watching { border-color: #a78bfa; background: var(--accent-soft); color: var(--accent); }
+.mention { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 3px; font-weight: 600; }

@@ -1,6 +1,8 @@
 @page "/p/{Key}"
 @page "/p/{Key}/issues"
 @inject IssueService Issues
+@inject LiveEvents Live
+@implements IDisposable
 
 <PageTitle>Issues · @project?.Name</PageTitle>
 
@@ -116,6 +118,22 @@ else if (project != null)
         issues = await Issues.GetIssuesAsync(project.Id, filter);
         counts = await Issues.CountAsync(project.Id);
     }
+
+    // ----- Live updates: any issue in this project changed -----
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<IssueChanged>(OnIssueChanged);
+    }
+
+    private Task OnIssueChanged(IssueChanged e) => project?.Id != e.ProjectId ? Task.CompletedTask : InvokeAsync(async () =>
+    {
+        await Load();
+        StateHasChanged();
+    });
+
+    public void Dispose() => liveSubscription?.Dispose();
 
     private async Task SetOpen(bool? open)
     {

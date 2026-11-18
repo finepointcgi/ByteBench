@@ -218,3 +218,40 @@ public class AiUsage
     public long CacheWriteTokens { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Notifications & watching -----
+
+public enum NotificationKind
+{
+    Assigned, Mentioned,
+    IssueCommented, IssueStatusChanged, IssueClosed, IssueReopened,
+    PullRequestCommented, PullRequestReviewed, PullRequestMerged, PullRequestDeclined, PullRequestReopened,
+}
+
+/// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
+public class Notification
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public int ProjectId { get; set; }
+    /// <summary>Who caused it; null for system-generated notifications.</summary>
+    public int? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public NotificationKind Kind { get; set; }
+    /// <summary>Short subject line, e.g. "WEB-12 Login button misaligned".</summary>
+    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    [Required, MaxLength(500)] public string Url { get; set; } = "";
+    public bool IsRead { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>A user watching exactly one issue or one pull request.</summary>
+public class Watch
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public int? IssueId { get; set; }
+    public int? PullRequestId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

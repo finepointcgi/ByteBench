@@ -1,0 +1,12 @@
+@* Watch / unwatch toggle for an issue or pull request. The page owns the state and reloads it. *@
+<button type="button" class="btn btn-sm watch-btn @(Watching ? "watching" : "")" @onclick="OnToggle"
+        title="@(Watching ? "You get notifications about this. Click to stop watching." : "Get notifications about comments and changes.")">
+    @(Watching ? "👁 Watching" : "👁 Watch")
+    <span class="count">@Count</span>
+</button>
+
+@code {
+    [Parameter] public bool Watching { get; set; }
+    [Parameter] public int Count { get; set; }
+    [Parameter] public EventCallback OnToggle { get; set; }
+}

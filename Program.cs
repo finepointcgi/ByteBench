@@ -49,6 +49,8 @@ builder.Services.AddScoped<IssueAiService>();
 builder.Services.AddScoped<RepositoryService>();
 builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
+builder.Services.AddSingleton<LiveEvents>();
+builder.Services.AddScoped<NotificationService>();
 
 var app = builder.Build();
 
@@ -58,6 +60,7 @@ using (var scope = app.Services.CreateScope())
     using var db = factory.CreateDbContext();
     SeedData.Initialize(db);
     RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
+    NotificationService.Initialize(db);
 }
 
 if (!app.Environment.IsDevelopment())
