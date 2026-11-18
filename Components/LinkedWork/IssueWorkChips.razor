@@ -1,0 +1,31 @@
+@* Parent key, sub-task progress and ⛔ blocked chips for list rows and board cards (data from Issue.Work). *@
+@if (Issue.Work is { } w)
+{
+    @if (w.Blocked)
+    {
+        <span class="lw-chip lw-chip-blocked" title="Blocked by @string.Join(", ", w.BlockedBy)">⛔@(Compact ? "" : " blocked")</span>
+    }
+    @if (w.ParentKey != null)
+    {
+        @if (Links)
+        {
+            <a class="lw-chip lw-chip-parent" href="/p/@Issue.Project.Key/issues/@w.ParentNumber" title="Parent: @w.ParentTitle" draggable="false">@w.ParentKey</a>
+        }
+        else
+        {
+            <span class="lw-chip lw-chip-parent" title="Parent: @w.ParentTitle">@w.ParentKey</span>
+        }
+    }
+    @if (w.ChildTotal > 0)
+    {
+        <span class="lw-chip @(w.ChildDone == w.ChildTotal ? "lw-chip-complete" : "")"
+              title="@w.ChildDone of @w.ChildTotal @(Issue.Type == IssueType.Epic ? "child issues" : "sub-tasks") done">☑ @w.ChildDone/@w.ChildTotal</span>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+    /// <summary>Render the parent chip as a link (not inside another link, e.g. not in an issue row).</summary>
+    [Parameter] public bool Links { get; set; }
+    [Parameter] public bool Compact { get; set; }
+}

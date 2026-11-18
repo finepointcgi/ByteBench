@@ -39,6 +39,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
+    // ----- Linked work -----
+    public DbSet<IssueLink> IssueLinks => Set<IssueLink>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b); // Identity tables (AspNetUsers, AspNetRoles, …)
@@ -120,5 +123,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Webhook>().HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
         b.Entity<WebhookDelivery>().HasIndex(d => new { d.WebhookId, d.CreatedAt });
         b.Entity<WebhookDelivery>().HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
+        // ----- Linked work -----
+        // Sub-tasks are deleted by IssueService with their parent; anything else left pointing at a deleted parent is unlinked.
+        b.Entity<Issue>().HasOne(i => i.Parent).WithMany(p => p.Children).HasForeignKey(i => i.ParentId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<IssueLink>().HasIndex(l => new { l.SourceIssueId, l.TargetIssueId, l.Type }).IsUnique();
+        b.Entity<IssueLink>().HasIndex(l => l.TargetIssueId);
+        b.Entity<IssueLink>().HasOne(l => l.SourceIssue).WithMany().HasForeignKey(l => l.SourceIssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<IssueLink>().HasOne(l => l.TargetIssue).WithMany().HasForeignKey(l => l.TargetIssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<IssueLink>().HasOne<User>().WithMany().HasForeignKey(l => l.CreatedById).OnDelete(DeleteBehavior.SetNull);
     }
 }

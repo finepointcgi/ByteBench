@@ -67,6 +67,7 @@ builder.Services.AddCiPipelines(builder.Configuration);
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
+builder.Services.AddScoped<LinkedWorkService>(); // linked work: sub-tasks, epics, issue links
 builder.Services.AddGitBenchApi();
 
 var app = builder.Build();

@@ -1,0 +1,32 @@
+@* Non-blocking warning when an issue with open blockers moves to In Progress or Done. *@
+@inject LinkedWorkService LinkedWork
+
+@if (warning != null)
+{
+    <div class="alert alert-warning py-2 d-flex align-items-center gap-2">
+        <span>@warning</span>
+        <button type="button" class="btn-close ms-auto" aria-label="Dismiss" @onclick="() => warning = null"></button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private string? warning;
+    private (int Id, IssueStatus Status)? seen;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var now = (Issue.Id, Issue.Status);
+        var before = seen;
+        seen = now;
+        if (before?.Id != Issue.Id) { warning = null; return; } // first load: nothing moved
+        if (before.Value.Status == Issue.Status) return;
+        warning = null;
+        if (Issue.Status is not (IssueStatus.InProgress or IssueStatus.Done)) return;
+        var blockers = (await LinkedWork.GetLinksAsync(Issue.Id))
+            .Where(l => l.Relation == IssueLinkRelation.IsBlockedBy && l.Other.Status != IssueStatus.Done)
+            .Select(l => l.Other.Key).ToList();
+        warning = HierarchyRules.BlockedMoveWarning(Issue.Key, Issue.Status, blockers);
+    }
+}

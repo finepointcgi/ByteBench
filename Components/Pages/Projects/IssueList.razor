@@ -57,6 +57,7 @@ else if (project != null)
             <option value="">Any type</option>
             @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
         </select>
+        <GitBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Load" />
         <select class="form-select form-select-sm" @bind="filter.Priority" @bind:after="Load">
             <option value="">Any priority</option>
             @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p</option> }
@@ -103,7 +104,8 @@ else if (project != null)
     }
 
     private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || filter.Status != null || filter.AssigneeId != null
-        || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null;
+        || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null
+        || filter.EpicId != null || filter.HideSubtasks;
 
     protected override async Task OnParametersSetAsync()
     {

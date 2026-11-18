@@ -1,0 +1,81 @@
+@* Issue detail sidebar: the issue's parent (epic, or a sub-task's story/task), with a picker to change it. *@
+@inject LinkedWorkService LinkedWork
+@inject ProjectAccess Access
+@inject CurrentUser Me
+
+<div class="field">
+    <label>Parent</label>
+    @if (Issue.Type == IssueType.Epic)
+    {
+        <span class="muted small">Epics are top-level issues.</span>
+    }
+    else
+    {
+        @if (parent != null)
+        {
+            <div class="lw-parent">
+                <span title="@parent.Type">@parent.Type.Icon()</span>
+                <a href="@parent.Url" class="mono small">@parent.Key</a>
+                <span class="lw-parent-title" title="@parent.Title">@parent.Title</span>
+                @if (canEdit && Issue.Type != IssueType.Subtask)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger" title="Remove parent" @onclick="() => Set(null)">✕</button>
+                }
+            </div>
+        }
+        else
+        {
+            <span class="muted small">None</span>
+        }
+        @if (canEdit)
+        {
+            @if (picking)
+            {
+                <div class="mt-1">
+                    <IssuePicker ProjectId="Issue.ProjectId" Types="HierarchyRules.AllowedParentTypes(Issue.Type)" ExcludeIds="exclude"
+                                 Placeholder="@(Issue.Type == IssueType.Subtask ? "Find a story or task…" : "Find an epic…")" OnSelected="r => Set(r.Id)" />
+                    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => picking = false">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <div><button type="button" class="btn btn-link btn-sm p-0" @onclick="() => picking = true">@(parent == null ? "Set parent" : "Change parent")</button></div>
+            }
+        }
+        @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private IssueRef? parent;
+    private int[] exclude = [];
+    private bool canEdit, picking;
+    private string? error;
+    private (int, int?, IssueType, DateTime) loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (Issue.Id, Issue.ParentId, Issue.Type, Issue.UpdatedAt);
+        if (key == loadedFor) return;
+        loadedFor = key;
+        canEdit = (await Access.GetPermissionsAsync(Issue.ProjectId)).Can(Permission.EditIssues);
+        var h = await LinkedWork.GetHierarchyAsync(Issue.Id);
+        parent = h.Ancestors.LastOrDefault();
+        exclude = [Issue.Id, .. h.Children.Select(c => c.Id)];
+        if (parent != null) exclude = [.. exclude, parent.Id];
+    }
+
+    private async Task Set(int? parentId)
+    {
+        error = null;
+        try
+        {
+            await LinkedWork.SetParentAsync(Issue.Id, parentId, Me.Id);
+            picking = false;
+            loadedFor = default; // reload on the next parameters pass (the page reloads on the live event)
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

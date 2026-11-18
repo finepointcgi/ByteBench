@@ -5,7 +5,7 @@ namespace GitBench.Data;
 
 public enum IssueStatus { Backlog, Todo, InProgress, InReview, Done }
 public enum IssuePriority { Lowest, Low, Medium, High, Highest }
-public enum IssueType { Task, Bug, Feature, Story, Epic }
+public enum IssueType { Task, Bug, Feature, Story, Epic, Subtask }
 
 /// <summary>An account. Id, UserName, Email and PasswordHash come from ASP.NET Core Identity.</summary>
 public class User : IdentityUser<int>
@@ -40,7 +40,7 @@ public class Project
     public List<ProjectMember> Members { get; set; } = [];
 }
 
-public class Issue
+public partial class Issue
 {
     public int Id { get; set; }
     public int ProjectId { get; set; }
@@ -239,6 +239,7 @@ public enum NotificationKind
     PullRequestCommented, PullRequestReviewed, PullRequestMerged, PullRequestDeclined, PullRequestReopened,
     ReviewRequested,
     PipelineFailed,
+    IssueLinked, IssueHierarchyChanged,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -528,4 +529,39 @@ public class WebhookDelivery
     [MaxLength(4096)] public string? ResponseBody { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+}
+
+// ----- Linked work -----
+
+/// <summary>Hierarchy: an issue's parent (an epic, or for a sub-task its story/task). Rules: <see cref="GitBench.Services.HierarchyRules"/>.</summary>
+public partial class Issue
+{
+    public int? ParentId { get; set; }
+    public Issue? Parent { get; set; }
+    public List<Issue> Children { get; set; } = [];
+
+    /// <summary>Not stored: parent key, sub-task progress and blocked flag, filled in for lists and the board.</summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped] public IssueWorkInfo? Work { get; set; }
+}
+
+/// <summary>Display info for list rows and board cards (see <see cref="Issue.Work"/>).</summary>
+public sealed record IssueWorkInfo(string? ParentKey, int? ParentNumber, string? ParentTitle, int ChildDone, int ChildTotal, IReadOnlyList<string> BlockedBy)
+{
+    public bool Blocked => BlockedBy.Count > 0;
+}
+
+/// <summary>Kinds of issue link. Stored from the source's point of view: Source blocks / relates to / duplicates / clones Target.</summary>
+public enum IssueLinkType { Blocks, RelatesTo, Duplicates, Clones }
+
+/// <summary>A directed link between two issues, possibly in different projects.</summary>
+public class IssueLink
+{
+    public int Id { get; set; }
+    public int SourceIssueId { get; set; }
+    public Issue SourceIssue { get; set; } = null!;
+    public int TargetIssueId { get; set; }
+    public Issue TargetIssue { get; set; } = null!;
+    public IssueLinkType Type { get; set; }
+    public int? CreatedById { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -509,6 +509,37 @@ dispatcher.Enqueue(projectId, "pipeline.completed", new { pipeline = new { id, s
 
 The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Other push listeners can inject `PushCapture` to get them too.
 
+## Linked work: sub-tasks, epics and issue links
+
+**Hierarchy.** `Issue.ParentId` links an issue to a parent in the same project, up to three levels: **Epic › Story/Task/Bug/Feature › Sub-task** (`IssueType.Subtask`).
+
+- An epic has no parent; its children can be any type except Epic and Subtask.
+- A sub-task must have a parent that is neither an epic nor a sub-task, and has no children of its own.
+- Other types may have an epic as parent, or none; their children can only be sub-tasks.
+- No cycles. The rules live in `Services/HierarchyRules.cs` and `IssueService` checks them on every create and update (UI and API alike), so changing a type can be refused too (e.g. turning a story with sub-tasks into an epic).
+- Deleting an issue deletes its sub-tasks (the UI says how many first). An epic's children are kept and unlinked.
+
+**Issue links.** `IssueLink` stores Source → Target with a type: **blocks**, **relates to**, **duplicates** or **clones**. Each side shows its own phrase ("blocks" / "is blocked by", "duplicates" / "is duplicated by"). Links can cross projects, but only to issues you can view, and links to issues you can't view are hidden. Self-links and a second link of the same type between the same two issues (in either direction) are refused.
+
+**In the UI** (`Components/LinkedWork/`, styles in `wwwroot/css/linked-work.css`):
+
+- Issue detail: a parent breadcrumb above the title, a **Parent** field with a search-as-you-type picker (`IssuePicker`, reused for links), a **Child issues** / **Sub-tasks** panel (progress by count and points, inline create, add existing, remove) and a **Linked issues** panel grouped by relationship with each issue's status.
+- Adding a "duplicates" link offers to close the issue. An issue with an open "is blocked by" link shows ⛔ on its board card, list row and links panel. Moving it to In Progress or Done still works, but shows a warning.
+- Issue list: the type filter includes Sub-task, plus an **epic** filter (its children and their sub-tasks) and **Hide sub-tasks**. Board cards show the parent key and child progress (☑ 2/5).
+- **Epics** page (`/p/{KEY}/epics`, in the sidebar): each epic with its child count, points and progress. New issues can start with a parent: `/p/{KEY}/issues/new?parent=WEB-9`.
+- Parent changes and link changes are written to the activity of every issue involved (both ends of a link) and notify their watchers (`IssueHierarchyChanged`, `IssueLinked`).
+
+**API.** Issues carry `parentId` (the parent's issue id). `POST /issues` and `PATCH /issues/{number}` accept `parentId` (`null` removes it); rule violations return `422`.
+
+| Method | Path (under `/api/v1/projects/{key}/issues/{number}`) | Notes |
+|---|---|---|
+| GET | `/links` | `[{id, type, issue: {id, key, number, project, title, type, status, webUrl}, createdAt}]`; `type` is from this issue's side: `blocks`, `isBlockedBy`, `relatesTo`, `duplicates`, `isDuplicatedBy`, `clones`, `isClonedBy` |
+| POST | `/links` | `{type, issue: "OPS-2"}`; returns `201`. Needs EditIssues here and view access to the other issue |
+| DELETE | `/links/{linkId}` | `204` |
+| GET | `/children` | Child issues (an epic's issues, or sub-tasks) as issue objects |
+
+Code: `Services/LinkedWorkService.cs`, `Services/HierarchyRules.cs`, `Services/LinkedWorkNotifications.cs`, `Api/LinkEndpoints.cs`. Schema: `Issue.ParentId` and `IssueLink` (migration `LinkedWork`). The seed makes WEB "Public release" an epic with three children, gives the Kanban story two sub-tasks, and has "Avatar images broken on Safari" block "Dark mode".
+
 ## Next steps
 
-- **More features:** issue links and sub-tasks, attachments, email delivery of notifications, @mention autocomplete.
+- **More features:** attachments, email delivery of notifications, @mention autocomplete.

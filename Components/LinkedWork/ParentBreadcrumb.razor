@@ -1,0 +1,29 @@
+@* Parent chain above an issue's title: ⚡ WEB-9 Public release › 📗 WEB-3 Kanban board › WEB-11 *@
+@inject LinkedWorkService LinkedWork
+
+@if (ancestors.Count > 0)
+{
+    <div class="lw-crumbs">
+        @foreach (var a in ancestors)
+        {
+            <a href="@a.Url" title="@a.Type: @a.Title"><span>@a.Type.Icon()</span> <span class="mono">@a.Key</span> @a.Title</a>
+            <span class="lw-crumb-sep">›</span>
+        }
+        <span class="mono">@Issue.Key</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private IReadOnlyList<IssueRef> ancestors = [];
+    private (int, int?, DateTime) loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (Issue.Id, Issue.ParentId, Issue.UpdatedAt);
+        if (key == loadedFor) return;
+        loadedFor = key;
+        ancestors = Issue.ParentId == null ? [] : (await LinkedWork.GetHierarchyAsync(Issue.Id)).Ancestors;
+    }
+}

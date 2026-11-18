@@ -257,6 +257,9 @@ namespace GitBench.Data.Migrations
                     b.Property<int>("Number")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("ParentId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Priority")
                         .HasColumnType("INTEGER");
 
@@ -292,12 +295,47 @@ namespace GitBench.Data.Migrations
 
                     b.HasIndex("MilestoneId");
 
+                    b.HasIndex("ParentId");
+
                     b.HasIndex("ReporterId");
 
                     b.HasIndex("ProjectId", "Number")
                         .IsUnique();
 
                     b.ToTable("Issues");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceIssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TargetIssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("TargetIssueId");
+
+                    b.HasIndex("SourceIssueId", "TargetIssueId", "Type")
+                        .IsUnique();
+
+                    b.ToTable("IssueLinks");
                 });
 
             modelBuilder.Entity("GitBench.Data.Label", b =>
@@ -1392,6 +1430,11 @@ namespace GitBench.Data.Migrations
                         .HasForeignKey("MilestoneId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("GitBench.Data.Issue", "Parent")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("GitBench.Data.Project", "Project")
                         .WithMany("Issues")
                         .HasForeignKey("ProjectId")
@@ -1408,9 +1451,35 @@ namespace GitBench.Data.Migrations
 
                     b.Navigation("Milestone");
 
+                    b.Navigation("Parent");
+
                     b.Navigation("Project");
 
                     b.Navigation("Reporter");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueLink", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Issue", "SourceIssue")
+                        .WithMany()
+                        .HasForeignKey("SourceIssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Issue", "TargetIssue")
+                        .WithMany()
+                        .HasForeignKey("TargetIssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SourceIssue");
+
+                    b.Navigation("TargetIssue");
                 });
 
             modelBuilder.Entity("GitBench.Data.Label", b =>
@@ -1772,6 +1841,8 @@ namespace GitBench.Data.Migrations
             modelBuilder.Entity("GitBench.Data.Issue", b =>
                 {
                     b.Navigation("Activities");
+
+                    b.Navigation("Children");
 
                     b.Navigation("Comments");
                 });

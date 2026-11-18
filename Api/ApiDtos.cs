@@ -25,7 +25,7 @@ public record MilestoneRefDto(int Id, string Title);
 public record MilestoneDto(int Id, string Title, string? Description, DateOnly? StartDate, DateOnly? DueDate, bool IsClosed,
     int OpenIssues, int ClosedIssues);
 
-public record IssueDto(int Id, string Key, int Number, string Title, string? Description,
+public partial record IssueDto(int Id, string Key, int Number, string Title, string? Description,
     IssueType Type, IssueStatus Status, IssuePriority Priority, int? StoryPoints, DateOnly? DueDate,
     UserDto? Assignee, UserDto Reporter, MilestoneRefDto? Milestone, IReadOnlyList<LabelDto> Labels,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl);
@@ -54,7 +54,7 @@ public record MergeResultDto(bool Merged, string? MergeCommitSha, bool FastForwa
 
 // ----- Request bodies -----
 
-public record CreateIssueRequest(string Title, string? Description = null, IssueType? Type = null, IssuePriority? Priority = null,
+public partial record CreateIssueRequest(string Title, string? Description = null, IssueType? Type = null, IssuePriority? Priority = null,
     IssueStatus? Status = null, string? Assignee = null, IReadOnlyList<string>? Labels = null, int? MilestoneId = null,
     int? StoryPoints = null, DateOnly? DueDate = null);
 
@@ -62,7 +62,7 @@ public record CreateIssueRequest(string Title, string? Description = null, Issue
 /// PATCH semantics: only fields present in the JSON change. <c>null</c> clears assignee, milestoneId, storyPoints,
 /// dueDate and description. <c>labels</c> replaces the whole label set.
 /// </summary>
-public record UpdateIssueRequest(string? Title = null, string? Description = null, IssueType? Type = null, IssuePriority? Priority = null,
+public partial record UpdateIssueRequest(string? Title = null, string? Description = null, IssueType? Type = null, IssuePriority? Priority = null,
     IssueStatus? Status = null, string? Assignee = null, IReadOnlyList<string>? Labels = null, int? MilestoneId = null,
     int? StoryPoints = null, DateOnly? DueDate = null);
 
@@ -109,7 +109,7 @@ public static class Dto
         i.Id, i.Key, i.Number, i.Title, i.Description, i.Type, i.Status, i.Priority, i.StoryPoints, Date(i.DueDate),
         UserOrNull(i.Assignee), User(i.Reporter), i.Milestone is { } m ? new MilestoneRefDto(m.Id, m.Title) : null,
         i.Labels.OrderBy(l => l.Name).Select(Label).ToList(),
-        Utc(i.CreatedAt), Utc(i.UpdatedAt), Utc(i.ClosedAt), $"{baseUrl}/p/{i.Project.Key}/issues/{i.Number}");
+        Utc(i.CreatedAt), Utc(i.UpdatedAt), Utc(i.ClosedAt), $"{baseUrl}/p/{i.Project.Key}/issues/{i.Number}") { ParentId = i.ParentId };
 
     public static CommentDto Comment(Comment c) => new(c.Id, c.Body, User(c.Author), Utc(c.CreatedAt), Utc(c.EditedAt));
 

@@ -7,6 +7,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject LinkedWorkService LinkedWork
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -19,6 +20,7 @@ else if (issue != null && project != null)
     <div class="breadcrumbs">
         <a href="/p/@project.Key/issues">@project.Name</a> / <a href="/p/@project.Key/issues">Issues</a> / <span class="mono">@issue.Key</span>
     </div>
+    <GitBench.Components.LinkedWork.ParentBreadcrumb Issue="issue" />
 
     <div class="issue-header">
         @if (editingTitle)
@@ -53,6 +55,7 @@ else if (issue != null && project != null)
         }
     </div>
     @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+    <GitBench.Components.LinkedWork.BlockedStatusWarning Issue="issue" />
     <div class="issue-subhead">
         <StatusBadge Status="issue.Status" />
         <span class="muted">
@@ -94,6 +97,8 @@ else if (issue != null && project != null)
                 </div>
             </div>
 
+            <GitBench.Components.LinkedWork.ChildIssuesPanel Issue="issue" />
+            <GitBench.Components.LinkedWork.LinkedIssuesPanel Issue="issue" />
             <!-- Timeline: comments + activity -->
             <h2 class="section-title mt-4">Activity</h2>
             <div class="timeline">
@@ -197,6 +202,7 @@ else if (issue != null && project != null)
                     @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
                 </select>
             </div>
+            <GitBench.Components.LinkedWork.ParentField Issue="issue" />
             <div class="field">
                 <label>Milestone</label>
                 <select class="form-select form-select-sm" value="@(issue.MilestoneId?.ToString() ?? "")" @onchange="SetMilestone">
@@ -460,7 +466,7 @@ else if (issue != null && project != null)
 
     private async Task Delete()
     {
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {issue!.Key}? This cannot be undone.")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", await LinkedWork.DeleteConfirmTextAsync(issue!.Id, issue.Key))) return;
         if (!await Guard(() => Issues.DeleteIssueAsync(issue.Id))) return;
         Nav.NavigateTo($"/p/{project!.Key}/issues");
     }

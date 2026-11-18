@@ -21,7 +21,7 @@ public static class IssueEndpoints
         issues.MapPost("/issues", CreateIssue).WithName("CreateIssue").WithSummary("Create an issue")
             .WithJsonBody<CreateIssueRequest>().Produces<IssueDto>(StatusCodes.Status201Created);
         issues.MapPatch("/issues/{number:int}", UpdateIssue).WithName("UpdateIssue").WithSummary("Update an issue")
-            .WithDescription("Only fields present in the body change. null clears assignee, milestoneId, storyPoints, dueDate and description; labels replaces the label set.")
+            .WithDescription("Only fields present in the body change. null clears assignee, milestoneId, parentId, storyPoints, dueDate and description; labels replaces the label set.")
             .WithJsonBody<UpdateIssueRequest>();
         issues.MapGet("/issues/{number:int}/comments", ListComments).WithName("ListIssueComments").WithSummary("List an issue's comments");
         issues.MapPost("/issues/{number:int}/comments", AddComment).WithName("AddIssueComment").WithSummary("Comment on an issue")
@@ -106,6 +106,7 @@ public static class IssueEndpoints
             DueDate = body.DueDate?.ToDateTime(TimeOnly.MinValue),
             AssigneeId = string.IsNullOrEmpty(body.Assignee) ? null : await ResolveAssigneeAsync(users, access, project.Id, body.Assignee),
             MilestoneId = body.MilestoneId is { } mid ? ValidMilestone(project, mid) : null,
+            ParentId = body.ParentId, // hierarchy rules are enforced by IssueService (422 if broken)
         };
         if (issue.Status == IssueStatus.Done) issue.ClosedAt = DateTime.UtcNow;
         var labelIds = ResolveLabels(project, body.Labels).Select(l => l.Id).ToList();
@@ -173,6 +174,11 @@ public static class IssueEndpoints
             {
                 DateTime? due = body.DueDate?.ToDateTime(TimeOnly.MinValue);
                 if (i.DueDate != due) { i.DueDate = due; changes.Add(due == null ? "removed the due date" : $"set the due date to **{due:MMM d, yyyy}**"); }
+            }
+            if (Has("parentId") && i.ParentId != body.ParentId)
+            {
+                changes.Add(await LinkedWorkService.ParentChangeTextAsync(db, i.ParentId, body.ParentId));
+                i.ParentId = body.ParentId;
             }
             if (labels != null)
             {

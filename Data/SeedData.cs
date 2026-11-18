@@ -105,6 +105,16 @@ public static class SeedData
         Make(web, "Public release", IssueType.Epic, IssueStatus.Backlog, IssuePriority.Highest, alice, alice, v1, null,
             "Umbrella epic for everything required to ship v1.0.");
         Make(web, "Avatar images broken on Safari", IssueType.Bug, IssueStatus.Todo, IssuePriority.Medium, dan, dan, s2, 1, null, bug, ui);
+
+        // ----- Linked work: an epic with children, sub-tasks and a "blocks" link -----
+        Issue Web(string title) => db.Issues.Local.First(i => i.Project == web && i.Title == title);
+        var release = Web("Public release");
+        foreach (var t in new[] { "Drag-and-drop Kanban board", "Write API documentation", "Dark mode" }) Web(t).Parent = release;
+        Make(web, "Drag between columns", IssueType.Subtask, IssueStatus.Done, IssuePriority.High, alice, alice, s2, 3, null).Parent = kanban;
+        Make(web, "Reorder cards within a column", IssueType.Subtask, IssueStatus.Todo, IssuePriority.Medium, alice, bob, s2, 2,
+            "Persist the new position when a card is dropped between two others.").Parent = kanban;
+        db.IssueLinks.Add(new IssueLink { SourceIssue = Web("Avatar images broken on Safari"), TargetIssue = Web("Dark mode"), Type = IssueLinkType.Blocks, CreatedAt = now.AddDays(-1) });
+
         web.NextIssueNumber = n;
 
         Make(ops, "Migrate builds to self-hosted runners", IssueType.Task, IssueStatus.InProgress, IssuePriority.Medium, dan, dan, null, 5, null, ops.Labels[0]);

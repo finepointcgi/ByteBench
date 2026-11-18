@@ -1,0 +1,134 @@
+@* Issue detail: links to other issues (any project the user can view), grouped by relationship, with add and remove. *@
+@inject LinkedWorkService LinkedWork
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject CurrentUser Me
+@inject LiveEvents Live
+@implements IDisposable
+
+@if (canEdit || links.Count > 0)
+{
+    <div class="lw-panel">
+        <div class="lw-panel-head">
+            <h2 class="section-title m-0">Linked issues</h2>
+            @if (OpenBlockers.Any())
+            {
+                <span class="lw-blocked" title="Blocked by @string.Join(", ", OpenBlockers.Select(b => b.Other.Key))">⛔ Blocked</span>
+            }
+        </div>
+        @foreach (var group in links.GroupBy(l => l.Relation))
+        {
+            <div class="lw-group">@LinkedWorkService.Phrase(group.Key)</div>
+            <ul class="lw-list">
+                @foreach (var l in group)
+                {
+                    <li @key="l.LinkId" class="@(l.Other.Status == IssueStatus.Done ? "lw-done-row" : "")">
+                        <span title="@l.Other.Type">@l.Other.Type.Icon()</span>
+                        <a class="mono small" href="@l.Other.Url">@l.Other.Key</a>
+                        <a class="lw-item-title" href="@l.Other.Url">@l.Other.Title</a>
+                        <Avatar User="l.Other.Assignee" Size="20" />
+                        <StatusBadge Status="l.Other.Status" />
+                        @if (canEdit)
+                        {
+                            <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Remove link" @onclick="() => Remove(l)">✕</button>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+        @if (links.Count == 0)
+        {
+            <div class="muted small mb-2">No linked issues.</div>
+        }
+        @if (offerClose != null)
+        {
+            <div class="lw-offer">
+                <span>@Issue.Key duplicates <b>@offerClose</b>. Close it?</span>
+                <button type="button" class="btn btn-sm btn-success" @onclick="CloseAsDuplicate">Close as duplicate</button>
+                <button type="button" class="btn btn-sm btn-link" @onclick="() => offerClose = null">Not now</button>
+            </div>
+        }
+        @if (canEdit)
+        {
+            <div class="lw-add">
+                <select class="form-select form-select-sm lw-type" @bind="relation" aria-label="Link type">
+                    @foreach (var r in Enum.GetValues<IssueLinkRelation>()) { <option value="@r">@LinkedWorkService.Phrase(r)</option> }
+                </select>
+                <IssuePicker ExcludeIds="exclude" Placeholder="Link an issue: key or title, any project…" OnSelected="Add" />
+            </div>
+        }
+        @if (error != null) { <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">@error</div> }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private List<IssueLinkView> links = [];
+    private int[] exclude = [];
+    private bool canEdit;
+    private string? error, offerClose;
+    private IssueLinkRelation relation = IssueLinkRelation.RelatesTo;
+    private (int, DateTime) loadedFor;
+    private IDisposable? liveSubscription;
+
+    private IEnumerable<IssueLinkView> OpenBlockers => links.Where(l => l.Relation == IssueLinkRelation.IsBlockedBy && l.Other.Status != IssueStatus.Done);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (Issue.Id, Issue.UpdatedAt);
+        if (key == loadedFor) return;
+        if (key.Item1 != loadedFor.Item1) offerClose = null;
+        loadedFor = key;
+        canEdit = (await Access.GetPermissionsAsync(Issue.ProjectId)).Can(Permission.EditIssues);
+        await Load();
+        if (Issue.Status == IssueStatus.Done) offerClose = null;
+    }
+
+    private async Task Load()
+    {
+        links = await LinkedWork.GetLinksAsync(Issue.Id);
+        exclude = [Issue.Id];
+    }
+
+    // A linked issue changed (e.g. its status): refresh.
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<IssueChanged>(e => links.Any(l => l.Other.Id == e.IssueId)
+            ? InvokeAsync(async () => { await Load(); StateHasChanged(); })
+            : Task.CompletedTask);
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+
+    private async Task Add(IssueRef other)
+    {
+        error = null;
+        try
+        {
+            await LinkedWork.AddLinkAsync(Issue.Id, other.Id, relation, Me.Id);
+            if (relation == IssueLinkRelation.Duplicates && Issue.Status != IssueStatus.Done) offerClose = other.Key;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Remove(IssueLinkView l)
+    {
+        error = null;
+        try
+        {
+            await LinkedWork.RemoveLinkAsync(l.LinkId, Issue.Id, Me.Id);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task CloseAsDuplicate()
+    {
+        error = null;
+        offerClose = null;
+        try { await Issues.SetStatusAsync(Issue.Id, IssueStatus.Done, Me.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

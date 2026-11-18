@@ -23,6 +23,7 @@ public static class Display
         IssueType.Feature => "✨",
         IssueType.Story => "📗",
         IssueType.Epic => "⚡",
+        IssueType.Subtask => "↳",
         _ => "☑️"
     };
 

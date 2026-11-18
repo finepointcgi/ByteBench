@@ -9,7 +9,7 @@
             }
         </div>
         <div class="issue-meta">
-            <span class="mono">@Issue.Key</span>
+            <span class="mono">@Issue.Key</span><GitBench.Components.LinkedWork.IssueWorkChips Issue="Issue" />
             · opened @Display.Ago(Issue.CreatedAt)
             @if (Issue.Milestone is { } m)
             {

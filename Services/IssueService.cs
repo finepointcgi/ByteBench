@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Services;
 
-public class IssueFilter
+public partial class IssueFilter
 {
     public string? Search { get; set; }
     public IssueStatus? Status { get; set; }
@@ -124,6 +124,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         if (f.MilestoneId is { } m) q = m == 0 ? q.Where(i => i.MilestoneId == null) : q.Where(i => i.MilestoneId == m);
         if (f.Type is { } t) q = q.Where(i => i.Type == t);
         if (f.Priority is { } p) q = q.Where(i => i.Priority == p);
+        q = f.ApplyLinkedWork(q);
 
         q = f.Sort switch
         {
@@ -133,7 +134,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
             "number" => q.OrderBy(i => i.Number),
             _ => q.OrderByDescending(i => i.UpdatedAt),
         };
-        return await q.ToListAsync();
+        return await HierarchyRules.AnnotateAsync(db, access, await q.ToListAsync());
     }
 
     public async Task<(int open, int closed)> CountAsync(int projectId)
@@ -152,7 +153,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         var q = BaseIssueQuery(db).Where(i => i.ProjectId == projectId);
         if (milestoneId is { } m) q = q.Where(i => i.MilestoneId == m);
         if (assigneeId is { } a) q = q.Where(i => i.AssigneeId == a);
-        return await q.OrderBy(i => i.SortOrder).ThenBy(i => i.Number).ToListAsync();
+        return await HierarchyRules.AnnotateAsync(db, access, await q.OrderBy(i => i.SortOrder).ThenBy(i => i.Number).ToListAsync());
     }
 
     public async Task<List<Issue>> GetAssignedToAsync(int userId)
@@ -194,11 +195,14 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         var ids = labelIds.ToList();
         issue.Labels = await db.Labels.Where(l => ids.Contains(l.Id)).ToListAsync();
         issue.Activities.Add(new Activity { ActorId = actorId, Text = "created this issue" });
+        await HierarchyRules.ValidateAsync(db, issue);
+        var hierarchy = await HierarchyRules.RecordAsync(db, issue, null, actorId);
 
         db.Issues.Add(issue);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         issue.Project = project;
+        await notifications.OnHierarchyChangedAsync(hierarchy, actorId);
         await notifications.OnIssueCreatedAsync(issue.Id, actorId);
         await webhooks.IssueCreatedAsync(issue.Id, actorId);
         return issue;
@@ -212,8 +216,11 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
         var wasClosed = issue.Status.IsClosed();
         var before = IssueSnapshot.Of(issue);
+        var (parentBefore, typeBefore) = (issue.ParentId, issue.Type);
         var text = await change(issue, db);
         if (text == null) return;
+        if (issue.ParentId != parentBefore || issue.Type != typeBefore) await HierarchyRules.ValidateAsync(db, issue);
+        var hierarchy = await HierarchyRules.RecordAsync(db, issue, parentBefore, actorId);
 
         if (!wasClosed && issue.Status.IsClosed()) issue.ClosedAt = DateTime.UtcNow;
         if (wasClosed && !issue.Status.IsClosed()) issue.ClosedAt = null;
@@ -221,6 +228,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         db.Activities.Add(new Activity { IssueId = issueId, ActorId = actorId, Text = text });
         await db.SaveChangesAsync();
         await notifications.OnIssueUpdatedAsync(issueId, actorId, before);
+        await notifications.OnHierarchyChangedAsync(hierarchy, actorId);
         await webhooks.IssueUpdatedAsync(issueId, actorId, text);
     }
 
@@ -316,6 +324,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
             ProjectRole.Maintainer, "delete issues");
         await using var db = await dbFactory.CreateDbContextAsync();
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
+        await HierarchyRules.DeleteSubtasksAsync(db, issueId); // an epic's children are unlinked by the FK instead
         db.Issues.Remove(issue);
         await db.SaveChangesAsync();
         await notifications.OnIssueDeletedAsync(issue.ProjectId, issueId);

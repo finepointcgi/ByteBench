@@ -78,6 +78,7 @@ public static class ApiEndpoints
         api.MapGet("/projects/{key}", GetProject).WithName("GetProject").WithSummary("Get a project").WithTags("Projects");
 
         api.MapIssueEndpoints();
+        api.MapLinkEndpoints();
         api.MapRepoEndpoints();
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.

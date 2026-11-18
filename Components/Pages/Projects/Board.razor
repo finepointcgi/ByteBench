@@ -32,6 +32,7 @@ else if (project != null)
     </div>
 
     @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+    @if (warning != null) { <div class="alert alert-warning py-2">@warning</div> }
     <div class="board">
         @foreach (var status in Enum.GetValues<IssueStatus>())
         {
@@ -63,6 +64,7 @@ else if (project != null)
                             <div class="board-card-foot">
                                 <span title="@i.Type">@i.Type.Icon()</span>
                                 <span class="mono small muted">@i.Key</span>
+                                <GitBench.Components.LinkedWork.IssueWorkChips Issue="i" Links Compact />
                                 <PriorityIcon Priority="i.Priority" />
                                 @if (i.StoryPoints is { } sp) { <span class="points">@sp</span> }
                                 <span class="ms-auto"><Avatar User="i.Assignee" Size="22" /></span>
@@ -84,7 +86,7 @@ else if (project != null)
 
     private Project? project;
     private bool notFound, canEdit;
-    private string? error;
+    private string? error, warning;
     private List<User> users = [];
     private List<Issue> issues = [];
     private int? milestoneId, assigneeId;
@@ -138,6 +140,7 @@ else if (project != null)
 
         // Optimistic local reorder so the UI responds instantly.
         issues.Remove(moved);
+        warning = moved.Status == status ? null : HierarchyRules.BlockedMoveWarning(moved.Key, status, moved.Work?.BlockedBy ?? []);
         moved.Status = status;
         var idx = beforeId is { } b ? issues.FindIndex(x => x.Id == b) : -1;
         if (idx < 0) issues.Add(moved); else issues.Insert(idx, moved);

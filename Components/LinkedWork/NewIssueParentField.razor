@@ -1,0 +1,60 @@
+@* New issue form: optional parent (an epic, or for a sub-task its story/task). Preset with ?parent=WEB-9. *@
+@inject LinkedWorkService LinkedWork
+@inject NavigationManager Nav
+
+<div class="field">
+    <label>Parent</label>
+    @if (Issue.Type == IssueType.Epic)
+    {
+        <span class="muted small">Epics are top-level issues.</span>
+    }
+    else if (parent != null)
+    {
+        <div class="lw-parent">
+            <span>@parent.Type.Icon()</span> <span class="mono small">@parent.Key</span>
+            <span class="lw-parent-title" title="@parent.Title">@parent.Title</span>
+            <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger" title="Clear" @onclick="() => Set(null)">✕</button>
+        </div>
+        @if (!HierarchyRules.CanBeChildOf(Issue.Type, parent.Type))
+        {
+            <div class="text-danger small mt-1">@HierarchyRules.ParentRule(Issue.Type)</div>
+        }
+    }
+    else
+    {
+        <IssuePicker ProjectId="Project.Id" Types="HierarchyRules.AllowedParentTypes(Issue.Type)"
+                     Placeholder="@(Issue.Type == IssueType.Subtask ? "Required: story or task…" : "Optional: epic…")" OnSelected="r => Set(r)" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    /// <summary>The issue being created; its ParentId is set directly.</summary>
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+    /// <summary>Called after this field changed the issue (e.g. preset its type), so the form re-renders.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private IssueRef? parent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("parent", out var key) && await LinkedWork.FindByKeyAsync(key.ToString()) is { } p && p.ProjectId == Project.Id)
+        {
+            Set(p);
+            if (p.Type != IssueType.Epic && Issue.Type != IssueType.Subtask) Issue.Type = IssueType.Subtask;
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Issue.Type == IssueType.Epic && parent != null) Set(null); // epics can't have a parent
+    }
+
+    private void Set(IssueRef? p)
+    {
+        parent = p;
+        Issue.ParentId = p?.Id;
+    }
+}

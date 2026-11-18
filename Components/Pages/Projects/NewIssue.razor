@@ -46,6 +46,7 @@ else if (project != null)
                         @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
                     </InputSelect>
                 </div>
+                <GitBench.Components.LinkedWork.NewIssueParentField Project="project" Issue="issue" OnChanged="StateHasChanged" />
                 <div class="field">
                     <label>Status</label>
                     <InputSelect class="form-select form-select-sm" @bind-Value="issue.Status">

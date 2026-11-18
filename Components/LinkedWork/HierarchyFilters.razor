@@ -1,0 +1,40 @@
+@* Issue list filters: issues under an epic, and hide sub-tasks. Edits the page's IssueFilter, then calls OnChanged. *@
+@inject LinkedWorkService LinkedWork
+
+<select class="form-select form-select-sm" value="@(Filter.EpicId?.ToString() ?? "")" @onchange="SetEpic" aria-label="Epic">
+    <option value="">Any epic</option>
+    @foreach (var e in epics) { <option value="@e.Epic.Id">⚡ @e.Epic.Key @Trim(e.Epic.Title)</option> }
+</select>
+<label class="lw-toggle small">
+    <input type="checkbox" class="form-check-input" checked="@Filter.HideSubtasks" @onchange="SetHide" /> Hide sub-tasks
+</label>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public IssueFilter Filter { get; set; } = null!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private List<EpicSummary> epics = [];
+    private int loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == Project.Id) return;
+        loadedFor = Project.Id;
+        epics = await LinkedWork.GetEpicsAsync(Project.Id);
+    }
+
+    private static string Trim(string s) => s.Length > 40 ? s[..39] + "…" : s;
+
+    private async Task SetEpic(ChangeEventArgs e)
+    {
+        Filter.EpicId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task SetHide(ChangeEventArgs e)
+    {
+        Filter.HideSubtasks = e.Value is true || e.Value?.ToString() == "True" || e.Value?.ToString() == "true";
+        await OnChanged.InvokeAsync();
+    }
+}
