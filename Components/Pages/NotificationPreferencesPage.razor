@@ -5,82 +5,68 @@
 @inject NotificationPreferences Preferences
 @inject CurrentUser Me
 @inject IOptions<EmailOptions> EmailOptions
+@inject ISnackbar Snackbar
 
 <PageTitle>Notification preferences · GitBench</PageTitle>
 
+<div class="notif-prefs-page">
 <div class="page-header">
-    <h1>Notification preferences</h1>
-    <div class="d-flex gap-3 align-items-center">
-        @if (savedAt != null) { <span class="small muted" role="status">✓ Saved</span> }
-        <a class="btn btn-link btn-sm" href="/notifications">Notifications</a>
-        <a class="btn btn-link btn-sm" href="/account/profile">Profile</a>
+    <MudText Typo="Typo.h5" HtmlTag="h1">Notification preferences</MudText>
+    <div class="np-links">
+        <MudButton Href="/notifications" Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Notifications">Notifications</MudButton>
+        <MudButton Href="/account/profile" Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Person">Profile</MudButton>
     </div>
 </div>
 
 @if (prefs == null)
 {
-    <div class="muted">Loading…</div>
+    <MudText Class="mud-text-secondary">Loading…</MudText>
 }
 else
 {
-    <div class="card-panel narrow notif-prefs">
-        <h2 class="h6 mb-2">Email</h2>
-        <div class="form-check form-switch mb-1">
-            <input class="form-check-input" type="checkbox" role="switch" id="np-email" checked="@emailEnabled" @onchange="OnEmailToggled" />
-            <label class="form-check-label" for="np-email">Send me notification emails</label>
-        </div>
-        <div class="small muted mb-3">
-            @if (string.IsNullOrWhiteSpace(Me.User?.Email)) { <span>Your account has no email address. Add one on your <a href="/account/profile">profile</a>.</span> }
+    <MudPaper Outlined="true" Class="pa-4 np-panel">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="np-title">Email</MudText>
+        <MudSwitch T="bool" Value="emailEnabled" ValueChanged="OnEmailToggled" Color="Color.Primary" Label="Send me notification emails" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3 np-help">
+            @if (string.IsNullOrWhiteSpace(Me.User?.Email)) { <span>Your account has no email address. Add one on your <MudLink Href="/account/profile" Typo="Typo.body2">profile</MudLink>.</span> }
             else { <span>Emails go to <b>@Me.User!.Email</b>.</span> }
             @if (!EmailOptions.Value.Enabled) { <span> Email delivery is turned off on this server, so nothing is sent for now.</span> }
             else if (EmailOptions.Value.DigestMinutes > 0) { <span> Emails are batched: at most one every @EmailOptions.Value.DigestMinutes minutes.</span> }
-        </div>
+        </MudText>
 
-        <div class="form-check mb-4">
-            <input class="form-check-input" type="checkbox" id="np-self" checked disabled />
-            <label class="form-check-label" for="np-self">Don't notify me about my own actions</label>
-            <div class="small muted">Always on: you never get notifications or emails about things you did yourself.</div>
-        </div>
+        <MudCheckBox T="bool" Value="true" Disabled="true" Color="Color.Primary" Label="Don't notify me about my own actions" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4 np-help">Always on: you never get notifications or emails about things you did yourself.</MudText>
 
-        <h2 class="h6 mb-2">What you hear about</h2>
-        <table class="table table-sm align-middle notif-prefs-table">
-            <thead>
-                <tr>
-                    <th scope="col">Event</th>
-                    <th scope="col" class="text-center">In-app + email</th>
-                    <th scope="col" class="text-center">In-app only</th>
-                    <th scope="col" class="text-center">Off</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var g in NotificationPreferences.Groups)
-                {
-                    var group = g.Group;
-                    <tr @key="group">
-                        <th scope="row" class="fw-normal">
-                            <div class="fw-semibold">@g.Title</div>
-                            <div class="small muted">@g.Description</div>
-                        </th>
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="np-title">What you hear about</MudText>
+        <div class="np-groups">
+            @foreach (var g in NotificationPreferences.Groups)
+            {
+                var group = g.Group;
+                <div class="np-group" @key="group">
+                    <div class="np-group-text">
+                        <div class="np-group-title">@g.Title</div>
+                        <div class="np-group-desc">@g.Description</div>
+                    </div>
+                    <MudRadioGroup T="NotificationChannel" Value="channels[group]" ValueChanged="channel => SetChannel(group, channel)"
+                                   Name="@($"np-{group}")" Class="np-choices" role="radiogroup" aria-label="@g.Title">
                         @foreach (var c in Choices)
                         {
                             var channel = c;
-                            <td class="text-center">
-                                <input type="radio" class="form-check-input" name="np-@group" id="np-@group-@channel"
-                                       aria-label="@($"{g.Title}: {Label(channel)}")"
-                                       checked="@(channels[group] == channel)" disabled="@(channel == NotificationChannel.InAppAndEmail && !emailEnabled)"
-                                       @onchange="() => SetChannel(group, channel)" />
-                            </td>
+                            <MudRadio T="NotificationChannel" Value="channel" Color="Color.Primary" Dense="true"
+                                      Disabled="@(channel == NotificationChannel.InAppAndEmail && !emailEnabled)"
+                                      AriaLabel="@($"{g.Title}: {Label(channel)}")">@Label(channel)</MudRadio>
                         }
-                    </tr>
-                }
-            </tbody>
-        </table>
-        <p class="small muted mb-0">
+                    </MudRadioGroup>
+                </div>
+            }
+        </div>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3 np-help">
             Defaults: in-app for everything, plus email for assignments, mentions and review requests.
-            To silence one issue or pull request, use <b>🔕 Mute</b> next to its Watch button.
-        </p>
-    </div>
+            To silence one issue or pull request, use <b>Mute</b> next to its Watch button.
+        </MudText>
+    </MudPaper>
 }
+</div>
 
 @code {
     private static readonly NotificationChannel[] Choices = [NotificationChannel.InAppAndEmail, NotificationChannel.InApp, NotificationChannel.Off];
@@ -88,7 +74,6 @@ else
     private UserNotificationPreferences? prefs;
     private Dictionary<NotificationGroup, NotificationChannel> channels = [];
     private bool emailEnabled;
-    private DateTime? savedAt;
 
     protected override async Task OnInitializedAsync()
     {
@@ -106,9 +91,9 @@ else
         _ => "Off",
     };
 
-    private Task OnEmailToggled(ChangeEventArgs e)
+    private Task OnEmailToggled(bool value)
     {
-        emailEnabled = e.Value is true || e.Value?.ToString() == "true";
+        emailEnabled = value;
         return SaveAsync();
     }
 
@@ -121,6 +106,6 @@ else
     private async Task SaveAsync()
     {
         await Preferences.SaveAsync(Me.Id, emailEnabled, channels);
-        savedAt = DateTime.UtcNow;
+        Snackbar.Add("Preferences saved.", Severity.Success);
     }
 }

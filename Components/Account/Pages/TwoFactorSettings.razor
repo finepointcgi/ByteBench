@@ -12,25 +12,29 @@
 
 <div class="profile-page">
     <div class="profile-head">
-        <a class="auth-back" href="account/profile">← Back to your profile</a>
-        <h1 class="auth-title mb-0">Two-factor sign-in</h1>
-        <p class="muted small mb-0">
+        <a class="auth-back" href="account/profile"><MudIcon Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" /> Back to your profile</a>
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Two-factor sign-in</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
             Protect your account with a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator,
             1Password, Authy, …) in addition to your password.
-        </p>
+        </MudText>
     </div>
 
-    <StatusMessage Success="@success" Errors="errors" />
+    <div class="mt-4">
+        <StatusMessage Success="@success" Errors="errors" />
+    </div>
 
     @if (recoveryCodes != null)
     {
         <section class="profile-section">
-            <h2 class="profile-section-title">Your recovery codes</h2>
-            <div class="alert alert-warning">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Your recovery codes</MudText>
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="auth-alert">
                 <b>Save these codes now.</b> They are shown only once. If you lose your device, each code signs you in once instead of an authenticator code.
-            </div>
+            </MudAlert>
             <pre id="recovery-codes" class="mono recovery-codes">@string.Join("\n", recoveryCodes)</pre>
-            <button type="button" class="btn btn-outline-secondary btn-sm"
+            @* A plain button: MudButton's OnClick parameter would claim the inline JS onclick (static SSR has no events).
+               The handler string is allowed by hash in ProductionSetup.InlineHandlers; keep the two in sync. *@
+            <button type="button" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-small"
                     onclick="navigator.clipboard.writeText(document.getElementById('recovery-codes').textContent); this.textContent='Copied';">Copy codes</button>
         </section>
     }
@@ -38,65 +42,70 @@
     @if (user != null && !enabled)
     {
         <section class="profile-section">
-            <h2 class="profile-section-title">Set up your authenticator app</h2>
-            <ol class="small">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Set up your authenticator app</MudText>
+            <ol class="tf-steps">
                 <li>Scan this QR code with your authenticator app, or enter the key manually.</li>
                 <li>Enter the 6-digit code the app shows to finish.</li>
             </ol>
-            <div class="d-flex flex-wrap gap-4 align-items-start mb-3">
+            <div class="tf-setup">
                 @if (qrSvg != null)
                 {
                     <div class="totp-qr" role="img" aria-label="QR code for your authenticator app">@((MarkupString)qrSvg)</div>
                 }
-                <div>
-                    <div class="small muted mb-1">Manual entry key</div>
-                    <code class="mono d-block mb-2 totp-key">@FormatKey(sharedKey)</code>
-                    <div class="small muted">Account: @user.UserName · Type: time-based · 6 digits</div>
+                <div class="tf-key">
+                    <div class="gb-field-label">Manual entry key</div>
+                    <code class="mono totp-key">@FormatKey(sharedKey)</code>
+                    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary">Account: @user.UserName · Type: time-based · 6 digits</MudText>
                 </div>
             </div>
 
             <EditForm Model="EnableInput" FormName="enable-2fa" OnValidSubmit="Enable" method="post">
                 <DataAnnotationsValidator />
-                <div class="mb-3" style="max-width:240px">
-                    <label class="form-label" for="tf-verify">Verification code</label>
-                    <InputText id="tf-verify" class="form-control mono" @bind-Value="EnableInput!.Code" autocomplete="one-time-code" inputmode="numeric" placeholder="123456" />
-                    <ValidationMessage For="() => EnableInput!.Code" class="text-danger small" />
+                <div class="gb-field tf-code-field">
+                    <label class="gb-field-label" for="tf-verify">Verification code</label>
+                    <InputText id="tf-verify" class="gb-input mono" @bind-Value="EnableInput!.Code" autocomplete="one-time-code" inputmode="numeric" placeholder="123456" />
+                    <ValidationMessage For="() => EnableInput!.Code" />
                 </div>
-                <button type="submit" class="btn btn-primary">Turn on two-factor sign-in</button>
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+                           StartIcon="@Icons.Material.Outlined.Security">Turn on two-factor sign-in</MudButton>
             </EditForm>
         </section>
     }
     else if (user != null)
     {
         <section class="profile-section">
-            <h2 class="profile-section-title">Status</h2>
-            <p><span class="badge text-bg-success">On</span> You sign in with your password and a code from your authenticator app.</p>
-            <p class="small muted">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Status</MudText>
+            <div class="d-flex align-center gap-2 mb-2">
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">On</MudChip>
+                <MudText Typo="Typo.body2">You sign in with your password and a code from your authenticator app.</MudText>
+            </div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
                 Git over HTTP and the REST API need a <a href="account/profile#tokens">personal access token</a>; your password alone is refused for git.
-            </p>
+            </MudText>
         </section>
 
         <section class="profile-section">
-            <h2 class="profile-section-title">Recovery codes</h2>
-            <p class="small">You have <b>@codesLeft</b> unused recovery code@(codesLeft == 1 ? "" : "s"). Generating new codes makes the old ones stop working.</p>
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Recovery codes</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">You have <b>@codesLeft</b> unused recovery code@(codesLeft == 1 ? "" : "s"). Generating new codes makes the old ones stop working.</MudText>
             <form method="post" @formname="regenerate-codes" @onsubmit="Regenerate">
                 <AntiforgeryToken />
-                <button type="submit" class="btn btn-outline-secondary"
+                @* Plain button for the inline confirm(); its string is allowed by hash in ProductionSetup.InlineHandlers. *@
+                <button type="submit" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-medium"
                         onclick="return confirm('Generate new recovery codes? Your current codes will stop working.');">Generate new recovery codes</button>
             </form>
         </section>
 
         <section class="profile-section">
-            <h2 class="profile-section-title">Turn off two-factor sign-in</h2>
-            <p class="small muted">Your account will be protected by your password only. Your authenticator key and recovery codes will stop working.</p>
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Turn off two-factor sign-in</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Your account will be protected by your password only. Your authenticator key and recovery codes will stop working.</MudText>
             <EditForm Model="DisableInput" FormName="disable-2fa" OnValidSubmit="Disable" method="post">
                 <DataAnnotationsValidator />
-                <div class="mb-3" style="max-width:320px">
-                    <label class="form-label" for="tf-password">Confirm with your password</label>
-                    <InputText id="tf-password" type="password" class="form-control" @bind-Value="DisableInput!.Password" autocomplete="current-password" />
-                    <ValidationMessage For="() => DisableInput!.Password" class="text-danger small" />
+                <div class="gb-field tf-password-field">
+                    <label class="gb-field-label" for="tf-password">Confirm with your password</label>
+                    <InputText id="tf-password" type="password" class="gb-input" @bind-Value="DisableInput!.Password" autocomplete="current-password" />
+                    <ValidationMessage For="() => DisableInput!.Password" />
                 </div>
-                <button type="submit" class="btn btn-outline-danger">Turn off</button>
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Error">Turn off</MudButton>
             </EditForm>
         </section>
     }

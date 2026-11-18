@@ -1,0 +1,20 @@
+.auth-back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 14px; font-size: 13px; }
+.profile-section { border-top: 1px solid var(--mud-palette-lines-default); margin-top: 20px; padding-top: 18px; }
+.profile-section ::deep .profile-section-title { font-weight: 600; margin-bottom: 12px; }
+
+.tf-steps { margin: 0 0 16px; padding-left: 20px; font-size: .875rem; }
+.tf-setup { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; margin-bottom: 20px; }
+.tf-key { flex: 1 1 200px; min-width: 0; }
+.tf-code-field { max-width: 240px; }
+.tf-password-field { max-width: 320px; }
+
+/* The QR code keeps a white background and quiet zone whatever the theme, so scanners read it. */
+.totp-qr { background: #fff; padding: 8px; border-radius: 6px; border: 1px solid var(--mud-palette-lines-default); line-height: 0; }
+.totp-qr ::deep svg { width: 180px; height: 180px; display: block; }
+.totp-key { display: block; margin-bottom: 8px; font-size: 15px; letter-spacing: .04em; word-break: break-all; color: var(--mud-palette-text-primary); }
+
+.recovery-codes {
+    columns: 2; margin: 0 0 12px; padding: 10px 14px; font-size: 14px;
+    color: var(--mud-palette-text-primary); background: var(--mud-palette-background);
+    border: 1px solid var(--mud-palette-lines-default); border-radius: 6px;
+}

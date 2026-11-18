@@ -1,4 +1,4 @@
-/* Email notifications, preferences, mute and the Markdown editor's @mention / issue autocomplete. Colours come from the theme variables. */
+/* The Markdown editor's @mention / issue autocomplete (built by wwwroot/js/mention-autocomplete.js outside any component, so it can't use scoped CSS). Colours come from the theme variables, so it follows dark mode. */
 
 /* ----- Autocomplete dropdown (wwwroot/js/mention-autocomplete.js; appended to <body>, position: fixed) ----- */
 .gb-ac {
@@ -16,12 +16,3 @@
 .gb-ac-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .gb-ac-detail { flex: none; color: var(--muted); font-size: 12px; }
 .gb-ac-item.active .gb-ac-detail { color: inherit; }
-
-/* ----- Watch / Mute ----- */
-.watch-group { display: inline-flex; gap: 4px; }
-.mute-btn.muted { border-color: var(--muted); background: var(--bg); color: var(--muted); }
-
-/* ----- Preferences ----- */
-.notif-prefs-table th, .notif-prefs-table td { background: transparent; color: var(--text); border-color: var(--border); }
-.notif-prefs-table td { width: 110px; }
-.notif-prefs-link { border-top: 1px solid var(--border); font-weight: 400; font-size: 12px; }
