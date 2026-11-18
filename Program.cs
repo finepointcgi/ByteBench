@@ -44,6 +44,7 @@ builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.AddScoped<RepositoryService>();
 builder.Services.AddScoped<PullRequestService>();
+builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
 
 var app = builder.Build();
 
