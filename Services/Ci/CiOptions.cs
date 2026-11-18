@@ -23,4 +23,19 @@ public class CiOptions
     public string? WorkDirectory { get; set; }
     /// <summary>Per-step log cap, in characters (about 1 MB by default).</summary>
     public int MaxLogChars { get; set; } = 1024 * 1024;
+
+    // ----- CI extras -----
+
+    /// <summary>Where job artifacts (zips) are stored. Default: {ContentRoot}/ci-artifacts.</summary>
+    public string? ArtifactsRoot { get; set; }
+    /// <summary>Largest artifact archive per job (bytes, uncompressed and zipped). Default 100 MB.</summary>
+    public long MaxArtifactBytes { get; set; } = 100L * 1024 * 1024;
+    /// <summary>Where caches are stored. Default: {ContentRoot}/ci-cache.</summary>
+    public string? CacheRoot { get; set; }
+    /// <summary>Largest single cache (bytes). Default 500 MB.</summary>
+    public long MaxCacheBytes { get; set; } = 500L * 1024 * 1024;
+    /// <summary>Total cache size per repository; least recently used caches are evicted past it. Default 2 GB.</summary>
+    public long CacheBytesPerRepository { get; set; } = 2L * 1024 * 1024 * 1024;
+    /// <summary>Run pipeline schedules (only when <see cref="Enabled"/> too).</summary>
+    public bool SchedulesEnabled { get; set; } = true;
 }

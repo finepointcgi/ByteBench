@@ -44,6 +44,7 @@
     <TabLink Active="@(Active == "releases")" Href="@GitBench.Services.Releases.ReleaseUrls.List(Repo)" Icon="@Icons.Material.Outlined.NewReleases">Releases</TabLink>
     <TabLink Active="@(Active == "prs")" Href="@RepoUrls.RepoPullRequests(Repo)" Icon="@Icons.Material.Outlined.MergeType">Pull requests</TabLink>
     <TabLink Active="@(Active == "pipelines")" Href="@PipelineUrls.List(Repo)" Icon="@Icons.Material.Outlined.PlayCircleOutline">Pipelines</TabLink>
+    <TabLink Active="@(Active == "environments")" Href="@PipelineUrls.Environments(Repo)" Icon="@Icons.Material.Outlined.Cloud">Environments</TabLink>
     <TabLink Active="@(Active == "search")" Href="@CodeUrls.Search(Repo, null, Ref)" Icon="@Icons.Material.Outlined.Search">Search</TabLink>
     @if (canManage)
     {
@@ -53,7 +54,7 @@
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>One of: source, commits, branches, tags, releases, prs, pipelines, search, settings.</summary>
+    /// <summary>One of: source, commits, branches, tags, releases, prs, pipelines, environments, search, settings.</summary>
     [Parameter] public string Active { get; set; } = "source";
     /// <summary>The ref being viewed, carried across the Source/Commits/Search tabs.</summary>
     [Parameter] public string? Ref { get; set; }

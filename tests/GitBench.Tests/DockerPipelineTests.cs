@@ -84,4 +84,93 @@ public class DockerPipelineTests(CiApp app) : IClassFixture<CiApp>
         Assert.Equal(PipelineStatus.Failed, fail.Status);
         Assert.Equal(3, fail.Steps.Single().ExitCode);
     }
+
+    private async Task<Pipeline> WaitAsync(int id, params PipelineStatus[] until)
+    {
+        var deadline = DateTime.UtcNow.AddMinutes(3);
+        while (true)
+        {
+            await using (var db = app.Db())
+            {
+                var p = await db.Pipelines.AsNoTracking().Include(x => x.Jobs).ThenInclude(j => j.Steps).ThenInclude(s => s.Log)
+                    .AsSplitQuery().FirstAsync(x => x.Id == id);
+                if (until.Contains(p.Status)) return p;
+            }
+            Assert.True(DateTime.UtcNow < deadline, "The pipeline didn't reach the expected state in time.");
+            await Task.Delay(500);
+        }
+    }
+
+    [DockerFact]
+    public async Task Artifacts_flow_through_needs_and_a_manual_deploy_is_recorded()
+    {
+        var project = await app.CreateProjectAsync("carol");
+        var repo = await app.CreateRepoAsync(project.Id, "carol");
+        app.Commit(repo, "main", ".gitbench-ci.yml", """
+            jobs:
+              build:
+                cache: { key: "deps-{{ hashFiles('README.md') }}", paths: [cache/] }
+                artifacts: { paths: [dist/], expire_in: 1d }
+                steps:
+                  - run: |
+                      mkdir -p dist/sub cache
+                      echo "built by $GITBENCH_JOB" > dist/sub/out.txt
+                      echo cached > cache/c.txt
+                      ln -s /etc/hostname dist/leak
+              test:
+                needs: [build]
+                steps:
+                  - run: grep "built by build" dist/sub/out.txt && test ! -e dist/leak
+              deploy:
+                needs: [build, test]
+                when: manual
+                allow_failure: false
+                environment: { name: staging, url: "https://staging.example.com" }
+                steps:
+                  - run: test "$CI_ENVIRONMENT_NAME" = staging && test "$CI_PIPELINE_SOURCE" = manual && cat dist/sub/out.txt
+            """);
+
+        int id;
+        await using (var s = app.Scope(app.UserId("carol")))
+            id = await s.Get<PipelineService>().RunAsync(repo, "main");
+
+        // build and test run; the blocking manual deploy holds the pipeline.
+        var p = await WaitAsync(id, PipelineStatus.Manual, PipelineStatus.Failed, PipelineStatus.Error, PipelineStatus.Passed);
+        Assert.True(p.Status == PipelineStatus.Manual, $"status {p.Status}: {p.Error} / " + string.Join("\n", p.Jobs.SelectMany(j => j.Steps).Select(x => x.Log?.Text)));
+        Assert.Equal(PipelineStatus.Passed, p.Jobs.Single(j => j.Name == "test").Status);
+        var buildLog = p.Jobs.Single(j => j.Name == "build").Steps.Single().Log!.Text;
+        Assert.Contains("Saved artifacts: 1 file(s)", buildLog);
+        Assert.Contains("skipped symbolic link dist/leak", buildLog);
+        Assert.Contains("Saved cache 'deps-", buildLog);
+        Assert.Contains("Downloaded artifacts of 'build': 1 file(s)", p.Jobs.Single(j => j.Name == "test").Steps.Single().Log!.Text);
+        var deploy = p.Jobs.Single(j => j.Name == "deploy");
+        Assert.Equal(PipelineStatus.Manual, deploy.Status);
+
+        // The artifact zip downloads as an attachment.
+        var buildJob = p.Jobs.Single(j => j.Name == "build");
+        var client = await app.CookieClientAsync("carol");
+        var response = await client.GetAsync(CiServiceCollectionExtensions.ArtifactZipUrl(repo, id, buildJob.Id));
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        var file = await client.GetStringAsync(CiServiceCollectionExtensions.ArtifactFileUrl(repo, id, buildJob.Id, "dist/sub/out.txt"));
+        Assert.Equal("built by build\n", file);
+        var outsider = await app.CookieClientAsync("bob"); // not a member of this private project
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await outsider.GetAsync(CiServiceCollectionExtensions.ArtifactZipUrl(repo, id, buildJob.Id))).StatusCode);
+
+        // Run the manual job: the pipeline resumes and passes, and the deployment is recorded.
+        await using (var s = app.Scope(app.UserId("carol")))
+            await s.Get<PipelineService>().PlayJobAsync(repo, id, deploy.Id);
+        p = await WaitAsync(id, PipelineStatus.Passed, PipelineStatus.Failed, PipelineStatus.Error);
+        Assert.True(p.Status == PipelineStatus.Passed, $"status {p.Status}: " + p.Jobs.Single(j => j.Name == "deploy").Steps.Single().Log?.Text);
+        Assert.Contains("built by build", p.Jobs.Single(j => j.Name == "deploy").Steps.Single().Log!.Text);
+
+        await using var db = app.Db();
+        var d = await db.Deployments.AsNoTracking().Include(x => x.Environment).SingleAsync(x => x.PipelineId == id);
+        Assert.Equal("staging", d.Environment.Name);
+        Assert.Equal("https://staging.example.com", d.Environment.ExternalUrl);
+        Assert.Equal(PipelineStatus.Passed, d.Status);
+        Assert.Equal(app.UserId("carol"), d.UserId);
+        Assert.Equal(p.CommitSha, d.CommitSha);
+    }
 }

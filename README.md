@@ -19,7 +19,7 @@ dotnet test                              # everything (about 15 s)
 dotnet test --filter "Category!=Docker"  # skip the Docker pipeline test (what CI runs)
 ```
 
-The suite is in `tests/GitBench.Tests` (xUnit, referenced from `GitBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs a pipeline in `alpine:3.20`; it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
+The suite is in `tests/GitBench.Tests` (xUnit, referenced from `GitBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs pipelines in `alpine:3.20` (including artifacts passed through `needs`, a cache and a manual deploy); it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
 
 ## UI
 
@@ -479,8 +479,10 @@ jobs:
     steps: [ { name: Test, run: ./test.sh } ]
 ```
 
-- **Format.** `jobs` is required. Each job has `steps` (each with `run` and an optional `name`), plus optional `image` and `needs`. Job names use letters, digits, `_`, `.` and `-`. Limits: 20 jobs, 50 steps per job, 64 KB per file. Unknown keys, missing `run`, unknown or circular `needs` and invalid image names are errors: the pipeline is created in the **Error** state with a readable message, such as `invalid YAML at line 4, column 5: Property 'stepz' not found`.
-- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass is skipped. Jobs don't share files, so a later job can't see what an earlier job built. Steps can read `CI`, `GITBENCH_PIPELINE_ID`, `GITBENCH_JOB`, `GITBENCH_REF`, `GITBENCH_COMMIT_SHA` and `GITBENCH_REPOSITORY`.
+Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` and `environment`; see [CI artifacts, caches, manual jobs, schedules & environments](#ci-artifacts-caches-manual-jobs-schedules--environments).
+
+- **Format.** `jobs` is required. Each job has `steps` (each with `run` and an optional `name`), plus optional `image`, `needs`, `artifacts`, `cache`, `when`, `allow_failure`, `rules` or `only`, and `environment`. Job names use letters, digits, `_`, `.` and `-`. Limits: 20 jobs, 50 steps per job, 64 KB per file. Unknown keys, missing `run`, unknown or circular `needs` and invalid image names are errors: the pipeline is created in the **Error** state with a readable message, such as `invalid YAML at line 4, column 5: Property 'stepz' not found`.
+- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass (or failed without `allow_failure`) is skipped. Jobs only share files through [artifacts](#ci-artifacts-caches-manual-jobs-schedules--environments): a job gets the artifacts of the jobs it `needs`. Steps can read `CI`, `GITBENCH_PIPELINE_ID`, `GITBENCH_JOB`, `GITBENCH_REF`, `GITBENCH_COMMIT_SHA`, `GITBENCH_REPOSITORY`, `CI_PIPELINE_SOURCE` (= `GITBENCH_PIPELINE_SOURCE`: `push`, `pull_request`, `manual`, `retry` or `schedule`) and, for jobs with an environment, `CI_ENVIRONMENT_NAME` and `CI_ENVIRONMENT_URL`.
 - **Triggers.**
   - A push runs a pipeline for each branch it created or moved, if the branch matches `on.branches` or is the source of an open PR. Deleted branches are skipped. A merge done in GitBench counts as a push to the target branch.
   - Opening a PR runs a pipeline for its source head, unless that commit already has one.
@@ -488,7 +490,7 @@ jobs:
   - **Run pipeline** (Pipelines tab) runs any branch's tip and ignores the filters. **Re-run** runs the same commit again. Both need PushCode (Developer or higher), as does **Cancel**.
   - Pushes are noticed by `CiPushListener`. PR events reach `CiPullRequestWatcher` through `LiveEvents`.
   - Push listeners aren't told which refs moved, so GitBench remembers each repository's branch tips, starting from a snapshot taken at startup. A branch created in the UI is picked up by the next push.
-- **Statuses.** A pipeline is Queued, Running, Passed, Failed, Canceled or Error. Jobs and steps can also be Skipped. Icons (✓ ✗ ● spinner ⊘) appear on the commit list, the branch list and the PR header.
+- **Statuses.** A pipeline is Queued, Running, Passed, Failed, Canceled, Error or Manual (blocked on a manual job). Jobs and steps can also be Skipped; jobs can be Manual (waiting for someone to run them). Icons (✓ ✗ ● spinner ⊘) appear on the commit list, the branch list and the PR header.
 - **Logs.** stdout and stderr stream into the database about once a second, and the pipeline page tails them live. Each step's log is capped at about 1 MB, with a note when it's truncated. The page shows the last 200 KB. **Raw log** opens the full text.
 - **Pages.** `/p/{KEY}/repos/{slug}/pipelines` lists pipelines. `/p/{KEY}/repos/{slug}/pipelines/{id}` shows jobs, steps and logs, with Cancel and Re-run buttons. Everything needs ViewProject.
 - **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head: Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.gitbench-ci.yml`.
@@ -508,6 +510,10 @@ jobs:
 | `PidsLimit` | `1024` | `--pids-limit` |
 | `DockerExecutable` | `docker` | Path of the docker CLI |
 | `WorkDirectory` | `{temp}/gitbench-ci/{instance}` | Where workspaces are exported. Docker must be able to mount it |
+| `ArtifactsRoot` / `CacheRoot` | `{ContentRoot}/ci-artifacts` / `{ContentRoot}/ci-cache` | Where artifact and cache zips are stored. Back up the artifacts folder with the database |
+| `MaxArtifactBytes` | 100 MB | Largest artifact per job (total file size and zip size). Over it, the job fails |
+| `MaxCacheBytes` / `CacheBytesPerRepository` | 500 MB / 2 GB | Largest single cache; total per repository before least-recently-used caches are evicted |
+| `SchedulesEnabled` | `true` | Run [pipeline schedules](#ci-artifacts-caches-manual-jobs-schedules--environments) |
 
 ### Security model
 
@@ -520,6 +526,49 @@ jobs:
 - Containers still have network access by default (`bridge`). They run as the image's user, often root inside the container, and Docker isolation is not a hard security boundary. On a shared or exposed server, use `Network: none`, rootless Docker or a separate CI host, and let only trusted people push.
 
 Code: `Services/Ci/` (`CiFile` parser, `CiTriggerService`, `CiRunner` worker, `CiDocker`, `PipelineService`, `PipelineMergeCheck`) and `Components/Pages/Pipelines/`. The seeded `WEB/web-app` repository has a sample `.gitbench-ci.yml`.
+
+### CI artifacts, caches, manual jobs, schedules & environments
+
+```yaml
+jobs:
+  build:
+    cache:
+      key: "npm-{{ hashFiles('package-lock.json') }}"   # or a plain string; default "default"
+      paths: [node_modules/]
+    artifacts:
+      paths: [dist/, "*.log"]     # folders (trailing /), files or globs, relative to /workspace
+      expire_in: 7d               # 30m, 12h, 7d, 2w, 3mo, 1y or never (default 30d)
+      when: on_success            # on_success (default), on_failure or always
+    steps: [ { run: npm ci && npm run build } ]
+  lint:
+    allow_failure: true           # a failure doesn't fail the pipeline, and doesn't skip jobs that need it
+    steps: [ { run: npm run lint } ]
+  deploy:
+    needs: [build]                # gets build's artifacts in its workspace
+    when: manual                  # waits for someone to click Run
+    allow_failure: false          # manual jobs don't block the pipeline unless this is false
+    only: [main]                  # branch globs; or rules (below)
+    environment: { name: production, url: "https://example.com" }
+    steps: [ { run: ./deploy.sh dist/ } ]
+  preview:
+    rules:                        # the first rule whose branches match decides; no match = job not created
+      - { branches: [main], when: never }
+      - { branches: ["feature/**"], when: manual }
+      - { when: on_success }      # no branches: matches every branch
+    steps: [ { run: ./preview.sh } ]
+```
+
+Unknown keys are still errors (`invalid YAML at line 5, column 7: Property 'expire' not found`), as are `..` or absolute paths, bad durations, cache keys with anything but letters, digits, `.`, `_`, `-` and `{{ hashFiles('…') }}`, `only` together with `rules`, non-http(s) environment URLs, and a job that `needs` a job its rules leave out on the branch being run. Code: `Services/Ci/` (`CiFile`, `CiJobGraph`, `CiArtifacts`, `CiArtifactStore`, `CiCacheStore`, `CiCron`, `PipelineScheduleService`, `CiEnvironmentService`), `Components/Pipelines/PipelineGraph.razor`, `Components/Pipelines/PipelineArtifacts.razor`, and `Components/Pages/Pipelines/Environments.razor` and `PipelineSchedules.razor`.
+
+- **Pipeline graph.** The pipeline page draws the jobs in columns by `needs` depth, with a line from each need. Each job shows its status, duration and environment, plus ▶ (run a manual job) or ↻ (retry). Click a job to see its log. Retry runs a finished job again in the same pipeline, replacing its logs and artifacts; it needs PushCode.
+- **Artifacts.** After a job's steps, if `artifacts.when` matches the result, GitBench zips the matching files from the workspace into `Ci:ArtifactsRoot/{repoId}/{guid}.zip` and records the size, file count and expiry. Symbolic links are never followed or stored (the log names each one skipped), so a step can't use `ln -s /etc/passwd dist/x` to read host files. If the files exceed `Ci:MaxArtifactBytes`, nothing is stored and the job fails. Before its first step, a job gets the artifacts of every job in its `needs` extracted into its workspace. Extraction skips names with `..` or an absolute path, and any file whose path goes through a symlink already in the workspace (from the repository or an earlier step), so it never writes outside the workspace. The pipeline page lists artifacts with **Download** (the zip), **Browse** (the file list; each file downloads) and **Keep** (pin past expiry; PushCode). Downloads need ViewProject and are always sent as `application/octet-stream` with `Content-Disposition: attachment`, `nosniff`, a sandboxing CSP and `Cache-Control: private, no-store`. Every hour `CiCleanupService` deletes expired, unkept artifacts, plus zip files no row refers to.
+- **Caches.** Before the first step, the job's `cache.key` is resolved (each `hashFiles(...)` becomes a hash of the names and contents of the matching files in the fresh checkout) and the cache with that key is extracted, with the same safety rules as artifacts. After the job passes, the cache paths are zipped and replace that key's cache. Caches are stored per repository and key under `Ci:CacheRoot`; past `Ci:CacheBytesPerRepository` the least recently used are evicted. **Protected-branch caches are not used by unprotected branches.** Pipelines on a branch that matches a [branch protection rule](#branch-protection-reviewers--pr-templates) read and write only the *protected* scope; every other pipeline (other branches and pull requests) uses the *unprotected* scope. Without this, anyone who can push a branch could save a poisoned `node_modules` that the next `main` pipeline (which may get protected secrets and deploy) would restore. The log says which scope was used.
+- **Manual jobs.** A `when: manual` job (or a rule with `when: manual`) waits in **Manual** once its needs pass, until someone with PushCode clicks ▶ on the pipeline page. Then it runs and the pipeline resumes. Jobs that need it wait too. With `allow_failure: true` (the default for manual jobs), a waiting manual job doesn't block: the pipeline finishes as Passed and the job can still be run later. With `allow_failure: false`, the pipeline stays **Manual** (blocked): the page shows Cancel and Re-run, and the PR merge check reports it as pending. While a pipeline is blocked, no `pipeline.completed` webhook or failure notification is sent; they're sent when it really finishes.
+- **Rules / only.** `only: [main, "release/*"]` creates the job only on matching branches. `rules` is a list of `{ branches, when }`. The first rule whose `branches` match (no `branches` means every branch) decides, and `when: never` leaves the job out. If no job is left for a branch, pushes don't create a pipeline and **Run pipeline** says so.
+- **Scheduled pipelines.** **Pipelines → Schedules** (`/p/{KEY}/repos/{slug}/pipelines/schedules`, Maintainer+) lists, creates, edits, deletes and runs schedules. Each has a description, a branch, variables, and a 5-field cron expression in UTC (`minute hour day-of-month month day-of-week`). Fields take `*`, ranges, steps, lists and names such as `mon-fri` and `jan`; `@hourly`, `@daily`, `@weekly`, `@monthly` and `@yearly` also work. `CiScheduleRunner` checks every 30 seconds and starts each due schedule's pipeline on the branch's tip. It runs as the schedule's **owner** (the last person who saved it), with `CI_PIPELINE_SOURCE=schedule` and the schedule's variables. If the owner can no longer push, the schedule records an error instead, and a Maintainer saves it to take it over. **Run now** runs it immediately as you. Schedule variables aren't secret (Maintainers can read them). They override CI variables with the same name and go through the same mode-600 env file. Runs missed while the server was down happen once, then the schedule moves on. Audit events: `pipeline_schedule.created`, `.updated`, `.deleted`.
+- **Environments & deployments.** Each time a job with `environment:` runs, it records a **Deployment** (environment, pipeline, job, commit, branch, user, status). The environment is created the first time, and its URL is updated from the file. The **Environments** tab (`/p/{KEY}/repos/{slug}/environments`) shows each environment's current commit (its last successful deployment), latest deployment and history. **Redeploy** re-runs a deployment's job (PushCode). A deployment's user is whoever ran the manual job or retry, else whoever started the pipeline.
+- **Protected environments.** A Maintainer can mark an environment **Protected** on the Environments tab, or add it there (already protected) before any job deploys to it. Jobs that deploy to it always wait in Manual (blocking, whatever `allow_failure` says) until a Maintainer or Owner runs them. Developers get "Only Maintainers can run jobs that deploy to the protected environment …" for ▶, Retry and Redeploy alike. Protection is checked when the job becomes ready, so a pipeline created before the environment was protected still waits. It controls who runs the job; secrets still follow branch protection, so use protected CI variables for deploy keys. Audit events: `environment.created`, `environment.protected`, `environment.unprotected`, `environment.deleted`.
+
 
 ## Code tools
 
@@ -1025,7 +1074,7 @@ Settings come from these sources; later ones override earlier ones:
 | `Ssh:HostKeyPath` | `{DataProtection:KeysPath}/ssh_host_rsa_key` | SSH host key (PEM), generated on first start. Keep it with the key ring |
 | `Ssh:PublicHost` / `Ssh:PublicPort` | the site's host / `Ssh:Port` | Host and port shown in SSH clone URLs, e.g. `22` when the host maps port 22 to the container's 2222 |
 | `Ssh:MaxConnections` / `Ssh:AuthTimeoutSeconds` | 200 / 30 | Simultaneous SSH connections; seconds a connection may take to authenticate |
-| `Ci:*` | see [CI pipelines](#ci-pipelines) | `Enabled`, `MaxConcurrentJobs`, `JobTimeoutMinutes`, `Network`, `Memory`, `Cpus`, `PidsLimit`, `DockerExecutable`, `WorkDirectory`, `MaxLogChars` |
+| `Ci:*` | see [CI pipelines](#ci-pipelines) | `Enabled`, `MaxConcurrentJobs`, `JobTimeoutMinutes`, `Network`, `Memory`, `Cpus`, `PidsLimit`, `DockerExecutable`, `WorkDirectory`, `MaxLogChars`, `ArtifactsRoot`, `MaxArtifactBytes`, `CacheRoot`, `MaxCacheBytes`, `CacheBytesPerRepository`, `SchedulesEnabled` |
 | `Webhooks:AllowPrivateNetworks` | `false` | Allow webhook targets on private networks |
 | `Audit:RetentionDays` | 365 | Audit event retention (`0` keeps them forever) |
 | `Ai:Enabled` / `Ai:Model` / `Ai:ApiKey` | `true` / `claude-opus-5-5` / none | AI features. Prefer `ANTHROPIC_API_KEY` for the key |

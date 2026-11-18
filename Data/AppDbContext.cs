@@ -302,6 +302,46 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureGroups(b);
         ConfigurePrFeatures(b);
         ConfigureSsh(b);
+        ConfigureCiExtras(b);
+    }
+
+    // ----- CI extras: artifacts, caches, schedules, environments & deployments -----
+    public DbSet<PipelineArtifact> PipelineArtifacts => Set<PipelineArtifact>();
+    public DbSet<CiCacheEntry> CiCacheEntries => Set<CiCacheEntry>();
+    public DbSet<PipelineSchedule> PipelineSchedules => Set<PipelineSchedule>();
+    public DbSet<CiEnvironment> CiEnvironments => Set<CiEnvironment>();
+    public DbSet<Deployment> Deployments => Set<Deployment>();
+
+    private static void ConfigureCiExtras(ModelBuilder b)
+    {
+        b.Entity<PipelineJob>().HasOne(j => j.PlayedBy).WithMany().HasForeignKey(j => j.PlayedById).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Pipeline>().HasOne<PipelineSchedule>().WithMany().HasForeignKey(p => p.ScheduleId).OnDelete(DeleteBehavior.SetNull);
+
+        b.Entity<PipelineArtifact>().HasIndex(a => a.JobId).IsUnique();
+        b.Entity<PipelineArtifact>().HasIndex(a => a.PipelineId);
+        b.Entity<PipelineArtifact>().HasIndex(a => a.ExpiresAt);
+        b.Entity<PipelineArtifact>().HasIndex(a => a.StoredName).IsUnique();
+        b.Entity<PipelineArtifact>().HasOne(a => a.Job).WithMany().HasForeignKey(a => a.JobId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PipelineArtifact>().HasOne<Repository>().WithMany().HasForeignKey(a => a.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<CiCacheEntry>().HasIndex(c => new { c.RepositoryId, c.IsProtected, c.Key }).IsUnique();
+        b.Entity<CiCacheEntry>().HasIndex(c => c.StoredName).IsUnique();
+        b.Entity<CiCacheEntry>().HasOne<Repository>().WithMany().HasForeignKey(c => c.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<PipelineSchedule>().HasIndex(s => new { s.Active, s.NextRunAt });
+        b.Entity<PipelineSchedule>().HasIndex(s => s.RepositoryId);
+        b.Entity<PipelineSchedule>().HasOne(s => s.Repository).WithMany().HasForeignKey(s => s.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PipelineSchedule>().HasOne(s => s.Owner).WithMany().HasForeignKey(s => s.OwnerId).OnDelete(DeleteBehavior.SetNull);
+
+        b.Entity<CiEnvironment>().HasIndex(e => new { e.RepositoryId, e.Name }).IsUnique();
+        b.Entity<CiEnvironment>().HasOne<Repository>().WithMany().HasForeignKey(e => e.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<Deployment>().HasIndex(d => new { d.EnvironmentId, d.Id });
+        b.Entity<Deployment>().HasIndex(d => d.JobId);
+        b.Entity<Deployment>().HasOne(d => d.Environment).WithMany().HasForeignKey(d => d.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Deployment>().HasOne(d => d.Job).WithMany().HasForeignKey(d => d.JobId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Deployment>().HasOne<Pipeline>().WithMany().HasForeignKey(d => d.PipelineId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Deployment>().HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.SetNull);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----

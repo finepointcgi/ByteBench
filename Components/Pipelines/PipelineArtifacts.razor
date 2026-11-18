@@ -1,0 +1,85 @@
+@* The artifacts section of the pipeline page: one row per job that saved artifacts, with download, browse and keep. *@
+@using GitBench.Services.Ci
+@inject PipelineService Pipelines
+@inject ISnackbar Snackbar
+
+@if (Items.Count > 0)
+{
+    <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mt-4 mb-2 d-flex align-center gap-2">
+        <MudIcon Icon="@Icons.Material.Outlined.Inventory" Size="Size.Small" /> Artifacts
+    </MudText>
+    <div class="gb-rows ci-artifacts">
+        @foreach (var item in Items)
+        {
+            var a = item.Artifact;
+            <div class="gb-row" @key="a.Id">
+                <div class="gb-row-main gb-min0">
+                    <div class="gb-row-title">
+                        <b>@item.JobName</b>
+                        @if (a.Keep) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info" Class="ma-0 ml-2">Kept</MudChip> }
+                    </div>
+                    <div class="gb-row-meta">
+                        @a.FileCount file(s) · @CiArtifacts.Format(a.SizeBytes) ·
+                        @(a.Keep || a.ExpiresAt == null ? "never expires" : $"expires {a.ExpiresAt.Value.ToLocalTime():g}")
+                    </div>
+                    @if (open.Contains(a.Id))
+                    {
+                        <ul class="ci-artifact-files">
+                            @foreach (var f in files.GetValueOrDefault(a.Id) ?? [])
+                            {
+                                <li>
+                                    <a class="mono" href="@CiServiceCollectionExtensions.ArtifactFileUrl(Repo, Pipeline.Id, a.JobId, f.Path)" download>@f.Path</a>
+                                    <span class="mud-text-secondary small"> @CiArtifacts.Format(f.Size)</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div class="gb-row-right d-flex gap-1 align-center">
+                    <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@(open.Contains(a.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                               OnClick="() => Toggle(a)">Browse</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Download"
+                               Href="@CiServiceCollectionExtensions.ArtifactZipUrl(Repo, Pipeline.Id, a.JobId)" download="">Download</MudButton>
+                    @if (Perms.Can(Permission.PushCode) && a.ExpiresAt != null)
+                    {
+                        <MudTooltip Text="@(a.Keep ? "Let these artifacts expire" : "Keep these artifacts after they expire")">
+                            <MudIconButton Size="Size.Small" Icon="@(a.Keep ? Icons.Material.Filled.PushPin : Icons.Material.Outlined.PushPin)"
+                                           aria-label="@(a.Keep ? "Unpin artifacts" : "Keep artifacts")" OnClick="() => SetKeep(a, !a.Keep)" />
+                        </MudTooltip>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter, EditorRequired] public Pipeline Pipeline { get; set; } = null!;
+    [Parameter, EditorRequired] public List<PipelineArtifactInfo> Items { get; set; } = [];
+    [Parameter] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly HashSet<int> open = [];
+    private readonly Dictionary<int, List<(string Path, long Size)>> files = [];
+
+    private async Task Toggle(PipelineArtifact a)
+    {
+        if (!open.Remove(a.Id))
+        {
+            open.Add(a.Id);
+            files[a.Id] = await Pipelines.ListArtifactFilesAsync(Repo, Pipeline.Id, a.JobId);
+        }
+    }
+
+    private async Task SetKeep(PipelineArtifact a, bool keep)
+    {
+        try
+        {
+            await Pipelines.SetArtifactKeepAsync(Repo, a.Id, keep);
+            Snackbar.Add(keep ? "These artifacts will be kept." : "These artifacts will expire as scheduled.", Severity.Success);
+            await Changed.InvokeAsync();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

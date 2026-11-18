@@ -4,6 +4,7 @@
 @inject ProjectAccess Access
 @inject LiveEvents Live
 @inject IJSRuntime JS
+@inject ISnackbar Snackbar
 @implements IAsyncDisposable
 
 <PageTitle>Pipeline #@Id · @Repo?.Name</PageTitle>
@@ -34,15 +35,24 @@ else if (Repo != null && pipeline != null)
                 <span>· @Display.Ago(p.CreatedAt)</span>
                 @if (p.StartedAt != null) { <span class="ci-duration"> · <MudIcon Icon="@Icons.Material.Outlined.Timer" Style="font-size: 14px" /> @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</span> }
             </div>
+            @foreach (var env in p.Jobs.Where(j => j.EnvironmentName != null).GroupBy(j => j.EnvironmentName!))
+            {
+                var url = env.Select(j => j.EnvironmentUrl).FirstOrDefault(u => u != null);
+                <div class="ci-meta">
+                    <MudIcon Icon="@Icons.Material.Outlined.Cloud" Style="font-size: 14px; vertical-align: -2px" />
+                    Deploys to <a href="@PipelineUrls.Environments(Repo)"><b>@env.Key</b></a>
+                    @if (url != null) { <span> · <a href="@url" target="_blank" rel="noopener noreferrer">@url</a></span> }
+                </div>
+            }
         </div>
         @if (perms.Can(Permission.PushCode))
         {
             <div class="d-flex gap-2">
-                @if (!p.IsFinished)
+                @if (!p.IsFinished || p.Status == PipelineStatus.Manual)
                 {
                     <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.StopCircle" Disabled="@busy" OnClick="Cancel">Cancel</MudButton>
                 }
-                else if (Pipelines.Enabled)
+                @if (p.IsFinished && Pipelines.Enabled)
                 {
                     <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Replay" Disabled="@busy" OnClick="Rerun">Re-run</MudButton>
                 }
@@ -53,8 +63,15 @@ else if (Repo != null && pipeline != null)
     @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
     @if (p.Error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3 ci-error">@p.Error</MudAlert> }
 
+    @if (p.Status == PipelineStatus.Manual)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">This pipeline is waiting for a manual job. Run it (▶) to continue.</MudAlert>
+    }
+
     @if (p.Jobs.Count > 0)
     {
+        <PipelineGraph Pipeline="p" Perms="perms" ProtectedEnvironments="protectedEnvs" Enabled="Pipelines.Enabled" Busy="busy"
+                       SelectedJobId="SelectedStep?.JobId" OnSelect="SelectJob" OnPlay="Play" OnRetry="Retry" />
         <div class="ci-grid">
             <div class="ci-jobs">
                 @foreach (var job in p.Jobs)
@@ -68,6 +85,7 @@ else if (Repo != null && pipeline != null)
                         <div class="ci-job-meta muted small">
                             <span class="mono" title="Image">@job.Image</span>
                             @if (job.Needs.Length > 0) { <div>needs @string.Join(", ", job.NeedsList)</div> }
+                            @if (job.Status == PipelineStatus.Manual) { <div>waiting for someone to run it@(job.RequiresApproval ? $" (a Maintainer: {job.EnvironmentName} is protected)" : "")</div> }
                         </div>
                         @foreach (var s in job.Steps)
                         {
@@ -98,10 +116,11 @@ else if (Repo != null && pipeline != null)
                     {
                         <div class="ci-log-muted small px-2 pt-1">Showing the last @(MaxShown / 1024) KB. Open the raw log for all of it.</div>
                     }
-                    <pre class="ci-log" @ref="logEl">@(string.IsNullOrEmpty(logText) ? (st.Status == PipelineStatus.Queued ? "Waiting to start…" : st.Status == PipelineStatus.Skipped ? "Skipped: an earlier step or a needed job did not pass." : st.Status == PipelineStatus.Canceled ? "Canceled." : "") : logText)</pre>
+                    <pre class="ci-log" @ref="logEl">@(string.IsNullOrEmpty(logText) ? (st.Status == PipelineStatus.Queued ? (pipeline.Jobs.FirstOrDefault(j => j.Id == st.JobId)?.Status == PipelineStatus.Manual ? "Manual job: waiting for someone to run it." : "Waiting to start…") : st.Status == PipelineStatus.Skipped ? "Skipped: an earlier step or a needed job did not pass." : st.Status == PipelineStatus.Canceled ? "Canceled." : "") : logText)</pre>
                 }
             </div>
         </div>
+        <PipelineArtifacts Repo="Repo" Pipeline="p" Items="artifacts" Perms="perms" Changed="LoadAsync" />
     }
 }
 
@@ -121,6 +140,9 @@ else if (Repo != null && pipeline != null)
     private IDisposable? sub;
     private int reloadPending;
     private bool scrollForce;
+
+    private List<PipelineArtifactInfo> artifacts = [];
+    private HashSet<string> protectedEnvs = [];
 
     private PipelineStep? SelectedStep => pipeline?.Jobs.SelectMany(j => j.Steps).FirstOrDefault(s => s.Id == SelectedStepId);
 
@@ -181,6 +203,8 @@ else if (Repo != null && pipeline != null)
         loaded = true;
         if (pipeline == null) return;
         prNumber = await Pipelines.GetPullRequestNumberAsync(pipeline.PullRequestId);
+        artifacts = await Pipelines.ListArtifactsAsync(Repo!, Id);
+        protectedEnvs = await Pipelines.ProtectedEnvironmentsAsync(Repo!);
         await LoadLogAsync();
     }
 
@@ -205,6 +229,40 @@ else if (Repo != null && pipeline != null)
         chosenStepId = stepId;
         scrollForce = true;
         await LoadLogAsync();
+    }
+
+    private async Task SelectJob(PipelineJob job)
+    {
+        var step = job.Steps.LastOrDefault(s => s.StartedAt != null) ?? job.Steps.FirstOrDefault();
+        if (step != null) await Select(step.Id);
+    }
+
+    private async Task Play(PipelineJob job)
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            await Pipelines.PlayJobAsync(Repo!, Id, job.Id);
+            Snackbar.Add($"Started {job.Name}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Retry(PipelineJob job)
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            await Pipelines.RetryJobAsync(Repo!, Id, job.Id);
+            Snackbar.Add($"Retrying {job.Name}.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
     }
 
     private async Task Cancel()

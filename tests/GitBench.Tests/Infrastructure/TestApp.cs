@@ -41,6 +41,8 @@ public class TestApp : WebApplicationFactory<Program>
             ["Ai:ApiKey"] = "",
             ["Ci:Enabled"] = "false",
             ["Ci:WorkDirectory"] = Path.Combine(DataRoot, "ci"),
+            ["Ci:ArtifactsRoot"] = Path.Combine(DataRoot, "ci-artifacts"),
+            ["Ci:CacheRoot"] = Path.Combine(DataRoot, "ci-cache"),
             ["Webhooks:AllowPrivateNetworks"] = "true",
             ["Ssh:Enabled"] = "false", // SshTests turns it on with a free port
             ["Logging:LogLevel:Default"] = "Warning",

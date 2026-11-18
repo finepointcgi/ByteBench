@@ -130,10 +130,19 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     /// commit already has a pipeline on that branch (the PR link is added to it instead). Returns the new id, or null.
     /// </summary>
     public async Task<int?> CreateAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? userId,
-        int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default)
+        int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default,
+        int? scheduleId = null, IReadOnlyDictionary<string, string>? variables = null)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var commit = await Task.Run(() => GitOps.GetCommit(path, sha), ct);
+
+        // rules/only: the jobs that run on this branch. None at all: no pipeline (an error for manual runs).
+        var (jobs, jobsError) = def.Definition?.ForBranch(branch) ?? ([], null);
+        if (def.Definition != null && jobsError == null && jobs.Count == 0)
+        {
+            if (dedupe) return null;
+            throw new InvalidOperationException($"No job in {CiFile.FileName} runs on branch '{branch}' (see the jobs' rules).");
+        }
 
         Pipeline p;
         await CreateGate.WaitAsync(ct);
@@ -145,13 +154,19 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
             {
                 RepositoryId = repo.Id, Ref = branch, CommitSha = sha, PullRequestId = pullRequestId, Trigger = trigger,
                 TriggeredById = userId, CommitMessage = Truncate(commit?.MessageShort, 200), CreatedAt = DateTime.UtcNow,
+                ScheduleId = scheduleId, VariablesJson = CiJobExtras.SerializeVariables(variables),
             };
-            if (def.Definition is { } d)
+            if (def.Definition != null && jobsError == null)
             {
                 var order = 0;
-                foreach (var j in d.Jobs)
+                foreach (var j in jobs)
                 {
-                    var job = new PipelineJob { Name = j.Name, Image = j.Image, Needs = string.Join(",", j.Needs), Order = order++ };
+                    var job = new PipelineJob
+                    {
+                        Name = j.Name, Image = j.Image, Needs = string.Join(",", j.Needs), Order = order++,
+                        IsManual = j.When == CiJobWhen.Manual, AllowFailure = j.AllowFailure,
+                        EnvironmentName = j.Environment?.Name, EnvironmentUrl = j.Environment?.Url, ExtrasJson = CiJobExtras.Serialize(j),
+                    };
                     var n = 0;
                     foreach (var s in j.Steps) job.Steps.Add(new PipelineStep { Order = n++, Name = s.Name, Run = s.Run });
                     p.Jobs.Add(job);
@@ -160,7 +175,7 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
             else
             {
                 p.Status = PipelineStatus.Error;
-                p.Error = def.Error;
+                p.Error = jobsError ?? def.Error;
                 p.FinishedAt = p.CreatedAt;
             }
 
