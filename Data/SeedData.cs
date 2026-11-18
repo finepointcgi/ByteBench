@@ -13,7 +13,7 @@ public static class SeedData
         var user = new User
         {
             UserName = userName, NormalizedUserName = userName.ToUpperInvariant(),
-            Email = email, NormalizedEmail = email.ToUpperInvariant(), EmailConfirmed = true,
+            Email = email, NormalizedEmail = email.ToUpperInvariant(), EmailConfirmed = true, LockoutEnabled = true,
             SecurityStamp = Guid.NewGuid().ToString(), DisplayName = displayName, Color = color,
         };
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, DemoPassword);

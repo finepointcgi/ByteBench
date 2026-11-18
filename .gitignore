@@ -486,3 +486,6 @@ gitbench.db*
 
 # Hosted bare git repositories
 repos/
+
+# Agent worktrees
+.claude/worktrees/

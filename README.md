@@ -23,7 +23,7 @@ The seed data creates four demo accounts. All of them use the password in `SeedD
 | `carol` | carol@example.com | Carol Okafor |
 | `dan` | dan@example.com | Dan Kowalski |
 
-- **Sign in** at `/account/login` with a username or an email. Five failed attempts lock an account for five minutes (accounts with lockout enabled, which includes every registered account; the seeded demo accounts are created with `LockoutEnabled = false`).
+- **Sign in** at `/account/login` with a username or an email. Five failed attempts lock an account for five minutes.
 - **Register** at `/account/register`. New users get a random avatar color and are signed in right away.
 - **Profile** at `/account/profile` (click your avatar in the top bar): change display name, email, avatar color and password.
 - **Sign out** with the button in the top bar.
