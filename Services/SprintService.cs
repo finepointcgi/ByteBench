@@ -288,7 +288,10 @@ public class SprintService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcc
             .ToListAsync();
         var ids = issues.Select(i => i.Id).ToList();
         var activities = (await db.Activities.AsNoTracking().Where(a => ids.Contains(a.IssueId)).ToListAsync()).ToLookup(a => a.IssueId);
-        return SprintHistory.Build(sprint, issues, activities, now);
+        // Status activity names workflow statuses; any status in the Done category (plus the built-in name) counts as done.
+        var doneNames = new HashSet<string>(await db.WorkflowStatuses.Where(w => w.ProjectId == projectId && w.Category == IssueStatus.Done)
+            .Select(w => w.Name).ToListAsync(), StringComparer.OrdinalIgnoreCase) { IssueStatus.Done.Name() };
+        return SprintHistory.Build(sprint, issues, activities, now, doneNames);
     }
 
     /// <summary>Committed vs completed for the last <paramref name="take"/> completed sprints, oldest first.</summary>

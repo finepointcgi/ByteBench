@@ -224,12 +224,13 @@ public class LinkedWorkService(IDbContextFactory<AppDbContext> dbFactory, Projec
         title = title.Trim();
         if (title.Length is 0 or > 200) throw new InvalidOperationException("Title is required (max 200 characters).");
         await using var db = await dbFactory.CreateDbContextAsync();
-        var parent = await db.Issues.Where(i => i.Id == parentId).Select(i => new { i.ProjectId, i.MilestoneId }).FirstOrDefaultAsync()
+        var parent = await db.Issues.Where(i => i.Id == parentId).Select(i => new { i.ProjectId, i.MilestoneId, i.SprintId }).FirstOrDefaultAsync()
             ?? throw new InvalidOperationException("Parent issue not found.");
         var child = new Issue
         {
             Title = title, Type = type, ParentId = parentId, Status = IssueStatus.Todo,
-            MilestoneId = type == IssueType.Subtask ? parent.MilestoneId : null, // sub-tasks ride along in the parent's sprint
+            MilestoneId = type == IssueType.Subtask ? parent.MilestoneId : null, // sub-tasks ride along with the parent's milestone
+            SprintId = type == IssueType.Subtask ? parent.SprintId : null, // and sprint
         };
         return await issues.CreateIssueAsync(parent.ProjectId, child, [], actorId);
     }

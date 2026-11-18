@@ -64,17 +64,17 @@ public static partial class SprintHistory
     [GeneratedRegex(@"(?<!changed the )estimated \*\*(\d+)\*\* story points")] private static partial Regex EstimatedRx();
     [GeneratedRegex(@"(added this issue to|removed this issue from|moved this issue from) sprint \[[^\]]*\]\([^)]*#sprint-(\d+)\)")] private static partial Regex SprintRx();
 
-    private static readonly string DoneName = IssueStatus.Done.Name();
+    private static readonly IReadOnlySet<string> DefaultDoneNames = new HashSet<string>([IssueStatus.Done.Name()], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>An issue's state at some moment.</summary>
     public record struct State(bool Exists, int? SprintId, bool Done, int Points);
 
     /// <summary>Undoes one activity: given the state just after it, the state just before it.</summary>
-    public static State Undo(State after, string text)
+    public static State Undo(State after, string text, IReadOnlySet<string>? doneNames = null)
     {
         var s = after;
         if (StatusRx().Match(text) is { Success: true } st)
-            s.Done = st.Groups[1].Value.Equals(DoneName, StringComparison.OrdinalIgnoreCase);
+            s.Done = (doneNames ?? DefaultDoneNames).Contains(st.Groups[1].Value);
 
         if (EstimateChangedRx().Match(text) is { Success: true } ec) s.Points = int.Parse(ec.Groups[1].Value);
         else if (EstimateRemovedRx().Match(text) is { Success: true } er) s.Points = int.Parse(er.Groups[1].Value);
@@ -89,11 +89,11 @@ public static partial class SprintHistory
     /// The state of <paramref name="issue"/> at <paramref name="at"/>, from its current state and its activities
     /// (any order; only those later than <paramref name="at"/> are undone).
     /// </summary>
-    public static State StateAt(Issue issue, IEnumerable<Activity> activities, DateTime at)
+    public static State StateAt(Issue issue, IEnumerable<Activity> activities, DateTime at, IReadOnlySet<string>? doneNames = null)
     {
         var s = new State(issue.CreatedAt <= at, issue.SprintId, issue.Status == IssueStatus.Done, issue.StoryPoints ?? 0);
         foreach (var a in activities.Where(a => a.CreatedAt > at).OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id))
-            s = Undo(s, a.Text);
+            s = Undo(s, a.Text, doneNames);
         return s;
     }
 
@@ -102,7 +102,7 @@ public static partial class SprintHistory
     /// it) and their activities. Days run from the start date to the end date; the first is measured when the sprint was
     /// started, the others at the end of the day (or now / when the sprint was completed, whichever is earlier).
     /// </summary>
-    public static Burndown Build(Sprint sprint, IReadOnlyList<Issue> issues, ILookup<int, Activity> activities, DateTime now)
+    public static Burndown Build(Sprint sprint, IReadOnlyList<Issue> issues, ILookup<int, Activity> activities, DateTime now, IReadOnlySet<string>? doneNames = null)
     {
         var start = (sprint.StartDate ?? sprint.StartedAt ?? now).Date;
         var end = (sprint.EndDate ?? start.AddDays(13)).Date;
@@ -116,7 +116,7 @@ public static partial class SprintHistory
             int rp = 0, rc = 0, sp = 0, sc = 0;
             foreach (var i in issues)
             {
-                var s = StateAt(i, activities[i.Id], at);
+                var s = StateAt(i, activities[i.Id], at, doneNames);
                 if (!s.Exists || s.SprintId != sprint.Id) continue;
                 sp += s.Points; sc++;
                 if (!s.Done) { rp += s.Points; rc++; }

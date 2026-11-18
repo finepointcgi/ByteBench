@@ -68,6 +68,8 @@ public partial class IssueService
             }
             attachmentFiles.Delete(files); // rows first, then files
             await notifications.OnIssuesBulkChangedAsync(actorId, issues.Select(i => (i.ProjectId, i.Id)).ToList(), []);
+            await audit.RecordAsync("issue.bulk_deleted", "issue", null, projectIds.Count == 1 ? projectIds[0] : null,
+                new { Issues = issues.Select(i => i.Key).ToList(), Subtasks = subtaskIds.Count });
             return new(0, 0, issues.Count);
         }
 
@@ -107,7 +109,13 @@ public partial class IssueService
                 var before = IssueSnapshot.Of(i);
                 var wasClosed = i.Status.IsClosed();
                 var parts = new List<string>();
-                if (change.Status is { } s && i.Status != s) { parts.Add($"changed status from **{i.Status.Name()}** to **{s.Name()}**"); i.Status = s; }
+                if (change.Status is { } s && i.Status != s)
+                {
+                    // Through the project's workflow (picks the category's status, enforces transitions; a refusal rolls back the batch).
+                    var (fromStatus, fromWorkflow) = (i.Status, i.WorkflowStatusId);
+                    i.Status = s;
+                    if (await ReconcileStatusAsync(i, fromStatus, fromWorkflow) is { } sc) parts.Add(sc.Describe());
+                }
                 if (change.Priority is { } p && i.Priority != p) { i.Priority = p; parts.Add($"set priority to **{p}**"); }
                 if (change.SetAssignee && i.AssigneeId != assignee?.Id)
                 {
