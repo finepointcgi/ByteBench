@@ -245,6 +245,33 @@ sqlite3 gitbench.db "select Feature, count(*), sum(InputTokens), sum(OutputToken
 Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions), `AiReviewLogic.cs` (pure functions: skipping, chunking, prompts, validation, summary), `AiReviewQueue.cs` (queue, worker, push listener), `AiClient.Structured.cs` (generic `CompleteJsonAsync<T>` structured-output helper) and `AiBot.cs`.
 
 
+## Branch protection, reviewers & PR templates
+
+**Branch protection rules** are set per repository at `/p/{KEY}/repos/{slug}/settings/branches` (Maintainer+, the **🔒 Branch protection** tab). A rule matches branches by name: an exact name (`main`) or a glob (`release/*`; `*` and `?` stay within one path segment, `**` crosses `/`). When several rules match, the strictest setting wins. Protected branches show a 🔒 badge on the Branches page.
+
+| Setting | Effect |
+|---|---|
+| Required approvals (0–10) | Merging needs this many distinct approvals from people other than the author |
+| Block direct pushes | The branch changes only through PR merges: git pushes and creating matching branches are refused |
+| Block force pushes | Non-fast-forward pushes are refused |
+| Block deletion | Deleting via git push, the Branches page or "delete source branch after merge" is refused |
+| Require checks to pass | Any merge check (e.g. a pipeline) that is Pending or Failed blocks merging. Neutral never blocks |
+| Dismiss approvals when new commits are pushed | Only approvals on the PR's current head count; a push to the source branch removes older ones |
+| Allow admins to bypass | Site admins and project Owners are exempt (off by default). A bypassed merge is noted in the PR timeline |
+| Default reviewers | Added to new PRs that target a matching branch |
+
+"Changes requested" by anyone always blocks merging into a protected branch. Reviews record the head commit they were given on (`PullRequestReview.CommitSha`).
+
+**Where it's enforced:**
+- **Git push over HTTP.** `Services/Git/ProtectedPushGuard.cs` reads the receive-pack ref update commands before handing the request to `git http-backend`. It refuses deletes, creates and direct pushes with a proper report-status `ng` line plus a sideband message, so git prints `! [remote rejected] main -> main (branch 'main' is protected: changes must go through a pull request)`. A force push can only be detected once the pack has arrived, so for those refs a tiny `pre-receive` hook (written to `{RepositoryRoot}/.hooks`, enabled for that request only via `core.hooksPath`) runs `git merge-base --is-ancestor old new`. Requires git ≥ 2.31 (`GIT_CONFIG_COUNT`).
+- **Branch create/delete** in `RepositoryService`, and **PR merge** in `PullRequestService.MergeAsync`, which refuses with the list of reasons.
+
+**Merge checks.** `Services/MergeGate.cs` collects every registered `IMergeCheck` (`Services/MergeChecks.cs`) plus the approval and change-request results, and decides whether a PR can be merged. The PR page's merge box lists every check with its state, and the Merge button is disabled while blocked (it reads "Merge (bypass protection)" for admins who may bypass). To add a check, register `services.AddScoped<IMergeCheck, MyCheck>()`.
+
+**Assigned reviewers.** Pick reviewers on the New PR page (project members with ReviewPullRequest) or with **Edit reviewers** in the PR sidebar (the author or a Maintainer+). The sidebar shows each one as Pending, Approved or Changes requested. Added reviewers get a "requested your review on" notification and start watching the PR. The PR list's **Review requested** button (`?filter=review-requested`) shows open PRs waiting for your verdict.
+
+**PR templates.** The New PR description is prefilled from the target branch's `.gitbench/pull_request_template.md`, falling back to `PULL_REQUEST_TEMPLATE.md`, then `.github/pull_request_template.md`.
+
 ## Next steps
 
 - **More features:** issue links and sub-tasks, attachments, email delivery of notifications, @mention autocomplete.

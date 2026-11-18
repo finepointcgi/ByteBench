@@ -1,4 +1,5 @@
 @* Breadcrumb, title and tab strip shared by every page of a repository. *@
+@inject ProjectAccess Access
 <div class="breadcrumbs">
     <a href="/p/@Repo.Project.Key/issues">@Repo.Project.Name</a> /
     <a href="@RepoUrls.List(Repo.Project.Key)">Repositories</a> /
@@ -22,13 +23,22 @@
     <a class="tab @(Active == "commits" ? "active" : "")" href="@RepoUrls.Commits(Repo, Ref)">Commits</a>
     <a class="tab @(Active == "branches" ? "active" : "")" href="@RepoUrls.Branches(Repo)">Branches</a>
     <a class="tab @(Active == "prs" ? "active" : "")" href="@RepoUrls.RepoPullRequests(Repo)">Pull requests</a>
+    @if (canManage)
+    {
+        <a class="tab @(Active == "protection" ? "active" : "")" href="@RepoUrls.BranchProtection(Repo)">🔒 Branch protection</a>
+    }
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>One of: source, commits, branches, prs.</summary>
+    /// <summary>One of: source, commits, branches, prs, protection.</summary>
     [Parameter] public string Active { get; set; } = "source";
     /// <summary>The ref being viewed, carried across the Source/Commits tabs.</summary>
     [Parameter] public string? Ref { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool canManage;
+
+    protected override async Task OnParametersSetAsync() =>
+        canManage = await Access.CanAsync(Repo.ProjectId, Permission.ManageRepositories);
 }

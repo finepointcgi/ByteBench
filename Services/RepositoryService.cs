@@ -14,7 +14,8 @@ public record DevelopmentInfo(List<DevBranch> Branches, List<PullRequest> PullRe
 }
 
 /// <summary>Repository metadata (database) plus access to the bare repos on disk via <see cref="GitOps"/>.</summary>
-public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access)
+public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access,
+    BranchProtectionService protection)
 {
     public string PathOf(Repository repo) => storage.PathFor(repo.Project.Key, repo.Slug);
 
@@ -133,6 +134,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
     public async Task CreateBranchAsync(Repository repo, string name, string fromRev, int? actorId = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.PushCode, actorId);
+        await protection.EnsureAllowedAsync(repo, name, RefChangeKind.Create, actorId);
         await Git(repo, path => GitOps.CreateBranch(path, name, fromRev));
     }
 
@@ -140,6 +142,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
     public async Task DeleteBranchAsync(Repository repo, string name, int? actorId = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.DeleteBranch, actorId);
+        await protection.EnsureAllowedAsync(repo, name, RefChangeKind.Delete, actorId);
         await Git(repo, path => GitOps.DeleteBranch(path, name, repo.DefaultBranch));
     }
 

@@ -7,6 +7,8 @@
 @inject GitBench.Services.Ai.AiClient Ai
 @inject GitBench.Services.Ai.AiReviewService AiReviews
 @inject ProjectAccess Access
+@inject ReviewerService Reviewers
+@inject BranchProtectionService Protection
 
 <PageTitle>New pull request · @project?.Name</PageTitle>
 
@@ -112,6 +114,7 @@ else if (project != null)
                                 }
                             </div>
                             <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
+                            @if (templatePath != null) { <div class="form-text">Prefilled from <span class="mono">@templatePath</span> on <span class="mono">@TargetOrDefault</span>.</div> }
                         </div>
                         @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
                         <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(title))" @onclick="Create">Create pull request</button>
@@ -121,6 +124,18 @@ else if (project != null)
                             <label>Summary</label>
                             <div><b>@compare.Commits.Count</b> commit@(compare.Commits.Count == 1 ? "" : "s"), <b>@compare.Files.Count</b> file@(compare.Files.Count == 1 ? "" : "s") changed</div>
                             <div class="muted small">@Source is @compare.Ahead ahead, @compare.Behind behind @TargetOrDefault</div>
+                        </div>
+                        <div class="field">
+                            <label>Reviewers</label>
+                            @if (reviewerCandidates.Count == 0) { <div class="muted small">No other project members can review.</div> }
+                            @foreach (var u in reviewerCandidates)
+                            {
+                                <label class="form-check small" @key="u.Id">
+                                    <input class="form-check-input" type="checkbox" checked="@selectedReviewers.Contains(u.Id)"
+                                           @onchange="e => { if (e.Value is true) selectedReviewers.Add(u.Id); else selectedReviewers.Remove(u.Id); }" />
+                                    <span class="form-check-label">@u.DisplayName</span>
+                                </label>
+                            }
                         </div>
                         <div class="field">
                             <label>Linked issues</label>
@@ -166,6 +181,9 @@ else if (project != null)
     private string? title, description, error;
     private string tab = "commits";
     private string? previewKey;
+    private string? templatePath;
+    private List<User> reviewerCandidates = [];
+    private HashSet<int> selectedReviewers = [];
 
     private string TargetOrDefault => string.IsNullOrEmpty(Target) ? repo?.DefaultBranch ?? "main" : Target;
 
@@ -208,6 +226,17 @@ else if (project != null)
                 ? string.Join("\n", compare.Commits.AsEnumerable().Reverse().Select(c => $"- {c.MessageShort}"))
                 : compare.Commits.FirstOrDefault()?.Body;
             linkedNumbers = IssueKeys.Numbers(project.Key, compare.Commits.Select(c => c.Message).Append(source).Append(title));
+
+            // A description template on the target branch replaces the commit-list default.
+            var template = await Repos.Git(r, path => PullRequestTemplates.Find(path, target));
+            templatePath = template?.Path;
+            if (template is { } t) description = t.Text;
+
+            // Reviewers: project members who can review, preselecting the default reviewers of matching branch rules.
+            if (reviewerCandidates.Count == 0)
+                reviewerCandidates = (await Reviewers.CandidatesAsync(project.Id)).Where(u => u.Id != Me.Id).ToList();
+            selectedReviewers = (await Protection.ForBranchAsync(r.Id, target)).Rules
+                .SelectMany(x => x.DefaultReviewerIds).Where(id => id != Me.Id).ToHashSet();
         }
     }
 
@@ -256,7 +285,7 @@ else if (project != null)
         error = null;
         try
         {
-            var pr = await PRs.CreateAsync(repo!, title ?? "", description, Source!, TargetOrDefault, Me.Id);
+            var pr = await PRs.CreateAsync(repo!, title ?? "", description, Source!, TargetOrDefault, Me.Id, selectedReviewers);
             Nav.NavigateTo(RepoUrls.PullRequest(repo!, pr.Number));
         }
         catch (InvalidOperationException ex) { error = ex.Message; }

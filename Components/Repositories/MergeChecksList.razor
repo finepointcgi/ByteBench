@@ -1,0 +1,46 @@
+@* The merge box's list of checks: branch protection (approvals, change requests) plus every IMergeCheck. *@
+@if (Gate != null && (Gate.Checks.Count > 0 || Gate.Protection.IsProtected))
+{
+    <div class="merge-checks">
+        @if (Gate.Protection.IsProtected)
+        {
+            <div class="mc-protected" title="Branch protection rules matching @Target">🔒 <span class="mono">@Target</span> is protected (@Gate.Protection.Describe)</div>
+        }
+        @foreach (var c in Gate.Checks)
+        {
+            <div class="mc-row">
+                <span class="mc-icon @c.State.ToString().ToLowerInvariant()" title="@c.State">@Icon(c.State)</span>
+                <div class="mc-text">
+                    @if (c.Url != null) { <a href="@c.Url"><b>@c.Name</b></a> } else { <b>@c.Name</b> }
+                    @if (c.Detail != null) { <span class="muted"> · @c.Detail</span> }
+                </div>
+            </div>
+        }
+        @if (Gate.Blocked)
+        {
+            <div class="mc-blocked @(Gate.CanBypass ? "bypass" : "")">
+                @if (Gate.CanBypass)
+                {
+                    <span>⚠ Blocked: @string.Join("; ", Gate.Blockers). As an admin you can bypass the rule and merge anyway.</span>
+                }
+                else
+                {
+                    <span>⛔ Merging is blocked: @string.Join("; ", Gate.Blockers).</span>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public MergeGateResult? Gate { get; set; }
+    [Parameter] public string Target { get; set; } = "";
+
+    private static string Icon(MergeCheckState s) => s switch
+    {
+        MergeCheckState.Passed => "✓",
+        MergeCheckState.Failed => "✕",
+        MergeCheckState.Pending => "●",
+        _ => "–",
+    };
+}

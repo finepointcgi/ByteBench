@@ -51,9 +51,12 @@ internal sealed partial class GitHttpBackend(string? gitPath, RepoStorage storag
 
     /// <summary>
     /// Executes http-backend. <paramref name="pathInfo"/> must already be validated
-    /// (e.g. "/WEB/web-app.git/info/refs").
+    /// (e.g. "/WEB/web-app.git/info/refs"). <paramref name="body"/> replaces the request body with an already
+    /// decoded stream (CONTENT_LENGTH and Content-Encoding are then dropped); <paramref name="extraEnv"/> adds CGI
+    /// environment variables. Both are used by <see cref="ProtectedPushGuard"/>.
     /// </summary>
-    public async Task<Result> RunAsync(HttpContext ctx, string pathInfo, string remoteUser)
+    public async Task<Result> RunAsync(HttpContext ctx, string pathInfo, string remoteUser,
+        Stream? body = null, IReadOnlyDictionary<string, string>? extraEnv = null)
     {
         var request = ctx.Request;
         var response = ctx.Response;
@@ -93,6 +96,13 @@ internal sealed partial class GitHttpBackend(string? gitPath, RepoStorage storag
         var gitProtocol = request.Headers["Git-Protocol"].ToString();
         if (!string.IsNullOrEmpty(gitProtocol) && GitProtocolPattern().IsMatch(gitProtocol))
             env["GIT_PROTOCOL"] = gitProtocol;
+        if (body != null)
+        {
+            env.Remove("CONTENT_LENGTH");
+            env.Remove("HTTP_CONTENT_ENCODING");
+        }
+        if (extraEnv != null)
+            foreach (var (k, v) in extraEnv) env[k] = v;
 
         using var process = new Process { StartInfo = psi };
         try
@@ -109,7 +119,7 @@ internal sealed partial class GitHttpBackend(string? gitPath, RepoStorage storag
         using var killOnAbort = aborted.Register(() => TryKill(process));
 
         var stderrTask = DrainStderrAsync(process.StandardError, pathInfo);
-        var stdinTask = PumpStdinAsync(request.Body, process.StandardInput.BaseStream, aborted);
+        var stdinTask = PumpStdinAsync(body ?? request.Body, process.StandardInput.BaseStream, aborted);
 
         try
         {

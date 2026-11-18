@@ -203,6 +203,20 @@ public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, Live
         live.Publish(new PullRequestChanged(prId, pr.Repository.ProjectId));
     }
 
+    /// <summary>Reviewers were assigned: they start watching the PR and are notified.</summary>
+    public async Task OnReviewersAddedAsync(int prId, int actorId, IReadOnlyCollection<int> reviewerIds)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var pr = await LoadPrAsync(db, prId);
+        if (pr == null) return;
+
+        foreach (var id in reviewerIds) await EnsureWatchAsync(db, id, pullRequestId: prId);
+        var r = new Recipients();
+        r.Add(reviewerIds, NotificationKind.ReviewRequested);
+        await NotifyAsync(db, r, actorId, pr.Repository.ProjectId, PrTitle(pr), PrUrl(pr));
+        live.Publish(new PullRequestChanged(prId, pr.Repository.ProjectId));
+    }
+
     public Task OnPullRequestMergedAsync(int prId, int actorId) =>
         OnPullRequestStateChangedAsync(prId, actorId, NotificationKind.PullRequestMerged);
 
@@ -330,6 +344,7 @@ public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, Live
         NotificationKind.PullRequestMerged => "merged",
         NotificationKind.PullRequestDeclined => "declined",
         NotificationKind.PullRequestReopened => "reopened",
+        NotificationKind.ReviewRequested => "requested your review on",
         _ => "updated",
     };
 

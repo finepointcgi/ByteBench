@@ -25,6 +25,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
 
+    // ----- Branch protection & reviewers -----
+    public DbSet<BranchProtectionRule> BranchProtectionRules => Set<BranchProtectionRule>();
+    public DbSet<PullRequestReviewer> PullRequestReviewers => Set<PullRequestReviewer>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b); // Identity tables (AspNetUsers, AspNetRoles, …)
@@ -76,5 +80,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<ProjectMember>().HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PersonalAccessToken>().HasIndex(t => t.UserId);
         b.Entity<PersonalAccessToken>().HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- Branch protection & reviewers -----
+        b.Entity<BranchProtectionRule>().HasIndex(r => new { r.RepositoryId, r.Pattern }).IsUnique();
+        b.Entity<BranchProtectionRule>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestReviewer>().HasIndex(r => new { r.PullRequestId, r.UserId }).IsUnique();
+        b.Entity<PullRequestReviewer>().HasIndex(r => r.UserId);
+        b.Entity<PullRequestReviewer>().HasOne<PullRequest>().WithMany().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestReviewer>().HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestReviewer>().HasOne<User>().WithMany().HasForeignKey(r => r.AddedById).OnDelete(DeleteBehavior.SetNull);
     }
 }

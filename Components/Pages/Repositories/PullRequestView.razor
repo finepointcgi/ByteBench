@@ -8,6 +8,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject MergeGate MergeGateSvc
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -203,6 +204,7 @@ else if (pr != null)
                             @foreach (var p in mergeStatus.ConflictPaths) { <li>@p</li> }
                         </ul>
                     }
+                    <MergeChecksList Gate="gate" Target="@pr.TargetBranch" />
                     @if (perms.Can(Permission.MergePullRequest))
                     {
                     <select class="form-select form-select-sm mt-2" @bind="strategy" disabled="@(!CanMerge)">
@@ -213,7 +215,7 @@ else if (pr != null)
                         <input class="form-check-input" type="checkbox" @bind="deleteSource" disabled="@(!CanMerge || pr.SourceBranch == repo.DefaultBranch)" />
                         <span class="form-check-label">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
                     </label>
-                    <button class="btn btn-success btn-sm w-100 mt-2" disabled="@(!CanMerge || busy)" @onclick="Merge">Merge</button>
+                    <button class="btn btn-success btn-sm w-100 mt-2" disabled="@(!CanMerge || busy)" @onclick="Merge">@(gate is { Blocked: true, CanBypass: true } ? "Merge (bypass protection)" : "Merge")</button>
                     }
                     else
                     {
@@ -246,18 +248,7 @@ else if (pr != null)
 
             <div class="field">
                 <label>Reviewers</label>
-                @if (pr.Reviews.Count == 0)
-                {
-                    <div class="muted small">No reviews yet.</div>
-                }
-                @foreach (var r in pr.Reviews.OrderBy(r => r.CreatedAt))
-                {
-                    <div class="reviewer" @key="r.Id">
-                        <Avatar User="r.User" Size="22" ShowName /> <AiBadge User="r.User" />
-                        @if (r.State == ReviewState.Approved) { <span class="review-chip approved ms-auto">✓ Approved</span> }
-                        else { <span class="review-chip changes ms-auto">✎ Changes requested</span> }
-                    </div>
-                }
+                <PrReviewersPanel Pr="pr" HeadSha="@changes?.HeadSha" CanEdit="CanEditPr" OnChanged="() => Reload(full: false)" />
                 @if (pr.State == PullRequestState.Open && pr.AuthorId != Me.Id && perms.Can(Permission.ReviewPullRequest))
                 {
                     var mine = pr.Reviews.FirstOrDefault(r => r.UserId == Me.Id)?.State;
@@ -341,7 +332,9 @@ else if (pr != null)
 
     private string CurrentTab => Tab is "commits" or "files" ? Tab : "overview";
     private string TabUrl(string? tab) => RepoUrls.PullRequest(pr!) + (tab == null ? "" : "?tab=" + tab);
-    private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean;
+    private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean
+                             && (gate == null || !gate.Blocked || gate.CanBypass);
+    private MergeGateResult? gate; // branch protection + IMergeCheck results (open PRs only)
 
     private string MergeCss => mergeStatus?.Check switch
     {
@@ -380,6 +373,7 @@ else if (pr != null)
         watching = await Notifications.IsWatchingPullRequestAsync(Me.Id, pr.Id);
         watcherCount = await Notifications.CountPullRequestWatchersAsync(pr.Id);
         perms = await Access.GetPermissionsAsync(pr.Repository.ProjectId);
+        gate = pr.State == PullRequestState.Open ? await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id) : null;
         if (full)
         {
             changes = await PRs.GetChangesAsync(pr);

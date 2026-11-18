@@ -7,6 +7,8 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject ReviewerService Reviewers
+@inject CurrentUser Me
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -40,6 +42,10 @@ else if (project != null)
             }
         </div>
         <div class="d-flex gap-2 mb-2">
+            <a class="btn btn-sm text-nowrap @(ReviewRequested ? "btn-secondary" : "btn-outline-secondary")" title="Open pull requests waiting for your review"
+               href="@Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["filter"] = ReviewRequested ? null : "review-requested", ["state"] = null })">
+                Review requested <span class="count">@awaitingReview.Count</span>
+            </a>
             @if (scopedRepo == null)
             {
                 <select class="form-select form-select-sm" value="@(RepoFilter ?? "")" @onchange="FilterRepo">
@@ -61,7 +67,7 @@ else if (project != null)
         }
         else if (prs.Count == 0)
         {
-            <div class="empty">No @CurrentState.ToString().ToLowerInvariant() pull requests.</div>
+            <div class="empty">No @CurrentState.ToString().ToLowerInvariant() pull requests@(ReviewRequested ? " waiting for your review" : "").</div>
         }
         @foreach (var pr in prs)
         {
@@ -94,6 +100,10 @@ else if (project != null)
     [Parameter] public string? Slug { get; set; }
     [SupplyParameterFromQuery(Name = "state")] public string? State { get; set; }
     [SupplyParameterFromQuery(Name = "repo")] public string? RepoFilter { get; set; }
+    [SupplyParameterFromQuery(Name = "filter")] public string? Filter { get; set; }
+
+    private bool ReviewRequested => Filter == "review-requested";
+    private HashSet<int> awaitingReview = [];
 
     private Project? project;
     private Repository? scopedRepo;
@@ -116,6 +126,8 @@ else if (project != null)
         canCreate = await Access.CanAsync(project.Id, Permission.CreatePullRequest);
         var repoId = scopedRepo?.Id ?? repos.FirstOrDefault(r => r.Repository.Slug == RepoFilter)?.Repository.Id;
         prs = await PRs.ListAsync(project.Id, CurrentState, repoId);
+        awaitingReview = await Reviewers.AwaitingReviewAsync(project.Id, Me.Id, repoId);
+        if (ReviewRequested) prs = prs.Where(p => awaitingReview.Contains(p.Id)).ToList();
         counts = await PRs.CountAsync(project.Id, repoId);
         commentCounts = await PRs.CommentCountsAsync(prs.Select(p => p.Id));
     }

@@ -1,0 +1,102 @@
+@* PR sidebar: assigned reviewers (and anyone else who reviewed) with pending / approved / changes requested. *@
+@inject ReviewerService Reviewers
+@inject CurrentUser Me
+
+@if (entries.Count == 0 && !editing)
+{
+    <div class="muted small">No reviewers yet.</div>
+}
+@foreach (var e in entries)
+{
+    <div class="reviewer" @key="e.User.Id">
+        <Avatar User="e.User" Size="22" ShowName /> <AiBadge User="e.User" />
+        @switch (e.Status)
+        {
+            case ReviewerStatus.Approved:
+                <span class="review-chip approved ms-auto">✓ Approved</span>
+                break;
+            case ReviewerStatus.ChangesRequested:
+                <span class="review-chip changes ms-auto">✎ Changes requested</span>
+                break;
+            default:
+                <span class="review-chip pending ms-auto" title="@(e.Stale ? "Approved an older version; new commits were pushed since" : "Review requested")">
+                    @(e.Stale ? "◷ Re-review needed" : "◷ Pending")
+                </span>
+                break;
+        }
+    </div>
+}
+@if (CanEdit && Pr.State == PullRequestState.Open)
+{
+    @if (editing)
+    {
+        <div class="reviewer-picker mt-2">
+            @if (candidates.Count == 0) { <div class="muted small">No other project members can review.</div> }
+            @foreach (var u in candidates)
+            {
+                <label class="form-check small" @key="u.Id">
+                    <input class="form-check-input" type="checkbox" checked="@selected.Contains(u.Id)" @onchange="e => Toggle(u.Id, e)" />
+                    <span class="form-check-label">@u.DisplayName <span class="muted">@@@u.UserName</span></span>
+                </label>
+            }
+            @if (error != null) { <div class="text-danger small">@error</div> }
+            <div class="d-flex gap-2 mt-1">
+                <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="Save">Save</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="() => editing = false">Cancel</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <button class="btn btn-link btn-sm px-0" @onclick="StartEdit">Edit reviewers</button>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public PullRequest Pr { get; set; } = null!;
+    [Parameter] public string? HeadSha { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private List<ReviewerEntry> entries = [];
+    private List<User> candidates = [];
+    private HashSet<int> selected = [];
+    private bool editing, busy;
+    private string? error;
+    private PullRequest? loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReferenceEquals(loadedFor, Pr)) return; // the page replaces Pr on every reload
+        loadedFor = Pr;
+        entries = await Reviewers.EntriesAsync(Pr, HeadSha);
+    }
+
+    private async Task StartEdit()
+    {
+        error = null;
+        candidates = (await Reviewers.CandidatesAsync(Pr.Repository.ProjectId)).Where(u => u.Id != Pr.AuthorId).ToList();
+        selected = entries.Where(e => e.Assigned).Select(e => e.User.Id).ToHashSet();
+        editing = true;
+    }
+
+    private void Toggle(int id, ChangeEventArgs e)
+    {
+        if (e.Value is true) selected.Add(id); else selected.Remove(id);
+    }
+
+    private async Task Save()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await Reviewers.SetAsync(Pr.Id, Me.Id, selected);
+            editing = false;
+            entries = await Reviewers.EntriesAsync(Pr, HeadSha);
+            await OnChanged.InvokeAsync();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

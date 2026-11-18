@@ -19,6 +19,7 @@ public static class RepoUrls
 
     public static string Commit(Repository r, string sha) => $"{Base(r)}/commits/{sha}";
     public static string Branches(Repository r) => Base(r) + "/branches";
+    public static string BranchProtection(Repository r) => Base(r) + "/settings/branches";
 
     public static string PullRequests(string projectKey, string? state = null, string? repo = null) =>
         $"/p/{projectKey}/pull-requests" + Query(("state", state), ("repo", repo));

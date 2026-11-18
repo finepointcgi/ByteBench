@@ -201,6 +201,8 @@ public class PullRequestReview
     public User User { get; set; } = null!;
     public ReviewState State { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Source-branch tip the verdict was given on (null for reviews recorded before this was tracked).</summary>
+    [MaxLength(40)] public string? CommitSha { get; set; }
 }
 
 public class PullRequestActivity
@@ -235,6 +237,7 @@ public enum NotificationKind
     Assigned, Mentioned,
     IssueCommented, IssueStatusChanged, IssueClosed, IssueReopened,
     PullRequestCommented, PullRequestReviewed, PullRequestMerged, PullRequestDeclined, PullRequestReopened,
+    ReviewRequested,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -336,4 +339,47 @@ public class PersonalAccessToken
     public DateTime? RevokedAt { get; set; }
 
     public bool IsActive(DateTime utcNow) => RevokedAt == null && (ExpiresAt == null || ExpiresAt > utcNow);
+}
+
+// ----- Branch protection & reviewers -----
+
+/// <summary>
+/// Protection for the branches of one repository whose name matches <see cref="Pattern"/> (exact, or a glob:
+/// <c>*</c> and <c>?</c> stay within one path segment, <c>**</c> matches across <c>/</c>). Enforced by
+/// <see cref="GitBench.Services.BranchProtectionService"/> on git push, branch create/delete and PR merge.
+/// </summary>
+public class BranchProtectionRule
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    [Required, MaxLength(250)] public string Pattern { get; set; } = "";
+    /// <summary>Approvals on the PR's current head (from people other than the author) needed to merge.</summary>
+    [Range(0, 10)] public int RequiredApprovals { get; set; }
+    /// <summary>Changes reach matching branches only by merging pull requests (pushes and branch creation are refused).</summary>
+    public bool BlockDirectPushes { get; set; }
+    /// <summary>Refuses pushes that aren't fast-forwards.</summary>
+    public bool BlockForcePushes { get; set; } = true;
+    public bool BlockDeletion { get; set; } = true;
+    /// <summary>Every external merge check (pipelines, ...) must be Passed or Neutral before merging.</summary>
+    public bool RequireChecksToPass { get; set; }
+    /// <summary>New commits on the PR's source branch dismiss existing approvals.</summary>
+    public bool DismissStaleApprovals { get; set; }
+    /// <summary>Site admins and project Owners are exempt from this rule.</summary>
+    public bool AllowAdminBypass { get; set; }
+    /// <summary>Users added as reviewers to new pull requests that target a matching branch.</summary>
+    public List<int> DefaultReviewerIds { get; set; } = [];
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>A user asked to review a pull request. Their verdict, if any, is their <see cref="PullRequestReview"/>.</summary>
+public class PullRequestReviewer
+{
+    public int Id { get; set; }
+    public int PullRequestId { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public int? AddedById { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

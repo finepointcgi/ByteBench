@@ -162,7 +162,17 @@ public static partial class GitHttpEndpoints
         var relative = Path.GetRelativePath(storage.Root, diskPath).Replace(Path.DirectorySeparatorChar, '/');
         var pathInfo = $"/{relative}/{rest}";
 
-        var (exitCode, requestBytes) = await backend.RunAsync(ctx, pathInfo, user.UserName!);
+        // Branch protection: refuse protected ref updates before git sees them (see ProtectedPushGuard).
+        Stream? body = null;
+        IReadOnlyDictionary<string, string>? extraEnv = null;
+        if (isPush)
+        {
+            var guard = await ProtectedPushGuard.InspectAsync(ctx, logger, found.Id, found.ProjectId, user.Id, storage);
+            if (guard.Rejected) return;
+            (body, extraEnv) = (guard.Body, guard.Environment);
+        }
+
+        var (exitCode, requestBytes) = await backend.RunAsync(ctx, pathInfo, user.UserName!, body, extraEnv);
 
         // For large pushes git first sends a probe POST whose body is a lone flush packet ("0000")
         // to check auth before streaming chunked; it updates nothing, so don't notify for it.

@@ -55,6 +55,11 @@ builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
 builder.Services.AddSingleton<LiveEvents>();
 builder.Services.AddScoped<NotificationService>();
+// Branch protection, merge checks & assigned reviewers
+builder.Services.AddScoped<BranchProtectionService>();
+builder.Services.AddScoped<MergeGate>();
+builder.Services.AddScoped<ReviewerService>();
+builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
 
 var app = builder.Build();
 

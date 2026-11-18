@@ -146,6 +146,59 @@ namespace GitBench.Data.Migrations
                     b.ToTable("AiUsages");
                 });
 
+            modelBuilder.Entity("GitBench.Data.BranchProtectionRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AllowAdminBypass")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("BlockDeletion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("BlockDirectPushes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("BlockForcePushes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("DefaultReviewerIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("DismissStaleApprovals")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Pattern")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("RequireChecksToPass")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RequiredApprovals")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Pattern")
+                        .IsUnique();
+
+                    b.ToTable("BranchProtectionRules");
+                });
+
             modelBuilder.Entity("GitBench.Data.Comment", b =>
                 {
                     b.Property<int>("Id")
@@ -612,6 +665,10 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -632,6 +689,36 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("PullRequestReviews");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PullRequestReviewer", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("AddedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AddedById");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("PullRequestId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("PullRequestReviewers");
                 });
 
             modelBuilder.Entity("GitBench.Data.Repository", b =>
@@ -955,6 +1042,17 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.BranchProtectionRule", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+                });
+
             modelBuilder.Entity("GitBench.Data.Comment", b =>
                 {
                     b.HasOne("GitBench.Data.User", "Author")
@@ -1141,6 +1239,28 @@ namespace GitBench.Data.Migrations
                 {
                     b.HasOne("GitBench.Data.PullRequest", null)
                         .WithMany("Reviews")
+                        .HasForeignKey("PullRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PullRequestReviewer", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("AddedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.PullRequest", null)
+                        .WithMany()
                         .HasForeignKey("PullRequestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

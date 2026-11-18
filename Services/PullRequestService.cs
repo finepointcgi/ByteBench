@@ -7,7 +7,8 @@ namespace GitBench.Services;
 public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
-public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue)
+public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
+    MergeGate gate, ReviewerService reviewers, BranchProtectionService protection)
 {
     // ---------- Queries ----------
 
@@ -90,7 +91,8 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     // ---------- Lifecycle ----------
 
-    public async Task<PullRequest> CreateAsync(Repository repo, string title, string? description, string source, string target, int authorId)
+    public async Task<PullRequest> CreateAsync(Repository repo, string title, string? description, string source, string target, int authorId,
+        IEnumerable<int>? reviewerIds = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest, authorId);
         title = title.Trim();
@@ -124,6 +126,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         await notifications.OnPullRequestCreatedAsync(pr.Id, authorId);
+        await reviewers.AddOnCreateAsync(pr.Id, authorId, reviewerIds);
         aiReviewQueue.Enqueue(pr.Id);
         return pr;
     }
@@ -154,6 +157,10 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be merged.");
+        // Branch protection: approvals, change requests and required checks (throws with the reasons when blocked).
+        var bypassed = await gate.EnsureCanMergeAsync(prId, actor.Id);
+        if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
+            await protection.EnsureAllowedAsync(pr.Repository, pr.SourceBranch, RefChangeKind.Delete, actor.Id);
 
         // Collect commit messages before merging: afterwards the commits are reachable from the target too.
         var before = await GetChangesAsync(pr);
@@ -172,6 +179,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         Log(db, pr, actor.Id, outcome.FastForwarded
             ? $"merged this pull request (fast-forward to `{outcome.MergeCommitSha![..7]}`)"
             : $"merged this pull request with commit `{outcome.MergeCommitSha![..7]}`");
+        if (bypassed) Log(db, pr, actor.Id, "bypassed branch protection on `" + pr.TargetBranch + "` to merge", now.AddMilliseconds(-1));
 
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
         {
@@ -277,13 +285,16 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
     {
         await access.RequireForPullRequestAsync(prId, Permission.ReviewPullRequest, userId);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var pr = await db.PullRequests.Include(p => p.Reviews).FirstOrDefaultAsync(p => p.Id == prId)
+        var pr = await db.PullRequests.Include(p => p.Reviews).Include(p => p.Repository).ThenInclude(r => r.Project)
+                     .FirstOrDefaultAsync(p => p.Id == prId)
                  ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.AuthorId == userId) throw new InvalidOperationException("You can't review your own pull request.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be reviewed.");
 
+        // The verdict applies to the current head; branch protection can ignore approvals of older heads.
+        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceBranch));
         var existing = pr.Reviews.FirstOrDefault(r => r.UserId == userId);
-        if (existing?.State == state) return;
+        if (existing?.State == state && (state == null || existing?.CommitSha == head)) return;
         string text;
         if (state == null)
         {
@@ -293,8 +304,8 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         }
         else
         {
-            if (existing == null) db.PullRequestReviews.Add(new PullRequestReview { PullRequestId = prId, UserId = userId, State = state.Value });
-            else { existing.State = state.Value; existing.CreatedAt = DateTime.UtcNow; }
+            if (existing == null) db.PullRequestReviews.Add(new PullRequestReview { PullRequestId = prId, UserId = userId, State = state.Value, CommitSha = head });
+            else { existing.State = state.Value; existing.CreatedAt = DateTime.UtcNow; existing.CommitSha = head; }
             text = state == ReviewState.Approved ? "approved this pull request" : "requested changes";
         }
         Log(db, pr, userId, text);
