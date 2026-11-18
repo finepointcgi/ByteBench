@@ -1,0 +1,87 @@
+@using GitBench.Services.Ai
+@implements IDisposable
+@inject IssueAiService Ai
+@inject CurrentUser Me
+
+@* "Draft with AI" box for the new-issue form. Fills the form; never creates anything. *@
+@if (!Ai.IsConfigured)
+{
+    <div class="ai-hint">✨ AI features need <code>ANTHROPIC_API_KEY</code> (or <code>Ai:ApiKey</code>) to be set.</div>
+}
+else
+{
+    <div class="ai-draft">
+        <button type="button" class="ai-draft-head" @onclick="() => open = !open" aria-expanded="@open">
+            <span>✨ Draft with AI</span>
+            <span class="muted small">Describe it in a sentence or paste an error log — Claude fills in the form for you to review.</span>
+            <span class="ms-auto muted">@(open ? "▾" : "▸")</span>
+        </button>
+        @if (open)
+        {
+            <div class="ai-draft-body">
+                <textarea class="form-control" rows="3" maxlength="12000" @bind="rough" @bind:event="oninput" @onkeydown="Key"
+                          placeholder="e.g. checkout button does nothing on Safari after applying a coupon" disabled="@busy"></textarea>
+                <div class="d-flex align-items-center gap-2 mt-2">
+                    <button type="button" class="btn btn-sm btn-ai" disabled="@(busy || string.IsNullOrWhiteSpace(rough))" @onclick="Draft">
+                        @if (busy) { <span class="spinner-border spinner-border-sm me-1"></span><span>Drafting…</span> }
+                        else { <span>✨ Draft issue</span> }
+                    </button>
+                    <span class="muted small">Ctrl+Enter</span>
+                    @if (error != null) { <span class="text-danger small">@error</span> }
+                    @if (applied) { <span class="text-success small">Form filled. Review and edit before creating.</span> }
+                </div>
+                @if (dropped.Count > 0)
+                {
+                    <div class="muted small mt-1">Ignored labels that don't exist in this project: @string.Join(", ", dropped)</div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    /// <summary>The form's issue object; its fields are overwritten with the draft.</summary>
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+    /// <summary>The form's selected label ids; replaced with the draft's labels.</summary>
+    [Parameter, EditorRequired] public HashSet<int> LabelIds { get; set; } = null!;
+    /// <summary>Raised after the form fields were filled so the page re-renders.</summary>
+    [Parameter] public EventCallback OnApplied { get; set; }
+
+    private bool open = true, busy, applied;
+    private string? rough, error;
+    private List<string> dropped = [];
+    private CancellationTokenSource? cts;
+
+    private async Task Key(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && !busy && !string.IsNullOrWhiteSpace(rough)) await Draft();
+    }
+
+    private async Task Draft()
+    {
+        busy = true; error = null; applied = false; dropped = [];
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        try
+        {
+            var result = await Ai.DraftIssueAsync(Project, rough!, Me.User?.Id, cts.Token);
+            if (!result.Ok) { error = result.Error; return; }
+            var d = result.Value!;
+            Issue.Title = d.Title;
+            Issue.Description = d.Description;
+            Issue.Type = d.Type;
+            Issue.Priority = d.Priority;
+            if (d.StoryPoints != null) Issue.StoryPoints = d.StoryPoints;
+            LabelIds.Clear();
+            LabelIds.UnionWith(d.LabelIds);
+            dropped = d.DroppedLabels;
+            applied = true;
+            await OnApplied.InvokeAsync();
+        }
+        catch (OperationCanceledException) { }
+        finally { busy = false; }
+    }
+
+    public void Dispose() { cts?.Cancel(); cts?.Dispose(); }
+}

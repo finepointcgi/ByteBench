@@ -1,0 +1,97 @@
+@using GitBench.Services.Ai
+@implements IDisposable
+@inject IssueAiService Ai
+@inject CurrentUser Me
+@inject IJSRuntime JS
+
+@* "Generate release notes" for one milestone, shown in a dialog with a copyable Markdown box. *@
+@if (Ai.IsConfigured)
+{
+    <button type="button" class="btn btn-sm ai-btn" @onclick="Open" title="Generate release notes from this milestone's closed issues">✨ Release notes</button>
+    @if (open)
+    {
+        <div class="rn-backdrop" @onclick="Close"></div>
+        <div class="rn-dialog" role="dialog" aria-label="Release notes for @Milestone.Title">
+            <div class="rn-head">
+                <b>Release notes · @Milestone.Title</b>
+                @if (generatedAt is { } g) { <span class="ai-badge">AI-generated</span><span class="muted small">@g.ToLocalTime().ToString("g")</span> }
+                <button type="button" class="btn-close ms-auto" aria-label="Close" @onclick="Close"></button>
+            </div>
+            <div class="rn-body">
+                @if (busy)
+                {
+                    <div class="muted"><span class="spinner-border spinner-border-sm me-1"></span>Writing release notes from closed issues…</div>
+                }
+                else if (error != null)
+                {
+                    <div class="text-danger">@error</div>
+                }
+                else if (notes != null)
+                {
+                    <div class="rn-tabs">
+                        <button type="button" class="@(raw ? "" : "active")" @onclick="() => raw = false">Preview</button>
+                        <button type="button" class="@(raw ? "active" : "")" @onclick="() => raw = true">Markdown</button>
+                    </div>
+                    @if (raw)
+                    {
+                        <textarea class="form-control mono rn-raw" readonly rows="16" onfocus="this.select()">@notes</textarea>
+                    }
+                    else
+                    {
+                        <div class="markdown rn-preview">@Display.Markdown(notes)</div>
+                    }
+                }
+            </div>
+            <div class="rn-foot">
+                @if (copied) { <span class="text-success small me-auto">Copied to clipboard.</span> }
+                <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@busy" @onclick="Generate">Regenerate</button>
+                <button type="button" class="btn btn-sm btn-ai" disabled="@(busy || notes == null)" @onclick="Copy">Copy Markdown</button>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public Milestone Milestone { get; set; } = null!;
+
+    private bool open, busy, raw, copied;
+    private string? notes, error;
+    private DateTime? generatedAt;
+    private CancellationTokenSource? cts;
+
+    private async Task Open()
+    {
+        open = true;
+        if (notes == null && !busy) await Generate();
+    }
+
+    private void Close() { open = false; cts?.Cancel(); }
+
+    private async Task Generate()
+    {
+        busy = true; error = null; copied = false;
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        try
+        {
+            var result = await Ai.ReleaseNotesAsync(Project, Milestone, Me.User?.Id, cts.Token);
+            if (result.Ok) { notes = result.Value; generatedAt = DateTime.UtcNow; }
+            else error = result.Error;
+        }
+        catch (OperationCanceledException) { }
+        finally { busy = false; }
+    }
+
+    private async Task Copy()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", notes);
+            copied = true;
+        }
+        catch (JSException) { raw = true; error = null; } // clipboard blocked: show the raw box to copy by hand
+    }
+
+    public void Dispose() { cts?.Cancel(); cts?.Dispose(); }
+}

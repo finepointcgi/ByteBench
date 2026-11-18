@@ -1,0 +1,82 @@
+@using GitBench.Services.Ai
+@implements IDisposable
+@inject IssueAiService Ai
+@inject CurrentUser Me
+
+@* Checks for likely duplicates whenever Title changes (the title input commits on blur, or a draft fills it). *@
+@if (Ai.IsConfigured && (checking || hints.Count > 0 || error != null))
+{
+    <div class="dup-panel">
+        @if (checking)
+        {
+            <div class="muted small"><span class="spinner-border spinner-border-sm me-1"></span>Checking for possible duplicates…</div>
+        }
+        else if (error != null)
+        {
+            <div class="muted small">Duplicate check unavailable: @error</div>
+        }
+        else
+        {
+            <div class="dup-head">
+                <b>Possible duplicates</b>
+                <span class="ai-badge">AI-generated</span>
+                <button type="button" class="btn btn-link btn-sm ms-auto p-0" @onclick="() => hints = []">Dismiss</button>
+            </div>
+            <ul class="dup-list">
+                @foreach (var h in hints)
+                {
+                    <li>
+                        <a href="/p/@Project.Key/issues/@h.Number" target="_blank" rel="noopener">
+                            <span class="mono">@h.Key</span> @h.Title
+                        </a>
+                        @if (h.Closed) { <span class="status-badge status-done ms-1">Closed</span> }
+                        <div class="muted small">@h.Reason</div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Description { get; set; }
+
+    private string? lastTitle;
+    private bool checking;
+    private string? error;
+    private List<DuplicateHint> hints = [];
+    private CancellationTokenSource? cts;
+
+    protected override void OnParametersSet()
+    {
+        var title = Title?.Trim();
+        if (title == lastTitle) return;
+        lastTitle = title;
+        cts?.Cancel();
+        hints = []; error = null; checking = false;
+        if (!Ai.IsConfigured || IssueAiLogic.WordCount(title) < 4) return;
+        cts = new CancellationTokenSource();
+        _ = CheckAsync(title!, Description, cts.Token);
+    }
+
+    private async Task CheckAsync(string title, string? description, CancellationToken ct)
+    {
+        checking = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await Ai.FindDuplicatesAsync(Project, title, description, Me.User?.Id, ct);
+            if (ct.IsCancellationRequested) return;
+            if (result.Ok) hints = result.Value!; else error = result.Error;
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception) { if (!ct.IsCancellationRequested) error = "the request failed."; }
+        if (ct.IsCancellationRequested) return;
+        checking = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() { cts?.Cancel(); cts?.Dispose(); }
+}

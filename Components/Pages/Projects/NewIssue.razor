@@ -13,6 +13,7 @@ else if (project != null)
 {
     <div class="page-header"><h1>New issue <span class="muted">in @project.Name</span></h1></div>
 
+    <GitBench.Components.Ai.AiIssueDraft Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
     <EditForm Model="issue" OnValidSubmit="Create" FormName="new-issue">
         <DataAnnotationsValidator />
         <div class="detail-grid">
@@ -21,6 +22,7 @@ else if (project != null)
                     <label class="form-label">Title</label>
                     <InputText class="form-control form-control-lg" @bind-Value="issue.Title" placeholder="Short summary" autofocus />
                     <ValidationMessage For="() => issue.Title" />
+                    <GitBench.Components.Ai.DuplicateHints Project="project" Title="@issue.Title" Description="@issue.Description" />
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Description</label>

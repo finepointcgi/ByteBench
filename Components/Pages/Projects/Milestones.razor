@@ -80,6 +80,7 @@ else if (project != null)
                     </div>
                 </div>
                 <div class="milestone-actions">
+                    <GitBench.Components.Ai.ReleaseNotesButton Project="project" Milestone="m" />
                     <a class="btn btn-sm btn-outline-secondary" href="/p/@project.Key/board">Board</a>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => Edit(m)">Edit</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleClosed(m)">@(m.IsClosed ? "Reopen" : "Close")</button>

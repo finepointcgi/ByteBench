@@ -1,0 +1,107 @@
+@using GitBench.Services.Ai
+@implements IDisposable
+@inject IssueAiService Ai
+@inject CurrentUser Me
+
+@* "Catch me up": streams a short AI summary of the issue's description, comments and activity. *@
+@if (Ai.IsConfigured)
+{
+    <div class="ai-summary">
+        <div class="ai-summary-head">
+            @if (streaming)
+            {
+                <span class="spinner-border spinner-border-sm"></span><b>Summarising…</b>
+                <button type="button" class="btn btn-link btn-sm ms-auto" @onclick="Stop">Stop</button>
+            }
+            else if (summary == null)
+            {
+                <button type="button" class="btn btn-sm btn-ai" @onclick="Generate">✨ Catch me up</button>
+                <span class="muted small">AI summary of the description, comments and activity.</span>
+            }
+            else
+            {
+                <b>✨ Catch me up</b>
+                <span class="ai-badge">AI-generated</span>
+                <span class="muted small" title="@generatedAt?.ToLocalTime().ToString("F")">@(generatedAt is { } g ? Display.Ago(g) : "")</span>
+                @if (stale) { <span class="muted small">· issue updated since</span> }
+                <span class="ms-auto d-flex gap-1">
+                    @if (stale || note != null) { <button type="button" class="btn btn-link btn-sm" @onclick="Generate">Refresh</button> }
+                    <button type="button" class="btn btn-link btn-sm" @onclick="Hide">Hide</button>
+                </span>
+            }
+        </div>
+        @if (streaming)
+        {
+            @* Plain text while streaming (Blazor escapes it); Markdown is rendered once complete. *@
+            <div class="ai-summary-body ai-stream">@text</div>
+        }
+        else if (summary != null)
+        {
+            <div class="ai-summary-body markdown">@Display.Markdown(summary)</div>
+        }
+        @if (note != null) { <div class="ai-summary-note text-danger small">@note</div> }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private int issueId;
+    private bool streaming, stale;
+    private string text = "";
+    private string? summary, note;
+    private DateTime? generatedAt, summaryFor;
+    private CancellationTokenSource? cts;
+
+    protected override void OnParametersSet()
+    {
+        if (Issue.Id != issueId)
+        {
+            cts?.Cancel();
+            issueId = Issue.Id;
+            streaming = false; summary = null; note = null; text = "";
+            if (Ai.IsConfigured && Ai.GetCachedSummary(Issue) is { } c) Show(c);
+        }
+        stale = summary != null && summaryFor != Issue.UpdatedAt;
+    }
+
+    private void Show(IssueAiService.CachedSummary c)
+    {
+        summary = c.Markdown; generatedAt = c.GeneratedAt; summaryFor = c.IssueUpdatedAt; stale = false;
+    }
+
+    private async Task Generate()
+    {
+        if (Ai.GetCachedSummary(Issue) is { } cached) { Show(cached); note = null; return; }
+
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        var ct = cts.Token;
+        streaming = true; text = ""; note = null;
+        var last = DateTime.UtcNow;
+        try
+        {
+            await foreach (var ev in Ai.StreamSummaryAsync(Issue, Me.User?.Id, ct))
+            {
+                if (ev.Done) { note = ev.Text; break; }
+                text += ev.Text;
+                if ((DateTime.UtcNow - last).TotalMilliseconds > 50)
+                {
+                    last = DateTime.UtcNow;
+                    StateHasChanged();
+                    await Task.Yield();
+                }
+            }
+            if (note == null && Ai.GetCachedSummary(Issue) is { } c) Show(c);
+            else if (text.Length > 0) { summary = text; generatedAt = DateTime.UtcNow; summaryFor = Issue.UpdatedAt; }
+        }
+        catch (OperationCanceledException) { if (text.Length > 0) { summary = text; generatedAt = DateTime.UtcNow; summaryFor = null; note = "Stopped before it finished."; } }
+        finally { streaming = false; }
+    }
+
+    private void Stop() => cts?.Cancel();
+
+    private void Hide() { summary = null; note = null; }
+
+    public void Dispose() { cts?.Cancel(); cts?.Dispose(); }
+}

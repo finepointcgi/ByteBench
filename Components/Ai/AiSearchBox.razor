@@ -1,0 +1,90 @@
+@using GitBench.Services.Ai
+@implements IDisposable
+@inject IssueAiService Ai
+@inject CurrentUser Me
+
+@* "Ask" toggle for the issue filter bar: a plain-English query becomes filters, shown as removable chips. *@
+@if (Ai.IsConfigured)
+{
+    <button type="button" class="btn btn-sm ai-toggle @(open ? "on" : "")" @onclick="Toggle" title="Search in plain English with AI">✨ Ask</button>
+    @if (open || VisibleChips.Any() || error != null)
+    {
+        <div class="ai-search">
+            @if (open)
+            {
+                <div class="d-flex gap-2">
+                    <input class="form-control form-control-sm" maxlength="500" @bind="query" @bind:event="oninput" @onkeydown="Key"
+                           placeholder="e.g. my open high priority bugs in sprint 2 with the ui label" disabled="@busy" />
+                    <button type="button" class="btn btn-sm btn-ai" disabled="@(busy || string.IsNullOrWhiteSpace(query))" @onclick="Ask">
+                        @if (busy) { <span class="spinner-border spinner-border-sm"></span> } else { <span>Ask</span> }
+                    </button>
+                </div>
+            }
+            @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+            @if (VisibleChips.Any())
+            {
+                <div class="ai-chips">
+                    <span class="muted small">AI filters:</span>
+                    @foreach (var c in VisibleChips)
+                    {
+                        <span class="ai-chip">@c.Text<button type="button" aria-label="Remove @c.Text" @onclick="() => Remove(c)">×</button></span>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public List<User> Users { get; set; } = [];
+    /// <summary>The page's live filter; updated in place.</summary>
+    [Parameter, EditorRequired] public IssueFilter Filter { get; set; } = null!;
+    /// <summary>Raised after Filter changed, so the page reloads its issues.</summary>
+    [Parameter] public EventCallback OnApplied { get; set; }
+
+    private bool open, busy;
+    private string? query, error;
+    private SearchInterpretation? applied;
+    private IssueFilter? appliedTo;
+    private CancellationTokenSource? cts;
+
+    /// <summary>Chips whose value is still in effect (the user may have changed or cleared filters since).</summary>
+    private IEnumerable<FilterChip> VisibleChips => applied == null || !ReferenceEquals(appliedTo, Filter) ? []
+        : applied.Chips.Where(c => IssueAiLogic.StillApplied(Filter, applied.Filter, c.Field));
+
+    private void Toggle() { open = !open; error = null; }
+
+    private async Task Key(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !busy && !string.IsNullOrWhiteSpace(query)) await Ask();
+        if (e.Key == "Escape") open = false;
+    }
+
+    private async Task Ask()
+    {
+        busy = true; error = null;
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        try
+        {
+            var result = await Ai.InterpretSearchAsync(Project, Users, Me.User?.Id ?? 0, query!, Filter.Sort, cts.Token);
+            if (!result.Ok) { error = result.Error; return; }
+            applied = result.Value!;
+            appliedTo = Filter;
+            IssueAiLogic.ApplyTo(Filter, applied.Filter);
+            if (applied.Chips.Count == 0) error = "No filters found in that question; showing open issues.";
+            await OnApplied.InvokeAsync();
+        }
+        catch (OperationCanceledException) { }
+        finally { busy = false; }
+    }
+
+    private async Task Remove(FilterChip chip)
+    {
+        IssueAiLogic.Clear(Filter, chip.Field);
+        await OnApplied.InvokeAsync();
+    }
+
+    public void Dispose() { cts?.Cancel(); cts?.Dispose(); }
+}

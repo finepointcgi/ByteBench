@@ -27,6 +27,7 @@ else if (project != null)
     <div class="filter-bar">
         <input class="form-control form-control-sm search" placeholder="Search title, description or @project.Key-123…"
                @bind="filter.Search" @bind:event="oninput" @bind:after="Load" />
+        <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Load" />
 
         <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Load">
             <option value="">Any status</option>

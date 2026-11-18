@@ -45,6 +45,7 @@ builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
 builder.Services.AddSingleton<AiClient>();
+builder.Services.AddScoped<IssueAiService>();
 builder.Services.AddScoped<RepositoryService>();
 builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
