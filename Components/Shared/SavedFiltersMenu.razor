@@ -1,0 +1,125 @@
+@implements IDisposable
+@inject SavedFilterService Filters
+@inject LiveEvents Live
+
+@* "Filters" dropdown on the issue list: apply, star and save filters (a saved filter is the list's query string). *@
+<div class="filters-menu">
+    <button type="button" class="btn btn-outline-secondary btn-sm @(open ? "active" : "")" @onclick="Toggle" aria-expanded="@open">
+        ☰ Filters@(Current is { } c ? $": {c.Name}" : "") ▾
+    </button>
+    @if (open)
+    {
+        <div class="filters-backdrop" @onclick="() => open = false"></div>
+        <div class="filters-dropdown" role="menu">
+            @if (filters.Count == 0)
+            {
+                <div class="muted small px-3 py-2">No saved filters yet. Set up the list, then save it below.</div>
+            }
+            @foreach (var f in filters)
+            {
+                <div class="filters-item @(f.Id == Current?.Id ? "current" : "")" @key="f.Id">
+                    <button type="button" class="star @(f.IsStarred ? "on" : "")" title="@(f.IsStarred ? "Unstar" : "Star (show in sidebar)")" @onclick="() => Star(f)">@(f.IsStarred ? "★" : "☆")</button>
+                    <a href="@Href(f.Query)" @onclick="() => open = false">@f.Name</a>
+                    @if (f.IsShared) { <span class="badge text-bg-light" title="Shared with the project by @f.OwnerName">shared</span> }
+                    @if (f.IsMine && f.Id == Current?.Id) { <span class="muted small ms-auto">current</span> }
+                </div>
+            }
+            <div class="filters-save">
+                @if (Changed is { } changed)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 mb-2" @onclick="() => UpdateQuery(changed)">Update “@changed.Name” with the current filter</button>
+                }
+                <div class="small fw-semibold mb-1">Save current filter</div>
+                <div class="d-flex gap-2">
+                    <input class="form-control form-control-sm" maxlength="100" placeholder="Name, e.g. My open bugs" @bind="name" @bind:event="oninput" @onkeydown="Key" />
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(name)" @onclick="Save">Save</button>
+                </div>
+                @if (Perms.Role >= ProjectRole.Developer)
+                {
+                    <label class="form-check small mt-1 mb-0">
+                        <input type="checkbox" class="form-check-input" @bind="shared" /> Share with the project
+                    </label>
+                }
+                @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+            </div>
+            <a class="filters-manage" href="/p/@Project.Key/filters" @onclick="() => open = false">Manage filters…</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
+    /// <summary>The issue list's current query string (from <see cref="IssueFilterQuery"/>).</summary>
+    [Parameter, EditorRequired] public string Query { get; set; } = "";
+
+    private List<SavedFilterView> filters = [];
+    private bool open, shared;
+    private string? name, error;
+    private int loadedFor;
+    private IDisposable? liveSubscription;
+
+    /// <summary>The saved filter matching the current list, if any (own filters first).</summary>
+    private SavedFilterView? Current => filters.OrderByDescending(f => f.IsMine).FirstOrDefault(f => IssueFilterQuery.Normalize(f.Query) == Query);
+
+    /// <summary>The last-applied own filter whose conditions were since changed on the page.</summary>
+    private SavedFilterView? Changed => Current == null && lastApplied is { } id ? filters.FirstOrDefault(f => f.Id == id && f.IsMine) : null;
+    private int? lastApplied;
+
+    private string Href(string query) => $"/p/{Project.Key}/issues" + (query.Length > 0 ? "?" + query : "");
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor != Project.Id) { loadedFor = Project.Id; lastApplied = null; await Load(); }
+        if (Current is { } c) lastApplied = c.Id;
+    }
+
+    private async Task Load() => filters = await Filters.ListAsync(Project.Id);
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<SavedFiltersChanged>(e => e.ProjectId != Project.Id ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            await Load();
+            StateHasChanged();
+        }));
+    }
+
+    private void Toggle() { open = !open; error = null; }
+
+    private async Task Key(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(name)) await Save();
+        if (e.Key == "Escape") open = false;
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        try
+        {
+            var f = await Filters.CreateAsync(Project.Id, name!, Query, shared);
+            lastApplied = f.Id;
+            name = null;
+            shared = false;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task UpdateQuery(SavedFilterView f)
+    {
+        error = null;
+        try { await Filters.UpdateQueryAsync(f.Id, Query); await Load(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Star(SavedFilterView f)
+    {
+        error = null;
+        try { await Filters.SetStarAsync(f.Id, !f.IsStarred); await Load(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+}

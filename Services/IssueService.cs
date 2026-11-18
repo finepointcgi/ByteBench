@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Services;
 
-public partial class IssueFilter
+public partial record IssueFilter
 {
     public string? Search { get; set; }
     public IssueStatus? Status { get; set; }
@@ -20,7 +20,8 @@ public partial class IssueFilter
 /// Projects, issues, comments, labels and milestones. Reads only return projects the acting user can view and
 /// writes check <see cref="ProjectAccess"/> first (throwing <see cref="ForbiddenException"/>).
 /// </summary>
-public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications, Webhooks.WebhookNotifier webhooks)
+public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications, Webhooks.WebhookNotifier webhooks,
+    Attachments.AttachmentStorage attachmentFiles)
 {
     // ---------- Projects ----------
 
@@ -89,7 +90,9 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
     {
         await access.RequireAsync(id, Permission.DeleteProject);
         await using var db = await dbFactory.CreateDbContextAsync();
+        var files = await Attachments.AttachmentService.StoredNamesForProjectAsync(db, id);
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
+        attachmentFiles.Delete(files); // rows first, then files
     }
 
     // ---------- Users ----------
@@ -324,9 +327,12 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
             ProjectRole.Maintainer, "delete issues");
         await using var db = await dbFactory.CreateDbContextAsync();
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
+        var subtaskIds = await db.Issues.Where(i => i.ParentId == issueId && i.Type == IssueType.Subtask).Select(i => i.Id).ToListAsync();
+        var files = await Attachments.AttachmentService.StoredNamesForIssuesAsync(db, [issueId, .. subtaskIds]);
         await HierarchyRules.DeleteSubtasksAsync(db, issueId); // an epic's children are unlinked by the FK instead
         db.Issues.Remove(issue);
         await db.SaveChangesAsync();
+        attachmentFiles.Delete(files); // rows first, then files
         await notifications.OnIssueDeletedAsync(issue.ProjectId, issueId);
     }
 

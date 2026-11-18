@@ -4,6 +4,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject NavigationManager Nav
 
 <PageTitle>Issues · @project?.Name</PageTitle>
 
@@ -18,10 +19,13 @@ else if (project != null)
             <h1>Issues</h1>
             <div class="muted">@project.Name</div>
         </div>
-        @if (canCreate)
-        {
-            <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
-        }
+        <div class="d-flex gap-2 align-items-center">
+            <SavedFiltersMenu Project="project" Perms="perms" Query="@IssueFilterQuery.ToQueryString(filter)" />
+            @if (canCreate)
+            {
+                <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
+            }
+        </div>
     </div>
 
     <div class="tabs">
@@ -32,37 +36,37 @@ else if (project != null)
 
     <div class="filter-bar">
         <input class="form-control form-control-sm search" placeholder="Search title, description or @project.Key-123…"
-               @bind="filter.Search" @bind:event="oninput" @bind:after="Load" />
-        <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Load" />
+               @bind="filter.Search" @bind:event="oninput" @bind:after="Apply" />
+        <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Apply" />
 
-        <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Load">
+        <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Apply">
             <option value="">Any status</option>
             @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
         </select>
-        <select class="form-select form-select-sm" @bind="filter.AssigneeId" @bind:after="Load">
+        <select class="form-select form-select-sm" @bind="filter.AssigneeId" @bind:after="Apply">
             <option value="">Any assignee</option>
             <option value="0">Unassigned</option>
             @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
         </select>
-        <select class="form-select form-select-sm" @bind="filter.LabelId" @bind:after="Load">
+        <select class="form-select form-select-sm" @bind="filter.LabelId" @bind:after="Apply">
             <option value="">Any label</option>
             @foreach (var l in project.Labels) { <option value="@l.Id">@l.Name</option> }
         </select>
-        <select class="form-select form-select-sm" @bind="filter.MilestoneId" @bind:after="Load">
+        <select class="form-select form-select-sm" @bind="filter.MilestoneId" @bind:after="Apply">
             <option value="">Any milestone</option>
             <option value="0">No milestone</option>
             @foreach (var m in project.Milestones) { <option value="@m.Id">@m.Title</option> }
         </select>
-        <select class="form-select form-select-sm" @bind="filter.Type" @bind:after="Load">
+        <select class="form-select form-select-sm" @bind="filter.Type" @bind:after="Apply">
             <option value="">Any type</option>
             @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
         </select>
-        <GitBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Load" />
-        <select class="form-select form-select-sm" @bind="filter.Priority" @bind:after="Load">
+        <GitBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Apply" />
+        <select class="form-select form-select-sm" @bind="filter.Priority" @bind:after="Apply">
             <option value="">Any priority</option>
             @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p</option> }
         </select>
-        <select class="form-select form-select-sm" @bind="filter.Sort" @bind:after="Load">
+        <select class="form-select form-select-sm" @bind="filter.Sort" @bind:after="Apply">
             <option value="updated">Recently updated</option>
             <option value="created">Newest</option>
             <option value="priority">Priority</option>
@@ -75,14 +79,36 @@ else if (project != null)
         }
     </div>
 
+    @if (CanBulkEdit && selected.Count > 0)
+    {
+        <BulkActionBar Project="project" Users="users" Perms="perms" SelectedIds="SelectedOnPage" OnClear="() => selected.Clear()" OnDone="AfterBulk" />
+    }
     <div class="issue-list">
+        @if (CanBulkEdit && issues.Count > 0)
+        {
+            <div class="bulk-header">
+                <input type="checkbox" class="form-check-input" title="Select all on this page" aria-label="Select all on this page"
+                       checked="@(SelectedOnPage.Count == issues.Count)" @onchange="ToggleAll" />
+                <span class="muted small">@(SelectedOnPage.Count > 0 ? $"{SelectedOnPage.Count} of {issues.Count} selected" : $"{issues.Count} issues")</span>
+            </div>
+        }
         @if (issues.Count == 0)
         {
             <div class="empty">No issues match these filters.</div>
         }
         @foreach (var i in issues)
         {
-            <IssueRow Issue="i" @key="i.Id" />
+            @if (CanBulkEdit)
+            {
+                <div class="bulk-row @(selected.Contains(i.Id) ? "selected" : "")" @key="i.Id">
+                    <input type="checkbox" class="form-check-input" aria-label="Select @i.Key" checked="@selected.Contains(i.Id)" @onchange="() => Toggle(i.Id)" />
+                    <IssueRow Issue="i" />
+                </div>
+            }
+            else
+            {
+                <IssueRow Issue="i" @key="i.Id" />
+            }
         }
     </div>
 }
@@ -92,10 +118,18 @@ else if (project != null)
 
     private Project? project;
     private bool notFound, canCreate;
+    private ProjectPermissions perms = ProjectPermissions.None;
     private List<User> users = [];
     private List<Issue> issues = [];
+    // The whole filter state. It round-trips through the URL query string (IssueFilterQuery), so a filter is
+    // addressable and a saved filter is just a stored query string; new IssueFilter properties come along for free.
     private IssueFilter filter = new();
     private (int open, int closed) counts;
+    private readonly HashSet<int> selected = [];
+
+    private bool CanBulkEdit => perms.Can(Permission.EditIssues);
+    /// <summary>Selected issues that are still in the current list.</summary>
+    private List<int> SelectedOnPage => issues.Where(i => selected.Contains(i.Id)).Select(i => i.Id).ToList();
 
     private IssueStatus? StatusFilter
     {
@@ -110,11 +144,13 @@ else if (project != null)
     protected override async Task OnParametersSetAsync()
     {
         if (project?.Key == Key.ToUpper()) return;
-        filter = new();
+        filter = IssueFilterQuery.FromUri(Nav.Uri);
+        selected.Clear();
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (project == null) return;
-        canCreate = await Access.CanAsync(project.Id, Permission.EditIssues);
+        perms = await Access.GetPermissionsAsync(project.Id);
+        canCreate = perms.Can(Permission.EditIssues);
         users = await Issues.GetUsersAsync();
         await Load();
     }
@@ -126,32 +162,90 @@ else if (project != null)
         counts = await Issues.CountAsync(project.Id);
     }
 
+    /// <summary>The filter changed on this page: reflect it in the URL (without a history entry) and reload.</summary>
+    private async Task Apply()
+    {
+        if (project == null) return;
+        var q = IssueFilterQuery.ToQueryString(filter);
+        var target = $"p/{project.Key}/issues" + (q.Length > 0 ? "?" + q : "");
+        if (Nav.ToBaseRelativePath(Nav.Uri) != target) Nav.NavigateTo(target, replace: true);
+        await Load();
+    }
+
+    // ----- URL → filter: links to this page with another query (saved filters, sidebar, back/forward) -----
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (project == null) return;
+        var path = Nav.ToBaseRelativePath(e.Location).Split('?', '#')[0].TrimEnd('/');
+        if (!path.Equals($"p/{project.Key}", StringComparison.OrdinalIgnoreCase) && !path.Equals($"p/{project.Key}/issues", StringComparison.OrdinalIgnoreCase)) return;
+        var parsed = IssueFilterQuery.FromUri(e.Location);
+        if (IssueFilterQuery.ToQueryString(parsed) == IssueFilterQuery.ToQueryString(filter)) return;
+        _ = InvokeAsync(async () =>
+        {
+            filter = parsed;
+            await Load();
+            StateHasChanged();
+        });
+    }
+
     // ----- Live updates: any issue in this project changed -----
     private IDisposable? liveSubscription;
+    private int reloadQueued;
 
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender) liveSubscription = Live.Subscribe<IssueChanged>(OnIssueChanged);
+        if (!firstRender) return;
+        liveSubscription = Live.Subscribe<IssueChanged>(OnIssueChanged);
+        Nav.LocationChanged += OnLocationChanged;
     }
 
-    private Task OnIssueChanged(IssueChanged e) => project?.Id != e.ProjectId ? Task.CompletedTask : InvokeAsync(async () =>
+    // A bulk edit publishes one IssueChanged per issue in a single batch; coalesce them into one reload.
+    private Task OnIssueChanged(IssueChanged e)
     {
-        await Load();
-        StateHasChanged();
-    });
+        if (project?.Id != e.ProjectId || Interlocked.Exchange(ref reloadQueued, 1) == 1) return Task.CompletedTask;
+        return InvokeAsync(async () =>
+        {
+            Volatile.Write(ref reloadQueued, 0);
+            await Load();
+            StateHasChanged();
+        });
+    }
 
-    public void Dispose() => liveSubscription?.Dispose();
+    public void Dispose()
+    {
+        liveSubscription?.Dispose();
+        Nav.LocationChanged -= OnLocationChanged;
+    }
 
     private async Task SetOpen(bool? open)
     {
         filter.Status = null;
         filter.Open = open;
-        await Load();
+        await Apply();
     }
 
     private async Task Reset()
     {
         filter = new() { Sort = filter.Sort };
+        await Apply();
+    }
+
+    // ----- Selection & bulk edit -----
+    private void Toggle(int id)
+    {
+        if (!selected.Remove(id)) selected.Add(id);
+    }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        if (e.Value is true) foreach (var i in issues) selected.Add(i.Id);
+        else foreach (var i in issues) selected.Remove(i.Id);
+    }
+
+    private async Task AfterBulk(bool deleted)
+    {
+        if (deleted) selected.Clear();
         await Load();
+        selected.IntersectWith(issues.Select(i => i.Id));
     }
 }

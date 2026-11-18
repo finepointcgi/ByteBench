@@ -80,7 +80,7 @@ else if (issue != null && project != null)
                 <div class="comment-body">
                     @if (editingDesc)
                     {
-                        <MarkdownEditor @bind-Value="descDraft" Rows="10" />
+                        <MarkdownEditor @bind-Value="descDraft" Rows="10" AttachToIssueId="issue.Id" />
                         <div class="mt-2 d-flex gap-2">
                             <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
                             <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
@@ -99,6 +99,8 @@ else if (issue != null && project != null)
 
             <GitBench.Components.LinkedWork.ChildIssuesPanel Issue="issue" />
             <GitBench.Components.LinkedWork.LinkedIssuesPanel Issue="issue" />
+            <AttachmentsPanel IssueId="issue.Id" Perms="perms" />
+
             <!-- Timeline: comments + activity -->
             <h2 class="section-title mt-4">Activity</h2>
             <div class="timeline">
@@ -121,7 +123,7 @@ else if (issue != null && project != null)
                             <div class="comment-body">
                                 @if (editingCommentId == c.Id)
                                 {
-                                    <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" />
+                                    <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" AttachToIssueId="issue.Id" AttachFromComment />
                                     <div class="mt-2 d-flex gap-2">
                                         <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
                                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
@@ -151,7 +153,7 @@ else if (issue != null && project != null)
             <div class="comment-card mt-3">
                 <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
                 <div class="comment-body">
-                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
+                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" AttachToIssueId="issue.Id" AttachFromComment />
                     <div class="mt-2 d-flex gap-2">
                         <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
                         @if (!issue.Status.IsClosed() && CanEdit)

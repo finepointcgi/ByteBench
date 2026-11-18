@@ -1,0 +1,166 @@
+@using GitBench.Services.Attachments
+@implements IDisposable
+@inject AttachmentService Attachments
+@inject CurrentUser Me
+@inject LiveEvents Live
+@inject IJSRuntime JS
+
+@* Attachments of one issue: thumbnails (with a lightbox) for images, icons for other files, upload and delete. *@
+@if (items.Count > 0 || Perms.Can(Permission.EditIssues))
+{
+    <div class="attachments-panel">
+        <div class="attachments-head">
+            <h2 class="section-title m-0">Attachments <span class="count">@items.Count</span></h2>
+            @if (Perms.Can(Permission.EditIssues))
+            {
+                <label class="btn btn-outline-secondary btn-sm ms-auto mb-0 @(uploading ? "disabled" : "")">
+                    @(uploading ? "Uploading…" : "📎 Upload files")
+                    <InputFile OnChange="Upload" multiple class="d-none" disabled="@uploading" />
+                </label>
+            }
+        </div>
+        @if (error != null) { <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">@error</div> }
+        @if (items.Count == 0)
+        {
+            <div class="muted small mt-2">No attachments. Upload files here, or drop or paste them into the description or a comment
+                (max @AttachmentFormat.Size(Attachments.MaxBytes) each).</div>
+        }
+        else
+        {
+            <div class="attachments-grid">
+                @foreach (var a in items)
+                {
+                    var url = AttachmentFormat.Url(a.Id, a.FileName);
+                    <div class="attachment-card" @key="a.Id">
+                        @if (a.IsImage)
+                        {
+                            <button type="button" class="attachment-thumb" title="View @a.FileName" @onclick="() => lightbox = a">
+                                <img src="@url" alt="@a.FileName" loading="lazy" />
+                            </button>
+                        }
+                        else
+                        {
+                            <a class="attachment-thumb file" href="@url" title="Download @a.FileName" download>
+                                <span class="attachment-icon">@AttachmentFormat.Icon(a.FileName, a.ContentType)</span>
+                                <span class="attachment-ext">@System.IO.Path.GetExtension(a.FileName).TrimStart('.').ToUpperInvariant()</span>
+                            </a>
+                        }
+                        <div class="attachment-info">
+                            <a class="attachment-name" href="@url" title="@a.FileName" download>@a.FileName</a>
+                            <div class="muted small">
+                                @AttachmentFormat.Size(a.Size) · <span title="@a.Uploader.DisplayName">@a.Uploader.DisplayName</span> · <span title="@a.CreatedAt.ToLocalTime().ToString("g")">@Display.Ago(a.CreatedAt)</span>
+                            </div>
+                        </div>
+                        @if (Attachments.CanDelete(a, Me.Id, Perms))
+                        {
+                            <button type="button" class="attachment-delete" title="Delete @a.FileName" aria-label="Delete @a.FileName" @onclick="() => Delete(a)">×</button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (lightbox != null)
+{
+    <div class="lightbox" @onclick="() => lightbox = null" @onkeydown="LightboxKey" tabindex="0" @ref="lightboxRef">
+        <figure @onclick:stopPropagation>
+            <img src="@AttachmentFormat.Url(lightbox.Id, lightbox.FileName)" alt="@lightbox.FileName" />
+            <figcaption>
+                @if (Images.Count > 1) { <button type="button" class="btn btn-sm btn-dark" @onclick="() => Step(-1)">‹</button> }
+                <span>@lightbox.FileName · @AttachmentFormat.Size(lightbox.Size)</span>
+                <a class="btn btn-sm btn-light" href="@AttachmentFormat.Url(lightbox.Id, lightbox.FileName)" download>Download</a>
+                @if (Images.Count > 1) { <button type="button" class="btn btn-sm btn-dark" @onclick="() => Step(1)">›</button> }
+                <button type="button" class="btn btn-sm btn-dark" @onclick="() => lightbox = null">Close</button>
+            </figcaption>
+        </figure>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int IssueId { get; set; }
+    [Parameter, EditorRequired] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
+
+    private const int MaxFilesAtOnce = 10;
+    private List<Attachment> items = [];
+    private Attachment? lightbox;
+    private ElementReference lightboxRef;
+    private bool uploading;
+    private string? error;
+    private int loadedFor;
+    private IDisposable? liveSubscription;
+
+    private List<Attachment> Images => items.Where(a => a.IsImage).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == IssueId) return;
+        loadedFor = IssueId;
+        lightbox = null;
+        await Load();
+    }
+
+    private async Task Load() => items = await Attachments.ListAsync(IssueId);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<IssueChanged>(e => e.IssueId != IssueId ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            await Load();
+            if (lightbox != null && items.All(a => a.Id != lightbox.Id)) lightbox = null;
+            StateHasChanged();
+        }));
+        if (lightbox != null) { try { await lightboxRef.FocusAsync(); } catch (JSException) { } }
+    }
+
+    private async Task Upload(InputFileChangeEventArgs e)
+    {
+        error = null;
+        uploading = true;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(MaxFilesAtOnce))
+            {
+                if (file.Size > Attachments.MaxBytes)
+                {
+                    error = $"{file.Name} is too large (max {AttachmentFormat.Size(Attachments.MaxBytes)}).";
+                    continue;
+                }
+                await using var stream = file.OpenReadStream(Attachments.MaxBytes);
+                await Attachments.UploadAsync(IssueId, file.Name, stream);
+            }
+            if (e.FileCount > MaxFilesAtOnce) error = $"Only the first {MaxFilesAtOnce} files were uploaded.";
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        catch (IOException ex) { error = "Upload failed: " + ex.Message; }
+        finally { uploading = false; }
+        await Load();
+    }
+
+    private async Task Delete(Attachment a)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {a.FileName}? Links to it in the description or comments will stop working.")) return;
+        error = null;
+        try { await Attachments.DeleteAsync(a.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private void Step(int delta)
+    {
+        var images = Images;
+        var i = images.FindIndex(x => x.Id == lightbox?.Id);
+        if (i < 0 || images.Count == 0) return;
+        lightbox = images[(i + delta + images.Count) % images.Count];
+    }
+
+    private void LightboxKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") lightbox = null;
+        else if (e.Key == "ArrowRight") Step(1);
+        else if (e.Key == "ArrowLeft") Step(-1);
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+}

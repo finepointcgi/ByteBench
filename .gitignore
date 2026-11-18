@@ -489,3 +489,6 @@ gitbench.db*
 
 # Agent worktrees
 .claude/worktrees/
+
+# Issue attachments (Attachments:Root)
+/attachments/

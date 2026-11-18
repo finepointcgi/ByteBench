@@ -155,7 +155,7 @@ public static class HierarchyRules
 }
 
 /// <summary>Linked-work filters for the issue list.</summary>
-public partial class IssueFilter
+public partial record IssueFilter
 {
     /// <summary>Only issues under this epic: its children and their sub-tasks.</summary>
     public int? EpicId { get; set; }
