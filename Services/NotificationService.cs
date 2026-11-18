@@ -19,7 +19,7 @@ public record NotificationPage(List<Notification> Items, int Total, int Page, in
 /// publishes. Domain services call one <c>On…Async</c> hook at the end of a mutating method, after saving.
 /// Every recipient list goes through <see cref="FilterRecipientsAsync"/>.
 /// </summary>
-public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, LiveEvents live, ProjectAccess access, ILogger<NotificationService> log)
+public partial class NotificationService(IDbContextFactory<AppDbContext> dbFactory, LiveEvents live, ProjectAccess access, ILogger<NotificationService> log)
 {
     public const int DropdownSize = 10;
 

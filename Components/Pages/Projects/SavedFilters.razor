@@ -1,0 +1,168 @@
+@page "/p/{Key}/filters"
+@implements IDisposable
+@inject IssueService Issues
+@inject SavedFilterService Filters
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@inject IJSRuntime JS
+
+<PageTitle>Saved filters · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="breadcrumbs">
+        <a href="/p/@project.Key/issues">@project.Name</a> / <a href="/p/@project.Key/issues">Issues</a> / Saved filters
+    </div>
+    <div class="page-header">
+        <div>
+            <h1>Saved filters</h1>
+            <div class="muted">Your filters and the ones shared with @project.Name. Starred filters appear in the sidebar.
+                To create one, set up the <a href="/p/@project.Key/issues">issue list</a> and use <b>Filters → Save current filter</b>.</div>
+        </div>
+    </div>
+    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+
+    @if (filters.Count == 0)
+    {
+        <div class="empty">No saved filters yet.</div>
+    }
+    else
+    {
+        <div class="card-panel p-0">
+            <table class="table saved-filters-table mb-0 align-middle">
+                <thead>
+                    <tr><th style="width:36px"></th><th>Name</th><th>Conditions</th><th>Owner</th><th>Visibility</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in filters)
+                    {
+                        <tr @key="f.Id">
+                            <td>
+                                <button type="button" class="star @(f.IsStarred ? "on" : "")" title="@(f.IsStarred ? "Unstar" : "Star (show in sidebar)")" @onclick="() => Run(() => Filters.SetStarAsync(f.Id, !f.IsStarred))">@(f.IsStarred ? "★" : "☆")</button>
+                            </td>
+                            <td>
+                                @if (renamingId == f.Id)
+                                {
+                                    <div class="d-flex gap-1">
+                                        <input class="form-control form-control-sm" maxlength="100" @bind="renameDraft" @bind:event="oninput" @onkeydown="e => RenameKey(e, f)" />
+                                        <button class="btn btn-primary btn-sm" @onclick="() => Rename(f)">Save</button>
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => renamingId = null">Cancel</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <a href="@Href(f)"><b>@f.Name</b></a>
+                                }
+                            </td>
+                            <td class="small">
+                                @foreach (var c in Describe(f.Query)) { <span class="filter-chip">@c</span> }
+                            </td>
+                            <td class="small">@f.OwnerName@(f.IsMine ? " (you)" : "")</td>
+                            <td>
+                                @if (f.IsShared) { <span class="badge text-bg-info">Shared</span> } else { <span class="badge text-bg-light">Private</span> }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                @if (f.CanManage)
+                                {
+                                    <button class="btn btn-link btn-sm" @onclick="() => { renamingId = f.Id; renameDraft = f.Name; }">Rename</button>
+                                    @if (f.IsShared)
+                                    {
+                                        <button class="btn btn-link btn-sm" @onclick="() => Run(() => Filters.SetSharedAsync(f.Id, false))">Unshare</button>
+                                    }
+                                    else if (perms.Role >= ProjectRole.Developer)
+                                    {
+                                        <button class="btn btn-link btn-sm" @onclick="() => Run(() => Filters.SetSharedAsync(f.Id, true))">Share</button>
+                                    }
+                                    <button class="btn btn-link btn-sm text-danger" @onclick="() => Delete(f)">Delete</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<User> users = [];
+    private List<SavedFilterView> filters = [];
+    private bool notFound;
+    private string? error, renameDraft;
+    private int? renamingId;
+    private IDisposable? liveSubscription;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        users = await Issues.GetUsersAsync();
+        await Load();
+    }
+
+    private async Task Load() => filters = project == null ? [] : await Filters.ListAsync(project.Id);
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<SavedFiltersChanged>(e => e.ProjectId != project?.Id ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            await Load();
+            StateHasChanged();
+        }));
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+
+    private string Href(SavedFilterView f) => $"/p/{project!.Key}/issues" + (f.Query.Length > 0 ? "?" + f.Query : "");
+
+    private async Task Run(Func<Task> action)
+    {
+        error = null;
+        try { await action(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private async Task Rename(SavedFilterView f)
+    {
+        await Run(() => Filters.RenameAsync(f.Id, renameDraft ?? ""));
+        if (error == null) renamingId = null;
+    }
+
+    private async Task RenameKey(KeyboardEventArgs e, SavedFilterView f)
+    {
+        if (e.Key == "Enter") await Rename(f);
+        if (e.Key == "Escape") renamingId = null;
+    }
+
+    private async Task Delete(SavedFilterView f)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the filter “{f.Name}”{(f.IsShared ? " for everyone in the project" : "")}?")) return;
+        await Run(() => Filters.DeleteAsync(f.Id));
+    }
+
+    /// <summary>Human-readable conditions of a stored query.</summary>
+    private IEnumerable<string> Describe(string query)
+    {
+        var f = IssueFilterQuery.Parse(query);
+        if (f.Status is { } s) yield return $"status: {s.Name()}";
+        else yield return f.Open switch { true => "open", false => "closed", null => "open & closed" };
+        if (f.AssigneeId is { } a) yield return "assignee: " + (a == 0 ? "unassigned" : users.FirstOrDefault(u => u.Id == a)?.DisplayName ?? $"#{a}");
+        if (f.LabelId is { } l) yield return "label: " + (project!.Labels.FirstOrDefault(x => x.Id == l)?.Name ?? $"#{l}");
+        if (f.MilestoneId is { } m) yield return "milestone: " + (m == 0 ? "none" : project!.Milestones.FirstOrDefault(x => x.Id == m)?.Title ?? $"#{m}");
+        if (f.Type is { } t) yield return $"type: {t}";
+        if (f.Priority is { } p) yield return $"priority: {p}";
+        if (!string.IsNullOrWhiteSpace(f.Search)) yield return $"text: “{f.Search}”";
+        if (f.Sort != new IssueFilter().Sort) yield return $"sort: {f.Sort}";
+    }
+}

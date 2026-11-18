@@ -39,6 +39,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
+    // ----- Attachments & filters -----
+    public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<SavedFilter> SavedFilters => Set<SavedFilter>();
+    public DbSet<SavedFilterStar> SavedFilterStars => Set<SavedFilterStar>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b); // Identity tables (AspNetUsers, AspNetRoles, …)
@@ -120,5 +125,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Webhook>().HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
         b.Entity<WebhookDelivery>().HasIndex(d => new { d.WebhookId, d.CreatedAt });
         b.Entity<WebhookDelivery>().HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
+        // ----- Attachments & filters -----
+        b.Entity<Attachment>().HasIndex(a => new { a.IssueId, a.CreatedAt });
+        b.Entity<Attachment>().HasIndex(a => a.StoredName).IsUnique();
+        b.Entity<Attachment>().HasOne(a => a.Issue).WithMany().HasForeignKey(a => a.IssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Attachment>().HasOne(a => a.Uploader).WithMany().HasForeignKey(a => a.UploaderId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<SavedFilter>().HasIndex(f => new { f.ProjectId, f.OwnerId });
+        b.Entity<SavedFilter>().HasOne<Project>().WithMany().HasForeignKey(f => f.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SavedFilter>().HasOne(f => f.Owner).WithMany().HasForeignKey(f => f.OwnerId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SavedFilterStar>().HasIndex(s => new { s.UserId, s.SavedFilterId }).IsUnique();
+        b.Entity<SavedFilterStar>().HasOne<SavedFilter>().WithMany().HasForeignKey(s => s.SavedFilterId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SavedFilterStar>().HasOne<User>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

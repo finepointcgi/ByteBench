@@ -529,3 +529,59 @@ public class WebhookDelivery
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
 }
+
+// ----- Attachments & filters -----
+
+/// <summary>
+/// A file attached to an issue (from the issue page, a comment or the API). The bytes live on disk at
+/// <see cref="GitBench.Services.Attachments.AttachmentStorage.PathFor"/>(<see cref="StoredName"/>), never under the user's filename.
+/// </summary>
+public class Attachment
+{
+    public int Id { get; set; }
+    public int IssueId { get; set; }
+    public Issue Issue { get; set; } = null!;
+    /// <summary>Random 32-hex-character id; the file's name on disk.</summary>
+    [Required, MaxLength(32)] public string StoredName { get; set; } = "";
+    /// <summary>Sanitized original file name (display and Content-Disposition only).</summary>
+    [Required, MaxLength(255)] public string FileName { get; set; } = "";
+    /// <summary>Raster image types are only recorded when the file's bytes match them; otherwise from the extension, or octet-stream.</summary>
+    [Required, MaxLength(100)] public string ContentType { get; set; } = "application/octet-stream";
+    public long Size { get; set; }
+    /// <summary>Lowercase hex SHA-256 of the content.</summary>
+    [Required, MaxLength(64)] public string Sha256 { get; set; } = "";
+    public int UploaderId { get; set; }
+    public User Uploader { get; set; } = null!;
+    /// <summary>True when uploaded from a comment box (needs Comment rather than EditIssues).</summary>
+    public bool FromComment { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public bool IsImage => GitBench.Services.Attachments.AttachmentStorage.IsInlineImage(ContentType);
+}
+
+/// <summary>
+/// A named issue-list filter: the list's URL query string (see <see cref="GitBench.Services.IssueFilterQuery"/>) plus a name.
+/// Private to its owner unless <see cref="IsShared"/>, which makes it visible to everyone who can view the project.
+/// </summary>
+public class SavedFilter
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public int OwnerId { get; set; }
+    public User Owner { get; set; } = null!;
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    /// <summary>Query string without the leading '?', e.g. <c>status=InProgress&amp;assigneeId=3</c>.</summary>
+    [MaxLength(2000)] public string Query { get; set; } = "";
+    public bool IsShared { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>A user's star on a saved filter (own or shared); starred filters show in the sidebar under the project.</summary>
+public class SavedFilterStar
+{
+    public int Id { get; set; }
+    public int SavedFilterId { get; set; }
+    public int UserId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

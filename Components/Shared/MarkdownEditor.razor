@@ -1,9 +1,23 @@
-<div class="md-editor">
+@using GitBench.Services.Attachments
+@inject AttachmentService Attachments
+@inject IJSRuntime JS
+
+<div class="md-editor" data-attach="@(AttachToIssueId != null ? "" : null)">
     <div class="md-tabs">
         <button type="button" class="@(preview ? "" : "active")" @onclick="() => preview = false">Write</button>
         <button type="button" class="@(preview ? "active" : "")" @onclick="() => preview = true">Preview</button>
-        <span class="muted small ms-auto">Markdown supported</span>
+        @if (AttachToIssueId != null)
+        {
+            @* Drop/paste land here too (wwwroot/js/attachments.js hands the files to this input). *@
+            <label class="md-attach ms-2" title="Attach files (or drag & drop / paste them into the text)">
+                📎 Attach
+                <InputFile OnChange="OnFiles" multiple disabled="@uploading" />
+            </label>
+            @if (uploading) { <span class="small muted ms-2"><span class="spinner-border spinner-border-sm"></span> Uploading…</span> }
+        }
+        <span class="muted small ms-auto">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")</span>
     </div>
+    @if (uploadError != null) { <div class="md-attach-error small text-danger">@uploadError</div> }
     @if (preview)
     {
         <div class="markdown md-preview">
@@ -14,7 +28,7 @@
     else
     {
         <textarea class="form-control" rows="@Rows" placeholder="@Placeholder"
-                  value="@Value" @oninput="OnInput"></textarea>
+                  value="@Value" @oninput="OnInput" @ref="textarea"></textarea>
     }
 </div>
 
@@ -23,10 +37,57 @@
     [Parameter] public EventCallback<string?> ValueChanged { get; set; }
     [Parameter] public int Rows { get; set; } = 6;
     [Parameter] public string? Placeholder { get; set; }
+    /// <summary>When set, files picked, dropped or pasted are uploaded to this issue and linked into the text.</summary>
+    [Parameter] public int? AttachToIssueId { get; set; }
+    /// <summary>Uploads come from a comment box (need Comment rather than EditIssues).</summary>
+    [Parameter] public bool AttachFromComment { get; set; }
 
-    private bool preview;
+    private const int MaxFilesAtOnce = 10;
+    private bool preview, uploading;
+    private string? uploadError;
+    private ElementReference textarea;
 
     private Task OnInput(ChangeEventArgs e) => ValueChanged.InvokeAsync(Value = e.Value?.ToString());
 
     public void ShowWrite() => preview = false;
+
+    private async Task OnFiles(InputFileChangeEventArgs e)
+    {
+        if (AttachToIssueId is not { } issueId) return;
+        uploadError = null;
+        uploading = true;
+        var links = new List<string>();
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(MaxFilesAtOnce))
+            {
+                if (file.Size > Attachments.MaxBytes)
+                {
+                    uploadError = $"{file.Name} is too large (max {AttachmentFormat.Size(Attachments.MaxBytes)}).";
+                    continue;
+                }
+                await using var stream = file.OpenReadStream(Attachments.MaxBytes);
+                var a = await Attachments.UploadAsync(issueId, file.Name, stream, AttachFromComment);
+                links.Add(AttachmentFormat.MarkdownLink(a.Id, a.FileName, a.ContentType));
+            }
+            if (e.FileCount > MaxFilesAtOnce) uploadError = $"Only the first {MaxFilesAtOnce} files were uploaded.";
+        }
+        catch (InvalidOperationException ex) { uploadError = ex.Message; }
+        catch (IOException ex) { uploadError = "Upload failed: " + ex.Message; }
+        finally { uploading = false; }
+
+        if (links.Count == 0) return;
+        var text = string.Join("\n", links);
+        var inserted = false;
+        if (!preview)
+        {
+            try { inserted = await JS.InvokeAsync<bool>("gbAttach.insert", textarea, text); }
+            catch (JSException) { }
+        }
+        if (!inserted)
+        {
+            var v = Value ?? "";
+            await ValueChanged.InvokeAsync(Value = v + (v.Length > 0 && !v.EndsWith('\n') ? "\n" : "") + text);
+        }
+    }
 }

@@ -1,0 +1,63 @@
+@implements IDisposable
+@inject SavedFilterService Filters
+@inject LiveEvents Live
+@inject NavigationManager Nav
+
+@* Starred saved filters of the current project, in the sidebar under the project's links. *@
+@if (starred.Count > 0)
+{
+    <div class="side-filters">
+        <a class="side-heading side-filters-heading" href="/p/@ProjectKey/filters" title="Manage filters">★ Starred filters</a>
+        @foreach (var f in starred)
+        {
+            var href = $"/p/{ProjectKey}/issues" + (f.Query.Length > 0 ? "?" + f.Query : "");
+            <a class="side-link side-filter @(IsActive(f) ? "active" : "")" href="@href" title="@(f.IsShared ? f.Name + " (shared)" : f.Name)" @key="f.Id">
+                <span class="side-filter-name">@f.Name</span>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+
+    private List<SavedFilterView> starred = [];
+    private int loadedFor;
+    private IDisposable? liveSubscription;
+
+    private bool IsActive(SavedFilterView f)
+    {
+        var rel = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = rel.Split('?', '#')[0].TrimEnd('/');
+        return path.Equals($"p/{ProjectKey}/issues", StringComparison.OrdinalIgnoreCase)
+               && IssueFilterQuery.ToQueryString(IssueFilterQuery.FromUri(rel)) == IssueFilterQuery.Normalize(f.Query);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == ProjectId) return;
+        loadedFor = ProjectId;
+        await Load();
+    }
+
+    private async Task Load() => starred = await Filters.ListAsync(ProjectId, starredOnly: true);
+
+    protected override void OnInitialized()
+    {
+        liveSubscription = Live.Subscribe<SavedFiltersChanged>(e => e.ProjectId != loadedFor ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            await Load();
+            StateHasChanged();
+        }));
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        liveSubscription?.Dispose();
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

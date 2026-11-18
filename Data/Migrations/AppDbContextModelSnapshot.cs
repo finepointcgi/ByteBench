@@ -146,6 +146,59 @@ namespace GitBench.Data.Migrations
                     b.ToTable("AiUsages");
                 });
 
+            modelBuilder.Entity("GitBench.Data.Attachment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("FromComment")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StoredName")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UploaderId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoredName")
+                        .IsUnique();
+
+                    b.HasIndex("UploaderId");
+
+                    b.HasIndex("IssueId", "CreatedAt");
+
+                    b.ToTable("Attachments");
+                });
+
             modelBuilder.Entity("GitBench.Data.BranchProtectionRule", b =>
                 {
                     b.Property<int>("Id")
@@ -959,6 +1012,71 @@ namespace GitBench.Data.Migrations
                     b.ToTable("RepositoryRedirects");
                 });
 
+            modelBuilder.Entity("GitBench.Data.SavedFilter", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsShared")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OwnerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Query")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("ProjectId", "OwnerId");
+
+                    b.ToTable("SavedFilters");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SavedFilterStar", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SavedFilterId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SavedFilterId");
+
+                    b.HasIndex("UserId", "SavedFilterId")
+                        .IsUnique();
+
+                    b.ToTable("SavedFilterStars");
+                });
+
             modelBuilder.Entity("GitBench.Data.User", b =>
                 {
                     b.Property<int>("Id")
@@ -1352,6 +1470,25 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.Attachment", b =>
+                {
+                    b.HasOne("GitBench.Data.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "Uploader")
+                        .WithMany()
+                        .HasForeignKey("UploaderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Issue");
+
+                    b.Navigation("Uploader");
+                });
+
             modelBuilder.Entity("GitBench.Data.BranchProtectionRule", b =>
                 {
                     b.HasOne("GitBench.Data.Repository", "Repository")
@@ -1658,6 +1795,38 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SavedFilter", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SavedFilterStar", b =>
+                {
+                    b.HasOne("GitBench.Data.SavedFilter", null)
+                        .WithMany()
+                        .HasForeignKey("SavedFilterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GitBench.Data.Watch", b =>

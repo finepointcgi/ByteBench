@@ -68,6 +68,10 @@ builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo set
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
 builder.Services.AddGitBenchApi();
+// Attachments, saved filters & bulk edit
+builder.Services.AddSingleton<GitBench.Services.Attachments.AttachmentStorage>();
+builder.Services.AddScoped<GitBench.Services.Attachments.AttachmentService>();
+builder.Services.AddScoped<SavedFilterService>();
 
 var app = builder.Build();
 
@@ -102,6 +106,7 @@ app.UseWebhookPushCapture();
 app.MapGitHttp();
 app.MapCiEndpoints();
 app.MapGitBenchApi();
+GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
