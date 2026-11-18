@@ -1,6 +1,7 @@
 using GitBench.Components;
 using GitBench.Data;
 using GitBench.Services;
+using GitBench.Services.Git;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -62,6 +63,7 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapGitHttp();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

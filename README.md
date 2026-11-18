@@ -21,6 +21,22 @@ Open http://localhost:5108. On first run a `gitbench.db` SQLite file is created 
 - **Project settings**: rename, manage labels, delete the project
 - **Dashboard**: your assigned work, all projects, recent activity
 
+## Cloning & pushing
+
+Each repository is served over the Git Smart HTTP protocol at `/git/{PROJECTKEY}/{slug}.git`:
+
+```bash
+git clone http://localhost:5108/git/WEB/web-app.git
+cd web-app
+git push origin main
+```
+
+- **Credentials:** clone, fetch and push all require a GitBench account (repos are private). Enter your username (or email) and password when git prompts. In development the demo users `alice`, `bob`, `carol` and `dan` share the password defined in `SeedData.DemoPassword` (`Data/SeedData.cs`). Use a credential helper (`git config credential.helper osxkeychain`/`manager`/`store`) rather than putting the password in the URL. Failed logins count toward Identity lockout.
+- **Requirements:** the server runs `git http-backend`, so `git` must be on the server's `PATH` (or set `Git:Executable` in `appsettings.json`). If git is missing, the endpoints answer `503` and the error is logged at startup.
+- Protocol v2 (`git -c protocol.version=2 ...`) is supported; the legacy "dumb" HTTP protocol is not.
+- Repositories live as bare repos under `Git:RepositoryRoot` (default `./repos`).
+- Code can react to pushes by registering an `IGitPushListener` (`Services/Git/GitHttpPushListener.cs`) in DI.
+
 ## Layout
 
 | Path | Purpose |
