@@ -132,10 +132,12 @@ public class SnippetService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
         var list = await query.AsNoTracking().Include(s => s.Author).Include(s => s.Project)
             .OrderByDescending(s => s.UpdatedAt).Take(take).ToListAsync();
         var ids = list.Select(s => s.Id).ToList();
-        var files = await db.SnippetRevisions.AsNoTracking()
-            .Where(r => ids.Contains(r.SnippetId) && db.Snippets.Any(s => s.Id == r.SnippetId && s.CurrentRevision == r.Number))
-            .SelectMany(r => r.Files.Select(f => new { r.SnippetId, f.Position, f.FileName }))
-            .ToListAsync();
+        var files = await (
+            from s in db.Snippets
+            join r in db.SnippetRevisions on new { SnippetId = s.Id, Number = s.CurrentRevision } equals new { r.SnippetId, r.Number }
+            join f in db.SnippetFiles on r.Id equals f.RevisionId
+            where ids.Contains(s.Id)
+            select new { r.SnippetId, f.Position, f.FileName }).AsNoTracking().ToListAsync();
         var byId = files.GroupBy(f => f.SnippetId).ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.OrderBy(f => f.Position).Select(f => f.FileName).ToList());
         return list.Select(s => new SnippetSummary(s, byId.GetValueOrDefault(s.Id) ?? [])).ToList();
     }
