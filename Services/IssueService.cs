@@ -99,6 +99,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await access.RequireAsync(id, Permission.DeleteProject);
         await using var db = await dbFactory.CreateDbContextAsync();
         var files = await Attachments.AttachmentService.StoredNamesForProjectAsync(db, id);
+        files.AddRange(await Releases.ReleaseService.StoredNamesAsync(db, projectId: id)); // release assets cascade with the project
         var gone = await db.Projects.Where(p => p.Id == id).Select(p => new { p.Key, p.Name, Issues = p.Issues.Count }).FirstOrDefaultAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
         attachmentFiles.Delete(files); // rows first, then files

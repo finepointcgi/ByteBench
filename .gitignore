@@ -492,3 +492,10 @@ gitbench.db*
 
 # Issue attachments (Attachments:Root)
 /attachments/
+
+# Source folders named "Releases" (the build-output rule above would hide them)
+!/Services/Releases/
+!/Components/Releases/
+
+# Data Protection key ring (DataProtection:KeysPath)
+/keys/

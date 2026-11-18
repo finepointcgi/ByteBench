@@ -8,7 +8,7 @@ A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive S
 dotnet run --launch-profile http
 ```
 
-Open http://localhost:5108. On startup, EF Core migrations are applied to `gitbench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded. Delete `gitbench.db*` and `repos/` to reset.
+Open http://localhost:5108. On startup, EF Core migrations are applied to `gitbench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded (in Development only, or when `Seed:DemoData` is `true`). Delete `gitbench.db*` and `repos/` to reset.
 
 **Schema changes:** edit the model, then `dotnet ef migrations add <Name> -o Data/Migrations` (the `dotnet-ef` tool is pinned in `dotnet-tools.json`; run `dotnet tool restore` once). Migrations apply automatically on the next start.
 
@@ -459,6 +459,9 @@ curl -H "Authorization: Bearer gbp_…" http://localhost:5108/api/v1/user
 | GET | `/projects/{key}/repos/{slug}/pull-requests/{number}` | |
 | POST | `/projects/{key}/repos/{slug}/pull-requests/{number}/merge` | Optional `{deleteSourceBranch, fastForward}`. Conflicts return `409` with `conflictPaths` |
 | GET / POST | `/projects/{key}/repos/{slug}/pull-requests/{number}/comments` | `{body, path?, line?, oldLine?}` (with `path`, it's an inline comment) |
+| GET | `/projects/{key}/repos/{slug}/tags` | Newest first: `name`, `sha` (commit), `objectSha`, `annotated`, `message`, tagger, `zipUrl`, `tarGzUrl` |
+| GET | `/projects/{key}/repos/{slug}/releases`, `…/releases/{id}`, `…/releases/latest`, `…/releases/tags/{tag}` | Drafts only for Developer+. `latest` is the newest published release that isn't a pre-release |
+| POST | `/projects/{key}/repos/{slug}/releases` | `{tagName, title?, notes?, target?, tagMessage?, prerelease?, draft?, generateNotes?}`. Developer+. Returns `201`. A missing tag is created from `target` |
 
 Writes go through `IssueService` and `PullRequestService`, so activity, notifications, live updates, AI review and webhooks behave exactly as in the UI. Links in responses use the request's host, or the `PublicBaseUrl` setting if it is set.
 
@@ -483,6 +486,8 @@ They require `Permission.ManageRepositories`. Webhooks are integration settings 
 | `pull_request.updated` | Same, plus `action`: `edited`, `reopened`, `approved`, `changes_requested` or `review_dismissed` |
 | `pull_request.commented` | `pullRequest`, `repository` and `comment` |
 | `pipeline.completed` | Raised by CI code, not by GitBench itself (see below) |
+| `release.published` | A release was published (created as non-draft, or a draft published): `release` (with `assets`, `zipUrl`, `tarGzUrl`) and `repository` |
+| `tag.created` / `tag.deleted` | A tag was created or deleted in GitBench or by a push: `tag` and `repository` |
 | `ping` | Only from **Send test ping**. Always sent, even to an inactive hook |
 
 **Payload and headers.** Every body is JSON that starts with `event`, `deliveryId`, `timestamp`, `project` and `sender`, followed by the event's own fields. Each request carries these headers:
@@ -531,6 +536,47 @@ dispatcher.Enqueue(projectId, "pipeline.completed", new { pipeline = new { id, s
 ```
 
 The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Other push listeners can inject `PushCapture` to get them too.
+
+## Tags & releases
+
+**Tags** (`/p/{KEY}/repos/{slug}/tags`, the **Tags** tab) lists every tag, newest first. Each row shows the commit, the release that uses the tag, **zip** and **tar.gz** source downloads, and, for annotated tags, the tagger, date and message.
+
+- **Create** (Developer+, `PushCode`): give a name, a branch or commit (anything git can resolve, such as `main~3` or a SHA) and an optional message. With a message it's an annotated tag (tagger = you); without one it's a lightweight tag. Names must be valid git ref names: no spaces, `..` or `~^:?*[\`, no leading `-`, and at most 250 characters. A tag can't have the same name as a branch.
+- **Delete** (Maintainer+, `DeleteBranch`). A tag that a release uses can't be deleted, either in the UI or by `git push --delete`. Such a push is refused with `! [remote rejected] … tag 'v1.0' is used by a release`. Delete the release first.
+- Pushed tags arrive through git as usual. `TagPushListener` raises `tag.created`/`tag.deleted` webhooks for them and records pushed tag deletions in the audit log. Branch protection and CI triggers only look at `refs/heads/*`. The `push` webhook is still sent for tags; annotated tags have no commit list.
+
+**Releases** (the **Releases** tab) attach a title, Markdown notes and files to a tag.
+
+- **New release** (Developer+):
+  - Pick an existing tag or type a new one. A new tag is created from the branch or SHA you choose when you save, and is annotated if you give a tag message.
+  - Set a title (defaults to the tag), notes, and **pre-release** if it applies.
+  - Click **Publish release** or **Save draft**.
+- **Drafts** and their assets are visible only to Developer+. Publishing a draft keeps its first publish date.
+- **Generate notes** fills the notes from git history since the previous release. The previous release is the other release whose tag is the closest ancestor of this one. The notes list:
+  - merged pull requests (matched by merge commit)
+  - non-merge commits
+  - the issues mentioned in their messages, with issue keys linked (`[WEB-12](/p/WEB/issues/12)`)
+
+  Without an earlier release, the whole history is used (up to 300 commits).
+- **Assets**: upload files on the release page (Developer+).
+  - They're stored like issue attachments, under random names in `Attachments:Root`, but in their own table (`ReleaseAssets`).
+  - Limits: `Releases:MaxAssetBytes` per file (default 512 MB) and 50 per release.
+  - `GET /release-assets/{id}/{name}` serves them with the attachment rules: `nosniff`, a sandbox CSP, and `Content-Disposition: attachment` except for verified png/jpeg/gif/webp.
+  - Download counts are shown.
+- Each release also lists **Source code (zip / tar.gz)**.
+- **Edit** changes the title, notes and flags, but not the tag.
+- **Delete** (Maintainer+) removes the release and its asset files, and optionally the tag.
+- The repository's **Source** page shows a **Latest** badge for the newest published release that isn't a pre-release.
+
+**Source archives**: `GET /p/{KEY}/repos/{slug}/archive/{ref}.zip` or `.tar.gz` (also `.tgz`) works for any branch, tag or SHA.
+
+- The ref is resolved to a commit SHA first. `git archive` then runs with an argument list (never a shell) and streams straight to the response, with files under `{slug}-{ref}/`.
+- Access needs ViewProject, through a cookie session or a `Bearer` token with any scope. Otherwise the response is `401` or `404`.
+- Limits (section `Archives`): `MaxBytes` (default 1 GB), `TimeoutSeconds` (300) and `MaxConcurrent` (4; beyond that, `503` with `Retry-After`). An archive that hits a limit is cut off by aborting the connection, so it never looks complete.
+
+**Audit**: `release.created`, `release.published`, `release.deleted`, `tag.deleted`. **Webhooks**: `release.published`, `tag.created`, `tag.deleted`.
+
+Code: `Services/Releases/` (`ReleaseService`, `ReleaseDownloads`, `TagPushListener`), `Services/Git/GitOps.Tags.cs`, `Api/ReleaseEndpoints.cs`, `Components/Pages/Repositories/Repo{Tags,Releases,Release,ReleaseEdit}.razor`, `Components/Releases/ReleaseCard.razor`, `wwwroot/css/releases.css`. Schema: `Release`, `ReleaseAsset` (migration `Releases`).
 
 ## Linked work: sub-tasks, epics and issue links
 
@@ -621,15 +667,153 @@ Each project has its own **workflow**: an ordered list of statuses (name, colour
   - `webhook.created`, `webhook.updated`, `webhook.secret_rotated`, `webhook.deleted`
   - `workflow.status_added`, `workflow.status_updated`, `workflow.status_reordered`, `workflow.status_deleted`, `workflow.transitions_changed`
   - `issue.deleted`, `audit.exported`
+  - `release.created`, `release.published`, `release.deleted`, `tag.deleted` (also when a push deletes a tag)
   - There is no UI for changing the site-admin flag, so there's no event for it yet.
 - **No secrets.** Passwords, tokens (not even their prefix) and webhook secrets are never passed. Webhook URLs are logged as scheme and host only, because paths and queries often carry credentials. As a backstop, detail keys that look like secrets (`password`, `secret`, `token`, `hash`, …) are dropped before storing.
-- **Actor, IP and user agent.** The actor is the explicit `actorId`, else the acting user (`ProjectAccess`), else the signed-in user of the HTTP request. Blazor circuits have no reliable `HttpContext`, so `AuditCircuitHandler` copies IP and user agent from the connection's request into the scoped `AuditRequestInfo` when the circuit opens. Static SSR pages, the API and minimal endpoints read them from `IHttpContextAccessor`. `RemoteIpAddress` is used as-is: add `ForwardedHeaders` middleware if you run behind a proxy.
+- **Actor, IP and user agent.** The actor is the explicit `actorId`, else the acting user (`ProjectAccess`), else the signed-in user of the HTTP request. Blazor circuits have no reliable `HttpContext`, so `AuditCircuitHandler` copies IP and user agent from the connection's request into the scoped `AuditRequestInfo` when the circuit opens. Static SSR pages, the API and minimal endpoints read them from `IHttpContextAccessor`. Behind a reverse proxy, set `ReverseProxy:Enabled` (see [Deploying GitBench](#deploying-gitbench)) so `RemoteIpAddress` is the client's address.
 - **Append-only.** `AppDbContext` refuses tracked updates and deletes of audit rows, and the table has no foreign keys, so events outlive the users and projects they name. The only deletion is retention: `AuditRetentionService` deletes events older than `Audit:RetentionDays` (default 365; `0` keeps them forever) at startup and then daily.
 - **Pages:**
   - `/admin/audit` (site admins, linked in the sidebar) filters by actor username (or `system`), action prefix (e.g. `member.`), project key and UTC date range. It shows 50 events per page, and each row's **Details** expands to show the JSON and user agent.
   - `/p/{KEY}/settings/audit` (project Owners, linked from project Settings) shows the same view limited to that project.
   - **Export CSV** downloads every matching event (up to 100,000) from `GET /admin/audit/export.csv?project=&actor=&action=&from=&to=`, which is checked the same way. Cells that start like a spreadsheet formula are prefixed with `'`.
 - **Recording from new code:** `await audit.RecordAsync("area.verb", "target_type", targetId, projectId, new { …details… });`. For example, a bulk delete would record `issue.bulk_deleted` with the issue numbers. Recording never throws.
+
+## Deploying GitBench
+
+GitBench is one ASP.NET Core process with a SQLite database and three folders: repositories, attachments (which also hold release assets), and the Data Protection key ring. Run it as a single instance. SQLite and the in-process queues (CI, webhooks, AI review) aren't built for several replicas.
+
+### Docker
+
+```bash
+docker compose up -d --build        # builds the image from the Dockerfile and starts it on 127.0.0.1:8080
+docker compose logs -f gitbench     # JSON logs
+```
+
+- **Image.** The `Dockerfile` is multi-stage: an SDK build, then an `aspnet:10.0` runtime with `git`, `curl` and `sqlite3`. It runs as the non-root `app` user (uid 1654). State lives in four volumes: `/data/db`, `/data/repos`, `/data/attachments` and `/data/keys`.
+- **Image defaults.** The image sets:
+  - `ASPNETCORE_ENVIRONMENT=Production`
+  - `Seed__DemoData=false`, so no demo users with the published password
+  - `Ci__Enabled=false`
+  - `Security__HttpsRedirection=false`, because TLS ends at the proxy
+- **First admin.** Register your account in the UI, then restart once with `Bootstrap__AdminUsers=<your username>`; separate several usernames with commas. The setting only ever promotes users, so it's fine to leave it set.
+- **TLS.** Production cookies are `Secure`, so serve GitBench over HTTPS. `docker-compose.yml` has a commented-out Caddy service that gets certificates automatically: uncomment it, set the domain, and remove the `ports:` mapping of `gitbench`. For a quick trial over plain HTTP, set `Security__SecureCookies=false` instead. GitBench logs a warning when it sees plain HTTP with Secure cookies on.
+- **Health checks.** The container health check calls `/health/live`; compose checks `/health/ready`.
+
+**CI in the container.** Pipelines need a Docker daemon, so they're off by default. There are three options:
+
+1. **Mount the host's Docker socket** (`/var/run/docker.sock`).
+   - Build the image with `--build-arg WITH_DOCKER_CLI=true`, mount the socket and set `Ci__Enabled=true`.
+   - Set `Ci__WorkDirectory` to a folder mounted at the **same path** on the host and in the container, because the daemon mounts workspaces by host path.
+   - The socket's group must let uid 1654 use it (`group_add`).
+   - **Security:** the Docker socket gives root on the host. Anyone who can push can run any image, so every Developer effectively becomes root on the host. Only do this on a dedicated machine where you trust everyone who can push.
+2. **Run GitBench on the host** (`dotnet GitBench.dll` under systemd or similar) with Docker installed. The trust caveat is the same, without the extra container layer. Rootless Docker reduces the risk.
+3. **Use a separate Docker host.** Point the CLI at a remote daemon with `DOCKER_HOST=tcp://ci-host:2376`, using TLS (`DOCKER_TLS_VERIFY=1` and `DOCKER_CERT_PATH`). Builds then can't touch the GitBench host. `Ci:WorkDirectory` must be on storage the CI host sees at the same path. This is the safest option.
+
+Whichever you choose, keep `Ci:Network=none` unless jobs need the network (see [CI pipelines](#ci-pipelines)).
+
+### Configuration reference
+
+Settings come from these sources; later ones override earlier ones:
+
+1. `appsettings.json`
+2. `appsettings.{Environment}.json`
+3. environment variables, written `Section__Key` (e.g. `Ci__Enabled=false`), with arrays as `Section__Key__0`
+4. command-line arguments
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ConnectionStrings:Default` | `Data Source=gitbench.db` | SQLite connection string |
+| `PublicBaseUrl` | learned from the first request | Absolute site URL for links in API responses and webhooks. **Set it in production** |
+| `AllowedHosts` | `*` | Host header filter (e.g. `gitbench.example.com`) |
+| `Seed:DemoData` | `true` in Development, else `false` | Seed demo users, projects and repositories into an empty database |
+| `Bootstrap:AdminUsers` | none | Usernames made site admins at startup |
+| `Git:RepositoryRoot` | `{ContentRoot}/repos` | Bare repositories |
+| `Git:Executable` | `git` on `PATH` | The git used for Smart HTTP, `git grep` and `git archive` |
+| `Attachments:Root` | `{ContentRoot}/attachments` | Attachment and release asset files |
+| `Attachments:MaxBytes` / `Attachments:MaxPerIssue` | 25 MB / 50 | Issue attachment limits |
+| `Releases:MaxAssetBytes` | 512 MB | Size limit per release asset |
+| `Archives:MaxBytes` / `TimeoutSeconds` / `MaxConcurrent` | 1 GB / 300 / 4 | Source archive limits |
+| `DataProtection:KeysPath` | `{ContentRoot}/keys` | Key ring folder (created with mode 700). Back it up and keep it private |
+| `DataProtection:ApplicationName` | `GitBench` | Keep it the same across deployments that share keys |
+| `DataProtection:CertificatePath` / `CertificatePassword` | none | A `.pfx` that encrypts the keys at rest. Recommended on Linux, where the keys are otherwise stored as plain XML |
+| `DataProtection:DecryptionCertificatePaths` | none | Older `.pfx` files that are still accepted for reading keys after a certificate rotation |
+| `ReverseProxy:Enabled` | `false` | Honour `X-Forwarded-For` and `X-Forwarded-Proto` from trusted proxies |
+| `ReverseProxy:KnownProxies` / `KnownNetworks` | loopback only | Trusted proxy IPs / CIDR ranges (e.g. `172.16.0.0/12` for compose networks) |
+| `ReverseProxy:ForwardLimit` | `1` | Number of proxy hops to unwind |
+| `ReverseProxy:ForwardHost` | `false` | Also honour `X-Forwarded-Host` (then set `ReverseProxy:AllowedHosts`) |
+| `Security:SecureCookies` | `true` outside Development | Send sign-in cookies only over HTTPS |
+| `Security:HttpsRedirection` | `true` outside Development | Redirect HTTP to HTTPS (the Docker image turns it off) |
+| `Security:HstsMaxAgeDays` / `HstsIncludeSubDomains` | 365 / `false` | HSTS settings. HSTS is sent on HTTPS responses outside Development |
+| `Security:ContentSecurityPolicy` | `true` | Send the CSP on HTML pages |
+| `Security:ContentSecurityPolicyReportOnly` | `false` | Send the CSP as `Content-Security-Policy-Report-Only` instead, while testing |
+| `Security:CspInlineHandlers` | none | Extra inline `on…=""` handler strings to allow by hash |
+| `RateLimiting:Enabled` | `true` (`false` in `appsettings.Development.json`) | Turns all rate limits on or off |
+| `RateLimiting:Auth` | 10 / 60 s | POSTs to `/account/*` (sign-in, registration, two-factor), per client IP |
+| `RateLimiting:Api` | 300 / 60 s | `/api/*`: per access token, else per signed-in user, else per IP |
+| `RateLimiting:Git` | 120 / 60 s | `/git/*`: per user named in the credentials, else per IP |
+| `RateLimiting:WebhookPing` | 5 / 60 s | Webhook test pings, per user |
+| `Ci:*` | see [CI pipelines](#ci-pipelines) | `Enabled`, `MaxConcurrentJobs`, `JobTimeoutMinutes`, `Network`, `Memory`, `Cpus`, `PidsLimit`, `DockerExecutable`, `WorkDirectory`, `MaxLogChars` |
+| `Webhooks:AllowPrivateNetworks` | `false` | Allow webhook targets on private networks |
+| `Audit:RetentionDays` | 365 | Audit event retention (`0` keeps them forever) |
+| `Ai:Enabled` / `Ai:Model` / `Ai:ApiKey` | `true` / `claude-opus-5-5` / none | AI features. Prefer `ANTHROPIC_API_KEY` for the key |
+| `Logging:*` | | Standard .NET logging. `appsettings.Production.json` switches the console to JSON and keeps EF Core's SQL logging at Warning |
+
+**Rate limits.** Each rate limit section takes `PermitLimit` and `WindowSeconds`, e.g. `RateLimiting__Api__PermitLimit=600`. A `PermitLimit` of `0` turns that limit off. A request over the limit gets `429` with `Retry-After`: problem+json for the API, plain text elsewhere. For webhook test pings, the page shows "Too many test pings. Try again in N seconds."
+
+**Secrets** belong in environment variables or a secrets store, never in `appsettings.json` or the image. Examples: `ANTHROPIC_API_KEY`, `DataProtection__CertificatePassword`, SMTP passwords. With compose, use an `env_file` with mode 600, or Docker secrets.
+
+### Security headers & health checks
+
+**Headers.** Every response gets:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy`
+- `Cross-Origin-Opener-Policy: same-origin`
+- HSTS on HTTPS, outside Development
+
+**Content Security Policy.** HTML pages get a CSP with `default-src 'self'`:
+
+- **Scripts** come from the site. Blazor's import map is allowed by a per-request nonce, and the app's few inline handlers (`onfocus="this.select()"` and the copy buttons) by hash.
+- **Styles** allow `'unsafe-inline'`, because components set `style` attributes (label colours, charts).
+- **`connect-src`** covers the circuit's `ws:`/`wss:` connection to the same host.
+- The policy also sets `frame-ancestors 'none'`, `form-action 'self'` and `object-src 'none'`.
+- Responses with their own CSP (attachments, release assets) keep theirs.
+- New inline `<script>` blocks or `on…=""` attributes will be blocked. Put the code in a `.js` file in `wwwroot/js`, or add the handler string to `Security:CspInlineHandlers`.
+
+**Health checks.** Both endpoints are anonymous, return JSON without error details, and aren't rate limited.
+
+- `GET /health/live` returns 200 while the process runs.
+- `GET /health/ready` checks that:
+  - the database answers, and the repository and attachment folders are writable. If not, it reports `Unhealthy` (503).
+  - Docker is reachable when CI is on. If not, it reports `Degraded` but still returns 200.
+
+### Reverse proxy
+
+- **TLS and trust.** Terminate TLS at the proxy and forward to GitBench's HTTP port. Set `ReverseProxy__Enabled=true` and put the proxy's address in `KnownProxies` or `KnownNetworks`. The audit log, rate limits and git logs then see the real client IP, and cookies, HSTS and generated links see `https`. Requests from untrusted addresses keep their own IP, so clients can't spoof it with headers.
+- **Headers.** Pass the original `Host` header. Caddy does this by default. With nginx, set `proxy_set_header Host $host;`, plus `X-Forwarded-For $proxy_add_x_forwarded_for` and `X-Forwarded-Proto $scheme`.
+- **WebSockets.** Blazor needs them on `/_blazor`. With nginx, use `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;` and a long `proxy_read_timeout`.
+- **Large and long requests.** Git pushes and uploads need large request bodies and long timeouts. With nginx, set `client_max_body_size 0; proxy_request_buffering off; proxy_buffering off;` for `/git/`.
+- **Public URL.** Set `PublicBaseUrl` to the public `https://` URL.
+
+### Upgrades & backups
+
+1. **Back up first.** `scripts/backup.sh [out-dir]` writes `gitbench-backup-<UTC time>.tar.gz`. It contains a consistent SQLite copy (made with `sqlite3 .backup`, safe while GitBench runs), the repositories, the attachments and the key ring.
+   - If those aren't in the checkout, set `GITBENCH_DB`, `GITBENCH_REPOS`, `GITBENCH_ATTACHMENTS` and `GITBENCH_KEYS`.
+   - The image includes the script at `/app/scripts/backup.sh`; its header has the `docker compose exec` command.
+   - The archive contains password hashes, webhook secrets and the keys, so store it encrypted.
+2. **Deploy the new version**: `git pull && docker compose up -d --build`, or replace the published files and restart.
+3. **Migrations run automatically at startup.** Watch the log for `Applying migration`. If startup fails, restore the backup and run the previous version.
+
+**Restore**:
+
+1. Stop GitBench and extract the archive.
+2. Copy `db/gitbench.db` over the database, and delete any `-wal`/`-shm` files next to it.
+3. Replace the `repos`, `attachments` and `keys` folders with the archived ones.
+4. Start GitBench.
+
+Without the original `keys`, everyone has to sign in again and encrypted secrets can't be read.
 
 ## Next steps
 

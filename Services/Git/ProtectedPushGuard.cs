@@ -35,8 +35,9 @@ internal static class ProtectedPushGuard
     {
         var protection = ctx.RequestServices.GetRequiredService<BranchProtectionService>();
         var rules = await protection.RulesForAsync(repositoryId);
-        if (rules.Count == 0) return Result.PassThrough;
-        var isAdmin = await protection.IsBypassAdminAsync(projectId, userId);
+        var releaseTags = await ReleaseTagsAsync(ctx, repositoryId); // tags used by releases can't be deleted by a push
+        if (rules.Count == 0 && releaseTags.Count == 0) return Result.PassThrough;
+        var isAdmin = rules.Count > 0 && await protection.IsBypassAdminAsync(projectId, userId);
 
         var encoding = ctx.Request.Headers.ContentEncoding.ToString();
         var source = encoding is "gzip" or "x-gzip" ? new GZipStream(ctx.Request.Body, CompressionMode.Decompress) : ctx.Request.Body;
@@ -49,6 +50,8 @@ internal static class ProtectedPushGuard
         var fastForwardOnly = new List<string>();
         foreach (var c in commands)
         {
+            if (c.Ref.StartsWith("refs/tags/", StringComparison.Ordinal) && IsZero(c.NewSha) && releaseTags.Contains(c.Ref["refs/tags/".Length..]))
+                refusals[c.Ref] = $"tag '{c.Ref["refs/tags/".Length..]}' is used by a release: delete the release first";
             if (!c.Ref.StartsWith("refs/heads/", StringComparison.Ordinal)) continue;
             var branch = c.Ref["refs/heads/".Length..];
             var p = BranchProtectionService.ApplicableTo(rules, branch, isAdmin);
@@ -80,6 +83,13 @@ internal static class ProtectedPushGuard
     }
 
     private static bool IsZero(string sha) => sha.All(ch => ch == '0');
+
+    private static async Task<HashSet<string>> ReleaseTagsAsync(HttpContext ctx, int repositoryId)
+    {
+        var dbFactory = ctx.RequestServices.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<GitBench.Data.AppDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync(ctx.RequestAborted);
+        return (await Releases.ReleaseService.ReleaseTagsAsync(db, repositoryId)).ToHashSet(StringComparer.Ordinal);
+    }
 
     /// <summary>Reads pkt-lines up to the first flush. Returns the raw bytes read (to replay) and the parsed commands.</summary>
     private static async Task<(byte[] Prefix, List<Command> Commands, HashSet<string> Caps, bool Signed)> ReadCommandsAsync(Stream source, CancellationToken ct)

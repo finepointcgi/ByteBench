@@ -51,6 +51,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<WorkflowStatus> WorkflowStatuses => Set<WorkflowStatus>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    // ----- Releases -----
+    public DbSet<Release> Releases => Set<Release>();
+    public DbSet<ReleaseAsset> ReleaseAssets => Set<ReleaseAsset>();
+
+    private static void ConfigureReleases(ModelBuilder b)
+    {
+        b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.TagName }).IsUnique();
+        b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.CreatedAt });
+        b.Entity<Release>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Release>().HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ReleaseAsset>().HasIndex(a => a.StoredName).IsUnique();
+        b.Entity<ReleaseAsset>().HasOne(a => a.Release).WithMany(r => r.Assets).HasForeignKey(a => a.ReleaseId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ReleaseAsset>().HasOne(a => a.Uploader).WithMany().HasForeignKey(a => a.UploaderId).OnDelete(DeleteBehavior.Restrict);
+    }
 
     private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
     {
@@ -196,5 +210,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Sprint>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Issue>().HasOne(i => i.Sprint).WithMany().HasForeignKey(i => i.SprintId).OnDelete(DeleteBehavior.SetNull);
         ConfigureWorkflowsAndAudit(b);
+        ConfigureReleases(b);
     }
 }

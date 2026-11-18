@@ -453,8 +453,13 @@ public static partial class GitOps
     private static Commit? Resolve(LgRepository r, string? rev)
     {
         if (string.IsNullOrWhiteSpace(rev)) return r.Head?.Tip;
-        if (r.Branches[rev]?.Tip is { } bt) return bt;
-        if (r.Tags[rev]?.PeeledTarget is Commit tc) return tc;
+        try
+        {
+            // Branch/tag lookups throw for strings that aren't valid ref names (e.g. "main~3"); fall through to rev-parse.
+            if (r.Branches[rev]?.Tip is { } bt) return bt;
+            if (r.Tags[rev]?.PeeledTarget is Commit tc) return tc;
+        }
+        catch (InvalidSpecificationException) { }
         try { return r.Lookup<Commit>(rev); }
         catch (LibGit2SharpException) { return null; }
         catch (ArgumentException) { return null; }

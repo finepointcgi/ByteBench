@@ -12,8 +12,9 @@
     <link rel="stylesheet" href="@Assets["css/linked-work.css"]" />
     <link rel="stylesheet" href="@Assets["css/attachments-filters.css"]" />
     <link rel="stylesheet" href="@Assets["css/sprints.css"]" />
+    <link rel="stylesheet" href="@Assets["css/releases.css"]" />
     <link rel="stylesheet" href="@Assets["GitBench.styles.css"]" />
-    <ImportMap />
+    <ImportMap nonce="@GitBench.Services.Hosting.ProductionSetup.CspNonce(HttpContext)" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet @rendermode="PageRenderMode" />
 </head>

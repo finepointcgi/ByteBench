@@ -728,3 +728,51 @@ public class AuditEvent
     /// <summary>JSON object with event-specific details.</summary>
     public string? Details { get; set; }
 }
+
+// ----- Releases -----
+
+/// <summary>
+/// A release of a repository: a git tag plus a title, Markdown notes and downloadable assets. Drafts are visible only to
+/// people who can push (Developer+); publishing sets <see cref="PublishedAt"/> once. The tag must exist in the repository
+/// (it can be created from a branch when the release is created) and can't be deleted while a release uses it.
+/// </summary>
+public class Release
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    /// <summary>Short tag name (without <c>refs/tags/</c>). Unique per repository.</summary>
+    [Required, MaxLength(250)] public string TagName { get; set; } = "";
+    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    /// <summary>Markdown.</summary>
+    public string? Notes { get; set; }
+    public bool IsPrerelease { get; set; }
+    public bool IsDraft { get; set; }
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>When the release was first published (stays set if it is turned back into a draft).</summary>
+    public DateTime? PublishedAt { get; set; }
+    public List<ReleaseAsset> Assets { get; set; } = [];
+}
+
+/// <summary>
+/// A file attached to a release. Stored like issue attachments (<see cref="GitBench.Services.Attachments.AttachmentStorage"/>,
+/// random 32-hex name, never the user's filename) but in its own table.
+/// </summary>
+public class ReleaseAsset
+{
+    public int Id { get; set; }
+    public int ReleaseId { get; set; }
+    public Release Release { get; set; } = null!;
+    [Required, MaxLength(32)] public string StoredName { get; set; } = "";
+    [Required, MaxLength(255)] public string FileName { get; set; } = "";
+    [Required, MaxLength(100)] public string ContentType { get; set; } = "application/octet-stream";
+    public long Size { get; set; }
+    [Required, MaxLength(64)] public string Sha256 { get; set; } = "";
+    public int UploaderId { get; set; }
+    public User Uploader { get; set; } = null!;
+    public int DownloadCount { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

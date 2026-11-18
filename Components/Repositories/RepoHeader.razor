@@ -33,6 +33,8 @@
     <a class="tab @(Active == "source" ? "active" : "")" href="@RepoUrls.Source(Repo, Ref)">Source</a>
     <a class="tab @(Active == "commits" ? "active" : "")" href="@RepoUrls.Commits(Repo, Ref)">Commits</a>
     <a class="tab @(Active == "branches" ? "active" : "")" href="@RepoUrls.Branches(Repo)">Branches</a>
+    <a class="tab @(Active == "tags" ? "active" : "")" href="@GitBench.Services.Releases.ReleaseUrls.Tags(Repo)">Tags</a>
+    <a class="tab @(Active == "releases" ? "active" : "")" href="@GitBench.Services.Releases.ReleaseUrls.List(Repo)">Releases</a>
     <a class="tab @(Active == "prs" ? "active" : "")" href="@RepoUrls.RepoPullRequests(Repo)">Pull requests</a>
     <a class="tab @(Active == "pipelines" ? "active" : "")" href="@PipelineUrls.List(Repo)">Pipelines</a>
     <a class="tab @(Active == "search" ? "active" : "")" href="@CodeUrls.Search(Repo, null, Ref)">Search</a>
@@ -44,7 +46,7 @@
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>One of: source, commits, branches, prs, pipelines, search, settings.</summary>
+    /// <summary>One of: source, commits, branches, tags, releases, prs, pipelines, search, settings.</summary>
     [Parameter] public string Active { get; set; } = "source";
     /// <summary>The ref being viewed, carried across the Source/Commits/Search tabs.</summary>
     [Parameter] public string? Ref { get; set; }

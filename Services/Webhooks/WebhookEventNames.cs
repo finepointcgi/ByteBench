@@ -15,6 +15,10 @@ public static class WebhookEventNames
     public const string PullRequestCommented = "pull_request.commented";
     /// <summary>Raised by CI pipelines (not by this module) through <see cref="WebhookDispatcher.Enqueue"/>.</summary>
     public const string PipelineCompleted = "pipeline.completed";
+    // ----- Releases -----
+    public const string ReleasePublished = "release.published";
+    public const string TagCreated = "tag.created";
+    public const string TagDeleted = "tag.deleted";
 
     /// <summary>Events a hook can subscribe to, with a short description for the settings page. <c>ping</c> is always sent on request.</summary>
     public static readonly IReadOnlyList<(string Name, string Description)> Subscribable =
@@ -29,6 +33,9 @@ public static class WebhookEventNames
         (PullRequestDeclined, "A pull request is declined"),
         (PullRequestCommented, "Someone comments on a pull request"),
         (PipelineCompleted, "A CI pipeline finishes"),
+        (ReleasePublished, "A release is published"),
+        (TagCreated, "A tag is created (in GitBench or by a push)"),
+        (TagDeleted, "A tag is deleted (in GitBench or by a push)"),
     ];
 
     public static bool IsSubscribable(string name) => Subscribable.Any(e => e.Name == name);
