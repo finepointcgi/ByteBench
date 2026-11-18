@@ -18,7 +18,7 @@
                            StartIcon="@(uploading ? null : Icons.Material.Filled.AttachFile)">
                     @if (uploading) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" Style="width:14px;height:14px" /> }
                     @(uploading ? "Uploading…" : "Upload files")
-                    <InputFile OnChange="Upload" multiple class="attachments-input" disabled="@uploading" />
+                    <InputFile OnChange="Upload" multiple class="attachments-input" style="display:none" disabled="@uploading" />
                 </MudButton>
             }
         </div>
