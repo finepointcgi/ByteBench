@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 
 namespace GitBench.Data;
@@ -22,7 +23,7 @@ public static class SeedData
 
     public static void Initialize(AppDbContext db)
     {
-        db.Database.EnsureCreated();
+        db.Database.Migrate(); // applies pending EF Core migrations (Data/Migrations)
         if (db.Users.Any()) return;
 
         var alice = DemoUser("alice", "Alice Chen", "#6366f1");

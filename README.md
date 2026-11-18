@@ -8,7 +8,9 @@ A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive S
 dotnet run --launch-profile http
 ```
 
-Open http://localhost:5108. On first run a `gitbench.db` SQLite file is created and seeded with demo users, projects and issues. Delete it to reset.
+Open http://localhost:5108. On startup, EF Core migrations are applied to `gitbench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded. Delete `gitbench.db*` and `repos/` to reset.
+
+**Schema changes:** edit the model, then `dotnet ef migrations add <Name> -o Data/Migrations` (the `dotnet-ef` tool is pinned in `dotnet-tools.json`; run `dotnet tool restore` once). Migrations apply automatically on the next start.
 
 ## Accounts & sign-in
 
@@ -142,7 +144,7 @@ Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls
 |------|---------|
 | `Data/Models.cs` | Entities: User, Project, Issue, Label, Milestone, Comment, Activity |
 | `Data/AppDbContext.cs` | EF Core model configuration |
-| `Data/SeedData.cs` | Creates the schema (`EnsureCreated`) and seeds demo data |
+| `Data/SeedData.cs` | Applies migrations (`Data/Migrations`) and seeds demo data |
 | `Services/IssueService.cs` | All data access and business logic (numbering, board ordering, activity log) |
 | `Services/CurrentUser.cs` | The signed-in `User` for the current circuit/request |
 | `Services/ProjectAccess.cs` | Roles, permissions and project visibility: the single authorization point |
@@ -242,9 +244,7 @@ sqlite3 gitbench.db "select Feature, count(*), sum(InputTokens), sum(OutputToken
 
 Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions), `AiReviewLogic.cs` (pure functions: skipping, chunking, prompts, validation, summary), `AiReviewQueue.cs` (queue, worker, push listener), `AiClient.Structured.cs` (generic `CompleteJsonAsync<T>` structured-output helper) and `AiBot.cs`.
 
-> Schema note: this adds the `AiReviews` table and the `Projects.AiReviewEnabled` column. The database is created with `EnsureCreated`, so delete `gitbench.db*` to pick them up.
 
 ## Next steps
 
-- **Migrations:** switch from `EnsureCreated` to EF Core migrations before the schema changes.
 - **More features:** issue links and sub-tasks, attachments, email delivery of notifications, @mention autocomplete.
