@@ -18,6 +18,7 @@ public class SavedFilterTests(TestApp app) : IClassFixture<TestApp>
         Priority = IssuePriority.Highest,
         Sort = "priority",
         SprintId = 12,
+        WorkflowStatusId = 13,
         EpicId = 42,
         HideSubtasks = true,
     };
