@@ -33,7 +33,7 @@ public static class GroupEndpoints
             new DateTimeOffset(DateTime.SpecifyKind(g.CreatedAt, DateTimeKind.Utc)), role, $"{baseUrl}/g/{g.FullPath}");
 
     /// <summary>The group named by id or (encoded) path, if the caller can view it.</summary>
-    private static async Task<Group> RequireGroupAsync(GroupService groups, string idOrPath)
+    internal static async Task<Group> RequireGroupAsync(GroupService groups, string idOrPath)
     {
         var raw = Uri.UnescapeDataString(idOrPath);
         Group? group;

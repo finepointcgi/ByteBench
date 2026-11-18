@@ -1,0 +1,69 @@
+@* Name, description and sharing of a dashboard. Sharing lists projects and groups where the owner is Developer or higher. Returns DashboardSettings. *@
+@inject IssueService Issues
+@inject GroupService Groups
+@inject ProjectAccess Access
+
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">@(IsNew ? "New dashboard" : "Dashboard settings")</MudText></TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudTextField T="string" @bind-Value="name" Label="Name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" Required="true" AutoFocus="true" Immediate="true" />
+            <MudTextField T="string" @bind-Value="description" Label="Description" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="500" Lines="2" />
+            @if (!IsNew)
+            {
+                <MudSelect T="string" @bind-Value="share" Label="Share with" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           ToStringFunc="@ShareName" HelperText="Everyone who can view the project or group can open it, read-only. Each viewer only sees data they can access.">
+                    <MudSelectItem T="string" Value="@("")">Only me</MudSelectItem>
+                    @foreach (var p in projects) { <MudSelectItem T="string" Value="@($"p:{p.Id}")">Project · @p.Key · @p.Name</MudSelectItem> }
+                    @foreach (var g in groups) { <MudSelectItem T="string" Value="@($"g:{g.Id}")">Group · @g.FullPath</MudSelectItem> }
+                </MudSelect>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(name)" OnClick="Save">@(IsNew ? "Create" : "Save")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public sealed record DashboardSettings(string Name, string? Description, int? ProjectId, int? GroupId);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public int? ProjectId { get; set; }
+    [Parameter] public int? GroupId { get; set; }
+
+    private string? name, description;
+    private string share = "";
+    private List<ProjectSummary> projects = [];
+    private List<GroupSummary> groups = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        (name, description) = (Name, Description);
+        share = ProjectId is { } p ? $"p:{p}" : GroupId is { } g ? $"g:{g}" : "";
+        if (IsNew) return;
+        foreach (var proj in await Issues.GetProjectsAsync())
+            if (await Access.CanAsync(proj.Id, Permission.EditIssues)) projects.Add(proj);
+        foreach (var grp in await Groups.ListAsync())
+            if (await Access.GetGroupRoleAsync(grp.Id) is >= ProjectRole.Developer) groups.Add(grp);
+    }
+
+    private string ShareName(string v) => v switch
+    {
+        "" or null => "Only me",
+        _ when v.StartsWith("p:") => projects.FirstOrDefault(x => $"p:{x.Id}" == v) is { } pr ? $"Project · {pr.Key}" : "A project",
+        _ => groups.FirstOrDefault(x => $"g:{x.Id}" == v) is { } gr ? $"Group · {gr.FullPath}" : "A group",
+    };
+
+    private void Save()
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        int? pid = share.StartsWith("p:") ? int.Parse(share[2..]) : null;
+        int? gid = share.StartsWith("g:") ? int.Parse(share[2..]) : null;
+        MudDialog.Close(DialogResult.Ok(new DashboardSettings(name.Trim(), description, pid, gid)));
+    }
+}

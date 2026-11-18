@@ -83,6 +83,9 @@ builder.Services.AddSingleton<GitBench.Services.Attachments.AttachmentStorage>()
 builder.Services.AddScoped<GitBench.Services.Attachments.AttachmentService>();
 builder.Services.AddScoped<SavedFilterService>();
 builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndown & velocity
+builder.Services.AddScoped<GitBench.Services.Roadmap.RoadmapService>(); // roadmap timeline
+builder.Services.AddScoped<GitBench.Services.Dashboards.DashboardService>(); // dashboards & gadgets
+builder.Services.AddScoped<GitBench.Services.Dashboards.GadgetDataService>();
 builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
 builder.Services.AddScoped<WorkflowService>();
 builder.Services.AddScoped<GitBench.Services.Boards.BoardService>(); // multiple configurable boards per project

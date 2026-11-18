@@ -1247,3 +1247,77 @@ public class LfsObject
     public User? UploadedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Roadmap & dashboards -----
+
+public partial class Issue
+{
+    /// <summary>When work on the issue is planned to start (the roadmap bar's left end; <see cref="DueDate"/> is its target).</summary>
+    public DateTime? StartDate { get; set; }
+}
+
+/// <summary>What a <see cref="DashboardGadget"/> shows.</summary>
+public enum GadgetKind
+{
+    /// <summary>Issues matching a saved filter or query, with chosen columns.</summary>
+    FilterResults,
+    /// <summary>Pie or bar chart of issues matching a filter, grouped by a field.</summary>
+    IssueChart,
+    /// <summary>Issues created vs resolved per day over the last N days.</summary>
+    CreatedVsResolved,
+    /// <summary>A sprint's burndown (the Reports chart).</summary>
+    SprintBurndown,
+    /// <summary>Recent activity from your projects (or one project).</summary>
+    ActivityStream,
+    /// <summary>Open issues assigned to the viewer.</summary>
+    AssignedToMe,
+    /// <summary>Open pull requests waiting for the viewer's review.</summary>
+    ReviewRequests,
+    /// <summary>Latest pipelines of one repository.</summary>
+    PipelineStatus,
+    /// <summary>A Markdown note.</summary>
+    Markdown,
+    /// <summary>The viewer's projects with open/closed counts (the classic Home section).</summary>
+    Projects,
+}
+
+/// <summary>
+/// A personal dashboard: a grid of gadgets owned by one user. Shared with a project or a group (at most one), it is
+/// view-only for everyone else who can view that project or group. Gadget data is always loaded as the viewer.
+/// </summary>
+public class Dashboard
+{
+    public int Id { get; set; }
+    public int OwnerId { get; set; }
+    public User Owner { get; set; } = null!;
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    [MaxLength(500)] public string? Description { get; set; }
+    /// <summary>Shared (read-only) with everyone who can view this project.</summary>
+    public int? SharedProjectId { get; set; }
+    /// <summary>Shared (read-only) with everyone who can view this group.</summary>
+    public int? SharedGroupId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public List<DashboardGadget> Gadgets { get; set; } = [];
+}
+
+/// <summary>One gadget on a <see cref="Dashboard"/>; its settings are JSON (<see cref="GitBench.Services.Dashboards.GadgetConfig"/>).</summary>
+public class DashboardGadget
+{
+    public int Id { get; set; }
+    public int DashboardId { get; set; }
+    public GadgetKind Kind { get; set; }
+    [MaxLength(100)] public string? Title { get; set; }
+    /// <summary>Position in the grid (0 first).</summary>
+    public int Order { get; set; }
+    /// <summary>Columns out of 12 on medium and wider screens (4, 6, 8 or 12).</summary>
+    public int Width { get; set; } = 6;
+    [MaxLength(8000)] public string Config { get; set; } = "{}";
+}
+
+/// <summary>The dashboard a user pinned as their Home page (one row per user).</summary>
+public class DashboardHome
+{
+    public int UserId { get; set; }
+    public int DashboardId { get; set; }
+}

@@ -1,0 +1,332 @@
+@* One dashboard gadget: a card whose body depends on the kind. Data loads as the viewer (GadgetDataService) and
+   reloads on relevant live events, at most once a second. *@
+@using GitBench.Services.Dashboards
+@using GitBench.Services.Explore
+@using GitBench.Services.Git
+@using GitBench.Components.Pipelines
+@implements IDisposable
+@inject GadgetDataService Data
+@inject IssueService Issues
+@inject LiveEvents Live
+
+<MudCard Outlined="true" Class="gadget">
+    <MudCardHeader Class="gadget-head">
+        <CardHeaderContent>
+            <div class="d-flex align-center gap-2 gadget-title-row">
+                <MudIcon Icon="@info.Icon" Size="Size.Small" Color="Color.Primary" />
+                <MudText Typo="Typo.subtitle1" Class="gadget-title">@Title</MudText>
+                @if (count is { } c) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@c</MudChip> }
+            </div>
+            @if (subtitle != null) { <MudText Typo="Typo.caption" Class="mud-text-secondary gadget-sub">@subtitle</MudText> }
+        </CardHeaderContent>
+        <CardHeaderActions>
+            @if (CanEdit)
+            {
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                         aria-label="@($"Gadget actions: {Title}")">
+                    <MudMenuItem Icon="@Icons.Material.Outlined.Tune" OnClick="() => Later(() => OnConfigure.InvokeAsync())">Configure…</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.ArrowBack" Disabled="@(Index == 0)" OnClick="() => Later(() => OnMove.InvokeAsync(-1))">Move earlier</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.ArrowForward" Disabled="@(Index >= Count - 1)" OnClick="() => Later(() => OnMove.InvokeAsync(1))">Move later</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.Delete" OnClick="() => Later(() => OnRemove.InvokeAsync())">Remove</MudMenuItem>
+                </MudMenu>
+            }
+            else
+            {
+                <MudIconButton Icon="@Icons.Material.Outlined.Refresh" Size="Size.Small" OnClick="Reload" aria-label="@($"Refresh {Title}")" />
+            }
+        </CardHeaderActions>
+    </MudCardHeader>
+    <MudDivider />
+    <div class="@("gadget-body" + (Padded ? " padded" : ""))">
+        @if (!loaded)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Size="Size.Small" />
+        }
+        else if (problem != null)
+        {
+            <div class="gadget-empty">@problem</div>
+        }
+        else
+        {
+            @switch (Gadget.Kind)
+            {
+                case GadgetKind.FilterResults:
+                    @if (issues!.Issues.Count == 0)
+                    {
+                        <div class="gadget-empty">No issues match this filter.</div>
+                    }
+                    else
+                    {
+                        <div class="gadget-table-wrap">
+                            <table class="gadget-table">
+                                <thead><tr>@foreach (var col in config.ColumnsOrDefault) { <th scope="col">@GadgetMath.ColumnName(col)</th> }</tr></thead>
+                                <tbody>
+                                    @foreach (var i in issues.Issues.Take(config.LimitOrDefault))
+                                    {
+                                        <tr>@foreach (var col in config.ColumnsOrDefault) { <td class="@($"gc-{col}")">@Cell(i, col)</td> }</tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (issues.ListUrl is { } url)
+                        {
+                            <div class="gadget-foot"><a href="@url">@(issues.Issues.Count > config.LimitOrDefault ? $"View all {issues.Issues.Count}" : "Open in issue list")</a></div>
+                        }
+                    }
+                    break;
+                case GadgetKind.IssueChart:
+                    <IssueChartView Slices="slices" Chart="@config.ChartOrDefault" Field="@config.FieldOrDefault" />
+                    break;
+                case GadgetKind.CreatedVsResolved:
+                    <CreatedResolvedChart Data="days" />
+                    break;
+                case GadgetKind.SprintBurndown:
+                    @if (burndown is { } b)
+                    {
+                        <BurndownChart Data="b" />
+                    }
+                    else
+                    {
+                        <div class="gadget-empty">No sprint to show. Start a sprint on the backlog, or pick one in the gadget's settings.</div>
+                    }
+                    break;
+                case GadgetKind.ActivityStream:
+                    <ActivityFeed Items="feed" Empty="No activity yet." />
+                    break;
+                case GadgetKind.AssignedToMe:
+                    @if (assigned.Count == 0)
+                    {
+                        <div class="gadget-empty">Nothing assigned to you. 🎉</div>
+                    }
+                    @foreach (var i in assigned) { <IssueRow Issue="i" /> }
+                    break;
+                case GadgetKind.ReviewRequests:
+                    @if (reviews.Count == 0)
+                    {
+                        <div class="gadget-empty">No pull requests are waiting for your review.</div>
+                    }
+                    <ul class="gadget-list">
+                        @foreach (var pr in reviews)
+                        {
+                            <li>
+                                <MudIcon Icon="@Icons.Material.Outlined.MergeType" Size="Size.Small" Color="Color.Success" />
+                                <div class="gadget-li-main">
+                                    <a href="@RepoUrls.PullRequest(pr)">@pr.Title</a>
+                                    <div class="mud-text-secondary gadget-li-meta"><span class="mono">@pr.Repository.Project.Key/@pr.Repository.Slug#@pr.Number</span> · by @pr.Author.DisplayName · updated @Display.Ago(pr.UpdatedAt)</div>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                    break;
+                case GadgetKind.PipelineStatus:
+                    @if (pipelines is { } pl)
+                    {
+                        @if (pl.Pipelines.Count == 0)
+                        {
+                            <div class="gadget-empty">No pipelines have run in this repository yet.</div>
+                        }
+                        <ul class="gadget-list">
+                            @foreach (var p in pl.Pipelines)
+                            {
+                                var href = $"{RepoUrls.Base(pl.Repository)}/pipelines/{p.Id}";
+                                <li>
+                                    <PipelineStatusIcon Status="p.Status" Href="@href" />
+                                    <div class="gadget-li-main">
+                                        <a href="@href">#@p.Id · @p.Ref</a> <span class="mono mud-text-secondary">@p.CommitSha[..Math.Min(8, p.CommitSha.Length)]</span>
+                                        <div class="mud-text-secondary gadget-li-meta">@p.Status · @p.Trigger@(p.TriggeredBy is { } u ? $" by {u.DisplayName}" : "") · @Display.Ago(p.CreatedAt)</div>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    break;
+                case GadgetKind.Markdown:
+                    @if (string.IsNullOrWhiteSpace(config.Markdown))
+                    {
+                        <div class="gadget-empty">This note is empty.</div>
+                    }
+                    else
+                    {
+                        <div class="markdown gadget-md">@Display.Markdown(config.Markdown)</div>
+                    }
+                    break;
+                case GadgetKind.Projects:
+                    @if (projects.Count == 0)
+                    {
+                        <div class="gadget-empty">No projects yet. <a href="/projects/new">Create one</a>.</div>
+                    }
+                    <MudGrid Spacing="3">
+                        @foreach (var p in projects)
+                        {
+                            var total = p.OpenCount + p.ClosedCount;
+                            <MudItem xs="12" sm="6" lg="4">
+                                <a class="gadget-project" href="/p/@p.Key/issues">
+                                    <div class="d-flex align-center gap-3 mb-2">
+                                        <span class="proj-avatar">@p.Key[..1]</span>
+                                        <div class="gadget-min0">
+                                            <div class="gadget-ellipsis gb-bold">@p.Name</div>
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary mono">@p.Key</MudText>
+                                        </div>
+                                    </div>
+                                    <MudProgressLinear Value="@(total == 0 ? 0 : p.ClosedCount * 100.0 / total)" Color="Color.Success" Rounded="true" Size="Size.Small" Class="my-2"
+                                                       aria-label="@($"{p.Name}: {p.ClosedCount} of {total} issues closed")" />
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@p.OpenCount open · @p.ClosedCount closed</MudText>
+                                </a>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                    break;
+            }
+        }
+    </div>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public DashboardGadget Gadget { get; set; } = null!;
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public int Index { get; set; }
+    [Parameter] public int Count { get; set; }
+    [Parameter] public EventCallback OnConfigure { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+    [Parameter] public EventCallback<int> OnMove { get; set; }
+
+    /// <summary>Runs a menu action after the menu has closed (dialogs it opens would otherwise sit behind the open menu).</summary>
+    private void Later(Func<Task> action) => _ = InvokeAsync(async () => { await Task.Yield(); await action(); });
+
+    private GadgetKinds.Info info = GadgetKinds.All[0];
+    private GadgetConfig config = new();
+    private string? loadedConfig;
+    private bool loaded;
+    private string? problem, subtitle;
+    private int? count;
+
+    private GadgetIssues? issues;
+    private List<ChartSlice> slices = [];
+    private List<CreatedResolvedDay> days = [];
+    private Burndown? burndown;
+    private List<FeedItem> feed = [];
+    private List<Issue> assigned = [];
+    private List<PullRequest> reviews = [];
+    private GadgetPipelines? pipelines;
+    private List<ProjectSummary> projects = [];
+
+    private string Title => Gadget.Title ?? DefaultTitle;
+    private string DefaultTitle => Gadget.Kind switch
+    {
+        GadgetKind.FilterResults => issues?.FilterName ?? info.Name,
+        GadgetKind.IssueChart => $"Issues by {GadgetMath.FieldName(config.FieldOrDefault).ToLowerInvariant()}",
+        GadgetKind.SprintBurndown => burndown is { } b ? $"Burndown · {b.Sprint.Name}" : info.Name,
+        GadgetKind.PipelineStatus => pipelines is { } p ? $"Pipelines · {p.Repository.Name}" : info.Name,
+        _ => info.Name,
+    };
+
+    private bool Padded => Gadget.Kind is GadgetKind.IssueChart or GadgetKind.CreatedVsResolved or GadgetKind.SprintBurndown
+        or GadgetKind.Markdown or GadgetKind.Projects;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        info = GadgetKinds.Of(Gadget.Kind);
+        var key = $"{Gadget.Kind}|{Gadget.Config}";
+        if (key == loadedConfig) return;
+        loadedConfig = key;
+        config = GadgetConfig.Parse(Gadget.Config);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        problem = subtitle = null;
+        count = null;
+        switch (Gadget.Kind)
+        {
+            case GadgetKind.FilterResults:
+                issues = await Data.IssuesAsync(config);
+                problem = issues.Problem;
+                count = issues.Problem == null ? issues.Issues.Count : null;
+                subtitle = issues.ProjectName;
+                break;
+            case GadgetKind.IssueChart:
+                (slices, issues) = await Data.ChartAsync(config);
+                problem = issues.Problem;
+                subtitle = issues.ProjectName == null ? null : $"{issues.ProjectName} · {issues.FilterName ?? (issues.Query.Length > 0 ? "custom query" : "open issues")} · {issues.Issues.Count} issues";
+                break;
+            case GadgetKind.CreatedVsResolved:
+                days = await Data.CreatedVsResolvedAsync(config);
+                subtitle = $"Last {config.DaysOrDefault} days · " + (config.ProjectId is { } pid ? (await Issues.GetProjectsAsync()).FirstOrDefault(p => p.Id == pid)?.Name ?? "unavailable project" : "all your projects");
+                break;
+            case GadgetKind.SprintBurndown:
+                var (project, b) = await Data.BurndownAsync(config);
+                burndown = b;
+                if (project == null) problem = config.ProjectId == null ? "Choose a project in the gadget's settings." : "This project isn't available to you.";
+                subtitle = project?.Name;
+                break;
+            case GadgetKind.ActivityStream:
+                feed = await Data.ActivityAsync(config);
+                break;
+            case GadgetKind.AssignedToMe:
+                assigned = await Data.AssignedToMeAsync(config);
+                count = assigned.Count;
+                break;
+            case GadgetKind.ReviewRequests:
+                reviews = await Data.ReviewRequestsAsync(config);
+                count = reviews.Count;
+                break;
+            case GadgetKind.PipelineStatus:
+                pipelines = await Data.PipelinesAsync(config);
+                if (pipelines == null) problem = config.RepositoryId == null ? "Choose a repository in the gadget's settings." : "This repository isn't available to you.";
+                subtitle = pipelines?.Repository.Project.Key;
+                break;
+            case GadgetKind.Projects:
+                projects = await Issues.GetProjectsAsync();
+                break;
+        }
+        loaded = true;
+    }
+
+    private RenderFragment Cell(Issue i, string col) => col switch
+    {
+        "key" => @<a class="mono" href="/p/@i.Project.Key/issues/@i.Number">@i.Key</a>,
+        "title" => @<a href="/p/@i.Project.Key/issues/@i.Number">@i.Title</a>,
+        "type" => @<span title="@i.Type">@i.Type.Icon() @i.Type</span>,
+        "status" => @<StatusBadge Issue="i" />,
+        "priority" => @<span class="d-inline-flex align-center gap-1"><PriorityIcon Priority="i.Priority" /> @i.Priority</span>,
+        "assignee" => @<span class="d-inline-flex align-center gap-1"><Avatar User="i.Assignee" Size="18" /> @(i.Assignee?.DisplayName ?? "Unassigned")</span>,
+        "due" => @<span>@(i.DueDate?.ToString("MMM d") ?? "—")</span>,
+        "points" => @<span>@(i.StoryPoints?.ToString() ?? "—")</span>,
+        "updated" => @<span>@Display.Ago(i.UpdatedAt)</span>,
+        _ => @<span></span>,
+    };
+
+    // ----- Live updates (throttled) -----
+    private IDisposable? liveSubscription;
+    private int pending;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe(OnLive);
+    }
+
+    private bool Relevant(LiveEvent e) => (Gadget.Kind, e) switch
+    {
+        (GadgetKind.FilterResults or GadgetKind.IssueChart, IssueChanged x) => x.ProjectId == config.ProjectId,
+        (GadgetKind.FilterResults or GadgetKind.IssueChart, BoardChanged x) => x.ProjectId == config.ProjectId,
+        (GadgetKind.CreatedVsResolved, BoardChanged x) => config.ProjectId == null || x.ProjectId == config.ProjectId,
+        (GadgetKind.SprintBurndown, SprintChanged x) => x.ProjectId == config.ProjectId,
+        (GadgetKind.SprintBurndown, BoardChanged x) => x.ProjectId == config.ProjectId,
+        (GadgetKind.AssignedToMe, BoardChanged) => true,
+        (GadgetKind.ActivityStream or GadgetKind.Projects, ActivityChanged) => true,
+        (GadgetKind.ReviewRequests, PullRequestChanged) => true,
+        (GadgetKind.PipelineStatus, PipelineChanged x) => x.RepositoryId == config.RepositoryId,
+        _ => false,
+    };
+
+    private async Task OnLive(LiveEvent e)
+    {
+        if (!Relevant(e) || Interlocked.Exchange(ref pending, 1) == 1) return;
+        await Task.Delay(1000);
+        Interlocked.Exchange(ref pending, 0);
+        await InvokeAsync(async () => { await Reload(); StateHasChanged(); });
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+}

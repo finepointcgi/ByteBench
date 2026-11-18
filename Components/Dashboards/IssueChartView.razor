@@ -1,0 +1,93 @@
+@* Issue counts per value of a field: a donut ("pie") or horizontal bars, with a legend, hover titles and a data table. *@
+@using GitBench.Services.Dashboards
+@using static GitBench.Components.Sprints.ChartScale
+
+@if (Total == 0)
+{
+    <div class="gchart-empty">No issues match.</div>
+}
+else
+{
+    <figure class="gchart" aria-label="@($"{Total} issues by {FieldName}")">
+        @if (Chart == "bar")
+        {
+            var max = Slices.Max(s => s.Count);
+            <div class="gbar-list">
+                @foreach (var s in Slices)
+                {
+                    <div class="gbar-row" title="@($"{s.Label}: {s.Count} ({Pct(s.Count)})")">
+                        <span class="gbar-label">@s.Label</span>
+                        <span class="gbar-track"><span class="@($"gbar gs-{s.Slot}")" style="width:@(F(Math.Max(2, s.Count * 100.0 / max)))%"></span></span>
+                        <span class="gbar-value">@s.Count</span>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="gpie-wrap">
+                <svg viewBox="-50 -50 100 100" class="gpie" role="img">
+                    <title>@($"{Total} issues by {FieldName}")</title>
+                    @if (Slices.Count == 1)
+                    {
+                        <circle r="32.5" class="@($"gpie-ring gs-{Slices[0].Slot}")"><title>@Slices[0].Label: @Slices[0].Count (100%)</title></circle>
+                    }
+                    else
+                    {
+                        @foreach (var (s, path) in Arcs())
+                        {
+                            <path d="@path" class="@($"gpie-slice gs-{s.Slot}")"><title>@s.Label: @s.Count (@Pct(s.Count))</title></path>
+                        }
+                    }
+                    <text x="0" y="2" text-anchor="middle" class="gpie-total">@Total</text>
+                    <text x="0" y="13" text-anchor="middle" class="gpie-sub">issues</text>
+                </svg>
+                <ul class="glegend">
+                    @foreach (var s in Slices)
+                    {
+                        <li><i class="@($"gsw gs-{s.Slot}")"></i><span class="glegend-label">@s.Label</span><b>@s.Count</b></li>
+                    }
+                </ul>
+            </div>
+        }
+        <figcaption class="chart-sr-only">@string.Join(", ", Slices.Select(s => $"{s.Label}: {s.Count}"))</figcaption>
+    </figure>
+    <details class="gchart-table">
+        <summary>Data table</summary>
+        <MudSimpleTable Dense="true" Elevation="0" Class="gchart-data">
+            <thead><tr><th scope="col">@FieldName</th><th scope="col" class="num">Issues</th><th scope="col" class="num">Share</th></tr></thead>
+            <tbody>
+                @foreach (var s in Slices)
+                {
+                    <tr><td>@s.Label</td><td class="num">@s.Count</td><td class="num">@Pct(s.Count)</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </details>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChartSlice> Slices { get; set; } = [];
+    /// <summary><c>pie</c> or <c>bar</c>.</summary>
+    [Parameter] public string Chart { get; set; } = "pie";
+    [Parameter] public string Field { get; set; } = "status";
+
+    private string FieldName => GadgetMath.FieldName(Field).ToLowerInvariant();
+    /// <summary>Label counts can exceed the issue count; shares are of the slices' total.</summary>
+    private int Total => Slices.Sum(s => s.Count);
+    private string Pct(int n) => Total == 0 ? "0%" : $"{Math.Round(n * 100.0 / Total)}%";
+
+    private IEnumerable<(ChartSlice, string)> Arcs()
+    {
+        const double R = 40, r = 25;
+        var a0 = -Math.PI / 2;
+        foreach (var s in Slices)
+        {
+            var a1 = a0 + s.Count * 2 * Math.PI / Total;
+            var large = a1 - a0 > Math.PI ? 1 : 0;
+            string P(double rad, double a) => $"{F(rad * Math.Cos(a))},{F(rad * Math.Sin(a))}";
+            yield return (s, $"M{P(R, a0)} A{F(R)},{F(R)} 0 {large} 1 {P(R, a1)} L{P(r, a1)} A{F(r)},{F(r)} 0 {large} 0 {P(r, a0)} Z");
+            a0 = a1;
+        }
+    }
+}

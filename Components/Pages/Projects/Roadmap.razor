@@ -1,0 +1,35 @@
+@page "/p/{Key}/roadmap"
+@using GitBench.Components.Roadmap
+@inject IssueService Issues
+
+<PageTitle>Roadmap · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
+        <div>
+            <MudText Typo="Typo.h5" Class="gb-bold">Roadmap</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name · epics on a timeline</MudText>
+        </div>
+        <MudButton Href="@($"/p/{project.Key}/epics")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Bolt">Epics</MudButton>
+    </div>
+    <RoadmapView ProjectId="project.Id" @key="project.Id" />
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (project?.Key == Key.ToUpperInvariant()) return;
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+    }
+}

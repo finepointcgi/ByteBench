@@ -244,6 +244,8 @@ else if (issue != null && project != null)
                     </div>
                     <MudNumericField T="int?" @key="(nameof(SetPoints), fieldsVersion)" Value="issue.StoryPoints" ValueChanged="SetPoints" Label="Story points"
                                      Min="0" Max="100" Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudDatePicker @key="(nameof(SetStart), fieldsVersion)" Date="issue.StartDate" DateChanged="SetStart" Label="Start date" Disabled="@(!CanEdit)"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DateFormat="yyyy-MM-dd" Editable="true" />
                     <MudDatePicker @key="(nameof(SetDue), fieldsVersion)" Date="issue.DueDate" DateChanged="SetDue" Label="Due date" Disabled="@(!CanEdit)"
                                    Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DateFormat="yyyy-MM-dd" Editable="true" />
                 </MudStack>
@@ -456,6 +458,16 @@ else if (issue != null && project != null)
         var old = i.StoryPoints;
         i.StoryPoints = p;
         return SprintHistory.EstimateText(old, p);
+    });
+
+    // Start date (roadmap): must not be after the due date.
+    private Task SetStart(DateTime? value) => Change(i =>
+    {
+        DateTime? d = value?.Date;
+        if (d != null && i.DueDate is { } due && d > due.Date) throw new InvalidOperationException("The start date must be on or before the due date.");
+        var text = GitBench.Services.Roadmap.RoadmapService.DatesText(i.StartDate, i.DueDate, d, i.DueDate);
+        i.StartDate = d;
+        return text;
     });
 
     private Task SetDue(DateTime? value) => Change(i =>

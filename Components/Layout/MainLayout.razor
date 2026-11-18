@@ -78,6 +78,7 @@
     <MudDrawer @bind-Open="drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive" Class="gb-drawer">
         <MudNavMenu Dense="true" Class="gb-nav">
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/dashboards" Icon="@Icons.Material.Outlined.SpaceDashboard">Dashboards</MudNavLink>
             <MudNavLink Href="/explore" Icon="@Icons.Material.Outlined.TravelExplore">Explore</MudNavLink>
             <MudNavLink Href="/groups" Icon="@Icons.Material.Outlined.Workspaces">Groups</MudNavLink>
             <MudNavLink Href="/projects/new" Icon="@Icons.Material.Outlined.AddBox">New project</MudNavLink>
@@ -101,6 +102,7 @@
                 <MudNavLink Href="@($"/p/{cp.Key}/issues")" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.ListAlt">Issues</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/board")" Icon="@Icons.Material.Outlined.ViewKanban">Board</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/epics")" Icon="@Icons.Material.Outlined.Bolt">Epics</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/roadmap")" Icon="@Icons.Material.Outlined.Timeline">Roadmap</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/backlog")" Icon="@Icons.Material.Outlined.DirectionsRun">Backlog</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/reports")" Icon="@Icons.Material.Outlined.Insights">Reports</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/milestones")" Icon="@Icons.Material.Outlined.Flag">Milestones</MudNavLink>

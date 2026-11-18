@@ -1,0 +1,179 @@
+@* Settings of one gadget. Returns a GadgetSettings (title, width, config). Pickers only list what the editor can see. *@
+@using GitBench.Services.Dashboards
+@inject IssueService Issues
+@inject SavedFilterService Filters
+@inject SprintService Sprints
+@inject GadgetDataService Data
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="d-flex align-center gap-2"><MudIcon Icon="@info.Icon" /> @info.Name</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">@info.Description</MudText>
+        <MudStack Spacing="3">
+            <MudTextField T="string" @bind-Value="title" Label="Title" Placeholder="@info.Name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100"
+                          HelperText="Leave empty for the default title." />
+            <MudSelect T="int" @bind-Value="width" Label="Width" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="int" Value="4">Narrow (one third)</MudSelectItem>
+                <MudSelectItem T="int" Value="6">Half</MudSelectItem>
+                <MudSelectItem T="int" Value="8">Wide (two thirds)</MudSelectItem>
+                <MudSelectItem T="int" Value="12">Full width</MudSelectItem>
+            </MudSelect>
+
+            @if (NeedsProject)
+            {
+                <MudSelect T="int?" Value="projectId" ValueChanged="SetProject" Label="@(ProjectOptional ? "Project (optional)" : "Project")" Clearable="@ProjectOptional"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => projects.FirstOrDefault(p => p.Id == id)?.Name ?? (ProjectOptional ? "All your projects" : ""))">
+                    @foreach (var p in projects) { <MudSelectItem T="int?" Value="p.Id">@p.Key · @p.Name</MudSelectItem> }
+                </MudSelect>
+            }
+
+            @if (Kind is GadgetKind.FilterResults or GadgetKind.IssueChart && projectId != null)
+            {
+                <MudSelect T="int?" @bind-Value="savedFilterId" Label="Saved filter" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           ToStringFunc="@(id => filters.FirstOrDefault(f => f.Id == id)?.Name ?? "None (use a query)")"
+                           HelperText="Only your own and shared filters are listed. People who can't see the filter get a notice instead.">
+                    @foreach (var f in filters) { <MudSelectItem T="int?" Value="f.Id">@f.Name@(f.IsShared ? " (shared)" : "")</MudSelectItem> }
+                </MudSelect>
+                @if (savedFilterId == null)
+                {
+                    <MudTextField T="string" @bind-Value="query" Label="Issue list query" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Placeholder="type=Bug&priority=High" HelperText="Copy the part after '?' from a filtered issue list. Empty: open issues." />
+                }
+            }
+
+            @if (Kind == GadgetKind.FilterResults)
+            {
+                <MudSelect T="string" SelectedValues="columns" SelectedValuesChanged="cols => columns = cols.ToList()" MultiSelection="true" Label="Columns" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           ToStringFunc="@GadgetMath.ColumnName">
+                    @foreach (var c in GadgetMath.Columns) { <MudSelectItem T="string" Value="c">@GadgetMath.ColumnName(c)</MudSelectItem> }
+                </MudSelect>
+            }
+
+            @if (Kind == GadgetKind.IssueChart)
+            {
+                <MudSelect T="string" @bind-Value="field" Label="Group by" Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@GadgetMath.FieldName">
+                    @foreach (var f in GadgetMath.Fields) { <MudSelectItem T="string" Value="f">@GadgetMath.FieldName(f)</MudSelectItem> }
+                </MudSelect>
+                <MudRadioGroup T="string" @bind-Value="chart">
+                    <MudRadio T="string" Value="@("pie")" Color="Color.Primary">Pie</MudRadio>
+                    <MudRadio T="string" Value="@("bar")" Color="Color.Primary">Bar</MudRadio>
+                </MudRadioGroup>
+            }
+
+            @if (Kind == GadgetKind.CreatedVsResolved)
+            {
+                <MudNumericField T="int" @bind-Value="daysValue" Label="Days" Min="7" Max="365" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+
+            @if (Kind == GadgetKind.SprintBurndown && projectId != null)
+            {
+                <MudSelect T="int?" @bind-Value="sprintId" Label="Sprint" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           ToStringFunc="@(id => sprints.FirstOrDefault(s => s.Id == id)?.Name ?? "The active sprint")">
+                    @foreach (var s in sprints) { <MudSelectItem T="int?" Value="s.Id">@s.Name (@s.State.ToString().ToLowerInvariant())</MudSelectItem> }
+                </MudSelect>
+            }
+
+            @if (Kind == GadgetKind.PipelineStatus)
+            {
+                <MudSelect T="int?" @bind-Value="repositoryId" Label="Repository" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           ToStringFunc="@(id => repos.FirstOrDefault(r => r.Id == id) is { } r ? $"{r.Project.Key}/{r.Slug}" : "")">
+                    @foreach (var r in repos) { <MudSelectItem T="int?" Value="r.Id">@r.Project.Key/@r.Slug</MudSelectItem> }
+                </MudSelect>
+            }
+
+            @if (Kind == GadgetKind.Markdown)
+            {
+                <MudTextField T="string" @bind-Value="markdown" Label="Note (Markdown)" Lines="8" Variant="Variant.Outlined" MaxLength="@GadgetConfig.MaxMarkdown" Counter="@GadgetConfig.MaxMarkdown" />
+            }
+
+            @if (HasLimit)
+            {
+                <MudNumericField T="int" @bind-Value="limit" Label="Rows to show" Min="1" Max="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!Valid)" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>What the dialog returns.</summary>
+    public sealed record GadgetSettings(string? Title, int Width, GadgetConfig Config);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public GadgetKind Kind { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public int Width { get; set; } = 6;
+    [Parameter] public GadgetConfig Config { get; set; } = new();
+
+    private GadgetKinds.Info info = GadgetKinds.All[0];
+    private string? title, query, markdown;
+    private int width, daysValue, limit;
+    private int? projectId, savedFilterId, sprintId, repositoryId;
+    private string field = "status", chart = "pie";
+    private IReadOnlyCollection<string> columns = [];
+
+    private List<ProjectSummary> projects = [];
+    private List<SavedFilterView> filters = [];
+    private List<Sprint> sprints = [];
+    private List<Repository> repos = [];
+
+    private bool NeedsProject => Kind is GadgetKind.FilterResults or GadgetKind.IssueChart or GadgetKind.CreatedVsResolved
+        or GadgetKind.SprintBurndown or GadgetKind.ActivityStream;
+    private bool ProjectOptional => Kind is GadgetKind.CreatedVsResolved or GadgetKind.ActivityStream;
+    private bool HasLimit => Kind is GadgetKind.FilterResults or GadgetKind.ActivityStream or GadgetKind.AssignedToMe
+        or GadgetKind.ReviewRequests or GadgetKind.PipelineStatus;
+    private bool Valid => (!NeedsProject || ProjectOptional || projectId != null)
+                          && (Kind != GadgetKind.PipelineStatus || repositoryId != null);
+
+    protected override async Task OnInitializedAsync()
+    {
+        info = GadgetKinds.Of(Kind);
+        (title, width) = (Title, Width);
+        var c = Config;
+        (projectId, savedFilterId, sprintId, repositoryId) = (c.ProjectId, c.SavedFilterId, c.SprintId, c.RepositoryId);
+        (query, markdown, field, chart) = (c.Query, c.Markdown, c.FieldOrDefault, c.ChartOrDefault);
+        (daysValue, limit) = (c.DaysOrDefault, c.LimitOrDefault);
+        columns = c.ColumnsOrDefault.ToList();
+        if (NeedsProject) projects = await Issues.GetProjectsAsync();
+        if (Kind == GadgetKind.PipelineStatus) repos = await Data.RepositoriesAsync();
+        await LoadProjectOptions();
+    }
+
+    private async Task SetProject(int? id)
+    {
+        if (id != projectId) (savedFilterId, sprintId) = (null, null);
+        projectId = id;
+        await LoadProjectOptions();
+    }
+
+    private async Task LoadProjectOptions()
+    {
+        filters = projectId is { } p && Kind is GadgetKind.FilterResults or GadgetKind.IssueChart ? await Filters.ListAsync(p) : [];
+        sprints = projectId is { } q && Kind == GadgetKind.SprintBurndown ? (await Sprints.GetSprintsAsync(q)).Where(s => s.State != SprintState.Planned).ToList() : [];
+    }
+
+    private void Save()
+    {
+        if (!Valid) return;
+        var config = new GadgetConfig
+        {
+            ProjectId = NeedsProject ? projectId : null,
+            SavedFilterId = Kind is GadgetKind.FilterResults or GadgetKind.IssueChart ? savedFilterId : null,
+            Query = Kind is GadgetKind.FilterResults or GadgetKind.IssueChart && savedFilterId == null && !string.IsNullOrWhiteSpace(query) ? query.Trim() : null,
+            Columns = Kind == GadgetKind.FilterResults ? GadgetMath.Columns.Where(columns.Contains).ToList() : null,
+            Field = Kind == GadgetKind.IssueChart ? field : null,
+            Chart = Kind == GadgetKind.IssueChart ? chart : null,
+            Days = Kind == GadgetKind.CreatedVsResolved ? Math.Clamp(daysValue, 7, 365) : null,
+            SprintId = Kind == GadgetKind.SprintBurndown ? sprintId : null,
+            RepositoryId = Kind == GadgetKind.PipelineStatus ? repositoryId : null,
+            Markdown = Kind == GadgetKind.Markdown ? markdown : null,
+            Limit = HasLimit ? Math.Clamp(limit, 1, 50) : null,
+        };
+        MudDialog.Close(DialogResult.Ok(new GadgetSettings(title, width, config)));
+    }
+}

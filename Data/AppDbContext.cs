@@ -304,6 +304,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureSsh(b);
         ConfigureBoards(b);
         ConfigureMirrorTagsLfs(b);
+        ConfigureRoadmapDashboards(b);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
@@ -349,5 +350,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<LfsObject>().HasIndex(o => o.Oid);
         b.Entity<LfsObject>().HasOne(o => o.Repository).WithMany().HasForeignKey(o => o.RepositoryId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<LfsObject>().HasOne(o => o.UploadedBy).WithMany().HasForeignKey(o => o.UploadedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
+    // ----- Roadmap & dashboards -----
+    public DbSet<Dashboard> Dashboards => Set<Dashboard>();
+    public DbSet<DashboardGadget> DashboardGadgets => Set<DashboardGadget>();
+    public DbSet<DashboardHome> DashboardHomes => Set<DashboardHome>();
+
+    private static void ConfigureRoadmapDashboards(ModelBuilder b)
+    {
+        b.Entity<Dashboard>().HasIndex(d => d.OwnerId);
+        b.Entity<Dashboard>().HasIndex(d => d.SharedProjectId);
+        b.Entity<Dashboard>().HasIndex(d => d.SharedGroupId);
+        b.Entity<Dashboard>().HasOne(d => d.Owner).WithMany().HasForeignKey(d => d.OwnerId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Dashboard>().HasOne<Project>().WithMany().HasForeignKey(d => d.SharedProjectId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Dashboard>().HasOne<Group>().WithMany().HasForeignKey(d => d.SharedGroupId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<DashboardGadget>().HasIndex(g => new { g.DashboardId, g.Order });
+        b.Entity<DashboardGadget>().HasOne<Dashboard>().WithMany(d => d.Gadgets).HasForeignKey(g => g.DashboardId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<DashboardHome>().HasKey(h => h.UserId);
+        b.Entity<DashboardHome>().HasIndex(h => h.DashboardId);
+        b.Entity<DashboardHome>().HasOne<User>().WithMany().HasForeignKey(h => h.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<DashboardHome>().HasOne<Dashboard>().WithMany().HasForeignKey(h => h.DashboardId).OnDelete(DeleteBehavior.Cascade);
     }
 }

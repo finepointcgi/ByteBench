@@ -87,6 +87,7 @@ public static class ApiEndpoints
         api.MapExploreEndpoints(); // search, user profiles, stars
         api.MapGroupEndpoints();
         api.MapBoardEndpoints(); // boards: list, columns with issues
+        api.MapRoadmapDashboardEndpoints(); // roadmap JSON, issue dates, dashboards
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

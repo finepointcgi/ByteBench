@@ -1,0 +1,72 @@
+@* Cumulative issues created vs resolved over a window of days (inline SVG), hover per day, plus a data table. *@
+@using GitBench.Services.Dashboards
+@using static GitBench.Components.Sprints.ChartScale
+
+<figure class="crc" aria-label="@($"Issues created and resolved over the last {n} days")">
+    <div class="crc-legend" aria-hidden="true">
+        <span><i class="crc-sw crc-created"></i>Created <b>@last.TotalCreated</b></span>
+        <span><i class="crc-sw crc-resolved"></i>Resolved <b>@last.TotalResolved</b></span>
+    </div>
+    <svg viewBox="0 0 @W @H" class="crc-svg" role="img">
+        <title>Created vs resolved, last @n days</title>
+        @for (var v = 0.0; v <= yMax + 0.001; v += yStep)
+        {
+            <g>
+                <line x1="@L" x2="@(W - R)" y1="@F(Y(v))" y2="@F(Y(v))" class="crc-grid" />
+                <text x="@(L - 6)" y="@F(Y(v) + 4)" text-anchor="end" class="crc-tick">@F(v)</text>
+            </g>
+        }
+        @for (var k = 0; k < n; k++)
+        {
+            if (k % labelEvery != 0 && k != n - 1) continue;
+            <g><text x="@F(X(k))" y="@(H - 6)" text-anchor="middle" class="crc-tick">@Data[k].Date.ToString("MMM d")</text></g>
+        }
+        <polyline points="@Points(d => d.TotalCreated)" class="crc-line crc-created" />
+        <polyline points="@Points(d => d.TotalResolved)" class="crc-line crc-resolved" />
+        @for (var k = 0; k < n; k++)
+        {
+            var d = Data[k];
+            <rect x="@F(X(k) - colW / 2)" y="@T" width="@F(colW)" height="@PlotH" class="crc-hit">
+                <title>@($"{d.Date:ddd MMM d}\nCreated: {d.Created} (total {d.TotalCreated})\nResolved: {d.Resolved} (total {d.TotalResolved})")</title>
+            </rect>
+        }
+    </svg>
+    <figcaption class="crc-sr">@($"{last.TotalCreated} issues created and {last.TotalResolved} resolved in the last {n} days.")</figcaption>
+</figure>
+<details class="crc-table">
+    <summary>Data table</summary>
+    <MudSimpleTable Dense="true" Elevation="0" Class="crc-data">
+        <thead><tr><th scope="col">Day</th><th scope="col" class="num">Created</th><th scope="col" class="num">Resolved</th></tr></thead>
+        <tbody>
+            @foreach (var d in Data.Where(d => d.Created + d.Resolved > 0).Reverse())
+            {
+                <tr><td>@d.Date.ToString("ddd MMM d")</td><td class="num">@d.Created</td><td class="num">@d.Resolved</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CreatedResolvedDay> Data { get; set; } = [];
+
+    private const int W = 560, H = 220, L = 36, R = 10, T = 10, B = 26;
+    private const int PlotW = W - L - R, PlotH = H - T - B;
+    private int n, labelEvery;
+    private double yMax, yStep, colW;
+    private CreatedResolvedDay last = new(DateTime.UtcNow.Date, 0, 0, 0, 0);
+
+    private double X(int k) => L + (n <= 1 ? PlotW / 2.0 : k * (double)PlotW / (n - 1));
+    private double Y(double v) => T + PlotH - v / yMax * PlotH;
+
+    protected override void OnParametersSet()
+    {
+        n = Data.Count;
+        last = n > 0 ? Data[^1] : last;
+        (yMax, yStep) = Nice(Math.Max(last.TotalCreated, last.TotalResolved));
+        labelEvery = Math.Max(1, (int)Math.Ceiling(n / 6.0));
+        colW = n <= 1 ? PlotW : PlotW / (double)(n - 1);
+    }
+
+    private string Points(Func<CreatedResolvedDay, int> value) =>
+        string.Join(" ", Data.Select((d, k) => $"{F(X(k))},{F(Y(value(d)))}"));
+}

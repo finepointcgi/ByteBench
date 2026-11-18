@@ -1,0 +1,31 @@
+::deep .gadget { height: 100%; display: flex; flex-direction: column; }
+::deep .gadget-head { padding: 10px 8px 10px 16px; }
+::deep .gadget-title { font-weight: 600; }
+.gadget-title-row { min-width: 0; }
+::deep .gadget-sub { display: block; margin-top: 2px; }
+.gadget-body { flex: 1 1 auto; min-width: 0; max-height: 520px; overflow-y: auto; }
+.gadget-body.padded { padding: 12px 16px; }
+.gadget-empty { padding: 24px 16px; text-align: center; color: var(--mud-palette-text-secondary); font-size: 13px; }
+
+.gadget-table-wrap { overflow-x: auto; }
+.gadget-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gadget-table th { text-align: left; font-weight: 600; color: var(--mud-palette-text-secondary); font-size: 12px; padding: 8px 12px; border-bottom: 1px solid var(--mud-palette-lines-default); white-space: nowrap; }
+.gadget-table td { padding: 6px 12px; border-bottom: 1px solid var(--mud-palette-lines-default); vertical-align: middle; }
+.gadget-table tr:last-child td { border-bottom: 0; }
+.gadget-table td.gc-key, .gadget-table td.gc-due, .gadget-table td.gc-updated { white-space: nowrap; }
+.gadget-table td.gc-points { text-align: right; }
+.gadget-table a { color: var(--mud-palette-text-primary); }
+.gadget-foot { padding: 8px 16px; font-size: 13px; border-top: 1px solid var(--mud-palette-lines-default); }
+
+.gadget-list { list-style: none; margin: 0; padding: 0; }
+.gadget-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 16px; border-bottom: 1px solid var(--mud-palette-lines-default); font-size: 13px; }
+.gadget-list li:last-child { border-bottom: 0; }
+.gadget-li-main { min-width: 0; flex: 1 1 auto; }
+.gadget-li-meta { font-size: 12px; margin-top: 2px; }
+
+.gadget-md { font-size: 14px; }
+.gadget-project { display: block; height: 100%; padding: 12px; color: inherit; text-decoration: none;
+    border: 1px solid var(--mud-palette-lines-default); border-radius: var(--mud-default-borderradius); transition: border-color .15s; }
+.gadget-project:hover, .gadget-project:focus-visible { border-color: var(--mud-palette-primary); text-decoration: none; }
+.gadget-min0 { min-width: 0; }
+.gadget-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

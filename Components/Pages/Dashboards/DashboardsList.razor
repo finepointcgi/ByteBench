@@ -1,0 +1,69 @@
+@page "/dashboards"
+@using GitBench.Components.Dashboards
+@using GitBench.Services.Dashboards
+@inject DashboardService Dashboards
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Dashboards · GitBench</PageTitle>
+
+<div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
+    <div>
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Dashboards</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Your dashboards and the ones shared with your projects and groups.</MudText>
+    </div>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="Create">New dashboard</MudButton>
+</div>
+
+@if (loaded && list.Count == 0)
+{
+    <MudPaper Outlined="true" Class="pa-8 text-center mud-text-secondary">
+        No dashboards yet. Create one and add gadgets: filter results, charts, burndowns, pull requests awaiting your review, pipelines and notes.
+    </MudPaper>
+}
+else
+{
+    <MudPaper Outlined="true">
+        <MudList T="string" Dense="false">
+            @foreach (var d in list)
+            {
+                <MudListItem T="string" Href="@($"/dashboards/{d.Id}")" Icon="@(d.IsHome ? Icons.Material.Filled.Home : Icons.Material.Outlined.SpaceDashboard)">
+                    <div class="d-flex align-center flex-wrap gap-2">
+                        <span class="gb-bold">@d.Name</span>
+                        @if (d.IsHome) { <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">Home</MudChip> }
+                        @if (d.SharedWith != null) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.Share">@d.SharedWith</MudChip> }
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @(d.IsMine ? "Yours" : $"By {d.OwnerName}") · @d.GadgetCount gadget@(d.GadgetCount == 1 ? "" : "s") · updated @Display.Ago(d.UpdatedAt)@(d.Description is { } desc ? $" · {desc}" : "")
+                    </MudText>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+}
+
+@code {
+    private List<DashboardSummary> list = [];
+    private bool loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        list = await Dashboards.ListAsync();
+        loaded = true;
+    }
+
+    private async Task Create()
+    {
+        var dialog = await Dialogs.ShowAsync<DashboardSettingsDialog>("New dashboard",
+            new DialogParameters<DashboardSettingsDialog> { { x => x.IsNew, true } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is not { Canceled: false, Data: DashboardSettingsDialog.DashboardSettings s }) return;
+        try
+        {
+            var d = await Dashboards.CreateAsync(s.Name, s.Description);
+            Nav.NavigateTo($"/dashboards/{d.Id}");
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}
