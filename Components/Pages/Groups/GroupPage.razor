@@ -52,6 +52,10 @@ else if (group != null)
             <TabLink Href="@Url("pull-requests")" Active="@(section == "pull-requests")" Icon="@Icons.Material.Outlined.MergeType">Pull requests</TabLink>
             <TabLink Href="@Url("labels")" Active="@(section == "labels")" Icon="@Icons.Material.Outlined.Label">Labels &amp; milestones</TabLink>
             <TabLink Href="@Url("members")" Active="@(section == "members")" Icon="@Icons.Material.Outlined.Group">Members</TabLink>
+            @if (perms.Can(GroupPermission.ManageGroupLabelsAndMilestones))
+            {
+                <TabLink Href="@Url("automation")" Active="@(section == "automation")" Icon="@Icons.Material.Outlined.Bolt">Automation</TabLink>
+            }
             @if (perms.Can(GroupPermission.ManageGroupSettings))
             {
                 <TabLink Href="@Url("settings")" Active="@(section == "settings")" Icon="@Icons.Material.Outlined.Settings">Settings</TabLink>
@@ -66,6 +70,9 @@ else if (group != null)
             case "labels": <GroupLabels Group="group" Perms="perms" /> break;
             case "members": <GroupMembers Group="group" Perms="perms" /> break;
             case "settings" when perms.Can(GroupPermission.ManageGroupSettings): <GroupSettings Group="group" Perms="perms" OnChanged="Reload" /> break;
+            case "automation" when perms.Can(GroupPermission.ManageGroupLabelsAndMilestones):
+                <GitBench.Components.Automation.AutomationRules Owner="GitBench.Services.Automation.RuleOwner.Group(group.Id)" BaseHref="@Url("automation")" /> break;
+            case "automation": <Forbidden Message="Only Maintainers and Owners of this group can manage its automation rules." BackHref="@Url("")" /> break;
             case "settings": <Forbidden Message="Only Owners can change this group's settings." BackHref="@Url("")" /> break;
             default: <ProjectNotFound Message="This page does not exist." /> break;
         }
@@ -80,12 +87,12 @@ else if (group != null)
     private bool notFound;
     private string section = "";
 
-    private static readonly string[] Sections = ["", "issues", "pull-requests", "labels", "members", "settings"];
+    private static readonly string[] Sections = ["", "issues", "pull-requests", "labels", "members", "settings", "automation"];
 
     private string SectionTitle => section switch
     {
         "issues" => "Issues", "pull-requests" => "Pull requests", "labels" => "Labels & milestones",
-        "members" => "Members", "settings" => "Settings", _ => "Overview",
+        "members" => "Members", "settings" => "Settings", "automation" => "Automation", _ => "Overview",
     };
 
     private string Url(string s) => $"/g/{group!.FullPath}" + (s == "" ? "" : "/-/" + s);

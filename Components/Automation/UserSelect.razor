@@ -1,0 +1,9 @@
+<MudSelect T="int?" Value="Value" ValueChanged="ValueChanged" Label="User" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="auto-select">
+    @foreach (var u in Users) { <MudSelectItem T="int?" Value="u.Id">@u.Name (@u.UserName)</MudSelectItem> }
+</MudSelect>
+
+@code {
+    [Parameter] public int? Value { get; set; }
+    [Parameter] public EventCallback<int?> ValueChanged { get; set; }
+    [Parameter] public IReadOnlyList<EditorUser> Users { get; set; } = [];
+}

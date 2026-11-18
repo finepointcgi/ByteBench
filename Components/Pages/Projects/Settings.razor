@@ -104,6 +104,16 @@ else if (project != null)
         </MudPaper>
     }
 
+    @if (perms.Role >= ProjectRole.Maintainer)
+    {
+        <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Automation</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Rules that react to issues, pull requests, pipelines or a schedule: transition, assign, label, comment, notify and more.</MudText>
+            <MudButton Href="@($"/p/{project.Key}/settings/automation")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                       StartIcon="@Icons.Material.Outlined.Bolt">Automation rules</MudButton>
+        </MudPaper>
+    }
+
     @if (perms.Can(Permission.ManageRepositories))
     {
         <MudPaper Outlined="true" Class="settings-card pa-5 mb-4" id="ci-variables">

@@ -1,0 +1,43 @@
+@inject AutomationService Rules
+@inject ISnackbar Snackbar
+
+@* "Automation ▾" on the issue page: the project's manual-trigger rules, run on this issue. Hidden when there are none. *@
+@if (rules.Count > 0)
+{
+    <MudMenu Label="Automation" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Bolt"
+             EndIcon="@Icons.Material.Filled.ArrowDropDown" AriaLabel="Run an automation rule" Disabled="busy">
+        @foreach (var r in rules)
+        {
+            <MudMenuItem OnClick="() => Run(r)">@r.Name</MudMenuItem>
+        }
+    </MudMenu>
+}
+
+@code {
+    [Parameter, EditorRequired] public int IssueId { get; set; }
+
+    private List<AutomationRule> rules = [];
+    private int loadedFor;
+    private bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == IssueId) return;
+        loadedFor = IssueId;
+        rules = await Rules.ManualRulesForIssueAsync(IssueId);
+    }
+
+    private async Task Run(AutomationRule rule)
+    {
+        busy = true;
+        try
+        {
+            var run = await Rules.RunManualAsync(rule.Id, IssueId);
+            if (run == null) Snackbar.Add($"\"{rule.Name}\" is still running.", Severity.Info);
+            else if (run.Status == AutomationRunStatus.Success) Snackbar.Add($"\"{rule.Name}\" ran: {run.Actions?.Replace("\n", "; ")}", Severity.Success);
+            else Snackbar.Add($"\"{rule.Name}\": {AutomationText.Status(run.Status)}. {run.Message}", run.Status == AutomationRunStatus.Failure ? Severity.Error : Severity.Info);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+}
