@@ -12,67 +12,76 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
-        <div>
-            <h1>Reports</h1>
-            <div class="muted">@project.Name · sprint burndown and velocity</div>
-        </div>
-        <div class="filter-bar compact">
-            <div class="btn-group btn-group-sm" role="group" aria-label="Measure">
-                <button class="btn @(countMode ? "btn-outline-secondary" : "btn-secondary")" aria-pressed="@(!countMode)" @onclick="() => countMode = false">Story points</button>
-                <button class="btn @(countMode ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@countMode" @onclick="() => countMode = true">Issue count</button>
+    <div class="rp-page">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
+            <div>
+                <MudText Typo="Typo.h5" Class="rp-heading">Reports</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name · sprint burndown and velocity</MudText>
             </div>
-            <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/backlog">🏃 Backlog</a>
+            <div class="d-flex align-center flex-wrap gap-2">
+                <MudToggleGroup T="bool" Value="countMode" ValueChanged="v => countMode = v" Size="Size.Small" Color="Color.Primary" Outlined="true"
+                                CheckMark="false" aria-label="Measure">
+                    <MudToggleItem T="bool" Value="false" Text="Story points" />
+                    <MudToggleItem T="bool" Value="true" Text="Issue count" />
+                </MudToggleGroup>
+                <MudButton Href="@($"/p/{project.Key}/backlog")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DirectionsRun">Backlog</MudButton>
+            </div>
         </div>
-    </div>
 
-    <section class="card-panel mb-4">
-        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-            <h2 class="section-title mb-0">Burndown</h2>
-            @if (started.Count > 0)
+        <MudPaper Outlined="true" Class="pa-5 mb-4">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+                <MudText Typo="Typo.h6" Class="rp-section">Burndown</MudText>
+                @if (started.Count > 0)
+                {
+                    <div class="rp-sprint">
+                        <MudSelect T="int" @bind-Value="sprintId" @bind-Value:after="LoadBurndown" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   aria-label="Sprint">
+                            @foreach (var s in started)
+                            {
+                                <MudSelectItem T="int" Value="@s.Id">@s.Name@(s.State == SprintState.Active ? " (active)" : "")</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </div>
+                }
+            </div>
+            @if (burndown is { } b)
             {
-                <select class="form-select form-select-sm w-auto" aria-label="Sprint" @bind="sprintId" @bind:after="LoadBurndown">
-                    @foreach (var s in started)
-                    {
-                        <option value="@s.Id">@s.Name@(s.State == SprintState.Active ? " (active)" : "")</option>
-                    }
-                </select>
+                var last = b.Days.LastOrDefault(d => d.RemainingPoints != null);
+                var completed = b.Sprint.State == SprintState.Completed;
+                <div class="report-stats">
+                    <div><span class="rp-label">Committed</span><strong>@(countMode ? b.StartCount : b.StartPoints)</strong></div>
+                    <div><span class="rp-label">@(completed ? "Final scope" : "Scope now")</span><strong>@(countMode ? last?.ScopeCount : last?.ScopePoints)</strong></div>
+                    <div><span class="rp-label">@(completed ? "Left open" : "Remaining")</span><strong>@(countMode ? last?.RemainingCount : last?.RemainingPoints)</strong></div>
+                    <div><span class="rp-label">Dates</span><strong class="rp-dates">@b.Days[0].Date.ToString("MMM d") – @b.Days[^1].Date.ToString("MMM d")</strong></div>
+                </div>
+                @if (!string.IsNullOrEmpty(b.Sprint.Goal))
+                {
+                    <div class="rp-goal"><MudIcon Icon="@Icons.Material.Outlined.TrackChanges" Size="Size.Small" /> @b.Sprint.Goal</div>
+                }
+                <BurndownChart Data="b" CountMode="countMode" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+                    Rebuilt from issue activity: status changes to and from Done, estimate changes and sprint membership. Issues without an estimate count as 0 points.
+                </MudText>
             }
-        </div>
-        @if (burndown is { } b)
-        {
-            var last = b.Days.LastOrDefault(d => d.RemainingPoints != null);
-            var completed = b.Sprint.State == SprintState.Completed;
-            <div class="report-stats">
-                <div><span class="muted small">Committed</span><strong>@(countMode ? b.StartCount : b.StartPoints)</strong></div>
-                <div><span class="muted small">@(completed ? "Final scope" : "Scope now")</span><strong>@(countMode ? last?.ScopeCount : last?.ScopePoints)</strong></div>
-                <div><span class="muted small">@(completed ? "Left open" : "Remaining")</span><strong>@(countMode ? last?.RemainingCount : last?.RemainingPoints)</strong></div>
-                <div><span class="muted small">Dates</span><strong class="fw-normal">@b.Days[0].Date.ToString("MMM d") – @b.Days[^1].Date.ToString("MMM d")</strong></div>
-            </div>
-            @if (!string.IsNullOrEmpty(b.Sprint.Goal)) { <p class="muted small mb-2">🎯 @b.Sprint.Goal</p> }
-            <BurndownChart Data="b" CountMode="countMode" />
-            <p class="muted small mt-2 mb-0">
-                Rebuilt from issue activity: status changes to and from Done, estimate changes and sprint membership. Issues without an estimate count as 0 points.
-            </p>
-        }
-        else
-        {
-            <div class="empty">No sprint has been started yet. Plan and start one on the <a href="/p/@project.Key/backlog">backlog</a>.</div>
-        }
-    </section>
+            else
+            {
+                <div class="rp-empty">No sprint has been started yet. Plan and start one on the <a href="/p/@project.Key/backlog">backlog</a>.</div>
+            }
+        </MudPaper>
 
-    <section class="card-panel">
-        <h2 class="section-title">Velocity</h2>
-        @if (velocity.Count > 0)
-        {
-            <p class="muted small">Committed: in the sprint when it started. Completed: done when it was completed. Last @velocity.Count completed sprints.</p>
-            <VelocityChart Data="velocity" CountMode="countMode" />
-        }
-        else
-        {
-            <div class="empty">Velocity appears once a sprint has been completed.</div>
-        }
-    </section>
+        <MudPaper Outlined="true" Class="pa-5">
+            <MudText Typo="Typo.h6" Class="rp-section mb-2">Velocity</MudText>
+            @if (velocity.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">Committed: in the sprint when it started. Completed: done when it was completed. Last @velocity.Count completed sprints.</MudText>
+                <VelocityChart Data="velocity" CountMode="countMode" />
+            }
+            else
+            {
+                <div class="rp-empty">Velocity appears once a sprint has been completed.</div>
+            }
+        </MudPaper>
+    </div>
 }
 
 @code {

@@ -3,13 +3,14 @@
 @inject SprintService Sprints
 @inject LiveEvents Live
 
-<select class="form-select form-select-sm" aria-label="Sprint" value="@(SprintId?.ToString() ?? "")" @onchange="Change">
-    <option value="">All issues</option>
+<MudSelect T="int" Value="@(SprintId ?? 0)" ValueChanged="Change" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+           aria-label="Sprint">
+    <MudSelectItem T="int" Value="0">All issues</MudSelectItem>
     @foreach (var s in sprints)
     {
-        <option value="@s.Id">@(s.State == SprintState.Active ? "🏃 " : "")@s.Name@(s.State == SprintState.Completed ? " (completed)" : "")</option>
+        <MudSelectItem T="int" Value="@s.Id">@(s.State == SprintState.Active ? "🏃 " : "")@s.Name@(s.State == SprintState.Completed ? " (completed)" : "")</MudSelectItem>
     }
-</select>
+</MudSelect>
 
 @code {
     [Parameter, EditorRequired] public int ProjectId { get; set; }
@@ -46,8 +47,7 @@
         }));
     }
 
-    private Task Change(ChangeEventArgs e) =>
-        SprintIdChanged.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : null);
+    private Task Change(int id) => SprintIdChanged.InvokeAsync(id == 0 ? null : id);
 
     public void Dispose() => sub?.Dispose();
 }

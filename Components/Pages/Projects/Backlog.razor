@@ -4,7 +4,7 @@
 @inject SprintService Sprints
 @inject ProjectAccess Access
 @inject LiveEvents Live
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
 
 <PageTitle>Backlog · @project?.Name</PageTitle>
 
@@ -14,31 +14,32 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
+    <div class="bl-page">
+    <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
         <div>
-            <h1>Backlog</h1>
-            <div class="muted">@project.Name · plan sprints by dragging issues, or use each issue's “Move” menu</div>
+            <MudText Typo="Typo.h5" Class="bl-heading">Backlog</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name · plan sprints by dragging issues, or use each issue's “Move” menu</MudText>
         </div>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/reports">📈 Reports</a>
+        <div class="d-flex flex-wrap gap-2">
+            <MudButton Href="@($"/p/{project.Key}/reports")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Insights">Reports</MudButton>
             @if (perms.Can(Permission.ManageLabelsAndMilestones) && !creating)
             {
-                <button class="btn btn-primary btn-sm" @onclick="StartCreate">+ Create sprint</button>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="StartCreate">Create sprint</MudButton>
             }
         </div>
     </div>
 
-    @if (error != null) { <div class="alert alert-danger py-2" role="alert">@error</div> }
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" role="alert">@error</MudAlert> }
 
     @if (creating)
     {
         <form class="sprint-panel sprint-inline-create" @onsubmit="CreateSprint" @onsubmit:preventDefault>
-            <label class="visually-hidden" for="new-sprint-name">Sprint name</label>
-            <input id="new-sprint-name" class="form-control form-control-sm" @bind="newName" maxlength="100" placeholder="Sprint name" />
-            <label class="visually-hidden" for="new-sprint-goal">Goal</label>
-            <input id="new-sprint-goal" class="form-control form-control-sm" @bind="newGoal" maxlength="500" placeholder="Goal (optional)" />
-            <button class="btn btn-primary btn-sm" type="submit">Create</button>
-            <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="() => creating = false">Cancel</button>
+            <MudTextField T="string" @bind-Value="newName" MaxLength="100" Label="Sprint name" Variant="Variant.Outlined" Margin="Margin.Dense" Class="sprint-inline-field" />
+            <MudTextField T="string" @bind-Value="newGoal" MaxLength="500" Label="Goal (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="sprint-inline-field" />
+            <div class="d-flex align-center gap-2">
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">Create</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => creating = false">Cancel</MudButton>
+            </div>
         </form>
     }
 
@@ -54,18 +55,18 @@ else if (project != null)
             <header class="bl-head">
                 <div class="bl-title">
                     <h2 class="bl-name">@(s?.Name ?? "Backlog")</h2>
-                    @if (s?.State == SprintState.Active) { <span class="status-badge status-inprogress">Active</span> }
+                    @if (s?.State == SprintState.Active) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Class="ma-0">Active</MudChip> }
                     @if (s != null && (s.StartDate != null || s.EndDate != null))
                     {
-                        <span class="muted small">@s.StartDate?.ToString("MMM d") – @s.EndDate?.ToString("MMM d, yyyy")@DaysLeft(s)</span>
+                        <span class="bl-dates">@s.StartDate?.ToString("MMM d") – @s.EndDate?.ToString("MMM d, yyyy")@DaysLeft(s)</span>
                     }
                 </div>
                 <div class="bl-stats">
-                    <span class="count" title="Issues">@section.Issues.Count @(section.Issues.Count == 1 ? "issue" : "issues")</span>
-                    <span class="points" title="Story points">@section.Points pts</span>
+                    <span class="bl-pill" title="Issues">@section.Issues.Count @(section.Issues.Count == 1 ? "issue" : "issues")</span>
+                    <span class="bl-pill" title="Story points">@section.Points pts</span>
                     @if (s?.State == SprintState.Active)
                     {
-                        <span class="muted small">@section.DoneCount/@section.Issues.Count done · @section.DonePoints/@section.Points pts</span>
+                        <span class="bl-dates">@section.DoneCount/@section.Issues.Count done · @section.DonePoints/@section.Points pts</span>
                     }
                 </div>
                 @if (s != null && perms.Can(Permission.ManageLabelsAndMilestones))
@@ -73,18 +74,24 @@ else if (project != null)
                     <div class="bl-actions">
                         @if (s.State == SprintState.Planned)
                         {
-                            <button class="btn btn-sm btn-primary" disabled="@(Active != null)" title="@(Active != null ? "Complete the active sprint first" : "")"
-                                    @onclick="() => OpenPanel(s, Panel.Start)">Start sprint</button>
+                            <MudTooltip Text="@(Active != null ? "Complete the active sprint first" : "")" Disabled="@(Active == null)">
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(Active != null)"
+                                           StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="() => OpenPanel(s, Panel.Start)">Start sprint</MudButton>
+                            </MudTooltip>
                         }
                         @if (s.State == SprintState.Active)
                         {
-                            <button class="btn btn-sm btn-success" @onclick="() => OpenPanel(s, Panel.Complete)">Complete sprint</button>
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Check"
+                                       OnClick="() => OpenPanel(s, Panel.Complete)">Complete sprint</MudButton>
                         }
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenPanel(s, Panel.Edit)">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSprint(s)">Delete</button>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => OpenPanel(s, Panel.Edit)">Edit</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete" OnClick="() => DeleteSprint(s)">Delete</MudButton>
                     </div>
                 }
-                @if (!string.IsNullOrEmpty(s?.Goal)) { <div class="bl-goal">🎯 @s.Goal</div> }
+                @if (!string.IsNullOrEmpty(s?.Goal))
+                {
+                    <div class="bl-goal"><MudIcon Icon="@Icons.Material.Outlined.TrackChanges" Size="Size.Small" /> @s.Goal</div>
+                }
             </header>
 
             @if (s != null && panelFor == s.Id)
@@ -95,23 +102,24 @@ else if (project != null)
                         <div class="sprint-form-grid">
                             @if (panel == Panel.Edit)
                             {
-                                <div><label class="form-label small" for="sp-name">Name</label>
-                                    <input id="sp-name" class="form-control form-control-sm" @bind="draftName" maxlength="100" required /></div>
+                                <MudTextField T="string" @bind-Value="draftName" MaxLength="100" Required="true" Label="Name" Variant="Variant.Outlined" Margin="Margin.Dense" />
                             }
-                            <div><label class="form-label small" for="sp-start">Start date</label>
-                                <input id="sp-start" type="date" class="form-control form-control-sm" @bind="draftStart" required="@(panel == Panel.Start)" /></div>
-                            <div><label class="form-label small" for="sp-end">End date</label>
-                                <input id="sp-end" type="date" class="form-control form-control-sm" @bind="draftEnd" required="@(panel == Panel.Start)" /></div>
-                            <div class="sprint-form-wide"><label class="form-label small" for="sp-goal">Sprint goal</label>
-                                <input id="sp-goal" class="form-control form-control-sm" @bind="draftGoal" maxlength="500" placeholder="What should this sprint achieve?" /></div>
+                            <MudDatePicker @bind-Date="draftStart" Label="Start date" Required="@(panel == Panel.Start)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Editable="true" Clearable="@(panel == Panel.Edit)" DateFormat="yyyy-MM-dd" />
+                            <MudDatePicker @bind-Date="draftEnd" Label="End date" Required="@(panel == Panel.Start)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Editable="true" Clearable="@(panel == Panel.Edit)" DateFormat="yyyy-MM-dd" />
+                            <div class="sprint-form-wide">
+                                <MudTextField T="string" @bind-Value="draftGoal" MaxLength="500" Label="Sprint goal" Placeholder="What should this sprint achieve?"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </div>
                         </div>
                         @if (panel == Panel.Start)
                         {
-                            <p class="small muted mb-2">@section.Issues.Count issues (@section.Points story points) will be committed to this sprint.</p>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">@section.Issues.Count issues (@section.Points story points) will be committed to this sprint.</MudText>
                         }
                         <div class="d-flex gap-2">
-                            <button class="btn btn-primary btn-sm" type="submit">@(panel == Panel.Start ? "Start sprint" : "Save")</button>
-                            <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="ClosePanel">Cancel</button>
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">@(panel == Panel.Start ? "Start sprint" : "Save")</MudButton>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ClosePanel">Cancel</MudButton>
                         </div>
                     </form>
                 }
@@ -120,29 +128,31 @@ else if (project != null)
                     var openCount = section.Issues.Count - section.DoneCount;
                     <div class="sprint-panel">
                         <div class="sprint-complete-stats">
-                            <div><strong>@section.DoneCount</strong> done <span class="muted">(@section.DonePoints pts)</span></div>
-                            <div><strong>@openCount</strong> open <span class="muted">(@(section.Points - section.DonePoints) pts)</span></div>
+                            <div><strong>@section.DoneCount</strong> done <span class="bl-muted">(@section.DonePoints pts)</span></div>
+                            <div><strong>@openCount</strong> open <span class="bl-muted">(@(section.Points - section.DonePoints) pts)</span></div>
                         </div>
                         @if (openCount > 0)
                         {
-                            <label class="form-label small" for="carry">Move the open issues to</label>
-                            <select id="carry" class="form-select form-select-sm mb-2" @bind="carryTarget" @bind:after="SuggestCarryNameAsync">
-                                @foreach (var p in Planned) { <option value="s:@p.Id">@p.Name</option> }
-                                <option value="new">A new sprint</option>
-                                <option value="backlog">The backlog</option>
-                            </select>
-                            @if (carryTarget == "new")
-                            {
-                                <input class="form-control form-control-sm mb-2" @bind="carryNewName" maxlength="100" aria-label="New sprint name" />
-                            }
+                            <div class="sprint-carry">
+                                <MudSelect T="string" @bind-Value="carryTarget" @bind-Value:after="SuggestCarryNameAsync" Label="Move the open issues to"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="mb-2">
+                                    @foreach (var p in Planned) { <MudSelectItem T="string" Value="@($"s:{p.Id}")">@p.Name</MudSelectItem> }
+                                    <MudSelectItem T="string" Value="@("new")">A new sprint</MudSelectItem>
+                                    <MudSelectItem T="string" Value="@("backlog")">The backlog</MudSelectItem>
+                                </MudSelect>
+                                @if (carryTarget == "new")
+                                {
+                                    <MudTextField T="string" @bind-Value="carryNewName" MaxLength="100" Label="New sprint name" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                                }
+                            </div>
                         }
                         else
                         {
-                            <p class="small mb-2">🎉 Every issue in this sprint is done.</p>
+                            <MudText Typo="Typo.body2" Class="mb-2">🎉 Every issue in this sprint is done.</MudText>
                         }
                         <div class="d-flex gap-2">
-                            <button class="btn btn-success btn-sm" @onclick="() => CompleteSprint(s)">Complete sprint</button>
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="ClosePanel">Cancel</button>
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" OnClick="() => CompleteSprint(s)">Complete sprint</MudButton>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ClosePanel">Cancel</MudButton>
                         </div>
                     </div>
                 }
@@ -157,38 +167,49 @@ else if (project != null)
                          @ondragstart="() => dragging = i"
                          @ondragend="() => { dragging = null; dragOver = null; }"
                          @ondrop="() => Drop(section, i.Id)" @ondrop:stopPropagation>
-                        @if (canEdit) { <span class="bl-grip" aria-hidden="true">⋮⋮</span> }
+                        @if (canEdit) { <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Class="bl-grip" aria-hidden="true" /> }
                         <span class="issue-type" title="@i.Type">@i.Type.Icon()</span>
-                        <a class="mono small bl-key" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Key</a>
+                        <a class="mono bl-key" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Key</a>
                         <a class="bl-issue-title" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Title</a>
                         <span class="bl-labels">@foreach (var l in i.Labels.OrderBy(l => l.Name)) { <LabelChip Label="l" /> }</span>
                         <span class="bl-meta">
                             <StatusBadge Status="i.Status" />
                             <PriorityIcon Priority="i.Priority" />
-                            <span class="points" title="Story points">@(i.StoryPoints?.ToString() ?? "–")</span>
+                            <span class="bl-pill" title="Story points">@(i.StoryPoints?.ToString() ?? "–")</span>
                             <Avatar User="i.Assignee" Size="22" />
                             @if (canEdit)
                             {
-                                <select class="form-select form-select-sm bl-move" aria-label="Move @i.Key" @key="(i.Id, moveNonce)" @onchange="e => MoveVia(section, idx, e)">
-                                    <option value="">Move…</option>
-                                    @if (idx > 0) { <option value="top">⤒ To top</option><option value="up">↑ Up</option> }
-                                    @if (idx < section.Issues.Count - 1) { <option value="down">↓ Down</option><option value="bottom">⤓ To bottom</option> }
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="@($"Move {i.Key}")"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                                    @if (idx > 0)
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Filled.VerticalAlignTop" OnClick="() => MoveVia(section, idx, MoveTop)">To top</MudMenuItem>
+                                        <MudMenuItem Icon="@Icons.Material.Filled.ArrowUpward" OnClick="() => MoveVia(section, idx, MoveUp)">Up</MudMenuItem>
+                                    }
+                                    @if (idx < section.Issues.Count - 1)
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Filled.ArrowDownward" OnClick="() => MoveVia(section, idx, MoveDown)">Down</MudMenuItem>
+                                        <MudMenuItem Icon="@Icons.Material.Filled.VerticalAlignBottom" OnClick="() => MoveVia(section, idx, MoveBottom)">To bottom</MudMenuItem>
+                                    }
+                                    @if (section.Issues.Count > 1) { <MudDivider /> }
                                     @foreach (var other in sections.Where(x => x != section))
                                     {
-                                        <option value="@(other.Sprint is { } os ? $"s:{os.Id}" : "backlog")">→ @(other.Sprint?.Name ?? "Backlog")</option>
+                                        var target = other.Sprint is { } os ? $"s:{os.Id}" : "backlog";
+                                        <MudMenuItem Icon="@Icons.Material.Filled.ArrowForward" OnClick="() => MoveVia(section, idx, target)">Move to @(other.Sprint?.Name ?? "the backlog")</MudMenuItem>
                                     }
-                                </select>
+                                </MudMenu>
                             }
                         </span>
                     </div>
                 }
                 @if (section.Issues.Count == 0)
                 {
-                    <div class="board-empty">@(s == null ? "The backlog is empty." : canEdit ? "Plan this sprint by dragging issues here." : "No issues in this sprint.")</div>
+                    <div class="bl-empty">@(s == null ? "The backlog is empty." : canEdit ? "Plan this sprint by dragging issues here." : "No issues in this sprint.")</div>
                 }
             </div>
         </section>
     }
+    </div>
 }
 
 @code {
@@ -204,7 +225,7 @@ else if (project != null)
 
     private Issue? dragging;
     private string? dragOver;
-    private int moveNonce;
+    private const string MoveTop = "top", MoveUp = "up", MoveDown = "down", MoveBottom = "bottom";
 
     private bool creating;
     private string? newName, newGoal;
@@ -235,7 +256,6 @@ else if (project != null)
     {
         if (project == null) return;
         sections = await Sprints.GetBacklogAsync(project.Id);
-        moveNonce++;
     }
 
     private static string DaysLeft(Sprint s)
@@ -287,9 +307,8 @@ else if (project != null)
         await Guard(() => Sprints.MoveIssueAsync(moved.Id, target.Sprint?.Id, beforeId));
     }
 
-    private async Task MoveVia(BacklogSection section, int idx, ChangeEventArgs e)
+    private async Task MoveVia(BacklogSection section, int idx, string value)
     {
-        var value = e.Value?.ToString() ?? "";
         var list = section.Issues;
         if (value == "" || idx < 0 || idx >= list.Count) return;
         var issue = list[idx];
@@ -385,7 +404,9 @@ else if (project != null)
 
     private async Task DeleteSprint(Sprint s)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete sprint \"{s.Name}\"? Its issues go back to the backlog.")) return;
+        var ok = await Dialogs.ShowMessageBoxAsync("Delete sprint", $"Delete sprint \"{s.Name}\"? Its issues go back to the backlog.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
         await Guard(() => Sprints.DeleteSprintAsync(s.Id));
     }
 }

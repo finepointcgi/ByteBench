@@ -6,66 +6,103 @@
 
 <PageTitle>Dashboard · GitBench</PageTitle>
 
-<div class="page-header">
-    <h1>Welcome back, @Me.User?.DisplayName.Split(' ')[0]</h1>
-    <a class="btn btn-primary" href="/projects/new">+ New project</a>
+<div class="dash">
+<div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-5">
+    <MudText Typo="Typo.h5" Class="dash-title">Welcome back, @Me.User?.DisplayName.Split(' ')[0]</MudText>
+    <MudButton Href="/projects/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New project</MudButton>
 </div>
 
-<div class="dash-grid">
-    <section>
-        <h2 class="section-title">Projects</h2>
+<MudGrid Spacing="4">
+    <MudItem xs="12" md="8">
+        <div class="d-flex align-center gap-2 mb-2">
+            <MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" Color="Color.Primary" />
+            <MudText Typo="Typo.subtitle1" Class="dash-section">Projects</MudText>
+        </div>
         @if (projects.Count == 0)
         {
-            <div class="empty">No projects yet. <a href="/projects/new">Create one</a>.</div>
+            <MudPaper Outlined="true" Class="dash-empty">No projects yet. <a href="/projects/new">Create one</a>.</MudPaper>
         }
-        <div class="project-cards">
+        <MudGrid Spacing="3">
             @foreach (var p in projects)
             {
                 var total = p.OpenCount + p.ClosedCount;
-                <a class="project-card" href="/p/@p.Key/issues">
-                    <div class="project-card-head">
-                        <span class="proj-avatar">@p.Key[..1]</span>
-                        <div>
-                            <div class="project-card-name">@p.Name</div>
-                            <div class="muted small mono">@p.Key</div>
+                <MudItem xs="12" sm="6" lg="4">
+                    <a class="dash-project-link" href="/p/@p.Key/issues">
+                        <MudCard Outlined="true" Class="dash-project">
+                            <MudCardContent>
+                                <div class="d-flex align-center gap-3 mb-2">
+                                    <span class="proj-avatar">@p.Key[..1]</span>
+                                    <div class="dash-min0">
+                                        <MudText Typo="Typo.subtitle2" Class="dash-ellipsis">@p.Name</MudText>
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary mono">@p.Key</MudText>
+                                    </div>
+                                </div>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary dash-desc">@p.Description</MudText>
+                                <MudProgressLinear Value="@(total == 0 ? 0 : p.ClosedCount * 100.0 / total)" Color="Color.Success" Rounded="true" Size="Size.Small" Class="my-2"
+                                                   aria-label="@($"{p.Name}: {p.ClosedCount} of {total} issues closed")" />
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@p.OpenCount open · @p.ClosedCount closed</MudText>
+                            </MudCardContent>
+                        </MudCard>
+                    </a>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudCard Outlined="true" Class="mt-6">
+            <MudCardHeader Class="dash-card-head">
+                <CardHeaderContent>
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Outlined.AssignmentInd" Size="Size.Small" Color="Color.Primary" />
+                        <MudText Typo="Typo.subtitle1" Class="dash-section">Assigned to me</MudText>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@mine.Count</MudChip>
+                    </div>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudDivider />
+            <div class="dash-issues">
+                @if (mine.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary pa-6" Align="Align.Center">Nothing assigned to you. 🎉</MudText>
+                }
+                @foreach (var i in mine)
+                {
+                    <IssueRow Issue="i" />
+                }
+            </div>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudCard Outlined="true">
+            <MudCardHeader Class="dash-card-head">
+                <CardHeaderContent>
+                    <div class="d-flex align-center gap-2">
+                        <MudIcon Icon="@Icons.Material.Outlined.History" Size="Size.Small" Color="Color.Primary" />
+                        <MudText Typo="Typo.subtitle1" Class="dash-section">Recent activity</MudText>
+                    </div>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudDivider />
+            @if (activity.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary pa-6" Align="Align.Center">No activity yet.</MudText>
+            }
+            <ul class="dash-feed">
+                @foreach (var a in activity)
+                {
+                    <li>
+                        <Avatar User="a.Actor" Size="22" />
+                        <div class="dash-min0">
+                            <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                            on <a href="/p/@a.Issue.Project.Key/issues/@a.Issue.Number">@a.Issue.Key</a>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@Display.Ago(a.CreatedAt)</MudText>
                         </div>
-                    </div>
-                    <p class="muted small">@p.Description</p>
-                    <div class="progress-thin"><div style="width:@(total == 0 ? 0 : p.ClosedCount * 100 / total)%"></div></div>
-                    <div class="small muted">@p.OpenCount open · @p.ClosedCount closed</div>
-                </a>
-            }
-        </div>
-
-        <h2 class="section-title mt-4">Assigned to me</h2>
-        <div class="issue-list">
-            @if (mine.Count == 0)
-            {
-                <div class="empty">Nothing assigned to you. 🎉</div>
-            }
-            @foreach (var i in mine)
-            {
-                <IssueRow Issue="i" />
-            }
-        </div>
-    </section>
-
-    <aside>
-        <h2 class="section-title">Recent activity</h2>
-        <ul class="activity-feed">
-            @foreach (var a in activity)
-            {
-                <li>
-                    <Avatar User="a.Actor" Size="22" />
-                    <div>
-                        <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
-                        on <a href="/p/@a.Issue.Project.Key/issues/@a.Issue.Number">@a.Issue.Key</a>
-                        <div class="muted small">@Display.Ago(a.CreatedAt)</div>
-                    </div>
-                </li>
-            }
-        </ul>
-    </aside>
+                    </li>
+                }
+            </ul>
+        </MudCard>
+    </MudItem>
+</MudGrid>
 </div>
 
 @code {
@@ -98,6 +135,4 @@
     }
 
     public void Dispose() => liveSubscription?.Dispose();
-
-
 }

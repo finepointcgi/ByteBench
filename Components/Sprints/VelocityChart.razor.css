@@ -1,0 +1,24 @@
+/* Inline-SVG chart; colours come from the MudBlazor palette so it reads in light and dark mode. */
+.chart { margin: 0; }
+.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--mud-palette-text-secondary); margin-bottom: 4px; }
+.chart-legend .sw { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.chart-legend .sw-committed, .chart-legend .sw-completed { width: 10px; height: 10px; border-radius: 2px; }
+.chart-legend .sw-committed { background: rgba(var(--mud-palette-primary-rgb), .35); }
+.chart-legend .sw-completed { background: var(--mud-palette-primary); }
+.chart-legend .sw-average { width: 16px; height: 0; border-top: 2px dashed var(--mud-palette-text-primary); opacity: .7; }
+
+.chart-grid { stroke: var(--mud-palette-lines-default); stroke-width: 1; }
+.chart-axis { stroke: var(--mud-palette-text-disabled); stroke-width: 1; }
+.chart-tick, .chart-axis-label { font-size: 11px; fill: var(--mud-palette-text-secondary); }
+.chart-value { font-size: 11px; fill: var(--mud-palette-text-primary); }
+.chart-line-average { stroke: var(--mud-palette-text-primary); stroke-opacity: .7; stroke-width: 1.5; stroke-dasharray: 6 4; }
+.chart-bar-committed { fill: var(--mud-palette-primary); fill-opacity: .35; }
+.chart-bar-completed { fill: var(--mud-palette-primary); }
+.chart-hit { fill: transparent; }
+g:hover > .chart-hit { fill: rgba(var(--mud-palette-primary-rgb), .08); }
+
+.chart-table { margin-top: 8px; font-size: 13px; }
+.chart-table summary { color: var(--mud-palette-primary); cursor: pointer; width: fit-content; }
+.chart-table ::deep .chart-data { margin-top: 6px; max-width: 640px; background: transparent; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }

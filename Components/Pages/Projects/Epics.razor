@@ -13,47 +13,53 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
-        <div>
-            <h1>Epics</h1>
-            <div class="muted">@project.Name</div>
-        </div>
-        @if (canCreate)
-        {
-            <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
-        }
-    </div>
-
-    @if (epics.Count == 0)
-    {
-        <div class="empty">No epics yet. Create an issue with type <b>Epic</b> to group stories and tasks.</div>
-    }
-    else
-    {
-        <div class="lw-epics">
-            @foreach (var e in epics)
+    <div class="ep-page">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
+            <div>
+                <MudText Typo="Typo.h5" Class="ep-heading">Epics</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name</MudText>
+            </div>
+            @if (canCreate)
             {
-                <div class="lw-epic @(e.Epic.Status == IssueStatus.Done ? "lw-done-row" : "")" @key="e.Epic.Id">
-                    <div class="lw-epic-head">
-                        <span>⚡</span>
-                        <a class="mono small" href="@e.Epic.Url">@e.Epic.Key</a>
-                        <a class="lw-epic-title" href="@e.Epic.Url">@e.Epic.Title</a>
-                        <StatusBadge Status="e.Epic.Status" />
-                        <Avatar User="e.Epic.Assignee" Size="22" />
-                    </div>
-                    <div class="progress-thin" title="@e.Done of @e.Total child issues done"><div style="width:@(e.Percent)%"></div></div>
-                    <div class="lw-epic-stats small muted">
-                        <span><b>@e.Done</b>/@e.Total child issues done (@e.Percent%)</span>
-                        <span>· <b>@e.DonePoints</b>/@e.Points points</span>
-                        @if (canCreate)
-                        {
-                            <a class="ms-auto" href="/p/@project.Key/issues/new?parent=@e.Epic.Key">+ Add child issue</a>
-                        }
-                    </div>
-                </div>
+                <MudButton Href="@($"/p/{project.Key}/issues/new")" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New issue</MudButton>
             }
         </div>
-    }
+
+        @if (epics.Count == 0)
+        {
+            <div class="ep-empty">No epics yet. Create an issue with type <b>Epic</b> to group stories and tasks.</div>
+        }
+        else
+        {
+            <MudStack Spacing="3">
+                @foreach (var e in epics)
+                {
+                    <MudPaper Outlined="true" Class="@("ep-epic" + (e.Epic.Status == IssueStatus.Done ? " ep-done" : ""))" @key="e.Epic.Id">
+                        <div class="ep-epic-head">
+                            <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" Class="ep-bolt" />
+                            <a class="mono ep-key" href="@e.Epic.Url">@e.Epic.Key</a>
+                            <a class="ep-title" href="@e.Epic.Url">@e.Epic.Title</a>
+                            <StatusBadge Status="e.Epic.Status" />
+                            <Avatar User="e.Epic.Assignee" Size="22" />
+                        </div>
+                        <MudTooltip Text="@($"{e.Done} of {e.Total} child issues done")" RootClass="d-block">
+                            <MudProgressLinear Value="e.Percent" Color="Color.Success" Rounded="true" Size="Size.Small" Class="my-2"
+                                               aria-label="@($"{e.Done} of {e.Total} child issues done")" />
+                        </MudTooltip>
+                        <div class="ep-stats">
+                            <span><b>@e.Done</b>/@e.Total child issues done (@e.Percent%)</span>
+                            <span>· <b>@e.DonePoints</b>/@e.Points points</span>
+                            @if (canCreate)
+                            {
+                                <MudButton Href="@($"/p/{project.Key}/issues/new?parent={e.Epic.Key}")" Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Add" Class="ep-add">Add child issue</MudButton>
+                            }
+                        </div>
+                    </MudPaper>
+                }
+            </MudStack>
+        }
+    </div>
 }
 
 @code {

@@ -43,8 +43,8 @@
 
 <details class="chart-table">
     <summary>Data table</summary>
-    <table class="table table-sm">
-        <thead><tr><th scope="col">Sprint</th><th scope="col">Completed on</th><th scope="col" class="text-end">Committed</th><th scope="col" class="text-end">Completed</th><th scope="col" class="text-end">Completed %</th></tr></thead>
+    <MudSimpleTable Dense="true" Hover="true" Bordered="false" Elevation="0" Class="chart-data">
+        <thead><tr><th scope="col">Sprint</th><th scope="col">Completed on</th><th scope="col" class="num">Committed</th><th scope="col" class="num">Completed</th><th scope="col" class="num">Completed %</th></tr></thead>
         <tbody>
             @foreach (var e in Data)
             {
@@ -52,13 +52,13 @@
                 <tr>
                     <td>@e.Sprint.Name</td>
                     <td>@e.Sprint.CompletedAt?.ToString("MMM d, yyyy")</td>
-                    <td class="text-end">@c</td>
-                    <td class="text-end">@d</td>
-                    <td class="text-end">@Pct(c, d)</td>
+                    <td class="num">@c</td>
+                    <td class="num">@d</td>
+                    <td class="num">@Pct(c, d)</td>
                 </tr>
             }
         </tbody>
-    </table>
+    </MudSimpleTable>
 </details>
 
 @code {

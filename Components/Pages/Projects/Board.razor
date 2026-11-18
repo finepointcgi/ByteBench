@@ -14,74 +14,87 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
-        <div>
-            <h1>Board</h1>
-            <div class="muted">@project.Name</div>
-        </div>
-        <div class="filter-bar compact">
-            <BoardSprintSelect ProjectId="project.Id" @bind-SprintId="sprintId" />
-            <select class="form-select form-select-sm" @bind="milestoneId" @bind:after="Load">
-                <option value="">All milestones</option>
-                @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <option value="@m.Id">@m.Title</option> }
-            </select>
-            <select class="form-select form-select-sm" @bind="assigneeId" @bind:after="Load">
-                <option value="">Everyone</option>
-                @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
-            </select>
-            <input class="form-control form-control-sm" placeholder="Filter cards…" @bind="search" @bind:event="oninput" />
-        </div>
-    </div>
-
-    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-    @if (warning != null) { <div class="alert alert-warning py-2">@warning</div> }
-    <div class="board" style="grid-template-columns: repeat(@Math.Max(workflow.Statuses.Count, 1), minmax(220px, 1fr))">
-        @foreach (var status in workflow.Statuses)
-        {
-            var col = Visible.Where(i => workflow.Effective(i)?.Id == status.Id).ToList();
-            var allowed = CanDropOn(status);
-            @* Columns the workflow doesn't allow the dragged card to move to don't accept the drop. *@
-            <div class="board-col @(dragOverStatus == status.Id && allowed ? "drag-over" : "") @(allowed ? "" : "drop-disabled")"
-                 @ondragover:preventDefault="allowed"
-                 @ondragenter="() => dragOverStatus = status.Id"
-                 @ondrop="() => Drop(status, null)">
-                <div class="board-col-head" title="@status.Category.Name()">
-                    <span class="status-dot" style="background:@status.Color"></span>
-                    @status.Name
-                    <span class="count">@col.Count</span>
-                    <span class="muted small ms-auto">@col.Sum(i => i.StoryPoints ?? 0) pts</span>
+    <div class="gb-board-page">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
+            <div>
+                <MudText Typo="Typo.h5" Class="board-heading">Board</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name</MudText>
+            </div>
+            <div class="board-filters">
+                <div class="board-filter">
+                    <BoardSprintSelect ProjectId="project.Id" @bind-SprintId="sprintId" />
                 </div>
-                <div class="board-cards">
-                    @foreach (var i in col)
-                    {
-                        <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="@(canEdit ? "true" : "false")" @key="i.Id"
-                             @ondragstart="() => dragging = i"
-                             @ondragend="() => { dragging = null; dragOverStatus = null; }"
-                             @ondrop="() => Drop(status, i.Id)" @ondrop:stopPropagation>
-                            <a class="board-card-title" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Title</a>
-                            @if (i.Labels.Count > 0)
-                            {
-                                <div class="board-card-labels">
-                                    @foreach (var l in i.Labels) { <LabelChip Label="l" /> }
-                                </div>
-                            }
-                            <div class="board-card-foot">
-                                <span title="@i.Type">@i.Type.Icon()</span>
-                                <span class="mono small muted">@i.Key</span>
-                                <GitBench.Components.LinkedWork.IssueWorkChips Issue="i" Links Compact />
-                                <PriorityIcon Priority="i.Priority" />
-                                @if (i.StoryPoints is { } sp) { <span class="points">@sp</span> }
-                                <span class="ms-auto"><Avatar User="i.Assignee" Size="22" /></span>
-                            </div>
-                        </div>
-                    }
-                    @if (col.Count == 0)
-                    {
-                        <div class="board-empty">Drop issues here</div>
-                    }
+                <div class="board-filter">
+                    <MudSelect T="int" Value="@(milestoneId ?? 0)" ValueChanged="SetMilestone" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                               aria-label="Milestone">
+                        <MudSelectItem T="int" Value="0">All milestones</MudSelectItem>
+                        @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <MudSelectItem T="int" Value="@m.Id">@m.Title</MudSelectItem> }
+                    </MudSelect>
+                </div>
+                <div class="board-filter">
+                    <MudSelect T="int" Value="@(assigneeId ?? 0)" ValueChanged="SetAssignee" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                               aria-label="Assignee">
+                        <MudSelectItem T="int" Value="0">Everyone</MudSelectItem>
+                        @foreach (var u in users) { <MudSelectItem T="int" Value="@u.Id">@u.DisplayName</MudSelectItem> }
+                    </MudSelect>
+                </div>
+                <div class="board-filter">
+                    <MudTextField T="string" @bind-Value="search" Immediate="true" Placeholder="Filter cards…" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" aria-label="Filter cards" />
                 </div>
             </div>
-        }
+        </div>
+
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+        @if (warning != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@warning</MudAlert> }
+        <div class="board" style="grid-template-columns: repeat(@Math.Max(workflow.Statuses.Count, 1), minmax(220px, 1fr))">
+            @foreach (var status in workflow.Statuses)
+            {
+                var col = Visible.Where(i => workflow.Effective(i)?.Id == status.Id).ToList();
+                var allowed = CanDropOn(status);
+                @* Columns the workflow doesn't allow the dragged card to move to don't accept the drop. *@
+                <div class="board-col @(dragOverStatus == status.Id && allowed ? "drag-over" : "") @(allowed ? "" : "drop-disabled")"
+                     @ondragover:preventDefault="allowed"
+                     @ondragenter="() => dragOverStatus = status.Id"
+                     @ondrop="() => Drop(status, null)">
+                    <div class="board-col-head" title="@status.Category.Name()">
+                        <span class="status-dot" style="background:@status.Color"></span>
+                        <span class="board-col-name">@status.Name</span>
+                        <span class="board-count" title="Issues">@col.Count</span>
+                        <span class="board-col-pts" title="Story points">@col.Sum(i => i.StoryPoints ?? 0) pts</span>
+                    </div>
+                    <div class="board-cards">
+                        @foreach (var i in col)
+                        {
+                            <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="@(canEdit ? "true" : "false")" @key="i.Id"
+                                 @ondragstart="() => dragging = i"
+                                 @ondragend="() => { dragging = null; dragOverStatus = null; }"
+                                 @ondrop="() => Drop(status, i.Id)" @ondrop:stopPropagation>
+                                <a class="board-card-title" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Title</a>
+                                @if (i.Labels.Count > 0)
+                                {
+                                    <div class="board-card-labels">
+                                        @foreach (var l in i.Labels) { <LabelChip Label="l" /> }
+                                    </div>
+                                }
+                                <div class="board-card-foot">
+                                    <span title="@i.Type">@i.Type.Icon()</span>
+                                    <span class="mono board-key">@i.Key</span>
+                                    <GitBench.Components.LinkedWork.IssueWorkChips Issue="i" Links Compact />
+                                    <PriorityIcon Priority="i.Priority" />
+                                    @if (i.StoryPoints is { } sp) { <span class="board-points" title="Story points">@sp</span> }
+                                    <span class="board-assignee"><Avatar User="i.Assignee" Size="22" /></span>
+                                </div>
+                            </div>
+                        }
+                        @if (col.Count == 0)
+                        {
+                            <div class="board-empty">Drop issues here</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
     </div>
 }
 
@@ -124,6 +137,18 @@ else if (project != null)
         if (project == null) return;
         workflow = await Workflows.GetAsync(project.Id);
         issues = await Issues.GetBoardAsync(project.Id, milestoneId, assigneeId);
+    }
+
+    private async Task SetMilestone(int id)
+    {
+        milestoneId = id == 0 ? null : id;
+        await Load();
+    }
+
+    private async Task SetAssignee(int id)
+    {
+        assigneeId = id == 0 ? null : id;
+        await Load();
     }
 
     // ----- Live updates: another user moved, created or edited a card in this project -----

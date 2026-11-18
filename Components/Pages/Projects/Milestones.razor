@@ -1,6 +1,7 @@
 @page "/p/{Key}/milestones"
 @inject IssueService Issues
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 @inject ProjectAccess Access
 
 <PageTitle>Milestones · @project?.Name</PageTitle>
@@ -11,91 +12,98 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
-        <div>
-            <h1>Milestones &amp; sprints</h1>
-            <div class="muted">@project.Name</div>
+    <div class="mst-page">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
+            <div>
+                <MudText Typo="Typo.h5" Class="mst-heading">Milestones &amp; sprints</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name</MudText>
+            </div>
+            @if (canManage)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="() => editing = new Milestone { ProjectId = project.Id, StartDate = DateTime.Today, DueDate = DateTime.Today.AddDays(14) }">New milestone</MudButton>
+            }
         </div>
-        @if (canManage)
+
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+        @if (editing != null)
         {
-            <button class="btn btn-primary" @onclick="() => editing = new Milestone { ProjectId = project.Id, StartDate = DateTime.Today, DueDate = DateTime.Today.AddDays(14) }">+ New milestone</button>
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <EditForm Model="editing" OnValidSubmit="Save" FormName="milestone">
+                    <DataAnnotationsValidator />
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="string" @bind-Value="editing.Title" For="() => editing.Title" Label="Title" Placeholder="Sprint 3"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="2">
+                            <MudDatePicker @bind-Date="editing.StartDate" Label="Start" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Editable="true" Clearable="true" DateFormat="yyyy-MM-dd" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="2">
+                            <MudDatePicker @bind-Date="editing.DueDate" Label="Due" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                           Editable="true" Clearable="true" DateFormat="yyyy-MM-dd" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField T="string" @bind-Value="editing.Description" Label="Description" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    </MudGrid>
+                    <div class="mt-3 d-flex gap-2">
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">@(editing.Id == 0 ? "Create" : "Save")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editing = null">Cancel</MudButton>
+                    </div>
+                </EditForm>
+            </MudPaper>
         }
-    </div>
 
-    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-    @if (editing != null)
-    {
-        <div class="card-panel mb-3">
-            <EditForm Model="editing" OnValidSubmit="Save" FormName="milestone">
-                <DataAnnotationsValidator />
-                <div class="row g-2">
-                    <div class="col-md-4">
-                        <label class="form-label">Title</label>
-                        <InputText class="form-control" @bind-Value="editing.Title" placeholder="Sprint 3" />
-                        <ValidationMessage For="() => editing.Title" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Start</label>
-                        <InputDate class="form-control" @bind-Value="editing.StartDate" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Due</label>
-                        <InputDate class="form-control" @bind-Value="editing.DueDate" />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Description</label>
-                        <InputText class="form-control" @bind-Value="editing.Description" />
-                    </div>
-                </div>
-                <div class="mt-2 d-flex gap-2">
-                    <button class="btn btn-primary btn-sm" type="submit">@(editing.Id == 0 ? "Create" : "Save")</button>
-                    <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="() => editing = null">Cancel</button>
-                </div>
-            </EditForm>
-        </div>
-    }
-
-    <div class="milestone-list">
         @if (milestones.Count == 0)
         {
-            <div class="empty">No milestones yet.</div>
+            <div class="mst-empty">No milestones yet.</div>
         }
-        @foreach (var ms in milestones)
-        {
-            var m = ms.Milestone;
-            var overdue = !m.IsClosed && m.DueDate < DateTime.Today && ms.Open > 0;
-            <div class="milestone @(m.IsClosed ? "closed" : "")">
-                <div class="milestone-info">
-                    <div class="milestone-title">
-                        🏁 @m.Title
-                        @if (m.IsClosed) { <span class="status-badge status-done">Closed</span> }
-                        @if (overdue) { <span class="status-badge overdue-badge">Overdue</span> }
+        <MudStack Spacing="3">
+            @foreach (var ms in milestones)
+            {
+                var m = ms.Milestone;
+                var overdue = !m.IsClosed && m.DueDate < DateTime.Today && ms.Open > 0;
+                <MudPaper Outlined="true" Class="@("mst-row" + (m.IsClosed ? " mst-closed" : ""))" @key="m.Id">
+                    <div class="mst-info">
+                        <div class="mst-title">
+                            <MudIcon Icon="@Icons.Material.Outlined.Flag" Size="Size.Small" Class="mst-flag" />
+                            <span>@m.Title</span>
+                            @if (m.IsClosed) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">Closed</MudChip> }
+                            @if (overdue) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Overdue</MudChip> }
+                        </div>
+                        <div class="mst-sub">
+                            @if (m.StartDate is { } s) { <span>@s.ToString("MMM d") – </span> }
+                            @(m.DueDate?.ToString("MMM d, yyyy") ?? "No due date")
+                            @if (!string.IsNullOrEmpty(m.Description)) { <span> · @m.Description</span> }
+                        </div>
                     </div>
-                    <div class="muted small">
-                        @if (m.StartDate is { } s) { <span>@s.ToString("MMM d") – </span> }
-                        @(m.DueDate?.ToString("MMM d, yyyy") ?? "No due date")
-                        @if (!string.IsNullOrEmpty(m.Description)) { <span> · @m.Description</span> }
+                    <div class="mst-progress">
+                        <MudProgressLinear Value="ms.Percent" Color="Color.Success" Rounded="true" Size="Size.Small" Class="my-2"
+                                           aria-label="@($"{m.Title}: {ms.Percent}% complete")" />
+                        <div class="mst-sub">
+                            <b>@ms.Percent%</b> complete · @ms.Open open · @ms.Closed closed
+                            @if (ms.Points > 0) { <span> · @ms.DonePoints/@ms.Points pts</span> }
+                        </div>
                     </div>
-                </div>
-                <div class="milestone-progress">
-                    <div class="progress-thin"><div style="width:@(ms.Percent)%"></div></div>
-                    <div class="small muted">
-                        <b>@ms.Percent%</b> complete · @ms.Open open · @ms.Closed closed
-                        @if (ms.Points > 0) { <span> · @ms.DonePoints/@ms.Points pts</span> }
+                    <div class="mst-actions">
+                        <GitBench.Components.Ai.ReleaseNotesButton Project="project" Milestone="m" />
+                        <MudButton Href="@($"/p/{project.Key}/board")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.ViewKanban">Board</MudButton>
+                        @if (canManage)
+                        {
+                            <MudTooltip Text="Edit">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Variant="Variant.Outlined" OnClick="() => Edit(m)" aria-label="@($"Edit {m.Title}")" />
+                            </MudTooltip>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => ToggleClosed(m)">@(m.IsClosed ? "Reopen" : "Close")</MudButton>
+                            <MudTooltip Text="Delete">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" OnClick="() => Delete(m)" aria-label="@($"Delete {m.Title}")" />
+                            </MudTooltip>
+                        }
                     </div>
-                </div>
-                <div class="milestone-actions">
-                    <GitBench.Components.Ai.ReleaseNotesButton Project="project" Milestone="m" />
-                    <a class="btn btn-sm btn-outline-secondary" href="/p/@project.Key/board">Board</a>
-                    @if (canManage)
-                    {
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => Edit(m)">Edit</button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleClosed(m)">@(m.IsClosed ? "Reopen" : "Close")</button>
-                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(m)">Delete</button>
-                    }
-                </div>
-            </div>
-        }
+                </MudPaper>
+            }
+        </MudStack>
     </div>
 }
 
@@ -133,6 +141,7 @@ else if (project != null)
         try { await Issues.SaveMilestoneAsync(editing!); }
         catch (InvalidOperationException ex) { error = ex.Message; return; }
         editing = null;
+        Snackbar.Add("Milestone saved.", Severity.Success);
         await Load();
     }
 
@@ -145,7 +154,9 @@ else if (project != null)
 
     private async Task Delete(Milestone m)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete milestone \"{m.Title}\"? Issues will be kept.")) return;
+        var ok = await Dialogs.ShowMessageBoxAsync("Delete milestone", $"Delete milestone \"{m.Title}\"? Issues will be kept.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
         error = null;
         try { await Issues.DeleteMilestoneAsync(m.Id); }
         catch (InvalidOperationException ex) { error = ex.Message; }

@@ -51,25 +51,25 @@
             </rect>
         }
     </svg>
-    <figcaption class="visually-hidden">@Summary</figcaption>
+    <figcaption class="chart-sr-only">@Summary</figcaption>
 </figure>
 
 <details class="chart-table">
     <summary>Data table</summary>
-    <table class="table table-sm">
-        <thead><tr><th scope="col">Day</th><th scope="col" class="text-end">Remaining @Unit</th><th scope="col" class="text-end">Ideal</th><th scope="col" class="text-end">Sprint scope</th></tr></thead>
+    <MudSimpleTable Dense="true" Hover="true" Bordered="false" Elevation="0" Class="chart-data">
+        <thead><tr><th scope="col">Day</th><th scope="col" class="num">Remaining @Unit</th><th scope="col" class="num">Ideal</th><th scope="col" class="num">Sprint scope</th></tr></thead>
         <tbody>
             @foreach (var d in Data.Days)
             {
                 <tr>
                     <td>@d.Date.ToString("ddd MMM d")</td>
-                    <td class="text-end">@(Rem(d)?.ToString() ?? "—")</td>
-                    <td class="text-end">@F(Ideal(d))</td>
-                    <td class="text-end">@(Scope(d)?.ToString() ?? "—")</td>
+                    <td class="num">@(Rem(d)?.ToString() ?? "—")</td>
+                    <td class="num">@F(Ideal(d))</td>
+                    <td class="num">@(Scope(d)?.ToString() ?? "—")</td>
                 </tr>
             }
         </tbody>
-    </table>
+    </MudSimpleTable>
 </details>
 
 @code {

@@ -1,0 +1,19 @@
+.rp-page ::deep .rp-heading,
+.rp-page ::deep .rp-section { font-weight: 600; }
+.rp-sprint { width: 220px; flex: 0 0 auto; }
+.rp-sprint ::deep .mud-input-control { margin-top: 0; }
+
+.report-stats { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-bottom: 8px; }
+.report-stats > div { display: flex; flex-direction: column; }
+.report-stats strong { font-size: 20px; font-weight: 600; }
+.report-stats .rp-dates { font-weight: 400; }
+.rp-label { color: var(--mud-palette-text-secondary); font-size: 12px; }
+.rp-goal { color: var(--mud-palette-text-secondary); font-size: 13px; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.rp-empty {
+    padding: 32px; text-align: center; color: var(--mud-palette-text-secondary);
+    border: 1px dashed var(--mud-palette-lines-default); border-radius: var(--mud-default-borderradius);
+}
+
+@media (max-width: 600px) {
+    .rp-sprint { width: 100%; }
+}

@@ -1,0 +1,17 @@
+.mst-page ::deep .mst-heading { font-weight: 600; }
+.mst-page ::deep .mst-row {
+    display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 8px 20px; align-items: center; padding: 14px 18px;
+}
+.mst-page ::deep .mst-closed { opacity: .7; }
+.mst-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mst-title ::deep .mst-flag { color: var(--mud-palette-primary); }
+.mst-sub { color: var(--mud-palette-text-secondary); font-size: 12px; }
+.mst-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mst-empty {
+    padding: 32px; text-align: center; color: var(--mud-palette-text-secondary);
+    border: 1px dashed var(--mud-palette-lines-default); border-radius: var(--mud-default-borderradius); background: var(--mud-palette-surface);
+}
+
+@media (max-width: 900px) {
+    .mst-page ::deep .mst-row { grid-template-columns: 1fr; }
+}

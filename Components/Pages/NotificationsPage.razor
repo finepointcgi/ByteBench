@@ -7,49 +7,54 @@
 
 <PageTitle>Notifications · GitBench</PageTitle>
 
-<div class="page-header">
-    <h1>Notifications</h1>
-    <button class="btn btn-outline-secondary btn-sm" disabled="@(unreadCount == 0)" @onclick="MarkAllRead">Mark all read</button>
-</div>
-
-<div class="tabs">
-    <a class="tab @(UnreadOnly ? "" : "active")" href="/notifications">All</a>
-    <a class="tab @(UnreadOnly ? "active" : "")" href="/notifications?filter=unread">Unread <span class="count">@unreadCount</span></a>
-</div>
-
-@if (result != null)
-{
-    <div class="notif-list">
-        @if (result.Items.Count == 0)
-        {
-            <div class="empty">@(UnreadOnly ? "No unread notifications." : "No notifications yet.")</div>
-        }
-        @foreach (var n in result.Items)
-        {
-            <div class="notif-row @(n.IsRead ? "" : "unread")" @key="n.Id">
-                <Avatar User="n.Actor" Size="28" />
-                <a class="notif-text" href="@n.Url" @onclick="() => Open(n)" @onclick:preventDefault>
-                    <b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind)
-                    <span class="notif-title">@n.Title</span>
-                </a>
-                <span class="muted small ms-auto text-nowrap">@Display.Ago(n.CreatedAt)</span>
-                @if (!n.IsRead)
-                {
-                    <button class="btn btn-link btn-sm" @onclick="() => MarkRead(n)">Mark read</button>
-                }
-            </div>
-        }
+<div class="notif-page">
+    <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-3">
+        <MudText Typo="Typo.h5" Class="notif-heading">Notifications</MudText>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DoneAll" Disabled="@(unreadCount == 0)" OnClick="MarkAllRead">Mark all read</MudButton>
     </div>
 
-    @if (result.Pages > 1)
+    <MudTabs ActivePanelIndex="@(UnreadOnly ? 1 : 0)" ActivePanelIndexChanged="TabChanged" Elevation="0" Class="mb-3" TabHeaderClass="notif-tabs">
+        <MudTabPanel Text="All" />
+        <MudTabPanel Text="Unread" BadgeData="@(unreadCount > 0 ? unreadCount : null)" BadgeColor="Color.Primary" />
+    </MudTabs>
+
+    @if (result != null)
     {
-        <nav class="pager">
-            @if (result.Page > 1) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(result.Page - 1)">← Newer</a> }
-            <span class="muted small">Page @result.Page of @result.Pages · @result.Total total</span>
-            @if (result.Page < result.Pages) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(result.Page + 1)">Older →</a> }
-        </nav>
+        <MudPaper Outlined="true" Class="notif-list">
+            @if (result.Items.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary pa-8" Align="Align.Center">@(UnreadOnly ? "No unread notifications." : "No notifications yet.")</MudText>
+            }
+            @foreach (var n in result.Items)
+            {
+                <div class="notif-row @(n.IsRead ? "" : "unread")" @key="n.Id">
+                    @if (!n.IsRead) { <span class="notif-dot" title="Unread"></span> }
+                    <Avatar User="n.Actor" Size="28" />
+                    <a class="notif-text" href="@n.Url" @onclick="() => Open(n)" @onclick:preventDefault>
+                        <b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind)
+                        <span class="notif-title">@n.Title</span>
+                    </a>
+                    <span class="notif-when">@Display.Ago(n.CreatedAt)</span>
+                    @if (!n.IsRead)
+                    {
+                        <MudTooltip Text="Mark read">
+                            <MudIconButton Icon="@Icons.Material.Outlined.MarkEmailRead" Size="Size.Small" OnClick="() => MarkRead(n)" aria-label="Mark read" />
+                        </MudTooltip>
+                    }
+                </div>
+            }
+        </MudPaper>
+
+        @if (result.Pages > 1)
+        {
+            <nav class="d-flex align-center justify-center flex-wrap gap-3 mt-3" aria-label="Pages">
+                @if (result.Page > 1) { <MudButton Variant="Variant.Outlined" Size="Size.Small" Href="@PageUrl(result.Page - 1)" StartIcon="@Icons.Material.Filled.ChevronLeft">Newer</MudButton> }
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Page @result.Page of @result.Pages · @result.Total total</MudText>
+                @if (result.Page < result.Pages) { <MudButton Variant="Variant.Outlined" Size="Size.Small" Href="@PageUrl(result.Page + 1)" EndIcon="@Icons.Material.Filled.ChevronRight">Older</MudButton> }
+            </nav>
+        }
     }
-}
+</div>
 
 @code {
     [SupplyParameterFromQuery(Name = "filter")] public string? Filter { get; set; }
@@ -77,6 +82,11 @@
     {
         result = await Notifications.GetPageAsync(Me.Id, UnreadOnly, PageNumber ?? 1);
         unreadCount = await Notifications.GetUnreadCountAsync(Me.Id);
+    }
+
+    private void TabChanged(int index)
+    {
+        if ((index == 1) != UnreadOnly) Nav.NavigateTo(index == 1 ? "/notifications?filter=unread" : "/notifications");
     }
 
     private async Task Open(Notification n)
