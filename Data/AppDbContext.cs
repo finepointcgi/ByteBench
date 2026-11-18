@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PullRequestComment> PullRequestComments => Set<PullRequestComment>();
     public DbSet<PullRequestReview> PullRequestReviews => Set<PullRequestReview>();
     public DbSet<PullRequestActivity> PullRequestActivities => Set<PullRequestActivity>();
+    public DbSet<AiReview> AiReviews => Set<AiReview>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -48,5 +49,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequestReview>().HasIndex(r => new { r.PullRequestId, r.UserId }).IsUnique();
         b.Entity<PullRequestReview>().HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestActivity>().HasOne(a => a.Actor).WithMany().HasForeignKey(a => a.ActorId).OnDelete(DeleteBehavior.Restrict);
+
+        // ----- AI code review -----
+        b.Entity<AiReview>().HasIndex(r => new { r.PullRequestId, r.HeadSha });
+        b.Entity<AiReview>().HasOne<PullRequest>().WithMany().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
     }
 }

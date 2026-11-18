@@ -77,7 +77,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
     public async Task<List<User>> GetUsersAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Users.OrderBy(u => u.DisplayName).ToListAsync();
+        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // the AI bot is not assignable
     }
 
     // ---------- Issues ----------

@@ -84,7 +84,7 @@ else
                                                 {
                                                     <div class="inline-comment" @key="c.Id">
                                                         <div class="inline-comment-head">
-                                                            <Avatar User="c.Author" Size="20" /> <b>@c.Author.DisplayName</b>
+                                                            <Avatar User="c.Author" Size="20" /> <b>@c.Author.DisplayName</b> <AiBadge User="c.Author" />
                                                             <span class="muted small">@Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
                                                         </div>
                                                         <div class="markdown">@Display.Markdown(c.Body)</div>

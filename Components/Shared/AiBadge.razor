@@ -1,0 +1,10 @@
+@* Small "AI" marker shown next to content written by the GitBench AI bot account. *@
+@using GitBench.Services.Ai
+@if (AiBot.IsBot(User))
+{
+    <span class="ai-badge" title="Written by GitBench AI. It can be wrong.">AI</span>
+}
+
+@code {
+    [Parameter] public User? User { get; set; }
+}

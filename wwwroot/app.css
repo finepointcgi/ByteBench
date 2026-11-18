@@ -443,3 +443,9 @@ a.tree-commit:hover { color: var(--accent); }
     .clone-box input { width: 220px; }
     .diff-thread { padding-left: 14px; }
 }
+
+/* ----- AI code review ----- */
+.ai-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em; line-height: 16px; padding: 0 5px; border-radius: 4px; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; vertical-align: middle; }
+.ai-review-status { padding: 6px 8px; border-radius: 6px; background: #f6f7f9; border: 1px solid var(--border); overflow-wrap: anywhere; }
+.ai-review-status.good { background: #f5f3ff; border-color: #ddd6fe; color: #4c1d95; }
+.ai-review-status.bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }

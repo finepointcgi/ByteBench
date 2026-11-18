@@ -28,7 +28,7 @@ public record AiResult(string Text, string? StopReason, bool Refused);
 /// refusal fallbacks and usage logging, so features only build prompts and parse answers.
 /// Register as a singleton.
 /// </summary>
-public class AiClient(IOptions<AiOptions> options, IDbContextFactory<AppDbContext> dbFactory, ILogger<AiClient> log)
+public partial class AiClient(IOptions<AiOptions> options, IDbContextFactory<AppDbContext> dbFactory, ILogger<AiClient> log)
 {
     private readonly AiOptions opts = options.Value;
     private AnthropicClient? client;
@@ -68,7 +68,7 @@ public class AiClient(IOptions<AiOptions> options, IDbContextFactory<AppDbContex
             response.Usage.InputTokens, response.Usage.OutputTokens,
             response.Usage.CacheReadInputTokens ?? 0, response.Usage.CacheCreationInputTokens ?? 0, ct);
 
-        var stop = response.StopReason?.ToString();
+        var stop = response.StopReason?.Raw();
         var text = string.Concat(response.Content.Select(b => b.TryPickText(out var t) ? t.Text : ""));
         if (stop == "refusal") log.LogWarning("Claude declined a {Feature} request", feature);
         return new AiResult(text, stop, stop == "refusal");
