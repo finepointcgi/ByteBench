@@ -44,7 +44,6 @@ else if (wiki != null && path != null)
                     {
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">
                             Last edited by @last.AuthorName @Display.Ago(last.When.UtcDateTime)
-                            · <a href="@WikiPaths.Url(wiki.ProjectKey, path, "action=history")">@("History")</a>
                         </MudText>
                     }
                 </div>
@@ -322,7 +321,7 @@ else if (wiki != null && path != null)
                               HelperText="@(isNew ? "Use / for folders, e.g. guides/Getting started" : "Change it to rename or move the page")" />
                 <div>
                     <div class="d-flex align-center gap-2 mb-1">
-                        <MudButton HtmlTag="label" Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Image" Disabled="uploading">
+                        <MudButton HtmlTag="label" Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Image" Disabled="uploading" Style="white-space:nowrap;flex-shrink:0">
                             Upload image
                             <InputFile OnChange="OnUpload" accept="image/png,image/jpeg,image/gif,image/webp" disabled="@uploading" class="d-none" />
                         </MudButton>

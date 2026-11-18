@@ -97,7 +97,7 @@ public static class WikiWebEndpoints
         sb.Append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         sb.Append("<title>").Append(E(s.Title)).Append(" · GitBench snippet</title>");
         sb.Append("<link rel=\"stylesheet\" href=\"/css/code-tools.css\">");
-        sb.Append("<style>:root{color-scheme:light dark}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:Canvas;color:CanvasText}")
+        sb.Append("<style>:root{color-scheme:light}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:Canvas;color:CanvasText}")
           .Append(".snip-head{padding:8px 12px;border-bottom:1px solid #8884;display:flex;gap:8px;align-items:baseline}")
           .Append(".snip-head a{color:inherit;font-weight:600;text-decoration:none}.muted{opacity:.7;font-size:12px}")
           .Append(".file{border-bottom:1px solid #8884}.file-name{padding:6px 12px;font:600 12px ui-monospace,monospace;background:#8881;display:flex;justify-content:space-between}")

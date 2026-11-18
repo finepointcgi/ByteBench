@@ -72,7 +72,7 @@ else if (view != null)
         <MudPaper Outlined="true" Class="snippet-file mb-4" @key="f.Id">
             <div class="snippet-file-head">
                 <span class="mono gb-bold">@f.FileName</span>
-                <span class="mud-text-secondary small">@f.Content.Split('\n').Length lines</span>
+                <span class="mud-text-secondary small">@f.Content.TrimEnd('\n').Split('\n').Length lines</span>
                 <MudSpacer />
                 <MudButton Href="@SnippetService.RawUrl(s.Id, f.FileName, view.IsCurrent ? null : view.Revision.Number)" Target="_blank"
                            Size="Size.Small" Variant="Variant.Text">Raw</MudButton>

@@ -130,9 +130,9 @@
                         {
                             <a class="sr-row" href="@w.Url">
                                 <MudIcon Icon="@Icons.Material.Outlined.Article" Size="Size.Small" />
-                                <span class="sr-title gb-bold">@w.Title</span>
-                                <span class="mud-text-secondary mono">@w.ProjectKey/@w.Path</span>
-                                @if (w.Excerpt != null) { <span class="mud-text-secondary sr-excerpt">@w.Excerpt</span> }
+                                <span class="sr-title gb-bold" style="flex-shrink:0">@w.Title</span>
+                                <span class="mud-text-secondary mono" style="flex-shrink:0">@w.ProjectKey/@w.Path</span>
+                                @if (w.Excerpt != null) { <span class="mud-text-secondary sr-excerpt" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@w.Excerpt</span> }
                             </a>
                         }
                     </SearchSection>

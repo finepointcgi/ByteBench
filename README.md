@@ -944,6 +944,49 @@ The script is a file (`wwwroot/js/shortcuts.js`) with one `keydown` listener and
 | GET | `/api/v1/user/starred` | Projects you have starred |
 | PUT / DELETE | `/api/v1/projects/{key}/star` | Star / unstar. Returns `{ project, starred, stars }`. |
 
+## Wiki & snippets
+
+### Project wiki
+
+Every project has a GitLab-style wiki (**Wiki** in the project sidebar, `/p/{KEY}/wiki/{path}`). It is a bare git repository at `{Git:RepositoryRoot}/{KEY}/{key}.wiki.git`, created on first use, with one Markdown file per page on `main`.
+
+- **Pages** are `{path}.md`; `/` makes folders (`guides/Getting-started`), spaces become `-`, and the title is the last segment. `home` is the home page. The sidebar shows the page tree, or the page `_sidebar` when it exists ("Customise sidebar").
+- **Editing** (`?action=edit`): the Markdown editor with a wiki-aware preview, a page-path field (change it to rename or move), an optional commit message and **Upload image**. Each save, rename, delete or revert is a commit authored by the signed-in user.
+- **Conflicts:** the editor remembers the blob it opened. If the page changed (or was deleted) since then, nothing is written. The editor shows the current version and offers *Save mine anyway* or *Discard mine, edit theirs*. Creating or moving onto an existing page is also a conflict. This is checked under the repository lock (`GitOps.CommitChanges`), so two writers can't both win.
+- **History** (`?action=history`): commits that touched the page, with *View* (`?rev=`), *Changes* (DiffView), *Compare with current* and *Revert to this* (a new commit).
+- **Links** (`Services/Wiki/WikiMarkdown.cs`): `[[Page Name]]` and `[[path|label]]` resolve next to the current page, then from the root, then by unique title. Missing pages are shown in red and open the editor. Relative links and images resolve against the page's folder (`uploads/…` from the root). This project's issue keys (`WEB-12`) link to the issue, except in code or inside existing links. Links with a scheme other than http, https or mailto are neutralised. Raw HTML stays escaped, as everywhere else.
+- **Images** are committed to `uploads/` (PNG, JPEG, GIF or WebP checked by magic number, max 10 MB). They are served from `/wiki-files/{KEY}/{path}` with `nosniff` and a sandbox CSP. Anything that isn't one of those images is sent as an `application/octet-stream` download.
+- **Git:** clone with `git clone http://host/git/KEY/wiki.git` (or `KEY/{key}.wiki.git`, or the same paths over SSH). It is resolved in `GitRepoLookup` after real repositories. Repository slugs `wiki` and `*.wiki` are reserved. Branch protection, deploy keys and code push listeners don't apply to wikis. After a push the search index is rebuilt.
+- **Permissions:** ViewProject (Viewer+) reads, EditIssues (Developer+) edits, and the project setting **Wiki** (Settings, Owners) must be on. When it's off, the pages, the git remote (404) and search hits disappear, but nothing is deleted.
+- **Search:** `WikiPageIndex` rows (title, path, Markdown) are rebuilt after every save and push. Global search has a **Wiki** group and tab (`type=wiki`).
+
+Code: `Services/Wiki/` (WikiService, WikiPaths, WikiMarkdown, WikiWebEndpoints), `Services/Git/GitOps.Wiki.cs`, `Components/Pages/Wiki/WikiPageView.razor`, `Components/Wiki/`.
+
+### Snippets
+
+Gist-style snippets: a title, an optional Markdown description, a visibility and 1 to 10 files (512 KB each, 1 MB in total), shown with highlight.js by file extension. Pages: `/snippets` (yours), `/snippets/explore`, `/p/{KEY}/snippets` (project), `/snippets/new[?project=KEY]`, `/snippets/{id}[?rev=n]` and `/snippets/{id}/edit`.
+
+- **Storage:** snippets are stored in the database, not as git repositories. They are small, lists filter by visibility, project and author in SQL, and every change to the files adds a `SnippetRevision` with a full copy of them. That gives a revision picker without a repository per snippet. Title, description and visibility change in place.
+- **Visibility** (`SnippetService.CanView`): **Private** means only the author. **Project** (project snippets only) means everyone who can view the project. **Public** (personal snippets only) means every signed-in user. Site admins see everything.
+- **Who can do what:** Developer+ creates project snippets. Only the author (or an admin) edits. The author, an admin or a project Maintainer+ deletes. Anyone who can see a snippet can comment, and the comment's author, the snippet's author or an admin can delete a comment.
+- **Raw:** `/snippets/{id}/raw/{file}` (`?rev=`, `?download=1`) is always `text/plain; charset=utf-8` with `nosniff` and a sandbox CSP.
+- **Embed:** `/snippets/{id}/embed` is a chrome-less, read-only HTML view (its own strict CSP, `frame-ancestors 'self'`, `X-Frame-Options: SAMEORIGIN`). *Embed* on the snippet page copies an `<iframe>` tag. Sign-in is required, so embeds work on same-site pages for signed-in viewers.
+
+### API
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/v1/projects/{key}/wiki/pages` | List pages |
+| GET | `/api/v1/projects/{key}/wiki/pages/{path}?rev=` | A page: `content`, `sha` (its blob id) and `lastCommit` |
+| POST | `/api/v1/projects/{key}/wiki/pages` | `{path, content, message?}`. 409 if the page exists. |
+| PUT | `/api/v1/projects/{key}/wiki/pages/{path}` | `{content?, sha?, message?, newPath?}`. With `sha`, a page that changed since is **409** with `currentSha`. |
+| DELETE | `/api/v1/projects/{key}/wiki/pages/{path}?sha=` | Delete (conditional with `sha`) |
+| GET | `/api/v1/projects/{key}/wiki/history?path=` | Commits that changed a page |
+| GET | `/api/v1/snippets?scope=mine\|explore`, `/api/v1/projects/{key}/snippets` | List snippets |
+| GET / POST / PUT / DELETE | `/api/v1/snippets[/{id}]` | Snippet CRUD. The body is `{title, description, visibility, files: [{fileName, content}], project?}`. Omitted fields keep their values on PUT. |
+| GET | `/api/v1/snippets/{id}/files/{fileName}/raw` | A file as `text/plain` |
+| GET / POST / DELETE | `/api/v1/snippets/{id}/comments[/{commentId}]` | Comments |
+
 ## Deploying GitBench
 
 GitBench is one ASP.NET Core process with a SQLite database and three folders: repositories, attachments (which also hold release assets), and the Data Protection key ring. Run it as a single instance. SQLite and the in-process queues (CI, webhooks, AI review) aren't built for several replicas.
