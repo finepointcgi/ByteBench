@@ -93,6 +93,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
     public async Task<PullRequest> CreateAsync(Repository repo, string title, string? description, string source, string target, int authorId)
     {
         await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest, authorId);
+        await RepositorySettingsService.EnsureNotArchivedAsync(dbFactory, repo.Id);
         title = title.Trim();
         if (title.Length is 0 or > 200) throw new InvalidOperationException("Title is required (max 200 characters).");
         if (source == target) throw new InvalidOperationException("Source and target must be different branches.");
@@ -154,6 +155,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be merged.");
+        RepositorySettingsService.EnsureNotArchived(pr.Repository);
 
         // Collect commit messages before merging: afterwards the commits are reachable from the target too.
         var before = await GetChangesAsync(pr);

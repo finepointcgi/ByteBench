@@ -7,6 +7,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject RepositorySettingsService RepoSettings
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -109,6 +110,11 @@ else if (project != null)
     {
         project = await Issues.GetProjectAsync(Key);
         scopedRepo = Slug != null && project != null ? await Repos.GetRepositoryAsync(Key, Slug) : null;
+        if (Slug != null && project != null && scopedRepo == null && await RepoSettings.RedirectUrlAsync(Nav.Uri, Key, Slug) is { } moved)
+        {
+            Nav.NavigateTo(moved, replace: true); // renamed repository
+            return;
+        }
         notFound = project == null || (Slug != null && scopedRepo == null);
         if (notFound) return;
 

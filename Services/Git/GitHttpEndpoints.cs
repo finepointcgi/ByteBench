@@ -114,7 +114,12 @@ public static partial class GitHttpEndpoints
         {
             found = await db.Repositories.AsNoTracking()
                 .Where(r => r.Project.Key.ToUpper() == upperKey && r.Slug == slug)
-                .Select(r => new RepoInfo(r.Id, r.Project.Key, r.Slug, r.ProjectId))
+                .Select(r => new RepoInfo(r.Id, r.Project.Key, r.Slug, r.ProjectId, r.IsArchived))
+                .FirstOrDefaultAsync(ctx.RequestAborted);
+            // A renamed repository keeps answering at its old slug (RepositoryRedirect).
+            found ??= await db.RepositoryRedirects.AsNoTracking()
+                .Where(r => r.Repository.Project.Key.ToUpper() == upperKey && r.OldSlug == slug)
+                .Select(r => new RepoInfo(r.Repository.Id, r.Repository.Project.Key, r.Repository.Slug, r.Repository.ProjectId, r.Repository.IsArchived))
                 .FirstOrDefaultAsync(ctx.RequestAborted);
         }
         if (found is null) { await NotFound(ctx); return; }
@@ -129,6 +134,12 @@ public static partial class GitHttpEndpoints
         {
             logger.LogInformation("Git push to {Key}/{Slug} denied for {User} (role {Role})", found.Key, found.Slug, user.UserName, role);
             await WritePlain(ctx, StatusCodes.Status403Forbidden, $"You don't have permission to push to this repository (requires Developer; you are {role}).");
+            return;
+        }
+        if (writing && found.IsArchived)
+        {
+            logger.LogInformation("Git push to archived {Key}/{Slug} rejected for {User}", found.Key, found.Slug, user.UserName);
+            await RejectArchivedPushAsync(ctx, rest);
             return;
         }
         if (tokenScopes is { } scopes)
@@ -179,7 +190,26 @@ public static partial class GitHttpEndpoints
         }
     }
 
-    private sealed record RepoInfo(int Id, string Key, string Slug, int ProjectId);
+    private sealed record RepoInfo(int Id, string Key, string Slug, int ProjectId, bool IsArchived);
+
+    private const string ArchivedMessage = "This repository is archived and read-only. A Maintainer can unarchive it in the repository settings.";
+
+    /// <summary>
+    /// Refuses a push to an archived repository. On the ref advertisement git prints an <c>ERR</c> packet as
+    /// "remote error: …", which is far clearer than a bare HTTP 403; the pack POST itself gets a plain 403.
+    /// </summary>
+    private static async Task RejectArchivedPushAsync(HttpContext ctx, string rest)
+    {
+        if (rest != "info/refs")
+        {
+            await WritePlain(ctx, StatusCodes.Status403Forbidden, ArchivedMessage);
+            return;
+        }
+        static string Pkt(string line) => (Encoding.UTF8.GetByteCount(line) + 4).ToString("x4") + line;
+        ctx.Response.StatusCode = StatusCodes.Status200OK;
+        ctx.Response.ContentType = "application/x-" + ReceivePack + "-advertisement";
+        await ctx.Response.WriteAsync(Pkt("# service=" + ReceivePack + "\n") + "0000" + Pkt("ERR " + ArchivedMessage + "\n"));
+    }
 
     /// <summary>
     /// HTTP Basic via Identity: the login is a username or email, the password is either the account password or

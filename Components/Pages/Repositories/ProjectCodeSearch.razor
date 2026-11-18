@@ -1,0 +1,101 @@
+@page "/p/{Key}/code-search"
+@inject IssueService Issues
+@inject CodeSearchService Search
+@inject NavigationManager Nav
+
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Code search" : $"{Q} · Code search") · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This project does not exist." />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Code search</h1>
+            <div class="muted">@project.Name · default branch of every repository</div>
+        </div>
+    </div>
+
+    <form class="search-form" @onsubmit="Submit">
+        <input class="form-control search-input" type="search" placeholder="Search file names and contents" @bind="text" autofocus />
+        <label class="form-check"><input class="form-check-input" type="checkbox" @bind="caseSensitive" /> Match case</label>
+        <label class="form-check"><input class="form-check-input" type="checkbox" @bind="regex" /> Regex</label>
+        <button class="btn btn-primary" type="submit">Search</button>
+    </form>
+
+    @if (string.IsNullOrWhiteSpace(Q))
+    {
+        <div class="empty">Search file names and contents across all of @project.Name's repositories.</div>
+    }
+    else if (searching || results == null)
+    {
+        <div class="muted">Searching…</div>
+    }
+    else if (results.Count == 0)
+    {
+        <div class="empty">This project has no repositories yet.</div>
+    }
+    else
+    {
+        var withHits = results.Where(r => r.Error != null || !r.IsEmpty).ToList();
+        <div class="search-summary">
+            <b>@results.Sum(r => r.MatchCount)</b> line match@(results.Sum(r => r.MatchCount) == 1 ? "" : "es") and
+            <b>@results.Sum(r => r.FileNames.Count)</b> file name@(results.Sum(r => r.FileNames.Count) == 1 ? "" : "s")
+            in @withHits.Count of @results.Count repositor@(results.Count == 1 ? "y" : "ies").
+            @if (results.Any(r => r.Truncated))
+            {
+                <span>Results were capped; refine your search to see more.</span>
+            }
+        </div>
+        @if (withHits.Count == 0)
+        {
+            <div class="empty">No results for <b>@Q</b>.</div>
+        }
+        @foreach (var r in withHits)
+        {
+            <div class="search-repo-head" @key="r.Repository.Id">
+                <span class="repo-icon sm">⌥</span>
+                <a href="@CodeUrls.Search(r.Repository, Q, null, caseSensitive, regex)">@r.Repository.Name</a>
+                <span class="muted small mono">@r.Ref</span>
+                @if (r.Repository.IsArchived) { <span class="archived-badge">Archived</span> }
+            </div>
+            <SearchResults Result="r" />
+        }
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "case")] public string? Case { get; set; }
+    [SupplyParameterFromQuery(Name = "regex")] public string? Regex { get; set; }
+
+    private Project? project;
+    private List<RepoSearchResult>? results;
+    private string? text, searchedFor;
+    private bool notFound, caseSensitive, regex, searching;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key); // null unless the user can view the project
+        notFound = project == null;
+        if (notFound) return;
+        text = Q;
+        caseSensitive = Case == "1";
+        regex = Regex == "1";
+
+        var key = $"{Key}|{Q}|{caseSensitive}|{regex}";
+        if (string.IsNullOrWhiteSpace(Q) || key == searchedFor) return;
+        searchedFor = key;
+        searching = true;
+        try
+        {
+            results = await Search.SearchProjectAsync(project!.Id, new CodeSearchOptions(Q.Trim(), IgnoreCase: !caseSensitive, Regex: regex));
+        }
+        finally { searching = false; }
+    }
+
+    private void Submit() => Nav.NavigateTo(CodeUrls.ProjectSearch(Key, text?.Trim(), caseSensitive, regex));
+}

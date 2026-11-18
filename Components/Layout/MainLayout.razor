@@ -64,6 +64,7 @@
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/milestones")">🏁 Milestones</NavLink>
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/repos")">📦 Repositories</NavLink>
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/pull-requests")">🔀 Pull requests</NavLink>
+                    <NavLink class="side-link" href="@($"/p/{cp.Key}/code-search")">🔍 Code search</NavLink>
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/members")">👥 Members</NavLink>
                     @if (projectPerms.ProjectId == cp.Id && projectPerms.Can(Permission.ManageLabelsAndMilestones))
                     {

@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AiReview> AiReviews => Set<AiReview>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
+    public DbSet<RepositoryRedirect> RepositoryRedirects => Set<RepositoryRedirect>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -76,5 +77,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<ProjectMember>().HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PersonalAccessToken>().HasIndex(t => t.UserId);
         b.Entity<PersonalAccessToken>().HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- Code tools -----
+        b.Entity<RepositoryRedirect>().HasIndex(r => new { r.ProjectId, r.OldSlug }).IsUnique();
+        b.Entity<RepositoryRedirect>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
     }
 }

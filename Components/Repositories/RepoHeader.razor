@@ -1,4 +1,6 @@
 @* Breadcrumb, title and tab strip shared by every page of a repository. *@
+@inject ProjectAccess Access
+@inject NavigationManager Nav
 <div class="breadcrumbs">
     <a href="/p/@Repo.Project.Key/issues">@Repo.Project.Name</a> /
     <a href="@RepoUrls.List(Repo.Project.Key)">Repositories</a> /
@@ -8,27 +10,59 @@
     <div class="repo-title">
         <span class="repo-icon">⌥</span>
         <div>
-            <h1>@Repo.Name</h1>
+            <h1>@Repo.Name@if (Repo.IsArchived) {<span class="archived-badge" title="Read-only: pushes and new pull requests are disabled">Archived</span>}</h1>
             @if (!string.IsNullOrWhiteSpace(Repo.Description))
             {
                 <div class="muted">@Repo.Description</div>
             }
         </div>
     </div>
-    @ChildContent
+    <div class="repo-header-actions">
+        <form class="d-flex" role="search" @onsubmit="Search">
+            <input class="form-control form-control-sm repo-search-box" type="search" placeholder="Search code…"
+                   aria-label="Search this repository" @bind="query" />
+        </form>
+        @ChildContent
+    </div>
 </div>
+@if (Repo.IsArchived)
+{
+    <div class="archived-banner">This repository was archived@(Repo.ArchivedAt is { } at ? $" on {at.ToLocalTime():MMM d, yyyy}" : ""). It is read-only: pushes, new branches and pull requests are disabled.</div>
+}
 <nav class="tabs repo-tabs">
     <a class="tab @(Active == "source" ? "active" : "")" href="@RepoUrls.Source(Repo, Ref)">Source</a>
     <a class="tab @(Active == "commits" ? "active" : "")" href="@RepoUrls.Commits(Repo, Ref)">Commits</a>
     <a class="tab @(Active == "branches" ? "active" : "")" href="@RepoUrls.Branches(Repo)">Branches</a>
     <a class="tab @(Active == "prs" ? "active" : "")" href="@RepoUrls.RepoPullRequests(Repo)">Pull requests</a>
+    <a class="tab @(Active == "search" ? "active" : "")" href="@CodeUrls.Search(Repo, null, Ref)">Search</a>
+    @if (canManage)
+    {
+        <a class="tab @(Active == "settings" ? "active" : "")" href="@CodeUrls.Settings(Repo)">Settings</a>
+    }
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>One of: source, commits, branches, prs.</summary>
+    /// <summary>One of: source, commits, branches, prs, search, settings.</summary>
     [Parameter] public string Active { get; set; } = "source";
-    /// <summary>The ref being viewed, carried across the Source/Commits tabs.</summary>
+    /// <summary>The ref being viewed, carried across the Source/Commits/Search tabs.</summary>
     [Parameter] public string? Ref { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool canManage;
+    private int? permsFor;
+    private string? query;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (permsFor == Repo.ProjectId) return;
+        permsFor = Repo.ProjectId;
+        canManage = await Access.CanAsync(Repo.ProjectId, Permission.ManageRepositories);
+    }
+
+    private void Search()
+    {
+        if (string.IsNullOrWhiteSpace(query)) return;
+        Nav.NavigateTo(CodeUrls.Search(Repo, query.Trim(), Ref));
+    }
 }

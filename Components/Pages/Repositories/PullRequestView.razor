@@ -8,6 +8,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject RepositorySettingsService RepoSettings
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -341,7 +342,7 @@ else if (pr != null)
 
     private string CurrentTab => Tab is "commits" or "files" ? Tab : "overview";
     private string TabUrl(string? tab) => RepoUrls.PullRequest(pr!) + (tab == null ? "" : "?tab=" + tab);
-    private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean;
+    private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean && !pr.Repository.IsArchived;
 
     private string MergeCss => mergeStatus?.Check switch
     {
@@ -350,7 +351,7 @@ else if (pr != null)
         _ => "neutral",
     };
 
-    private string MergeText => mergeStatus?.Check switch
+    private string MergeText => pr?.Repository.IsArchived == true ? "This repository is archived (read-only), so pull requests can't be merged." : mergeStatus?.Check switch
     {
         MergeCheck.Clean => mergeStatus.CanFastForward ? "✓ Ready to merge (can fast-forward)." : "✓ Ready to merge. No conflicts.",
         MergeCheck.Conflicts => "⚠ This pull request has conflicts and can't be merged. Resolve them locally and push.",
@@ -375,6 +376,11 @@ else if (pr != null)
     private async Task Reload(bool full)
     {
         pr = await PRs.GetAsync(Key, Slug, Number);
+        if (pr == null && full && await RepoSettings.RedirectUrlAsync(Nav.Uri, Key, Slug) is { } moved)
+        {
+            Nav.NavigateTo(moved, replace: true); // renamed repository
+            return;
+        }
         notFound = pr == null;
         if (pr == null) return;
         watching = await Notifications.IsWatchingPullRequestAsync(Me.Id, pr.Id);

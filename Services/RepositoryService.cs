@@ -133,6 +133,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
     public async Task CreateBranchAsync(Repository repo, string name, string fromRev, int? actorId = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.PushCode, actorId);
+        await RepositorySettingsService.EnsureNotArchivedAsync(dbFactory, repo.Id);
         await Git(repo, path => GitOps.CreateBranch(path, name, fromRev));
     }
 
@@ -140,6 +141,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
     public async Task DeleteBranchAsync(Repository repo, string name, int? actorId = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.DeleteBranch, actorId);
+        await RepositorySettingsService.EnsureNotArchivedAsync(dbFactory, repo.Id);
         await Git(repo, path => GitOps.DeleteBranch(path, name, repo.DefaultBranch));
     }
 

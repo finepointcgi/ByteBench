@@ -1,0 +1,95 @@
+@page "/p/{Key}/repos/{Slug}/search"
+@inherits RepoPageBase
+@inject CodeSearchService Search
+
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Search" : $"{Q} · Search") · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="search" Ref="@Ref" />
+
+    <form class="search-form" @onsubmit="Submit">
+        <RefSelector Branches="branches" Tags="tags" Value="@CurrentRef" ValueChanged="SwitchRef" />
+        <input class="form-control search-input" type="search" placeholder="Search file names and contents" @bind="text" autofocus />
+        <label class="form-check"><input class="form-check-input" type="checkbox" @bind="caseSensitive" /> Match case</label>
+        <label class="form-check"><input class="form-check-input" type="checkbox" @bind="regex" /> Regex</label>
+        <button class="btn btn-primary" type="submit">Search</button>
+    </form>
+
+    @if (string.IsNullOrWhiteSpace(Q))
+    {
+        <div class="empty">Search file names and file contents at <span class="mono">@CurrentRef</span>.
+            Searching is literal text by default; tick <b>Regex</b> for an extended regular expression.
+            <div class="mt-2"><a href="@CodeUrls.ProjectSearch(Repo.Project.Key)">Search every repository in @Repo.Project.Name</a></div>
+        </div>
+    }
+    else if (searching || result == null)
+    {
+        <div class="muted">Searching…</div>
+    }
+    else
+    {
+        <div class="search-summary">
+            @if (result.Error == null)
+            {
+                <span><b>@result.MatchCount</b> line match@(result.MatchCount == 1 ? "" : "es") in <b>@result.Files.Count</b> file@(result.Files.Count == 1 ? "" : "s")
+                    and <b>@result.FileNames.Count</b> file name@(result.FileNames.Count == 1 ? "" : "s") at <span class="mono">@result.Ref</span>.</span>
+                @if (result.Truncated)
+                {
+                    <span> Showing the first @CodeSearchService.MaxMatchesPerRepo matches; refine your search to see more.</span>
+                }
+            }
+        </div>
+        @if (result.Error == null && result.IsEmpty)
+        {
+            <div class="empty">No results for <b>@Q</b>.</div>
+        }
+        else
+        {
+            <SearchResults Result="result" />
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "ref")] public string? Ref { get; set; }
+    [SupplyParameterFromQuery(Name = "case")] public string? Case { get; set; }
+    [SupplyParameterFromQuery(Name = "regex")] public string? Regex { get; set; }
+
+    private List<BranchInfo> branches = [];
+    private List<string> tags = [];
+    private RepoSearchResult? result;
+    private string? text, searchedFor;
+    private bool caseSensitive, regex, searching;
+
+    private string CurrentRef => string.IsNullOrEmpty(Ref) ? Repo!.DefaultBranch : Ref;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        text = Q;
+        caseSensitive = Case == "1";
+        regex = Regex == "1";
+        if (branches.Count == 0 && tags.Count == 0)
+            (branches, tags) = await Git(path => GitOps.Exists(path) ? (GitOps.ListBranches(path, Repo!.DefaultBranch), GitOps.ListTags(path)) : ([], []));
+
+        var key = $"{Q}|{CurrentRef}|{caseSensitive}|{regex}";
+        if (string.IsNullOrWhiteSpace(Q) || key == searchedFor) return;
+        searchedFor = key;
+        searching = true;
+        try
+        {
+            result = await Search.SearchRepositoryAsync(Repo!, CurrentRef, new CodeSearchOptions(Q.Trim(), IgnoreCase: !caseSensitive, Regex: regex));
+        }
+        finally { searching = false; }
+    }
+
+    private void Submit() => Nav.NavigateTo(CodeUrls.Search(Repo!, text?.Trim(), CurrentRef, caseSensitive, regex));
+
+    private void SwitchRef(string newRef) => Nav.NavigateTo(CodeUrls.Search(Repo!, text?.Trim(), newRef, caseSensitive, regex));
+}

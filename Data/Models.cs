@@ -121,7 +121,7 @@ public class Activity
 /// A Git repository belonging to a project (Bitbucket-style). The bare repo lives on disk at
 /// <see cref="GitBench.Services.RepoStorage.PathFor"/>; this row is its metadata.
 /// </summary>
-public class Repository
+public partial class Repository
 {
     public int Id { get; set; }
     public int ProjectId { get; set; }
@@ -336,4 +336,27 @@ public class PersonalAccessToken
     public DateTime? RevokedAt { get; set; }
 
     public bool IsActive(DateTime utcNow) => RevokedAt == null && (ExpiresAt == null || ExpiresAt > utcNow);
+}
+
+// ----- Code tools -----
+
+public partial class Repository
+{
+    /// <summary>Archived repositories are read-only: pushes are rejected and pull requests can't be created or merged.</summary>
+    public bool IsArchived { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+}
+
+/// <summary>
+/// A slug a repository used to have. Web URLs and git clone URLs that use it keep working: pages redirect to the
+/// current slug and Git Smart HTTP serves the renamed repository. Removed with the repository.
+/// </summary>
+public class RepositoryRedirect
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    [Required, MaxLength(100)] public string OldSlug { get; set; } = "";
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

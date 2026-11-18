@@ -67,7 +67,7 @@ else if (project != null)
             <a class="issue-row repo-row" href="@RepoUrls.Base(r.Repository)" @key="r.Repository.Id">
                 <span class="repo-icon sm">⌥</span>
                 <div class="issue-main">
-                    <div class="issue-title">@r.Repository.Name <span class="muted mono small">@project.Key/@r.Repository.Slug</span></div>
+                    <div class="issue-title">@r.Repository.Name <span class="muted mono small">@project.Key/@r.Repository.Slug</span>@if (r.Repository.IsArchived) {<span class="archived-badge">Archived</span>}</div>
                     <div class="issue-meta">
                         @(r.Repository.Description ?? "No description")
                         · created @Display.Ago(r.Repository.CreatedAt)

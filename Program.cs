@@ -55,6 +55,8 @@ builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
 builder.Services.AddSingleton<LiveEvents>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
+builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 
 var app = builder.Build();
 

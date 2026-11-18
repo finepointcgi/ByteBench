@@ -245,6 +245,55 @@ sqlite3 gitbench.db "select Feature, count(*), sum(InputTokens), sum(OutputToken
 Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions), `AiReviewLogic.cs` (pure functions: skipping, chunking, prompts, validation, summary), `AiReviewQueue.cs` (queue, worker, push listener), `AiClient.Structured.cs` (generic `CompleteJsonAsync<T>` structured-output helper) and `AiBot.cs`.
 
 
+## Code tools
+
+### Syntax highlighting
+
+Code is highlighted in the browser with **highlight.js 11.11.1**, vendored in `wwwroot/lib/highlightjs/` (the cdnjs "common" bundle of ~35 languages plus Dockerfile, PowerShell and F#; checked against the cdnjs SRI hashes, never loaded from a CDN at runtime). It applies to:
+
+- the file viewer (`RepoSource`),
+- diffs (commit view, PR files tab, new-PR preview); the old side (context + deleted lines) and new side (context + added lines) are each highlighted as one document, so multi-line comments and strings work, and the +/- row colours stay,
+- fenced code blocks with a language (```` ```csharp ````) in Markdown: issue and PR descriptions, comments, README rendering and the editor preview.
+
+The language comes from the file extension or name (`Services/Code/CodeLanguages.cs`). Unknown types, and files or diffs over 200 KB, stay plain.
+
+Why client-side: highlight.js is maintained, small and covers far more languages than the .NET options (ColorCode covers few languages; TextMateSharp needs native Oniguruma binaries). To stay safe under Blazor's DOM diffing, each code line is rendered as a `MarkupString` (`<span class="hl-line">…</span>`). Blazor tracks the span and replaces it whole when the line changes, and `wwwroot/js/code-tools.js` only rewrites the span's children. A single `MutationObserver` reruns the idempotent highlight pass after every render, so it survives re-renders, enhanced navigation and live updates with no per-component JS interop. Token colours are CSS variables in `wwwroot/css/code-tools.css`. The app has no dark mode yet; adding one only means overriding the `--hl-*` variables.
+
+**Line links:** line numbers in the file viewer are links. `#L42` highlights and scrolls to a line, shift-click selects a range (`#L10-L20`), and the URL updates so it can be shared.
+
+### Code search
+
+| Route | Page |
+| --- | --- |
+| `/p/{KEY}/repos/{slug}/search?q=&ref=&case=1&regex=1` | Search one repository at a branch, tag or commit (default branch when `ref` is empty) |
+| `/p/{KEY}/code-search?q=&case=1&regex=1` | Search the default branch of every repository in the project ("Code search" in the sidebar) |
+
+Every repository page also has a search box in its header and a **Search** tab.
+
+- **File contents:** `git --git-dir <bare> grep -n -I -z --fixed-strings` against the resolved commit. It is case-insensitive unless *Match case* is ticked. With *Regex* ticked, `--perl-regexp` is used, falling back to `--extended-regexp` if git was built without PCRE.
+- **File names:** `git ls-tree -r -z --name-only`, matching the full path (up to 50).
+- **Safety and limits:** git runs with `ProcessStartInfo.ArgumentList` (no shell), the query is passed after `-e` (so it can't be an option), `GIT_*` variables are cleared, there is a 10-second timeout (the process is killed), at most 50 matches per file, 200 per repository and 400 per project search, and queries of at most 200 characters.
+- **Results** are grouped by file, with one line of context around each match. Matches are marked, and each line number links to `file#L{n}` at the searched ref.
+- Everything requires **ViewProject**. Users who can't view the project get "Not found".
+
+Code: `Services/Code/CodeSearchService.cs`, `Components/Repositories/SearchResults.razor`, `Components/Pages/Repositories/RepoSearch.razor` and `ProjectCodeSearch.razor`.
+
+### Repository settings
+
+`/p/{KEY}/repos/{slug}/settings` (the **Settings** tab, shown to Maintainers and Owners) requires **ManageRepositories**. The left-hand sub-nav (`Components/Repositories/RepoSettingsNav.razor`) has a *General* page; add further settings pages there.
+
+- **General:** name, description and default branch (a dropdown of existing branches). Changing the default branch also points the bare repo's `HEAD` at it, so new clones check it out.
+- **Rename** changes the slug and moves `{KEY}/{old}.git` to `{KEY}/{new}.git`. It refuses if a repository or anything on disk already has the new slug. The database update and the directory move run inside one transaction (if the commit fails, the directory is moved back). The old slug is stored in `RepositoryRedirects`:
+  - Web URLs with the old slug (source, commits, branches, PRs, search, settings) redirect to the new one, keeping the query and `#L` anchor.
+  - Git Smart HTTP at `/git/{KEY}/{old}.git` keeps serving the renamed repository, so existing clones keep fetching and pushing. Update remotes with `git remote set-url`.
+  - Renaming back to a former slug removes that redirect. A real repository always wins over a redirect.
+- **Archive / unarchive:** an archived repository is read-only and shows an **Archived** badge in its header and in the repository list.
+  - `git push` fails with `remote error: This repository is archived and read-only…` (sent as an `ERR` packet so git prints it).
+  - Creating, deleting and merging branches and pull requests is refused by the services and disabled in the UI. Clone, fetch, browsing and search still work.
+- **Delete:** type the repository name to confirm. The database goes first: the repository row is deleted, and FK cascades remove its pull requests with their comments, reviews, activity, watches and AI reviews, plus its redirects. Notifications that link into the repository are also removed. Then the bare repo is moved to a `.trash-…` name and deleted. A disk failure after the database delete is logged and leaves only an unreferenced trash directory.
+
+Code: `Services/RepositorySettingsService.cs`, `Services/Git/GitOps.CodeTools.cs`, `Components/Pages/Repositories/RepoSettings.razor`. Schema: `Repository.IsArchived` / `ArchivedAt` and the `RepositoryRedirect` entity (migration `CodeTools`).
+
 ## Next steps
 
 - **More features:** issue links and sub-tasks, attachments, email delivery of notifications, @mention autocomplete.
