@@ -1,23 +1,43 @@
-/* ----- Code tools: syntax highlighting, line links, code search, repository settings ----- */
+/* ----- Code tools and repositories: syntax highlighting, line links, code/diff tables, shared repo chrome ----- */
 
-/* Syntax colours (GitHub-like). The app has no dark mode yet; one would only need to override these variables. */
+/*
+   Dark mode: MudThemeProvider sets --mud-native-html-color-scheme to "light" or "dark". Code surfaces opt into it with
+   color-scheme, so the light-dark() pairs below resolve to the right half. Token names (--hl-*) are what code-tools.js
+   output and markdown code blocks use.
+*/
 :root {
-    --hl-keyword: #cf222e;
-    --hl-string: #0a3069;
-    --hl-number: #0550ae;
-    --hl-comment: #6e7781;
-    --hl-title: #8250df;
-    --hl-type: #953800;
-    --hl-attr: #0550ae;
-    --hl-tag: #116329;
-    --hl-meta: #6639ba;
-    --hl-variable: #953800;
-    --hl-addition: #116329;
-    --hl-deletion: #82071e;
-    --line-selected-bg: #fff8c5;
-    --line-selected-ln: #f0d878;
-    --search-mark-bg: #fff1a8;
+    --hl-keyword: light-dark(#cf222e, #ff7b72);
+    --hl-string: light-dark(#0a3069, #a5d6ff);
+    --hl-number: light-dark(#0550ae, #79c0ff);
+    --hl-comment: light-dark(#6e7781, #8b949e);
+    --hl-title: light-dark(#8250df, #d2a8ff);
+    --hl-type: light-dark(#953800, #ffa657);
+    --hl-attr: light-dark(#0550ae, #79c0ff);
+    --hl-tag: light-dark(#116329, #7ee787);
+    --hl-meta: light-dark(#6639ba, #d2a8ff);
+    --hl-variable: light-dark(#953800, #ffa657);
+    --hl-addition: light-dark(#116329, #aff5b4);
+    --hl-deletion: light-dark(#82071e, #ffdcd7);
+    --line-selected-bg: light-dark(#fff8c5, rgba(187, 128, 9, .18));
+    --line-selected-ln: light-dark(#f0d878, rgba(187, 128, 9, .4));
+    --search-mark-bg: light-dark(#fff1a8, rgba(210, 153, 34, .45));
+    --search-mark-ring: light-dark(#f5d65b, rgba(210, 153, 34, .8));
+
+    /* Diff rows */
+    --diff-add-bg: light-dark(#e9fbe9, rgba(46, 160, 67, .15));
+    --diff-add-ln-bg: light-dark(#d3f6d3, rgba(46, 160, 67, .28));
+    --diff-add-ln: light-dark(#3d7a46, #7ee787);
+    --diff-add-edge: light-dark(#b9e6bd, rgba(46, 160, 67, .4));
+    --diff-del-bg: light-dark(#fdecec, rgba(248, 81, 73, .13));
+    --diff-del-ln-bg: light-dark(#fad7d7, rgba(248, 81, 73, .26));
+    --diff-del-ln: light-dark(#9a3f3f, #ffa198);
+    --diff-del-edge: light-dark(#f2b9b9, rgba(248, 81, 73, .4));
+    --diff-hunk-bg: light-dark(#f1f4fb, rgba(56, 139, 253, .12));
+    --code-hover-bg: light-dark(#fffbea, rgba(187, 128, 9, .1));
 }
+
+/* Elements that use the light-dark() tokens follow the MudBlazor theme. */
+.code-table, .diff-table, .markdown pre, .hljs, .issue-key-chip, .gb-code-surface { color-scheme: var(--mud-native-html-color-scheme, light); }
 
 .hljs-keyword, .hljs-doctag, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-type.hljs-keyword, .hljs-selector-tag { color: var(--hl-keyword); }
 .hljs-string, .hljs-regexp, .hljs-meta .hljs-string, .hljs-char.escape_ { color: var(--hl-string); }
@@ -37,6 +57,15 @@
 .hljs-link { text-decoration: underline; }
 .markdown pre code.hljs { display: block; }
 
+/* ----- Code and diff tables (file viewer, search results, DiffView) ----- */
+.code-table, .diff-table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 20px; }
+.code-table td.ln, .diff-table td.ln {
+    width: 1%; min-width: 44px; padding: 0 10px; text-align: right; color: var(--mud-palette-text-disabled); user-select: none;
+    vertical-align: top; white-space: nowrap; border-right: 1px solid var(--border);
+}
+.code-table td.code { padding: 0 14px; white-space: pre; tab-size: 4; }
+.code-table tr:hover td { background: var(--code-hover-bg); }
+
 /* Linkable line numbers (#L42, #L10-L20) in the file viewer */
 .code-table td.ln a.ln-link { color: inherit; text-decoration: none; display: block; }
 .code-table td.ln a.ln-link:hover { color: var(--text); }
@@ -44,41 +73,90 @@
 .code-table tr.line-selected td.ln { background: var(--line-selected-ln); color: var(--text); }
 .code-table tr { scroll-margin-top: 80px; }
 
-/* Repo header: search box and archived badge */
-.repo-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.repo-search-box { width: 220px; }
-.archived-badge {
-    display: inline-block; font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 7px; border-radius: 9px;
-    background: #fef3c7; color: #92400e; border: 1px solid #fde68a; vertical-align: middle; margin-left: 8px;
+mark.search-hit { background: var(--search-mark-bg); color: inherit; padding: 0; border-radius: 2px; box-shadow: 0 0 0 1px var(--search-mark-ring); }
+
+/* Note shown in place of a file or diff body ("Binary file not shown.") */
+.diff-note { padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* ----- Shared repository chrome ----- */
+.sha-pill {
+    display: inline-block; background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary);
+    border-radius: 5px; padding: 0 6px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.archived-banner { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: var(--radius); padding: 8px 14px; margin-bottom: 12px; font-size: 13px; }
+a.sha-pill:hover { text-decoration: none; background: var(--accent-soft); color: var(--accent); }
+.branch-pill {
+    display: inline-block; background: rgba(var(--mud-palette-info-rgb), .12); color: var(--mud-palette-info);
+    border-radius: 5px; padding: 0 6px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+a.branch-pill:hover { text-decoration: none; background: rgba(var(--mud-palette-info-rgb), .22); }
+.issue-key-chip {
+    display: inline-block; font-size: 11.5px; background: rgba(var(--mud-palette-warning-rgb), .15); color: light-dark(#9a6200, #e3b341);
+    border-radius: 10px; padding: 0 7px; margin: 0 2px 0 4px; vertical-align: middle; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+a.issue-key-chip:hover { text-decoration: none; background: rgba(var(--mud-palette-warning-rgb), .28); }
 
-/* Code search */
-.search-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
-.search-form .search-input { flex: 1 1 320px; max-width: 560px; }
-.search-form .form-check { margin: 0; }
-.search-summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
-.search-repo-head { font-weight: 600; margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; }
-.search-names { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 0; margin-bottom: 12px; }
-.search-names a { display: block; padding: 3px 14px; font-size: 13px; }
-.search-file { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
-.search-file-head { display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: #f8f8fb; border-bottom: 1px solid var(--border); font-size: 13px; }
-.search-file .code-table td.ln a { color: inherit; }
-.search-file .code-table tr.search-gap td { height: 6px; background: #f8f8fb; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.search-file .code-table tr.search-ctx td.code { color: var(--muted); }
-mark.search-hit { background: var(--search-mark-bg); color: inherit; padding: 0; border-radius: 2px; box-shadow: 0 0 0 1px #f5d65b; }
+/* Route-driven tab strips (repository header, PR view, PR list states). Links, so tabs stay real URLs. */
+.gb-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.gb-tabs .gb-tab {
+    border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--muted);
+    text-transform: none; font-weight: 500; white-space: nowrap; flex-shrink: 0;
+}
+.gb-tabs .gb-tab:hover { color: var(--text); text-decoration: none; }
+.gb-tabs .gb-tab.gb-tab-active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.gb-tab-count {
+    display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 10px; font-size: 12px; line-height: 18px;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary); font-weight: 500;
+}
 
-/* Repository settings */
-.settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; align-items: start; }
-.settings-nav { display: flex; flex-direction: column; gap: 2px; }
-.settings-nav a { padding: 6px 10px; border-radius: 6px; color: var(--text); font-size: 14px; }
-.settings-nav a:hover { background: var(--accent-soft); text-decoration: none; }
-.settings-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+/* Toolbar row under a repository header */
+.repo-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.gb-ref-select { min-width: 200px; max-width: 280px; }
+
+/* Bordered list container with dividers between rows (repos, PRs, commits, branches, pipelines). */
+.gb-rows { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.gb-rows > .gb-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+.gb-rows > .gb-row:last-child { border-bottom: none; }
+.gb-rows > a.gb-row:hover, .gb-rows > .gb-row.gb-row-hover:hover { background: var(--mud-palette-action-default-hover); text-decoration: none; }
+.gb-rows > .empty { border: none; border-radius: 0; }
+.gb-row-main { flex: 1; min-width: 0; }
+.gb-row-title { font-weight: 600; }
+.gb-row-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.gb-row-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Small helpers */
+.gb-min0 { min-width: 0; }
+.gb-bold { font-weight: 600; }
+.gb-nowrap { white-space: nowrap; }
+.gb-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gb-section-label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.gb-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 14px; }
+
+/* Two-column page with a sidebar (PR view, new PR). Collapses on narrow screens. */
+.gb-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
+.gb-side { padding: 4px 16px; }
+.gb-side-field { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.gb-side-field:last-child { border-bottom: none; }
+@media (max-width: 960px) {
+    .gb-detail-grid { grid-template-columns: 1fr; }
+}
+
+/* Repository settings layout (RepoSettings, RepoBranchProtection) */
+.settings-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; align-items: start; }
 .settings-section { margin-bottom: 16px; }
-.settings-section h2 { font-size: 1.05rem; margin-bottom: 4px; }
-.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .settings-row:first-of-type { border-top: none; }
 @media (max-width: 720px) {
     .settings-layout { grid-template-columns: 1fr; }
-    .settings-nav { flex-direction: row; flex-wrap: wrap; }
 }
+
+/* Code search form and results headers */
+.search-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.search-form .search-input { flex: 1 1 280px; max-width: 560px; }
+.search-summary { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+
+/* Monospace MudTextField input */
+.gb-mono-input input, .gb-mono-input textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* PrStateBadge (MudChip) */
+.mud-chip.pr-state { font-weight: 600; text-transform: uppercase; letter-spacing: .02em; font-size: 11.5px; }
+.mud-chip.pr-state-compact { height: 18px; font-size: 10px; padding: 0 6px; flex-shrink: 0; }

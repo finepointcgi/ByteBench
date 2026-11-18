@@ -1,4 +1,15 @@
+.repo-toolbar ::deep .run-branch { flex: none; margin: 0; }
+.toolbar-note { margin-left: auto; }
 .ci-col-status { width: 96px; flex-shrink: 0; }
-.ci-col-time { width: 110px; flex-shrink: 0; line-height: 1.5; }
-.ci-msg { margin-left: 6px; color: var(--text); }
-.issue-meta a.branch-pill, .issue-meta a.sha-pill { margin-right: 2px; }
+.ci-col-time { width: 110px; flex-shrink: 0; line-height: 1.5; text-align: right; }
+.ci-duration { display: inline-flex; align-items: center; gap: 3px; }
+.ci-msg { margin-left: 6px; color: var(--text); overflow-wrap: anywhere; }
+.ci-row-error { color: var(--mud-palette-error); }
+.gb-row-meta a.branch-pill, .gb-row-meta a.sha-pill { margin-right: 2px; }
+
+@media (max-width: 600px) {
+    .ci-row { flex-wrap: wrap; }
+    .ci-col-status { width: auto; }
+    .ci-col-time { width: 100%; text-align: left; display: flex; gap: 10px; }
+    .toolbar-note { margin-left: 0; }
+}

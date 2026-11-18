@@ -3,7 +3,7 @@
 @inject RepositoryService Repos
 @inject CurrentUser Me
 @inject NavigationManager Nav
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
 @inject NotificationService Notifications
 @inject LiveEvents Live
 @implements IDisposable
@@ -20,38 +20,35 @@
 else if (pr != null)
 {
     var repo = pr.Repository;
-    <div class="breadcrumbs">
-        <a href="/p/@repo.Project.Key/issues">@repo.Project.Name</a> /
-        <a href="@RepoUrls.Base(repo)">@repo.Name</a> /
-        <a href="@RepoUrls.RepoPullRequests(repo)">Pull requests</a> /
-        <span class="mono">#@pr.Number</span>
-    </div>
+    <MudBreadcrumbs Items="@Crumbs" Class="px-0 pt-0 pb-2" />
 
-    <div class="issue-header">
+    <div class="pr-header">
         @if (editingTitle)
         {
-            <div class="d-flex gap-2 flex-grow-1">
-                <input class="form-control form-control-lg" @bind="titleDraft" maxlength="200" />
-                <button class="btn btn-primary" @onclick="SaveTitle">Save</button>
-                <button class="btn btn-outline-secondary" @onclick="() => editingTitle = false">Cancel</button>
+            <div class="pr-title-edit">
+                <MudTextField T="string" @bind-Value="titleDraft" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" AutoFocus="true"
+                              aria-label="Pull request title" Class="flex-grow-1" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveTitle">Save</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="() => editingTitle = false">Cancel</MudButton>
             </div>
         }
         else
         {
-            <h1>@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></h1>
-            <div class="d-flex gap-2">
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="pr-title">@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></MudText>
+            <div class="d-flex gap-2 align-center">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
                 @if (CanEditPr && pr.State == PullRequestState.Open)
                 {
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</button>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit"
+                               OnClick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</MudButton>
                 }
             </div>
         }
     </div>
-    <div class="issue-subhead">
+    <div class="pr-subhead">
         <PrStateBadge State="pr.State" />
         <span class="muted">
-            <b>@pr.Author.DisplayName</b>
+            <b>@pr.Author.DisplayName</b>@(pr.State == PullRequestState.Merged ? "" : " ")
             @if (pr.State == PullRequestState.Merged)
             {
                 <span>'s changes were merged by <b>@pr.MergedBy?.DisplayName</b> @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt) ·</span>
@@ -61,25 +58,27 @@ else if (pr != null)
                 <span> @(pr.State == PullRequestState.Open ? "wants to merge" : "proposed merging") @(changes?.Commits.Count ?? 0) commit@((changes?.Commits.Count ?? 0) == 1 ? "" : "s") ·</span>
             }
         </span>
-        <a class="branch-pill mono" href="@RepoUrls.Source(repo, pr.SourceBranch)">@pr.SourceBranch</a>
-        <span class="muted">→</span>
-        <a class="branch-pill mono" href="@RepoUrls.Source(repo, pr.TargetBranch)">@pr.TargetBranch</a>
+        <span class="pr-branches">
+            <a class="branch-pill" href="@RepoUrls.Source(repo, pr.SourceBranch)">@pr.SourceBranch</a>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Style="font-size: 14px" Class="muted" />
+            <a class="branch-pill" href="@RepoUrls.Source(repo, pr.TargetBranch)">@pr.TargetBranch</a>
+        </span>
         <PipelineBadge Repo="repo" Branch="@pr.SourceBranch" Sha="@(pr.State == PullRequestState.Open ? null : pr.SourceCommitSha)" />
     </div>
 
-    <div class="tabs">
-        <a class="tab @(CurrentTab == "overview" ? "active" : "")" href="@TabUrl(null)">Overview</a>
-        <a class="tab @(CurrentTab == "commits" ? "active" : "")" href="@TabUrl("commits")">Commits <span class="count">@(changes?.Commits.Count ?? 0)</span></a>
-        <a class="tab @(CurrentTab == "files" ? "active" : "")" href="@TabUrl("files")">Files changed <span class="count">@(changes?.Files.Count ?? 0)</span></a>
-    </div>
+    <nav class="gb-tabs" aria-label="Pull request">
+        <TabLink Active="@(CurrentTab == "overview")" Href="@TabUrl(null)" Icon="@Icons.Material.Outlined.Forum">Overview</TabLink>
+        <TabLink Active="@(CurrentTab == "commits")" Href="@TabUrl("commits")" Icon="@Icons.Material.Outlined.Commit" Count="@(changes?.Commits.Count ?? 0)">Commits</TabLink>
+        <TabLink Active="@(CurrentTab == "files")" Href="@TabUrl("files")" Icon="@Icons.Material.Outlined.Difference" Count="@(changes?.Files.Count ?? 0)">Files changed</TabLink>
+    </nav>
 
     @if (actionError != null)
     {
-        <div class="alert alert-danger py-2">@actionError</div>
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@actionError</MudAlert>
     }
 
-    <div class="detail-grid">
-        <div class="min-w-0">
+    <div class="gb-detail-grid">
+        <div class="gb-min0">
             @if (CurrentTab == "commits")
             {
                 @if (changes == null) { <div class="empty">The commits for this pull request are no longer available.</div> }
@@ -97,27 +96,28 @@ else if (pr != null)
             else
             {
                 <!-- Description -->
-                <div class="comment-card">
-                    <div class="comment-head">
+                <div class="pr-card">
+                    <div class="pr-card-head">
                         <Avatar User="pr.Author" Size="22" /> <b>@pr.Author.DisplayName</b>
                         <span class="muted small">opened @Display.Ago(pr.CreatedAt)</span>
                         @if (CanEditPr && !editingDesc)
                         {
-                            <button class="btn btn-link btn-sm ms-auto" @onclick="() => { descDraft = pr.Description; editingDesc = true; }">Edit</button>
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Class="ml-auto"
+                                       OnClick="() => { descDraft = pr.Description; editingDesc = true; }">Edit</MudButton>
                         }
                     </div>
-                    <div class="comment-body">
+                    <div class="pr-card-body">
                         @if (editingDesc)
                         {
                             <MarkdownEditor @bind-Value="descDraft" Rows="8" />
                             <div class="mt-2 d-flex gap-2">
-                                <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
-                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveDesc">Save</MudButton>
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editingDesc = false">Cancel</MudButton>
                             </div>
                         }
                         else if (string.IsNullOrWhiteSpace(pr.Description))
                         {
-                            <span class="muted fst-italic">No description provided.</span>
+                            <span class="muted"><i>No description provided.</i></span>
                         }
                         else
                         {
@@ -126,14 +126,14 @@ else if (pr != null)
                     </div>
                 </div>
 
-                <h2 class="section-title mt-4">Activity</h2>
+                <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mt-6 mb-2">Activity</MudText>
                 <div class="timeline">
                     @foreach (var entry in Timeline)
                     {
                         if (entry is PullRequestComment c)
                         {
-                            <div class="comment-card" @key="(1, c.Id)">
-                                <div class="comment-head">
+                            <div class="pr-card" @key="(1, c.Id)">
+                                <div class="pr-card-head">
                                     <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b> <AiBadge User="c.Author" />
                                     <span class="muted small">
                                         @if (c.IsInline)
@@ -145,19 +145,25 @@ else if (pr != null)
                                     </span>
                                     @if (c.AuthorId == Me.Id && perms.Can(Permission.Comment) && editingCommentId != c.Id)
                                     {
-                                        <span class="ms-auto">
-                                            <button class="btn btn-link btn-sm" @onclick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }">Edit</button>
-                                            <button class="btn btn-link btn-sm text-danger" @onclick="() => DeleteComment(c)">Delete</button>
+                                        <span class="ml-auto d-flex">
+                                            <MudTooltip Text="Edit comment">
+                                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit comment"
+                                                               OnClick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }" />
+                                            </MudTooltip>
+                                            <MudTooltip Text="Delete comment">
+                                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="Delete comment"
+                                                               OnClick="() => DeleteComment(c)" />
+                                            </MudTooltip>
                                         </span>
                                     }
                                 </div>
-                                <div class="comment-body">
+                                <div class="pr-card-body">
                                     @if (editingCommentId == c.Id)
                                     {
                                         <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" />
                                         <div class="mt-2 d-flex gap-2">
-                                            <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
-                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
+                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="() => SaveCommentEdit(c)">Save</MudButton>
+                                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editingCommentId = null">Cancel</MudButton>
                                         </div>
                                     }
                                     else
@@ -169,7 +175,7 @@ else if (pr != null)
                         }
                         else if (entry is PullRequestActivity a)
                         {
-                            <div class="activity-line" @key="(2, a.Id)">
+                            <div class="pr-activity" @key="(2, a.Id)">
                                 <Avatar User="a.Actor" Size="18" />
                                 <b>@a.Actor.DisplayName</b> <AiBadge User="a.Actor" /> <span class="md-inline">@Display.Markdown(a.Text)</span>
                                 <span class="muted">@Display.Ago(a.CreatedAt)</span>
@@ -180,12 +186,12 @@ else if (pr != null)
 
                 @if (perms.Can(Permission.Comment))
                 {
-                <div class="comment-card mt-3">
-                    <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
-                    <div class="comment-body">
+                <div class="pr-card mt-3">
+                    <div class="pr-card-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
+                    <div class="pr-card-body">
                         <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
                         <div class="mt-2">
-                            <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(newComment)" OnClick="AddComment">Comment</MudButton>
                         </div>
                     </div>
                 </div>
@@ -194,12 +200,12 @@ else if (pr != null)
         </div>
 
         <!-- Sidebar -->
-        <aside class="side-panel">
-            <div class="field">
-                <label>Merge</label>
+        <MudPaper Outlined="true" Class="gb-side" aria-label="Pull request details">
+            <div class="gb-side-field">
+                <span class="gb-section-label">Merge</span>
                 @if (pr.State == PullRequestState.Open)
                 {
-                    <div class="merge-status @MergeCss">@MergeText</div>
+                    <MudAlert Severity="@MergeSeverity" Dense="true" Variant="Variant.Outlined" Class="merge-status">@MergeText</MudAlert>
                     @if (mergeStatus?.Check == MergeCheck.Conflicts && mergeStatus.ConflictPaths.Count > 0)
                     {
                         <ul class="conflict-list mono">
@@ -209,80 +215,84 @@ else if (pr != null)
                     <MergeChecksList Gate="gate" Target="@pr.TargetBranch" />
                     @if (perms.Can(Permission.MergePullRequest))
                     {
-                    <select class="form-select form-select-sm mt-2" @bind="strategy" disabled="@(!CanMerge)">
-                        <option value="merge">Merge commit</option>
-                        <option value="ff">Fast-forward if possible</option>
-                    </select>
-                    <label class="form-check mt-2 small">
-                        <input class="form-check-input" type="checkbox" @bind="deleteSource" disabled="@(!CanMerge || pr.SourceBranch == repo.DefaultBranch)" />
-                        <span class="form-check-label">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
-                    </label>
-                    <button class="btn btn-success btn-sm w-100 mt-2" disabled="@(!CanMerge || busy)" @onclick="Merge">@(gate is { Blocked: true, CanBypass: true } ? "Merge (bypass protection)" : "Merge")</button>
+                    <MudSelect T="string" @bind-Value="strategy" Disabled="@(!CanMerge)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               OuterClass="mt-3" aria-label="Merge strategy">
+                        <MudSelectItem T="string" Value="@("merge")">Merge commit</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("ff")">Fast-forward if possible</MudSelectItem>
+                    </MudSelect>
+                    <MudCheckBox T="bool" @bind-Value="deleteSource" Disabled="@(!CanMerge || pr.SourceBranch == repo.DefaultBranch)" Size="Size.Small" Dense="true"
+                                 Color="Color.Primary" Class="mt-1">
+                        <span class="small">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
+                    </MudCheckBox>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" Class="mt-2" StartIcon="@Icons.Material.Filled.Merge"
+                               Disabled="@(!CanMerge || busy)" OnClick="Merge">@(gate is { Blocked: true, CanBypass: true } ? "Merge (bypass protection)" : "Merge")</MudButton>
                     }
                     else
                     {
-                        <div class="muted small mt-2">Only Maintainers and Owners can merge.</div>
+                        <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-2">Only Maintainers and Owners can merge.</MudText>
                     }
                     @if (CanEditPr)
                     {
-                        <button class="btn btn-outline-danger btn-sm w-100 mt-2" disabled="@busy" @onclick="Decline">Decline</button>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" FullWidth="true" Size="Size.Small" Class="mt-2"
+                                   Disabled="@busy" OnClick="Decline">Decline</MudButton>
                     }
                 }
                 else if (pr.State == PullRequestState.Merged)
                 {
-                    <div class="merge-status good">
+                    <MudAlert Severity="Severity.Success" Dense="true" Variant="Variant.Outlined" Class="merge-status" Icon="@Icons.Material.Filled.Merge">
                         Merged into <span class="mono">@pr.TargetBranch</span> by <b>@pr.MergedBy?.DisplayName</b>
                         @if (pr.MergeCommitSha != null)
                         {
-                            <div class="mt-1"><a class="sha-pill mono" href="@RepoUrls.Commit(repo, pr.MergeCommitSha)">@pr.MergeCommitSha[..7]</a></div>
+                            <div class="mt-1"><a class="sha-pill" href="@RepoUrls.Commit(repo, pr.MergeCommitSha)">@pr.MergeCommitSha[..7]</a></div>
                         }
-                    </div>
+                    </MudAlert>
                 }
                 else
                 {
-                    <div class="merge-status neutral">Declined @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt).</div>
+                    <MudAlert Severity="Severity.Normal" Dense="true" Variant="Variant.Outlined" Class="merge-status" Icon="@Icons.Material.Outlined.Block">Declined @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt).</MudAlert>
                     @if (CanEditPr)
                     {
-                        <button class="btn btn-outline-secondary btn-sm w-100 mt-2" disabled="@busy" @onclick="Reopen">Reopen</button>
+                        <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Small" Class="mt-2" StartIcon="@Icons.Material.Outlined.Replay"
+                                   Disabled="@busy" OnClick="Reopen">Reopen</MudButton>
                     }
                 }
             </div>
 
-            <div class="field">
-                <label>Reviewers</label>
+            <div class="gb-side-field">
+                <span class="gb-section-label">Reviewers</span>
                 <PrReviewersPanel Pr="pr" HeadSha="@changes?.HeadSha" CanEdit="CanEditPr" OnChanged="() => Reload(full: false)" />
                 @if (pr.State == PullRequestState.Open && pr.AuthorId != Me.Id && perms.Can(Permission.ReviewPullRequest))
                 {
                     var mine = pr.Reviews.FirstOrDefault(r => r.UserId == Me.Id)?.State;
-                    <div class="d-flex gap-2 mt-2">
+                    <div class="review-actions mt-2">
                         @if (mine == ReviewState.Approved)
                         {
-                            <button class="btn btn-outline-success btn-sm flex-fill" @onclick="() => Review(null)">Unapprove</button>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small" OnClick="() => Review(null)">Unapprove</MudButton>
                         }
                         else
                         {
-                            <button class="btn btn-success btn-sm flex-fill" @onclick="() => Review(ReviewState.Approved)">✓ Approve</button>
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Filled.Check" OnClick="() => Review(ReviewState.Approved)">Approve</MudButton>
                         }
                         @if (mine == ReviewState.ChangesRequested)
                         {
-                            <button class="btn btn-outline-warning btn-sm flex-fill" @onclick="() => Review(null)">Withdraw</button>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" OnClick="() => Review(null)">Withdraw</MudButton>
                         }
                         else
                         {
-                            <button class="btn btn-outline-warning btn-sm flex-fill" @onclick="() => Review(ReviewState.ChangesRequested)">Request changes</button>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" OnClick="() => Review(ReviewState.ChangesRequested)">Request changes</MudButton>
                         }
                     </div>
                 }
                 else if (pr.State == PullRequestState.Open && pr.AuthorId == Me.Id)
                 {
-                    <div class="muted small mt-1">You can't review your own pull request.</div>
+                    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">You can't review your own pull request.</MudText>
                 }
             </div>
 
             <AiReviewPanel PullRequest="pr" OnReviewFinished="() => Reload(full: false)" />
 
-            <div class="field">
-                <label>Linked issues</label>
+            <div class="gb-side-field">
+                <span class="gb-section-label">Linked issues</span>
                 @if (linked.Count == 0)
                 {
                     <div class="muted small">None. Mention <code>@repo.Project.Key-123</code> in the title, branch or commits.</div>
@@ -298,7 +308,7 @@ else if (pr != null)
                 }
             </div>
 
-            <div class="field muted small">
+            <div class="gb-side-field muted small">
                 Created @pr.CreatedAt.ToLocalTime().ToString("g")<br />
                 Updated @Display.Ago(pr.UpdatedAt)
                 @if (changes != null)
@@ -306,7 +316,7 @@ else if (pr != null)
                     <br /><span>@changes.Ahead ahead, @changes.Behind behind @pr.TargetBranch</span>
                 }
             </div>
-        </aside>
+        </MudPaper>
     </div>
 }
 
@@ -338,19 +348,27 @@ else if (pr != null)
                              && (gate == null || !gate.Blocked || gate.CanBypass);
     private MergeGateResult? gate; // branch protection + IMergeCheck results (open PRs only)
 
-    private string MergeCss => mergeStatus?.Check switch
+    private Severity MergeSeverity => mergeStatus?.Check switch
     {
-        MergeCheck.Clean => "good",
-        MergeCheck.Conflicts or MergeCheck.MissingBranch => "bad",
-        _ => "neutral",
+        MergeCheck.Clean => Severity.Success,
+        MergeCheck.Conflicts or MergeCheck.MissingBranch => Severity.Error,
+        _ => Severity.Normal,
     };
+
+    private List<BreadcrumbItem> Crumbs =>
+    [
+        new(pr!.Repository.Project.Name, $"/p/{pr.Repository.Project.Key}/issues"),
+        new(pr.Repository.Name, RepoUrls.Base(pr.Repository)),
+        new("Pull requests", RepoUrls.RepoPullRequests(pr.Repository)),
+        new($"#{pr.Number}", null, disabled: true),
+    ];
 
     private string MergeText => pr?.Repository.IsArchived == true ? "This repository is archived (read-only), so pull requests can't be merged." : mergeStatus?.Check switch
     {
-        MergeCheck.Clean => mergeStatus.CanFastForward ? "✓ Ready to merge (can fast-forward)." : "✓ Ready to merge. No conflicts.",
-        MergeCheck.Conflicts => "⚠ This pull request has conflicts and can't be merged. Resolve them locally and push.",
+        MergeCheck.Clean => mergeStatus.CanFastForward ? "Ready to merge (can fast-forward)." : "Ready to merge. No conflicts.",
+        MergeCheck.Conflicts => "This pull request has conflicts and can't be merged. Resolve them locally and push.",
         MergeCheck.UpToDate => "Nothing to merge: " + mergeStatus.Message,
-        MergeCheck.MissingBranch => "⚠ " + mergeStatus.Message,
+        MergeCheck.MissingBranch => mergeStatus.Message ?? "",
         _ => "Checking…",
     };
 
@@ -489,7 +507,7 @@ else if (pr != null)
 
     private async Task DeleteComment(PullRequestComment c)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this comment?")) return;
+        if (!await Dialogs.ConfirmAsync("Delete comment", "Delete this comment? This can't be undone.")) return;
         await Run(() => PRs.DeleteCommentAsync(c.Id, Me.Id), full: false);
     }
 }

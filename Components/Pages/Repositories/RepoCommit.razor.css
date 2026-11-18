@@ -1,0 +1,9 @@
+.commit-top { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+::deep .commit-title { font-weight: 600; margin: 0 0 6px; overflow-wrap: anywhere; }
+.commit-body { white-space: pre-wrap; font-size: 13px; color: var(--muted); background: none; margin: 4px 0 8px; font-family: inherit; overflow-wrap: anywhere; }
+.commit-meta {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--border); font-size: 13px;
+}
+.commit-parents { margin-left: auto; }
+.commit-sha { overflow-wrap: anywhere; }

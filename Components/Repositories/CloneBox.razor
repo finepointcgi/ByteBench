@@ -1,10 +1,12 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject ISnackbar Snackbar
 
-<div class="clone-box">
-    <span class="clone-label">Clone</span>
-    <input class="form-control form-control-sm mono" readonly value="@Url" onfocus="this.select()" />
-    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="Copy">@(copied ? "Copied" : "Copy")</button>
+@* focusin bubbles from the input, so the whole URL is selected when the field is focused. *@
+<div class="clone-box" onfocusin="if (event.target.select) event.target.select()">
+    <MudTextField T="string" Value="@Url" ReadOnly="true" Label="Clone" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Adornment="Adornment.End" AdornmentIcon="@(copied ? Icons.Material.Filled.Check : Icons.Material.Outlined.ContentCopy)"
+                  OnAdornmentClick="Copy" AdornmentAriaLabel="Copy clone URL" Class="clone-input gb-mono-input" />
 </div>
 
 @code {
@@ -19,6 +21,7 @@
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", Url);
             copied = true;
+            Snackbar.Add("Clone URL copied", Severity.Normal);
         }
         catch (JSException) { /* clipboard unavailable (e.g. insecure context); the field is still selectable */ }
     }

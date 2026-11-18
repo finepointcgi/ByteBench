@@ -1,2 +1,4 @@
-.review-chip.pending { font-size: 12px; border-radius: 10px; padding: 0 8px; white-space: nowrap; background: #f1f5f9; color: #475569; }
+.reviewer { display: flex; align-items: center; gap: 6px; padding: 3px 0; flex-wrap: wrap; }
+.reviewer-name { min-width: 0; flex: 1; }
+::deep .review-chip { margin: 0; white-space: nowrap; }
 .reviewer-picker { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }

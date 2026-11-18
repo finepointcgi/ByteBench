@@ -1,0 +1,12 @@
+.commit-day { font-size: 12px; font-weight: 600; color: var(--muted); margin: 16px 0 6px; }
+.commit-day:first-child { margin-top: 0; }
+.commit-msg { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.commit-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.merge-tag {
+    background: rgba(var(--mud-palette-primary-rgb), .12); color: var(--mud-palette-primary);
+    border-radius: 8px; padding: 0 6px; font-size: 11px; margin-left: 4px;
+}
+@media (max-width: 600px) {
+    .commit-row { flex-wrap: wrap; }
+    .commit-actions { width: 100%; justify-content: flex-end; }
+}

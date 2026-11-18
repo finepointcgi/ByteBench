@@ -22,10 +22,8 @@ else if (project != null && !canCreate)
 }
 else if (project != null)
 {
-    <div class="breadcrumbs">
-        <a href="/p/@project.Key/issues">@project.Name</a> / <a href="@RepoUrls.PullRequests(project.Key)">Pull requests</a> / New
-    </div>
-    <div class="page-header"><h1>Create pull request</h1></div>
+    <MudBreadcrumbs Items="@Crumbs" Class="px-0 pt-0 pb-2" />
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold mb-4">Create pull request</MudText>
 
     @if (repos.Count == 0)
     {
@@ -33,28 +31,23 @@ else if (project != null)
     }
     else
     {
-        <div class="card-panel pr-compare-bar">
-            <div class="field-inline">
-                <label>Repository</label>
-                <select class="form-select form-select-sm" value="@repo?.Slug" @onchange="e => Go(e.Value?.ToString(), null, null)">
-                    @foreach (var r in repos) { <option value="@r.Repository.Slug">@r.Repository.Name</option> }
-                </select>
+        <MudPaper Outlined="true" Class="pa-4">
+            <div class="pr-compare-bar">
+                <MudSelect T="string" Label="Repository" Value="@repo?.Slug" ValueChanged="v => Go(v, null, null)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="compare-field">
+                    @foreach (var r in repos) { <MudSelectItem T="string" Value="@r.Repository.Slug">@r.Repository.Name</MudSelectItem> }
+                </MudSelect>
+                <MudSelect T="string" Label="Source branch" Value="@(Source ?? "")" ValueChanged="v => Go(repo?.Slug, v, Target)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="compare-field gb-mono-input">
+                    <MudSelectItem T="string" Value="@("")">Choose a branch…</MudSelectItem>
+                    @foreach (var b in branches) { <MudSelectItem T="string" Value="@b.Name"><span class="mono">@b.Name</span></MudSelectItem> }
+                </MudSelect>
+                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Class="compare-arrow" />
+                <MudSelect T="string" Label="Target branch" Value="@TargetOrDefault" ValueChanged="v => Go(repo?.Slug, Source, v)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="compare-field gb-mono-input">
+                    @foreach (var b in branches) { <MudSelectItem T="string" Value="@b.Name"><span class="mono">@b.Name</span></MudSelectItem> }
+                </MudSelect>
             </div>
-            <div class="field-inline">
-                <label>Source branch</label>
-                <select class="form-select form-select-sm mono" value="@Source" @onchange="e => Go(repo?.Slug, e.Value?.ToString(), Target)">
-                    <option value="">Choose a branch…</option>
-                    @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
-                </select>
-            </div>
-            <div class="compare-arrow">→</div>
-            <div class="field-inline">
-                <label>Target branch</label>
-                <select class="form-select form-select-sm mono" value="@TargetOrDefault" @onchange="e => Go(repo?.Slug, Source, e.Value?.ToString())">
-                    @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
-                </select>
-            </div>
-        </div>
+        </MudPaper>
 
         @if (string.IsNullOrEmpty(Source))
         {
@@ -72,10 +65,10 @@ else if (project != null)
         {
             @if (existing != null)
             {
-                <div class="alert alert-info mt-3 py-2">
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
                     There's already an open pull request for these branches:
                     <a href="@RepoUrls.PullRequest(existing)">@existing.Repository.Slug#@existing.Number @existing.Title</a>
-                </div>
+                </MudAlert>
             }
             else if (compare.Commits.Count == 0)
             {
@@ -85,74 +78,77 @@ else if (project != null)
             }
             else
             {
-                <div class="merge-hint mt-3 @(mergeStatus?.Check == MergeCheck.Conflicts ? "bad" : "good")">
-                    @if (mergeStatus?.Check == MergeCheck.Conflicts)
-                    {
-                        <span>⚠ These branches have conflicts. You can still open the pull request, but it can't be merged until they're resolved.</span>
-                    }
-                    else
-                    {
-                        <span>✓ Able to merge. These branches can be merged automatically.</span>
-                    }
-                </div>
+                @if (mergeStatus?.Check == MergeCheck.Conflicts)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">These branches have conflicts. You can still open the pull request, but it can't be merged until they're resolved.</MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">Able to merge. These branches can be merged automatically.</MudAlert>
+                }
 
-                <div class="detail-grid mt-3">
-                    <div class="card-panel">
-                        <div class="mb-3">
-                            <label class="form-label">Title</label>
-                            <input class="form-control" @bind="title" @bind:event="oninput" maxlength="200" />
-                        </div>
-                        <div class="mb-3">
-                            <div class="d-flex align-items-center">
-                                <label class="form-label">Description</label>
-                                @if (Ai.IsConfigured)
+                <div class="gb-detail-grid mt-3">
+                    <MudPaper Outlined="true" Class="pa-4">
+                        <MudStack Spacing="3">
+                            <MudTextField T="string" Label="Title" @bind-Value="title" Immediate="true" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <div>
+                                <div class="desc-head">
+                                    <span class="gb-section-label mb-0">Description</span>
+                                    @if (Ai.IsConfigured)
+                                    {
+                                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" Disabled="@writing" OnClick="WriteDescriptionWithAi" Class="ml-auto"
+                                                   StartIcon="@Icons.Material.Outlined.AutoAwesome"
+                                                   title="Replaces the description with one written by GitBench AI from the commits and diff. You can edit it before creating the pull request.">
+                                            @(writing ? "Writing…" : "Write description with AI")
+                                        </MudButton>
+                                    }
+                                </div>
+                                <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
+                                @if (templatePath != null)
                                 {
-                                    <button class="btn btn-link btn-sm ms-auto" disabled="@writing" @onclick="WriteDescriptionWithAi"
-                                            title="Replaces the description with one written by GitBench AI from the commits and diff. You can edit it before creating the pull request.">
-                                        <span class="ai-badge">AI</span> @(writing ? "Writing…" : "Write description with AI")
-                                    </button>
+                                    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">Prefilled from <span class="mono">@templatePath</span> on <span class="mono">@TargetOrDefault</span>.</MudText>
                                 }
                             </div>
-                            <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
-                            @if (templatePath != null) { <div class="form-text">Prefilled from <span class="mono">@templatePath</span> on <span class="mono">@TargetOrDefault</span>.</div> }
-                        </div>
-                        @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-                        @if (repo?.IsArchived == true)
-                        {
-                            <div class="archived-banner">@repo.Name is archived, so pull requests can't be created.</div>
-                        }
-                        <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(title) || repo?.IsArchived == true)" @onclick="Create">Create pull request</button>
-                    </div>
-                    <aside class="side-panel">
-                        <div class="field">
-                            <label>Summary</label>
+                            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+                            @if (repo?.IsArchived == true)
+                            {
+                                <MudAlert Severity="Severity.Warning" Dense="true">@repo.Name is archived, so pull requests can't be created.</MudAlert>
+                            }
+                            <div>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.MergeType"
+                                           Disabled="@(busy || string.IsNullOrWhiteSpace(title) || repo?.IsArchived == true)" OnClick="Create">Create pull request</MudButton>
+                            </div>
+                        </MudStack>
+                    </MudPaper>
+                    <MudPaper Outlined="true" Class="gb-side">
+                        <div class="gb-side-field">
+                            <span class="gb-section-label">Summary</span>
                             <div><b>@compare.Commits.Count</b> commit@(compare.Commits.Count == 1 ? "" : "s"), <b>@compare.Files.Count</b> file@(compare.Files.Count == 1 ? "" : "s") changed</div>
                             <div class="muted small">@Source is @compare.Ahead ahead, @compare.Behind behind @TargetOrDefault</div>
                         </div>
-                        <div class="field">
-                            <label>Reviewers</label>
+                        <div class="gb-side-field">
+                            <span class="gb-section-label">Reviewers</span>
                             @if (reviewerCandidates.Count == 0) { <div class="muted small">No other project members can review.</div> }
                             @foreach (var u in reviewerCandidates)
                             {
-                                <label class="form-check small" @key="u.Id">
-                                    <input class="form-check-input" type="checkbox" checked="@selectedReviewers.Contains(u.Id)"
-                                           @onchange="e => { if (e.Value is true) selectedReviewers.Add(u.Id); else selectedReviewers.Remove(u.Id); }" />
-                                    <span class="form-check-label">@u.DisplayName</span>
-                                </label>
+                                <MudCheckBox T="bool" @key="u.Id" Value="@selectedReviewers.Contains(u.Id)" Size="Size.Small" Dense="true" Color="Color.Primary"
+                                             ValueChanged="v => { if (v) selectedReviewers.Add(u.Id); else selectedReviewers.Remove(u.Id); }">
+                                    <span class="small">@u.DisplayName</span>
+                                </MudCheckBox>
                             }
                         </div>
-                        <div class="field">
-                            <label>Linked issues</label>
+                        <div class="gb-side-field">
+                            <span class="gb-section-label">Linked issues</span>
                             @if (linkedNumbers.Count == 0) { <div class="muted small">None detected. Mention <code>@project.Key-123</code> in the title, branch or commits.</div> }
-                            @foreach (var n in linkedNumbers) { <a class="issue-key-chip mono" href="/p/@project.Key/issues/@n">@project.Key-@n</a> }
+                            @foreach (var n in linkedNumbers) { <a class="issue-key-chip" href="/p/@project.Key/issues/@n">@project.Key-@n</a> }
                         </div>
-                    </aside>
+                    </MudPaper>
                 </div>
 
-                <div class="tabs mt-4">
-                    <button class="tab @(tab == "commits" ? "active" : "")" @onclick='() => tab = "commits"'>Commits <span class="count">@compare.Commits.Count</span></button>
-                    <button class="tab @(tab == "files" ? "active" : "")" @onclick='() => tab = "files"'>Files changed <span class="count">@compare.Files.Count</span></button>
-                </div>
+                <nav class="gb-tabs mt-6" aria-label="Changes">
+                    <TabLink Active="@(tab == "commits")" OnClick='() => tab = "commits"' Icon="@Icons.Material.Outlined.Commit" Count="compare.Commits.Count">Commits</TabLink>
+                    <TabLink Active="@(tab == "files")" OnClick='() => tab = "files"' Icon="@Icons.Material.Outlined.Difference" Count="compare.Files.Count">Files changed</TabLink>
+                </nav>
                 @if (tab == "commits")
                 {
                     <CommitList Commits="compare.Commits" Repo="repo!" Users="usersByEmail" />
@@ -190,6 +186,13 @@ else if (project != null)
     private HashSet<int> selectedReviewers = [];
 
     private string TargetOrDefault => string.IsNullOrEmpty(Target) ? repo?.DefaultBranch ?? "main" : Target;
+
+    private List<BreadcrumbItem> Crumbs =>
+    [
+        new(project!.Name, $"/p/{project.Key}/issues"),
+        new("Pull requests", RepoUrls.PullRequests(project.Key)),
+        new("New", null, disabled: true),
+    ];
 
     protected override async Task OnParametersSetAsync()
     {

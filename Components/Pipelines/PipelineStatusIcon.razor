@@ -1,7 +1,7 @@
-@* Pipeline/job/step status: ✓ passed, ✗ failed or error, ● queued, spinner running, ⊘ canceled, – skipped. *@
+@* Pipeline/job/step status: check passed, cross failed or error, clock queued, spinner running, block canceled, dash skipped. *@
 @if (Href != null)
 {
-    <a class="ci-icon ci-@Css" href="@Href" title="@Tooltip">@Glyph@if (ShowLabel) {<span class="ci-label">@Label</span>}</a>
+    <a class="ci-icon ci-@Css" href="@Href" title="@Tooltip" aria-label="@Tooltip">@Glyph@if (ShowLabel) {<span class="ci-label">@Label</span>}</a>
 }
 else
 {
@@ -21,11 +21,16 @@ else
 
     private RenderFragment Glyph => Status switch
     {
-        PipelineStatus.Passed => @<span class="ci-glyph">✓</span>,
-        PipelineStatus.Failed or PipelineStatus.Error => @<span class="ci-glyph">✗</span>,
-        PipelineStatus.Running => @<span class="ci-glyph ci-spinner"></span>,
-        PipelineStatus.Canceled => @<span class="ci-glyph">⊘</span>,
-        PipelineStatus.Skipped => @<span class="ci-glyph">–</span>,
-        _ => @<span class="ci-glyph">●</span>,
+        PipelineStatus.Running => @<span class="ci-glyph"><span class="ci-spinner"></span></span>,
+        _ => @<span class="ci-glyph"><MudIcon Icon="@IconFor(Status)" Style="font-size: 16px" /></span>,
+    };
+
+    private static string IconFor(PipelineStatus s) => s switch
+    {
+        PipelineStatus.Passed => Icons.Material.Filled.CheckCircle,
+        PipelineStatus.Failed or PipelineStatus.Error => Icons.Material.Filled.Cancel,
+        PipelineStatus.Canceled => Icons.Material.Outlined.Block,
+        PipelineStatus.Skipped => Icons.Material.Outlined.RemoveCircleOutline,
+        _ => Icons.Material.Outlined.Schedule,
     };
 }

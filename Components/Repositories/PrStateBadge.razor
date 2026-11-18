@@ -1,5 +1,23 @@
-<span class="pr-state pr-state-@State.ToString().ToLowerInvariant()">@State</span>
+@* Pull request state chip: Open (blue), Merged (green), Declined (red). *@
+<MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@ChipColor" Icon="@ChipIcon"
+         Class="@("pr-state ma-0" + (Compact ? " pr-state-compact" : ""))">@State</MudChip>
 
 @code {
     [Parameter] public PullRequestState State { get; set; }
+    /// <summary>Smaller chip without an icon, for dense lists.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private Color ChipColor => State switch
+    {
+        PullRequestState.Open => Color.Info,
+        PullRequestState.Merged => Color.Success,
+        _ => Color.Error,
+    };
+
+    private string? ChipIcon => Compact ? null : State switch
+    {
+        PullRequestState.Open => Icons.Material.Outlined.MergeType,
+        PullRequestState.Merged => Icons.Material.Filled.Merge,
+        _ => Icons.Material.Outlined.Block,
+    };
 }

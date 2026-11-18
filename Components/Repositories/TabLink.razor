@@ -1,0 +1,18 @@
+@* One tab in a routed tab strip (<nav class="gb-tabs">). A link when Href is set, otherwise a button. Styles live in css/code-tools.css. *@
+<MudButton Href="@Href" OnClick="OnClick" Variant="Variant.Text" Color="Color.Default" StartIcon="@Icon" Ripple="false"
+           Class="@("gb-tab" + (Active ? " gb-tab-active" : ""))" aria-current="@(Active ? "page" : null)">
+    @ChildContent
+    @if (Count != null)
+    {
+        <span class="gb-tab-count">@Count</span>
+    }
+</MudButton>
+
+@code {
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    [Parameter] public bool Active { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public int? Count { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

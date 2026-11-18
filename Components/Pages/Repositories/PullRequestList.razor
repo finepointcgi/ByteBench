@@ -25,43 +25,43 @@ else if (project != null)
     }
     else
     {
-        <div class="page-header">
-            <div>
-                <h1>Pull requests</h1>
-                <div class="muted">@project.Name · all repositories</div>
-            </div>
+        <div class="pr-page-header">
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Pull requests</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name · all repositories</MudText>
         </div>
     }
 
-    <div class="d-flex align-items-end gap-3">
-        <div class="tabs flex-grow-1">
+    <div class="pr-bar">
+        <nav class="gb-tabs pr-state-tabs" aria-label="Pull request state">
             @foreach (var s in Enum.GetValues<PullRequestState>())
             {
-                <a class="tab @(CurrentState == s ? "active" : "")" href="@StateUrl(s)">
-                    @s <span class="count">@(s switch { PullRequestState.Open => counts.Open, PullRequestState.Merged => counts.Merged, _ => counts.Declined })</span>
-                </a>
+                <TabLink Active="@(CurrentState == s)" Href="@StateUrl(s)"
+                         Count="@(s switch { PullRequestState.Open => counts.Open, PullRequestState.Merged => counts.Merged, _ => counts.Declined })">@s</TabLink>
             }
-        </div>
-        <div class="d-flex gap-2 mb-2">
-            <a class="btn btn-sm text-nowrap @(ReviewRequested ? "btn-secondary" : "btn-outline-secondary")" title="Open pull requests waiting for your review"
-               href="@Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["filter"] = ReviewRequested ? null : "review-requested", ["state"] = null })">
-                Review requested <span class="count">@awaitingReview.Count</span>
-            </a>
+        </nav>
+        <div class="pr-actions">
+            <MudButton Href="@Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["filter"] = ReviewRequested ? null : "review-requested", ["state"] = null })"
+                       Variant="@(ReviewRequested ? Variant.Filled : Variant.Outlined)" Color="@(ReviewRequested ? Color.Primary : Color.Default)" Size="Size.Small"
+                       StartIcon="@Icons.Material.Outlined.RateReview" title="Open pull requests waiting for your review" Class="gb-nowrap">
+                Review requested <span class="gb-tab-count">@awaitingReview.Count</span>
+            </MudButton>
             @if (scopedRepo == null)
             {
-                <select class="form-select form-select-sm" value="@(RepoFilter ?? "")" @onchange="FilterRepo">
-                    <option value="">All repositories</option>
-                    @foreach (var r in repos) { <option value="@r.Repository.Slug">@r.Repository.Name</option> }
-                </select>
+                <MudSelect T="string" Value="@(RepoFilter ?? "")" ValueChanged="FilterRepo" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="pr-repo-filter" aria-label="Filter by repository">
+                    <MudSelectItem T="string" Value="@("")">All repositories</MudSelectItem>
+                    @foreach (var r in repos) { <MudSelectItem T="string" Value="@r.Repository.Slug">@r.Repository.Name</MudSelectItem> }
+                </MudSelect>
             }
             @if (repos.Count > 0 && canCreate)
             {
-                <a class="btn btn-primary btn-sm text-nowrap" href="@RepoUrls.NewPullRequest(project.Key, scopedRepo?.Slug ?? RepoFilter)">+ Create pull request</a>
+                <MudButton Href="@RepoUrls.NewPullRequest(project.Key, scopedRepo?.Slug ?? RepoFilter)" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Add" Class="gb-nowrap">Create pull request</MudButton>
             }
         </div>
     </div>
 
-    <div class="issue-list">
+    <div class="gb-rows">
         @if (repos.Count == 0)
         {
             <div class="empty">This project has no repositories yet. <a href="@RepoUrls.List(project.Key)">Create one</a> to open pull requests.</div>
@@ -74,21 +74,21 @@ else if (project != null)
         {
             var approvals = pr.Reviews.Count(r => r.State == ReviewState.Approved);
             var changes = pr.Reviews.Count(r => r.State == ReviewState.ChangesRequested);
-            <a class="issue-row pr-row" href="@RepoUrls.PullRequest(pr)" @key="pr.Id">
+            <a class="gb-row pr-row" href="@RepoUrls.PullRequest(pr)" @key="pr.Id">
                 <Avatar User="pr.Author" Size="28" />
-                <div class="issue-main">
-                    <div class="issue-title">@pr.Title</div>
-                    <div class="issue-meta">
+                <div class="gb-row-main">
+                    <div class="gb-row-title">@pr.Title</div>
+                    <div class="gb-row-meta">
                         <span class="mono">@pr.Repository.Slug#@pr.Number</span>
-                        · <span class="branch-pill mono">@pr.SourceBranch</span> → <span class="branch-pill mono">@pr.TargetBranch</span>
+                        · <span class="branch-pill">@pr.SourceBranch</span> → <span class="branch-pill">@pr.TargetBranch</span>
                         · opened @Display.Ago(pr.CreatedAt) by @pr.Author.DisplayName
                         · updated @Display.Ago(pr.UpdatedAt)
                     </div>
                 </div>
-                <div class="issue-right">
-                    @if (approvals > 0) { <span class="review-chip approved" title="Approvals">✓ @approvals</span> }
-                    @if (changes > 0) { <span class="review-chip changes" title="Changes requested">✎ @changes</span> }
-                    @if (commentCounts.GetValueOrDefault(pr.Id) is var n and > 0) { <span class="count" title="Comments">💬 @n</span> }
+                <div class="gb-row-right">
+                    @if (approvals > 0) { <span class="pr-stat approved" title="Approvals"><MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size: 14px" /> @approvals</span> }
+                    @if (changes > 0) { <span class="pr-stat changes" title="Changes requested"><MudIcon Icon="@Icons.Material.Outlined.Edit" Style="font-size: 14px" /> @changes</span> }
+                    @if (commentCounts.GetValueOrDefault(pr.Id) is var n and > 0) { <span class="pr-stat" title="Comments"><MudIcon Icon="@Icons.Material.Outlined.ChatBubbleOutline" Style="font-size: 14px" /> @n</span> }
                     <PrStateBadge State="pr.State" />
                 </div>
             </a>
@@ -160,9 +160,8 @@ else if (project != null)
         return scopedRepo != null ? RepoUrls.RepoPullRequests(scopedRepo, state) : RepoUrls.PullRequests(project!.Key, state, RepoFilter);
     }
 
-    private void FilterRepo(ChangeEventArgs e)
+    private void FilterRepo(string? slug)
     {
-        var slug = e.Value?.ToString();
         var state = CurrentState == PullRequestState.Open ? null : CurrentState.ToString().ToLowerInvariant();
         Nav.NavigateTo(RepoUrls.PullRequests(project!.Key, state, string.IsNullOrEmpty(slug) ? null : slug));
     }

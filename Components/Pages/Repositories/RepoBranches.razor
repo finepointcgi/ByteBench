@@ -1,7 +1,8 @@
 @page "/p/{Key}/repos/{Slug}/branches"
 @inherits RepoPageBase
 @inject PullRequestService PRs
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 @inject ProjectAccess Access
 @inject BranchProtectionService Protection
 @inject PipelineService Pipelines
@@ -19,41 +20,42 @@ else if (Repo != null)
     <div class="repo-toolbar">
         @if (perms.Can(Permission.PushCode) && !Repo.IsArchived)
         {
-        <input class="form-control form-control-sm branch-name-input mono" placeholder="new-branch-name" @bind="newName" @bind:event="oninput" />
-        <span class="muted small">from</span>
-        <select class="form-select form-select-sm ref-select" @bind="fromRef">
-            @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
-        </select>
-        <button class="btn btn-sm btn-primary" disabled="@string.IsNullOrWhiteSpace(newName)" @onclick="Create">Create branch</button>
+            <MudTextField T="string" @bind-Value="newName" Immediate="true" Placeholder="new-branch-name" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="branch-name-input gb-mono-input" aria-label="New branch name" />
+            <span class="muted small">from</span>
+            <MudSelect T="string" @bind-Value="fromRef" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="gb-ref-select gb-mono-input" aria-label="Create from branch">
+                @foreach (var b in branches) { <MudSelectItem T="string" Value="@b.Name">@b.Name</MudSelectItem> }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@string.IsNullOrWhiteSpace(newName)" OnClick="Create">Create branch</MudButton>
         }
-        <span class="ms-auto muted small">Ahead/behind relative to <span class="mono">@Repo.DefaultBranch</span></span>
+        <span class="toolbar-note muted small">Ahead/behind relative to <span class="mono">@Repo.DefaultBranch</span></span>
     </div>
-    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
-    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
-    <div class="issue-list">
+    <div class="gb-rows">
         @foreach (var b in branches)
         {
             var pr = openPrs.FirstOrDefault(p => p.SourceBranch == b.Name);
             var max = Math.Max(1, branches.Max(x => Math.Max(x.Ahead, x.Behind)));
             <div class="branch-row" @key="b.Name">
-                <div class="issue-main">
-                    <div class="issue-title">
+                <div class="gb-row-main">
+                    <div class="gb-row-title branch-title">
                         @if (ciStatus.GetValueOrDefault(b.Name) is { } ci)
                         {
                             <PipelineStatusIcon Status="ci.Status" Href="@PipelineUrls.Detail(Repo, ci.Id)" Title="@($"Pipeline #{ci.Id}")" />
                         }
                         <a class="mono" href="@RepoUrls.Source(Repo, b.Name)">@b.Name</a>
-                        @if (b.IsDefault) { <span class="count">default</span> }
+                        @if (b.IsDefault) { <span class="branch-tag">default</span> }
                         @if (protectionRules.Where(r => BranchPatterns.Matches(r.Pattern, b.Name)).Select(r => r.Pattern).ToList() is { Count: > 0 } by)
                         {
-                            <span class="count" title="Protected by rule@(by.Count == 1 ? "" : "s") @string.Join(", ", by)">🔒 protected</span>
+                            <span class="branch-tag" title="Protected by rule@(by.Count == 1 ? "" : "s") @string.Join(", ", by)"><MudIcon Icon="@Icons.Material.Outlined.Lock" Style="font-size: 13px" /> protected</span>
                         }
                         <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@b.Name" />
                     </div>
                     @if (b.Tip is { } t)
                     {
-                        <div class="issue-meta">
+                        <div class="gb-row-meta">
                             Updated @Display.Ago(t.When.UtcDateTime) by <b>@t.AuthorName</b> ·
                             <a href="@RepoUrls.Commit(Repo, t.Sha)">@t.MessageShort</a>
                         </div>
@@ -68,20 +70,23 @@ else if (Repo != null)
                 }
                 else
                 {
-                    <div class="ahead-behind muted small text-center">default branch</div>
+                    <div class="ahead-behind ab-default muted small">default branch</div>
                 }
                 <div class="branch-actions">
                     @if (pr != null)
                     {
-                        <a href="@RepoUrls.PullRequest(pr)" class="text-nowrap"><PrStateBadge State="pr.State" /> #@pr.Number</a>
+                        <a href="@RepoUrls.PullRequest(pr)" class="branch-pr"><PrStateBadge State="pr.State" Compact="true" /> #@pr.Number</a>
                     }
                     else if (!b.IsDefault && b.Ahead > 0 && perms.Can(Permission.CreatePullRequest) && !Repo.IsArchived)
                     {
-                        <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, b.Name, Repo.DefaultBranch)">Create PR</a>
+                        <MudButton Href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, b.Name, Repo.DefaultBranch)" Variant="Variant.Outlined" Size="Size.Small">Create PR</MudButton>
                     }
                     @if (!b.IsDefault && perms.Can(Permission.DeleteBranch) && !Repo.IsArchived)
                     {
-                        <button class="btn btn-sm btn-outline-danger" title="Delete branch" @onclick="() => Delete(b.Name)">Delete</button>
+                        <MudTooltip Text="Delete branch">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined"
+                                           aria-label="@($"Delete branch {b.Name}")" OnClick="() => Delete(b.Name)" />
+                        </MudTooltip>
                     }
                 </div>
             </div>
@@ -94,7 +99,7 @@ else if (Repo != null)
     private List<PullRequest> openPrs = [];
     private List<BranchProtectionRule> protectionRules = [];
     private Dictionary<string, PipelineBadgeInfo> ciStatus = [];
-    private string? newName, fromRef, message;
+    private string? newName, fromRef;
     private ProjectPermissions perms = ProjectPermissions.None;
 
     protected override async Task OnParametersSetAsync()
@@ -115,13 +120,13 @@ else if (Repo != null)
 
     private async Task Create()
     {
-        Error = message = null;
+        Error = null;
         var name = newName!.Trim();
         var from = fromRef ?? Repo!.DefaultBranch;
         try
         {
             await Repos.CreateBranchAsync(Repo!, name, from);
-            message = $"Created branch '{name}' from '{from}'.";
+            Snackbar.Add($"Created branch '{name}' from '{from}'.", Severity.Success);
             newName = null;
             await Load();
         }
@@ -130,12 +135,12 @@ else if (Repo != null)
 
     private async Task Delete(string name)
     {
-        Error = message = null;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete branch '{name}'? Commits only on this branch become unreachable.")) return;
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Delete branch", $"Delete branch '{name}'? Commits only on this branch become unreachable.")) return;
         try
         {
             await Repos.DeleteBranchAsync(Repo!, name);
-            message = $"Deleted branch '{name}'.";
+            Snackbar.Add($"Deleted branch '{name}'.", Severity.Success);
             await Load();
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }

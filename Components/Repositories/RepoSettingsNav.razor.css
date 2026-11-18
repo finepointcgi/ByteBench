@@ -1,0 +1,2 @@
+nav ::deep .settings-nav-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+nav ::deep .settings-nav-active .mud-list-item-icon .mud-icon-root { color: var(--accent); }

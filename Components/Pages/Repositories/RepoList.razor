@@ -13,72 +13,68 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
+    <div class="repo-page-header">
         <div>
-            <h1>Repositories</h1>
-            <div class="muted">@project.Name</div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Repositories</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
         </div>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary" href="@RepoUrls.PullRequests(project.Key)">Pull requests</a>
+        <div class="d-flex gap-2 flex-wrap">
+            <MudButton Href="@RepoUrls.PullRequests(project.Key)" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.MergeType">Pull requests</MudButton>
             @if (canCreate)
             {
-                <button class="btn btn-primary" @onclick="() => { creating = !creating; error = null; }">+ Create repository</button>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="() => { creating = !creating; error = null; }">Create repository</MudButton>
             }
         </div>
     </div>
 
     @if (creating)
     {
-        <div class="card-panel narrow mb-3">
-            <h2 class="section-title">Create repository</h2>
-            <div class="mb-3">
-                <label class="form-label">Name</label>
-                <input class="form-control" @bind="name" @bind:event="oninput" @bind:after="NameChanged" placeholder="e.g. Web App" maxlength="100" />
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Slug</label>
-                <div class="input-group">
-                    <span class="input-group-text mono">@project.Key /</span>
-                    <input class="form-control mono" @bind="slug" @bind:event="oninput" @bind:after="() => slugEdited = true" maxlength="100" />
-                    <span class="input-group-text mono">.git</span>
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 720px">
+            <MudText Typo="Typo.h6" Class="mb-3">Create repository</MudText>
+            <MudStack Spacing="3">
+                <MudTextField T="string" Label="Name" @bind-Value="name" @bind-Value:after="NameChanged" Immediate="true"
+                              Placeholder="e.g. Web App" MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField T="string" Label="Slug" @bind-Value="slug" @bind-Value:after="() => slugEdited = true" Immediate="true" MaxLength="100"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                              Adornment="Adornment.Start" AdornmentText="@($"{project.Key} /")"
+                              HelperText="Lowercase letters, digits, '.', '_' and '-'. Used in URLs and the clone address (…/slug.git)." />
+                <MudTextField T="string" Label="Description (optional)" @bind-Value="description" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudText Class="mud-text-secondary" Typo="Typo.body2">The repository starts with a <code>README.md</code> on the <code>main</code> branch.</MudText>
+                @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+                <div class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || string.IsNullOrWhiteSpace(name))" OnClick="Create">Create repository</MudButton>
+                    <MudButton Variant="Variant.Outlined" OnClick="() => creating = false">Cancel</MudButton>
                 </div>
-                <div class="form-text">Lowercase letters, digits, '.', '_' and '-'. Used in URLs and the clone address.</div>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Description <span class="muted">(optional)</span></label>
-                <input class="form-control" @bind="description" />
-            </div>
-            <div class="muted small mb-3">The repository starts with a <code>README.md</code> on the <code>main</code> branch.</div>
-            @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-            <div class="d-flex gap-2">
-                <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">Create repository</button>
-                <button class="btn btn-outline-secondary" @onclick="() => creating = false">Cancel</button>
-            </div>
-        </div>
+            </MudStack>
+        </MudPaper>
     }
 
-    <div class="issue-list">
+    <div class="gb-rows">
         @if (repos.Count == 0)
         {
             <div class="empty">No repositories yet. Create one to start hosting code for @project.Key.</div>
         }
         @foreach (var r in repos)
         {
-            <a class="issue-row repo-row" href="@RepoUrls.Base(r.Repository)" @key="r.Repository.Id">
-                <span class="repo-icon sm">⌥</span>
-                <div class="issue-main">
-                    <div class="issue-title">@r.Repository.Name <span class="muted mono small">@project.Key/@r.Repository.Slug</span>@if (r.Repository.IsArchived) {<span class="archived-badge">Archived</span>}</div>
-                    <div class="issue-meta">
+            <a class="gb-row repo-row" href="@RepoUrls.Base(r.Repository)" @key="r.Repository.Id">
+                <span class="repo-icon"><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /></span>
+                <div class="gb-row-main">
+                    <div class="gb-row-title">
+                        @r.Repository.Name <span class="muted mono small">@project.Key/@r.Repository.Slug</span>
+                        @if (r.Repository.IsArchived) { <span class="archived-tag">Archived</span> }
+                    </div>
+                    <div class="gb-row-meta">
                         @(r.Repository.Description ?? "No description")
                         · created @Display.Ago(r.Repository.CreatedAt)
                     </div>
                 </div>
-                <div class="issue-right">
+                <div class="gb-row-right">
                     @if (r.OpenPullRequests > 0)
                     {
-                        <span class="count" title="Open pull requests">⇄ @r.OpenPullRequests open</span>
+                        <span class="repo-stat" title="Open pull requests"><MudIcon Icon="@Icons.Material.Outlined.MergeType" Size="Size.Small" /> @r.OpenPullRequests open</span>
                     }
-                    <span class="muted small mono">⑂ @r.Repository.DefaultBranch</span>
+                    <span class="repo-stat mono" title="Default branch"><MudIcon Icon="@Icons.Material.Outlined.AccountTree" Size="Size.Small" /> @r.Repository.DefaultBranch</span>
                 </div>
             </a>
         }

@@ -1,0 +1,49 @@
+.diff-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.diff-summary-actions { margin-left: auto; display: flex; gap: 4px; }
+.diff-add-count { color: var(--mud-palette-success); font-weight: 600; }
+.diff-del-count { color: var(--mud-palette-error); font-weight: 600; }
+
+.diff-file { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.diff-file-head {
+    display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--mud-palette-background-gray); cursor: pointer;
+    user-select: none; border-bottom: 1px solid var(--border); flex-wrap: wrap; min-height: 40px;
+}
+::deep .diff-chevron { color: var(--muted); }
+.diff-path { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.diff-comment-count { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); }
+.diff-stat { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; flex-shrink: 0; }
+.diff-status {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .03em; border-radius: 4px; padding: 0 6px; flex-shrink: 0;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary);
+}
+.diff-status-added { background: rgba(var(--mud-palette-success-rgb), .15); color: var(--mud-palette-success); }
+.diff-status-deleted { background: rgba(var(--mud-palette-error-rgb), .15); color: var(--mud-palette-error); }
+.diff-status-renamed, .diff-status-copied { background: rgba(var(--mud-palette-info-rgb), .15); color: var(--mud-palette-info); }
+
+/* Rows (row and line-number tints come from the light-dark() tokens in css/code-tools.css) */
+.diff-file .diff-table { display: block; overflow-x: auto; }
+.diff-file .diff-table tbody { display: table; width: 100%; }
+.diff-table td.code { padding: 0 14px 0 26px; white-space: pre; position: relative; tab-size: 4; }
+.diff-sign { display: inline-block; width: 14px; margin-left: -14px; color: var(--mud-palette-text-disabled); user-select: none; }
+.diff-hunk td { background: var(--diff-hunk-bg); color: var(--muted); padding-top: 3px; padding-bottom: 3px; }
+.diff-hunk td.code { padding-left: 14px; }
+.diff-added td { background: var(--diff-add-bg); }
+.diff-added td.ln { background: var(--diff-add-ln-bg); color: var(--diff-add-ln); border-right-color: var(--diff-add-edge); }
+.diff-deleted td { background: var(--diff-del-bg); }
+.diff-deleted td.ln { background: var(--diff-del-ln-bg); color: var(--diff-del-ln); border-right-color: var(--diff-del-edge); }
+.diff-comment-btn {
+    position: absolute; left: 3px; top: 1px; width: 18px; height: 18px; line-height: 14px; padding: 0; border: none; border-radius: 4px;
+    background: var(--accent); color: var(--mud-palette-primary-text); font-weight: 700; font-size: 13px; opacity: 0; transition: opacity .1s; cursor: pointer;
+}
+.diff-line:hover .diff-comment-btn, .diff-comment-btn:focus { opacity: 1; }
+
+/* Inline comment threads */
+.diff-thread-row > td { padding: 0; background: var(--mud-palette-background-gray); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.diff-thread { padding: 10px 14px 10px 110px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13.5px; line-height: 1.5; white-space: normal; }
+.inline-comment { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; max-width: 760px; }
+.inline-comment-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.inline-compose { max-width: 760px; }
+
+@media (max-width: 1000px) {
+    .diff-thread { padding-left: 14px; }
+}

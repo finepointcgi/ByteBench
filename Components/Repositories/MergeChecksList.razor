@@ -4,12 +4,15 @@
     <div class="merge-checks">
         @if (Gate.Protection.IsProtected)
         {
-            <div class="mc-protected" title="Branch protection rules matching @Target">🔒 <span class="mono">@Target</span> is protected (@Gate.Protection.Describe)</div>
+            <div class="mc-protected" title="Branch protection rules matching @Target">
+                <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" />
+                <span><span class="mono">@Target</span> is protected (@Gate.Protection.Describe)</span>
+            </div>
         }
         @foreach (var c in Gate.Checks)
         {
             <div class="mc-row">
-                <span class="mc-icon @c.State.ToString().ToLowerInvariant()" title="@c.State">@Icon(c.State)</span>
+                <MudIcon Icon="@Icon(c.State)" Color="@IconColor(c.State)" Size="Size.Small" Class="mc-icon" title="@c.State.ToString()" />
                 <div class="mc-text">
                     @if (c.Url != null) { <a href="@c.Url"><b>@c.Name</b></a> } else { <b>@c.Name</b> }
                     @if (c.Detail != null) { <span class="muted"> · @c.Detail</span> }
@@ -18,16 +21,16 @@
         }
         @if (Gate.Blocked)
         {
-            <div class="mc-blocked @(Gate.CanBypass ? "bypass" : "")">
+            <MudAlert Severity="@(Gate.CanBypass ? Severity.Warning : Severity.Error)" Dense="true" Square="true" Class="mc-blocked">
                 @if (Gate.CanBypass)
                 {
-                    <span>⚠ Blocked: @string.Join("; ", Gate.Blockers). As an admin you can bypass the rule and merge anyway.</span>
+                    <span>Blocked: @string.Join("; ", Gate.Blockers). As an admin you can bypass the rule and merge anyway.</span>
                 }
                 else
                 {
-                    <span>⛔ Merging is blocked: @string.Join("; ", Gate.Blockers).</span>
+                    <span>Merging is blocked: @string.Join("; ", Gate.Blockers).</span>
                 }
-            </div>
+            </MudAlert>
         }
     </div>
 }
@@ -38,9 +41,17 @@
 
     private static string Icon(MergeCheckState s) => s switch
     {
-        MergeCheckState.Passed => "✓",
-        MergeCheckState.Failed => "✕",
-        MergeCheckState.Pending => "●",
-        _ => "–",
+        MergeCheckState.Passed => Icons.Material.Filled.CheckCircle,
+        MergeCheckState.Failed => Icons.Material.Filled.Cancel,
+        MergeCheckState.Pending => Icons.Material.Filled.Schedule,
+        _ => Icons.Material.Filled.RemoveCircleOutline,
+    };
+
+    private static Color IconColor(MergeCheckState s) => s switch
+    {
+        MergeCheckState.Passed => Color.Success,
+        MergeCheckState.Failed => Color.Error,
+        MergeCheckState.Pending => Color.Warning,
+        _ => Color.Default,
     };
 }

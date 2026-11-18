@@ -1,6 +1,8 @@
 @page "/p/{Key}/repos/{Slug}/settings"
 @inherits RepoPageBase
 @inject ProjectAccess Access
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>Settings · @Repo?.Name</PageTitle>
 
@@ -19,53 +21,47 @@ else if (Repo != null)
 
     <div class="settings-layout">
         <RepoSettingsNav Repo="Repo" Active="general" />
-        <div class="min-w-0">
-            @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-            @if (notice != null) { <div class="alert alert-success py-2">@notice</div> }
+        <div class="gb-min0">
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
 
-            <div class="card-panel settings-section">
-                <h2>General</h2>
-                <div class="mb-3">
-                    <label class="form-label" for="repo-name">Name</label>
-                    <input id="repo-name" class="form-control" maxlength="100" @bind="name" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="repo-desc">Description</label>
-                    <textarea id="repo-desc" class="form-control" rows="2" @bind="description"></textarea>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="repo-default">Default branch</label>
+            <MudPaper Outlined="true" Class="pa-5 settings-section">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-3">General</MudText>
+                <MudStack Spacing="3">
+                    <MudTextField T="string" Label="Name" @bind-Value="name" MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" InputId="repo-name" />
+                    <MudTextField T="string" Label="Description" @bind-Value="description" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" InputId="repo-desc" />
                     @if (branches.Count == 0)
                     {
-                        <div class="form-text">This repository has no branches yet.</div>
+                        <MudText Class="mud-text-secondary" Typo="Typo.body2">Default branch: this repository has no branches yet.</MudText>
                     }
                     else
                     {
-                        <select id="repo-default" class="form-select ref-select" @bind="defaultBranch">
-                            @foreach (var b in branches) { <option value="@b">@b</option> }
-                        </select>
-                        <div class="form-text">Used for the source browser, new pull requests and clones (HEAD).</div>
+                        <MudSelect T="string" Label="Default branch" @bind-Value="defaultBranch" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   HelperText="Used for the source browser, new pull requests and clones (HEAD)." OuterClass="default-branch gb-mono-input">
+                            @foreach (var b in branches) { <MudSelectItem T="string" Value="@b"><span class="mono">@b</span></MudSelectItem> }
+                        </MudSelect>
                     }
-                </div>
-                <button class="btn btn-primary btn-sm" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="SaveGeneral">Save changes</button>
-            </div>
+                    <div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(busy || string.IsNullOrWhiteSpace(name))" OnClick="SaveGeneral">Save changes</MudButton>
+                    </div>
+                </MudStack>
+            </MudPaper>
 
-            <div class="card-panel settings-section">
-                <h2>Rename</h2>
-                <p class="small muted mb-2">
+            <MudPaper Outlined="true" Class="pa-5 settings-section">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">Rename</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
                     Changes the repository's URL and clone URL. Old links and
                     <span class="mono">@RepoUrls.CloneUrl(Nav.BaseUri, Repo)</span> keep working, but update your remotes:
                     <span class="mono">git remote set-url origin &lt;new URL&gt;</span>.
-                </p>
-                <div class="d-flex gap-2 align-items-center flex-wrap">
-                    <span class="mono muted">/p/@Repo.Project.Key/repos/</span>
-                    <input class="form-control form-control-sm mono branch-name-input" maxlength="100" @bind="newSlug" @bind:event="oninput" aria-label="New slug" />
-                    <button class="btn btn-outline-secondary btn-sm" disabled="@(busy || string.IsNullOrWhiteSpace(newSlug) || newSlug.Trim().ToLowerInvariant() == Repo.Slug)" @onclick="Rename">Rename</button>
+                </MudText>
+                <div class="rename-row">
+                    <MudTextField T="string" @bind-Value="newSlug" Immediate="true" MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentText="@($"/p/{Repo.Project.Key}/repos/")" aria-label="New slug" Class="slug-input gb-mono-input" />
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(busy || string.IsNullOrWhiteSpace(newSlug) || newSlug.Trim().ToLowerInvariant() == Repo.Slug)" OnClick="Rename">Rename</MudButton>
                 </div>
-            </div>
+            </MudPaper>
 
-            <div class="card-panel settings-section danger-zone">
-                <h2>Danger zone</h2>
+            <MudPaper Outlined="true" Class="pa-5 settings-section danger-zone">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Color="Color.Error" Class="mb-1">Danger zone</MudText>
                 <div class="settings-row">
                     <div>
                         <b>@(Repo.IsArchived ? "Unarchive this repository" : "Archive this repository")</b>
@@ -80,38 +76,26 @@ else if (Repo != null)
                             }
                         </div>
                     </div>
-                    <button class="btn btn-outline-warning btn-sm text-nowrap" disabled="@busy" @onclick="ToggleArchive">@(Repo.IsArchived ? "Unarchive" : "Archive")</button>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" Class="gb-nowrap" Disabled="@busy" OnClick="ToggleArchive"
+                               StartIcon="@(Repo.IsArchived ? Icons.Material.Outlined.Unarchive : Icons.Material.Outlined.Archive)">@(Repo.IsArchived ? "Unarchive" : "Archive")</MudButton>
                 </div>
                 <div class="settings-row">
                     <div>
                         <b>Delete this repository</b>
                         <div class="small muted">Permanently deletes the Git data, its pull requests, reviews and comments. This can't be undone.</div>
                     </div>
-                    @if (!confirmingDelete)
-                    {
-                        <button class="btn btn-outline-danger btn-sm text-nowrap" @onclick="() => { confirmingDelete = true; confirmName = null; }">Delete…</button>
-                    }
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" Class="gb-nowrap" Disabled="@busy" OnClick="Delete"
+                               StartIcon="@Icons.Material.Outlined.DeleteForever">Delete…</MudButton>
                 </div>
-                @if (confirmingDelete)
-                {
-                    <div class="mt-2">
-                        <label class="form-label small" for="confirm-name">Type <b>@Repo.Name</b> to confirm.</label>
-                        <div class="d-flex gap-2">
-                            <input id="confirm-name" class="form-control form-control-sm" autocomplete="off" @bind="confirmName" @bind:event="oninput" />
-                            <button class="btn btn-danger btn-sm text-nowrap" disabled="@(busy || confirmName?.Trim() != Repo.Name)" @onclick="Delete">Delete repository</button>
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => confirmingDelete = false">Cancel</button>
-                        </div>
-                    </div>
-                }
-            </div>
+            </MudPaper>
         </div>
     </div>
 }
 
 @code {
-    private bool canManage, busy, confirmingDelete;
+    private bool canManage, busy;
     private string name = "", newSlug = "";
-    private string? description, defaultBranch, confirmName, error, notice;
+    private string? description, defaultBranch, error;
     private List<string> branches = [];
 
     protected override async Task OnParametersSetAsync()
@@ -130,11 +114,11 @@ else if (Repo != null)
     private async Task Run(Func<Task> action, string? success = null)
     {
         busy = true;
-        error = notice = null;
+        error = null;
         try
         {
             await action();
-            if (success != null) notice = success;
+            if (success != null) Snackbar.Add(success, Severity.Success);
         }
         catch (InvalidOperationException ex) { error = ex.Message; }
         finally { busy = false; }
@@ -163,13 +147,21 @@ else if (Repo != null)
         var archive = !Repo!.IsArchived;
         await RepoSettings.SetArchivedAsync(Repo.Id, archive);
         await Reload();
-        notice = archive ? "Repository archived. It is now read-only." : "Repository unarchived.";
+        Snackbar.Add(archive ? "Repository archived. It is now read-only." : "Repository unarchived.", Severity.Success);
     });
 
-    private Task Delete() => Run(async () =>
+    private async Task Delete()
     {
-        var key = Repo!.Project.Key;
-        await RepoSettings.DeleteAsync(Repo.Id, confirmName ?? "");
-        Nav.NavigateTo(RepoUrls.List(key));
-    });
+        error = null;
+        var typed = await Dialogs.TypeToConfirmAsync("Delete repository",
+            $"This permanently deletes {Repo!.Name}: its Git data, pull requests, reviews and comments. This can't be undone.",
+            Repo.Name, "Delete repository");
+        if (typed == null) return;
+        await Run(async () =>
+        {
+            var key = Repo!.Project.Key;
+            await RepoSettings.DeleteAsync(Repo.Id, typed);
+            Nav.NavigateTo(RepoUrls.List(key));
+        });
+    }
 }

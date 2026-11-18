@@ -3,7 +3,8 @@
 @inject BranchProtectionService Protection
 @inject ReviewerService Reviewers
 @inject ProjectAccess Access
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>Branch protection · @Repo?.Name</PageTitle>
 
@@ -22,80 +23,80 @@ else if (Repo != null)
 
     <div class="settings-layout">
         <RepoSettingsNav Repo="Repo" Active="branches" />
-        <div class="min-w-0">
+        <div class="gb-min0">
 
-    <div class="page-header">
-        <div>
-            <h2 class="section-title mb-1">🔒 Branch protection rules</h2>
-            <div class="muted small">
+    <div class="bp-header">
+        <div class="gb-min0">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Lock" /> Branch protection rules</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
                 Rules apply to branches whose name matches the pattern: an exact name such as <code>main</code>, or a glob such as
                 <code>release/*</code> (<code>*</code> and <code>?</code> stay within one path segment, <code>**</code> matches across <code>/</code>).
                 When several rules match a branch, the strictest setting of each wins. They are enforced on git push, branch creation and deletion, and pull request merges.
-            </div>
+            </MudText>
         </div>
         @if (draft == null)
         {
-            <button class="btn btn-primary btn-sm text-nowrap" @onclick="StartAdd">+ Add rule</button>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Class="gb-nowrap" OnClick="StartAdd">Add rule</MudButton>
         }
     </div>
 
-    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
-    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
     @if (draft != null)
     {
-        <div class="card-panel mb-3">
-            <h3 class="section-title">@(draft.Id == 0 ? "New rule" : "Edit rule")</h3>
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label">Branch name pattern</label>
-                    <input class="form-control form-control-sm mono" placeholder="main or release/*" @bind="draft.Pattern" @bind:event="oninput" />
-                    <div class="form-text">
+        <MudPaper Outlined="true" Class="pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-3">@(draft.Id == 0 ? "New rule" : "Edit rule")</MudText>
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" Label="Branch name pattern" Placeholder="main or release/*" @bind-Value="draft.Pattern" Immediate="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" />
+                    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">
                         @if (!string.IsNullOrWhiteSpace(draft.Pattern))
                         {
                             var matching = branchNames.Where(b => BranchPatterns.Matches(draft.Pattern.Trim(), b)).ToList();
                             @if (matching.Count == 0) { <span>Matches no existing branch.</span> }
                             else { <span>Matches: <span class="mono">@string.Join(", ", matching.Take(8))</span>@(matching.Count > 8 ? $" and {matching.Count - 8} more" : "")</span> }
                         }
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudNumericField T="int" Label="Required approvals" @bind-Value="draft.RequiredApprovals" Min="0" Max="10" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudCheckBox T="bool" @bind-Value="draft.BlockDirectPushes" Color="Color.Primary" Dense="true">
+                        <b>Block direct pushes</b> <span class="muted small">(changes only through pull requests; also blocks creating matching branches)</span>
+                    </MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.BlockForcePushes" Color="Color.Primary" Dense="true"><b>Block force pushes</b></MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.BlockDeletion" Color="Color.Primary" Dense="true"><b>Block deletion</b></MudCheckBox>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudCheckBox T="bool" @bind-Value="draft.RequireChecksToPass" Color="Color.Primary" Dense="true">
+                        <b>Require checks to pass</b> <span class="muted small">(pending or failed checks such as pipelines block merging)</span>
+                    </MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.DismissStaleApprovals" Color="Color.Primary" Dense="true"><b>Dismiss approvals when new commits are pushed</b></MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.AllowAdminBypass" Color="Color.Primary" Dense="true">
+                        <b>Allow admins to bypass</b> <span class="muted small">(site admins and project Owners)</span>
+                    </MudCheckBox>
+                </MudItem>
+                <MudItem xs="12">
+                    <span class="gb-section-label">Default reviewers <span class="muted small">(added to new pull requests that target a matching branch)</span></span>
+                    <div class="d-flex flex-wrap gap-3">
+                        @foreach (var u in candidates)
+                        {
+                            <MudCheckBox T="bool" @key="u.Id" Value="@draft.DefaultReviewerIds.Contains(u.Id)" ValueChanged="v => ToggleReviewer(u.Id, v)"
+                                         Size="Size.Small" Dense="true" Color="Color.Primary" Label="@u.DisplayName" />
+                        }
                     </div>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Required approvals</label>
-                    <input type="number" min="0" max="10" class="form-control form-control-sm" @bind="draft.RequiredApprovals" />
-                </div>
+                </MudItem>
+            </MudGrid>
+            <div class="d-flex gap-2 mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(draft.Pattern)" OnClick="Save">@(draft.Id == 0 ? "Create rule" : "Save rule")</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => draft = null">Cancel</MudButton>
             </div>
-            <div class="row mt-2">
-                <div class="col-md-6">
-                    <label class="form-check"><input class="form-check-input" type="checkbox" @bind="draft.BlockDirectPushes" /> <span class="form-check-label"><b>Block direct pushes</b> <span class="muted small">(changes only through pull requests; also blocks creating matching branches)</span></span></label>
-                    <label class="form-check"><input class="form-check-input" type="checkbox" @bind="draft.BlockForcePushes" /> <span class="form-check-label"><b>Block force pushes</b></span></label>
-                    <label class="form-check"><input class="form-check-input" type="checkbox" @bind="draft.BlockDeletion" /> <span class="form-check-label"><b>Block deletion</b></span></label>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-check"><input class="form-check-input" type="checkbox" @bind="draft.RequireChecksToPass" /> <span class="form-check-label"><b>Require checks to pass</b> <span class="muted small">(pending or failed checks such as pipelines block merging)</span></span></label>
-                    <label class="form-check"><input class="form-check-input" type="checkbox" @bind="draft.DismissStaleApprovals" /> <span class="form-check-label"><b>Dismiss approvals when new commits are pushed</b></span></label>
-                    <label class="form-check"><input class="form-check-input" type="checkbox" @bind="draft.AllowAdminBypass" /> <span class="form-check-label"><b>Allow admins to bypass</b> <span class="muted small">(site admins and project Owners)</span></span></label>
-                </div>
-            </div>
-            <div class="mt-3">
-                <label class="form-label mb-1">Default reviewers <span class="muted small">(added to new pull requests that target a matching branch)</span></label>
-                <div class="d-flex flex-wrap gap-3">
-                    @foreach (var u in candidates)
-                    {
-                        <label class="form-check small" @key="u.Id">
-                            <input class="form-check-input" type="checkbox" checked="@draft.DefaultReviewerIds.Contains(u.Id)" @onchange="e => ToggleReviewer(u.Id, e)" />
-                            <span class="form-check-label">@u.DisplayName</span>
-                        </label>
-                    }
-                </div>
-            </div>
-            <div class="d-flex gap-2 mt-3">
-                <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(draft.Pattern)" @onclick="Save">@(draft.Id == 0 ? "Create rule" : "Save rule")</button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="() => draft = null">Cancel</button>
-            </div>
-        </div>
+        </MudPaper>
     }
 
-    <div class="issue-list">
+    <div class="gb-rows">
         @if (rules.Count == 0)
         {
             <div class="empty">No branches are protected yet. Add a rule for <span class="mono">@Repo.DefaultBranch</span> to require pull requests and reviews.</div>
@@ -103,17 +104,21 @@ else if (Repo != null)
         @foreach (var r in rules)
         {
             var matching = branchNames.Where(b => BranchPatterns.Matches(r.Pattern, b)).ToList();
-            <div class="issue-row" @key="r.Id">
-                <div class="issue-main">
-                    <div class="issue-title"><span class="mono">🔒 @r.Pattern</span></div>
-                    <div class="issue-meta">
+            <div class="gb-row bp-row" @key="r.Id">
+                <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" Class="muted" />
+                <div class="gb-row-main">
+                    <div class="gb-row-title"><span class="mono">@r.Pattern</span></div>
+                    <div class="gb-row-meta">
                         @string.Join(" · ", Summary(r))
                         <br /><span>@(matching.Count == 0 ? "Matches no existing branch" : "Matches " + string.Join(", ", matching.Take(6)) + (matching.Count > 6 ? $" and {matching.Count - 6} more" : ""))</span>
                     </div>
                 </div>
-                <div class="issue-right">
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => StartEdit(r)">Edit</button>
-                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(r)">Delete</button>
+                <div class="gb-row-right">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => StartEdit(r)">Edit</MudButton>
+                    <MudTooltip Text="Delete rule">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                       aria-label="@($"Delete the rule for {r.Pattern}")" OnClick="() => Delete(r)" />
+                    </MudTooltip>
                 </div>
             </div>
         }
@@ -128,7 +133,6 @@ else if (Repo != null)
     private List<string> branchNames = [];
     private List<User> candidates = [];
     private BranchProtectionRule? draft;
-    private string? message;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -161,13 +165,13 @@ else if (Repo != null)
 
     private void StartAdd()
     {
-        Error = message = null;
+        Error = null;
         draft = new BranchProtectionRule { Pattern = rules.Any(x => x.Pattern == Repo!.DefaultBranch) ? "" : Repo!.DefaultBranch };
     }
 
     private void StartEdit(BranchProtectionRule r)
     {
-        Error = message = null;
+        Error = null;
         draft = new BranchProtectionRule
         {
             Id = r.Id, Pattern = r.Pattern, RequiredApprovals = r.RequiredApprovals, BlockDirectPushes = r.BlockDirectPushes,
@@ -176,19 +180,19 @@ else if (Repo != null)
         };
     }
 
-    private void ToggleReviewer(int id, ChangeEventArgs e)
+    private void ToggleReviewer(int id, bool on)
     {
         draft!.DefaultReviewerIds.Remove(id);
-        if (e.Value is true) draft.DefaultReviewerIds.Add(id);
+        if (on) draft.DefaultReviewerIds.Add(id);
     }
 
     private async Task Save()
     {
-        Error = message = null;
+        Error = null;
         try
         {
             var saved = await Protection.SaveAsync(Repo!.Id, draft!, Me.Id);
-            message = $"Saved the rule for '{saved.Pattern}'.";
+            Snackbar.Add($"Saved the rule for '{saved.Pattern}'.", Severity.Success);
             draft = null;
             await Load();
         }
@@ -197,12 +201,12 @@ else if (Repo != null)
 
     private async Task Delete(BranchProtectionRule r)
     {
-        Error = message = null;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the protection rule for '{r.Pattern}'?")) return;
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Delete protection rule", $"Delete the protection rule for '{r.Pattern}'?")) return;
         try
         {
             await Protection.DeleteAsync(Repo!.Id, r.Id, Me.Id);
-            message = $"Deleted the rule for '{r.Pattern}'.";
+            Snackbar.Add($"Deleted the rule for '{r.Pattern}'.", Severity.Success);
             await Load();
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }
