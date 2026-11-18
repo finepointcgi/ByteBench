@@ -1,0 +1,220 @@
+@page "/p/{Key}/pull-requests/new"
+@inject IssueService Issues
+@inject RepositoryService Repos
+@inject PullRequestService PRs
+@inject CurrentUser Me
+@inject NavigationManager Nav
+
+<PageTitle>New pull request · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="breadcrumbs">
+        <a href="/p/@project.Key/issues">@project.Name</a> / <a href="@RepoUrls.PullRequests(project.Key)">Pull requests</a> / New
+    </div>
+    <div class="page-header"><h1>Create pull request</h1></div>
+
+    @if (repos.Count == 0)
+    {
+        <div class="empty">This project has no repositories yet. <a href="@RepoUrls.List(project.Key)">Create one</a> first.</div>
+    }
+    else
+    {
+        <div class="card-panel pr-compare-bar">
+            <div class="field-inline">
+                <label>Repository</label>
+                <select class="form-select form-select-sm" value="@repo?.Slug" @onchange="e => Go(e.Value?.ToString(), null, null)">
+                    @foreach (var r in repos) { <option value="@r.Repository.Slug">@r.Repository.Name</option> }
+                </select>
+            </div>
+            <div class="field-inline">
+                <label>Source branch</label>
+                <select class="form-select form-select-sm mono" value="@Source" @onchange="e => Go(repo?.Slug, e.Value?.ToString(), Target)">
+                    <option value="">Choose a branch…</option>
+                    @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
+                </select>
+            </div>
+            <div class="compare-arrow">→</div>
+            <div class="field-inline">
+                <label>Target branch</label>
+                <select class="form-select form-select-sm mono" value="@TargetOrDefault" @onchange="e => Go(repo?.Slug, Source, e.Value?.ToString())">
+                    @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
+                </select>
+            </div>
+        </div>
+
+        @if (string.IsNullOrEmpty(Source))
+        {
+            <div class="empty mt-3">Choose the branch with your changes to see a preview.</div>
+        }
+        else if (Source == TargetOrDefault)
+        {
+            <div class="empty mt-3">Source and target are the same branch. Pick a different branch to compare.</div>
+        }
+        else if (compare == null)
+        {
+            <div class="empty mt-3">One of these branches doesn't exist.</div>
+        }
+        else
+        {
+            @if (existing != null)
+            {
+                <div class="alert alert-info mt-3 py-2">
+                    There's already an open pull request for these branches:
+                    <a href="@RepoUrls.PullRequest(existing)">@existing.Repository.Slug#@existing.Number @existing.Title</a>
+                </div>
+            }
+            else if (compare.Commits.Count == 0)
+            {
+                <div class="empty mt-3">
+                    <span class="mono">@TargetOrDefault</span> is up to date with all commits from <span class="mono">@Source</span>. Nothing to merge.
+                </div>
+            }
+            else
+            {
+                <div class="merge-hint mt-3 @(mergeStatus?.Check == MergeCheck.Conflicts ? "bad" : "good")">
+                    @if (mergeStatus?.Check == MergeCheck.Conflicts)
+                    {
+                        <span>⚠ These branches have conflicts. You can still open the pull request, but it can't be merged until they're resolved.</span>
+                    }
+                    else
+                    {
+                        <span>✓ Able to merge. These branches can be merged automatically.</span>
+                    }
+                </div>
+
+                <div class="detail-grid mt-3">
+                    <div class="card-panel">
+                        <div class="mb-3">
+                            <label class="form-label">Title</label>
+                            <input class="form-control" @bind="title" @bind:event="oninput" maxlength="200" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
+                        </div>
+                        @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+                        <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(title))" @onclick="Create">Create pull request</button>
+                    </div>
+                    <aside class="side-panel">
+                        <div class="field">
+                            <label>Summary</label>
+                            <div><b>@compare.Commits.Count</b> commit@(compare.Commits.Count == 1 ? "" : "s"), <b>@compare.Files.Count</b> file@(compare.Files.Count == 1 ? "" : "s") changed</div>
+                            <div class="muted small">@Source is @compare.Ahead ahead, @compare.Behind behind @TargetOrDefault</div>
+                        </div>
+                        <div class="field">
+                            <label>Linked issues</label>
+                            @if (linkedNumbers.Count == 0) { <div class="muted small">None detected. Mention <code>@project.Key-123</code> in the title, branch or commits.</div> }
+                            @foreach (var n in linkedNumbers) { <a class="issue-key-chip mono" href="/p/@project.Key/issues/@n">@project.Key-@n</a> }
+                        </div>
+                    </aside>
+                </div>
+
+                <div class="tabs mt-4">
+                    <button class="tab @(tab == "commits" ? "active" : "")" @onclick='() => tab = "commits"'>Commits <span class="count">@compare.Commits.Count</span></button>
+                    <button class="tab @(tab == "files" ? "active" : "")" @onclick='() => tab = "files"'>Files changed <span class="count">@compare.Files.Count</span></button>
+                </div>
+                @if (tab == "commits")
+                {
+                    <CommitList Commits="compare.Commits" Repo="repo!" Users="usersByEmail" />
+                }
+                else
+                {
+                    <DiffView Files="compare.Files" Repo="repo" ViewRef="@Source" />
+                }
+            }
+        }
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "repo")] public string? RepoSlug { get; set; }
+    [SupplyParameterFromQuery(Name = "source")] public string? Source { get; set; }
+    [SupplyParameterFromQuery(Name = "target")] public string? Target { get; set; }
+
+    private Project? project;
+    private Repository? repo;
+    private List<RepoSummary> repos = [];
+    private List<BranchInfo> branches = [];
+    private CompareResult? compare;
+    private MergeStatus? mergeStatus;
+    private PullRequest? existing;
+    private Dictionary<string, User> usersByEmail = [];
+    private SortedSet<int> linkedNumbers = [];
+    private bool notFound, busy;
+    private string? title, description, error;
+    private string tab = "commits";
+    private string? previewKey;
+
+    private string TargetOrDefault => string.IsNullOrEmpty(Target) ? repo?.DefaultBranch ?? "main" : Target;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project ??= await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (notFound) return;
+        if (repos.Count == 0) repos = await Repos.GetRepositoriesAsync(project!.Id);
+        if (usersByEmail.Count == 0) usersByEmail = await Repos.GetUsersByEmailAsync();
+
+        repo = repos.FirstOrDefault(r => r.Repository.Slug == RepoSlug)?.Repository ?? repos.FirstOrDefault()?.Repository;
+        if (repo == null) return;
+        var r = repo;
+        branches = await Repos.Git(r, path => GitOps.ListBranches(path, r.DefaultBranch));
+
+        var key = $"{r.Slug}|{Source}|{TargetOrDefault}";
+        if (key == previewKey) return;
+        previewKey = key;
+        compare = null; mergeStatus = null; existing = null; error = null;
+        if (string.IsNullOrEmpty(Source) || Source == TargetOrDefault) return;
+
+        var source = Source;
+        var target = TargetOrDefault;
+        (compare, mergeStatus) = await Repos.Git(r, path =>
+        {
+            var c = GitOps.Compare(path, target, source);
+            return (c, c == null || c.Commits.Count == 0 ? null : GitOps.CheckMerge(path, source, target));
+        });
+        existing = (await PRs.ListAsync(project!.Id, PullRequestState.Open, r.Id))
+            .FirstOrDefault(p => p.SourceBranch == source && p.TargetBranch == target);
+
+        // Sensible defaults: single commit → its subject; otherwise a humanised branch name.
+        if (compare != null)
+        {
+            title = compare.Commits.Count == 1 ? compare.Commits[0].MessageShort : Humanize(source);
+            description = compare.Commits.Count > 1
+                ? string.Join("\n", compare.Commits.AsEnumerable().Reverse().Select(c => $"- {c.MessageShort}"))
+                : compare.Commits.FirstOrDefault()?.Body;
+            linkedNumbers = IssueKeys.Numbers(project.Key, compare.Commits.Select(c => c.Message).Append(source).Append(title));
+        }
+    }
+
+    private static string Humanize(string branch)
+    {
+        var last = branch.Contains('/') ? branch[(branch.LastIndexOf('/') + 1)..] : branch;
+        var m = System.Text.RegularExpressions.Regex.Match(last, @"^([A-Za-z][A-Za-z0-9]+-\d+)[-_]?(.*)$");
+        var words = (m.Success ? m.Groups[2].Value : last).Replace('-', ' ').Replace('_', ' ').Trim();
+        if (words.Length > 0) words = char.ToUpperInvariant(words[0]) + words[1..];
+        return m.Success ? $"{m.Groups[1].Value.ToUpperInvariant()}: {words}".TrimEnd(' ', ':') : words;
+    }
+
+    private void Go(string? repoSlug, string? source, string? target) =>
+        Nav.NavigateTo(RepoUrls.NewPullRequest(project!.Key, repoSlug, string.IsNullOrEmpty(source) ? null : source, string.IsNullOrEmpty(target) ? null : target));
+
+    private async Task Create()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var pr = await PRs.CreateAsync(repo!, title ?? "", description, Source!, TargetOrDefault, Me.Id);
+            Nav.NavigateTo(RepoUrls.PullRequest(repo!, pr.Number));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

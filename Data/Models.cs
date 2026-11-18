@@ -124,3 +124,82 @@ public class Repository
     [MaxLength(100)] public string DefaultBranch { get; set; } = "main";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Pull requests (Bitbucket-style code review) -----
+
+public enum PullRequestState { Open, Merged, Declined }
+public enum ReviewState { Approved, ChangesRequested }
+
+/// <summary>A request to merge <see cref="SourceBranch"/> into <see cref="TargetBranch"/> within one repository.</summary>
+public class PullRequest
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    /// <summary>Sequential per repository (web-app#1, web-app#2, …).</summary>
+    public int Number { get; set; }
+
+    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    public string? Description { get; set; }
+    [Required, MaxLength(250)] public string SourceBranch { get; set; } = "";
+    [Required, MaxLength(250)] public string TargetBranch { get; set; } = "";
+
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    public PullRequestState State { get; set; } = PullRequestState.Open;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ClosedAt { get; set; }
+
+    public int? MergedById { get; set; }
+    public User? MergedBy { get; set; }
+    [MaxLength(40)] public string? MergeCommitSha { get; set; }
+    /// <summary>Source/target tips captured when the PR was merged or declined, so its diff survives branch moves and deletion.</summary>
+    [MaxLength(40)] public string? SourceCommitSha { get; set; }
+    [MaxLength(40)] public string? TargetCommitSha { get; set; }
+
+    public List<PullRequestComment> Comments { get; set; } = [];
+    public List<PullRequestReview> Reviews { get; set; } = [];
+    public List<PullRequestActivity> Activities { get; set; } = [];
+}
+
+/// <summary>A comment on a PR. With <see cref="FilePath"/> set it is an inline comment on a diff line.</summary>
+public class PullRequestComment
+{
+    public int Id { get; set; }
+    public int PullRequestId { get; set; }
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    [Required] public string Body { get; set; } = "";
+    [MaxLength(500)] public string? FilePath { get; set; }
+    /// <summary>Line number in the new file (null for comments on deleted lines).</summary>
+    public int? Line { get; set; }
+    /// <summary>Line number in the old file, for comments on deleted lines.</summary>
+    public int? OldLine { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? EditedAt { get; set; }
+
+    public bool IsInline => FilePath != null;
+}
+
+/// <summary>One reviewer's current verdict on a PR (at most one row per user).</summary>
+public class PullRequestReview
+{
+    public int Id { get; set; }
+    public int PullRequestId { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public ReviewState State { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PullRequestActivity
+{
+    public int Id { get; set; }
+    public int PullRequestId { get; set; }
+    public int ActorId { get; set; }
+    public User Actor { get; set; } = null!;
+    public string Text { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

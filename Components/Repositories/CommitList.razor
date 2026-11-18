@@ -1,0 +1,39 @@
+@* Commits grouped by day, newest first. *@
+@if (Commits.Count == 0)
+{
+    <div class="empty">@EmptyText</div>
+}
+else
+{
+    @foreach (var day in Commits.GroupBy(c => c.When.ToLocalTime().Date))
+    {
+        <div class="commit-day">Commits on @day.Key.ToString("MMM d, yyyy")</div>
+        <div class="issue-list commit-list">
+            @foreach (var c in day)
+            {
+                <div class="commit-row" @key="c.Sha">
+                    <GitAvatar Name="@c.AuthorName" Email="@c.AuthorEmail" Users="Users" Size="28" />
+                    <div class="commit-main">
+                        <a class="commit-msg" href="@RepoUrls.Commit(Repo, c.Sha)">@c.MessageShort</a>
+                        <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@c.Message" />
+                        <div class="issue-meta">
+                            <b>@c.AuthorName</b> committed @Display.Ago(c.When.UtcDateTime)
+                            @if (c.ParentShas.Count > 1) { <span class="merge-tag">merge</span> }
+                        </div>
+                    </div>
+                    <div class="commit-actions">
+                        <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, c.Sha)" title="@c.Sha">@c.ShortSha</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Source(Repo, c.Sha)" title="Browse the repository at this commit">&lt;/&gt;</a>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CommitInfo> Commits { get; set; } = [];
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter] public IReadOnlyDictionary<string, User>? Users { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "No commits.";
+}

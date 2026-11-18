@@ -1,0 +1,71 @@
+@page "/p/{Key}/repos/{Slug}/commits"
+@inherits RepoPageBase
+
+<PageTitle>Commits · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="commits" Ref="@Ref" />
+
+    <div class="repo-toolbar">
+        <RefSelector Branches="branches" Tags="tags" Value="@CurrentRef" ValueChanged="r => Nav.NavigateTo(RepoUrls.Commits(Repo, r, CleanPath))" />
+        @if (CleanPath != null)
+        {
+            <span class="muted">History for <span class="mono"><a href="@RepoUrls.Source(Repo, Ref, CleanPath)">@CleanPath</a></span></span>
+            <a class="small" href="@RepoUrls.Commits(Repo, Ref)">Show all commits</a>
+        }
+    </div>
+
+    @if (commits == null)
+    {
+        <div class="empty">Unknown branch or commit <span class="mono">@CurrentRef</span>.</div>
+    }
+    else
+    {
+        <CommitList Commits="commits" Repo="Repo" Users="UsersByEmail" EmptyText="No commits found." />
+        @if (CurrentPage > 1 || hasMore)
+        {
+            <div class="pager">
+                @if (CurrentPage > 1) { <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath, CurrentPage - 1)">← Newer</a> }
+                <span class="muted small">Page @CurrentPage</span>
+                @if (hasMore) { <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath, CurrentPage + 1)">Older →</a> }
+            </div>
+        }
+    }
+}
+
+@code {
+    private const int PageSize = 30;
+
+    [SupplyParameterFromQuery(Name = "ref")] public string? Ref { get; set; }
+    [SupplyParameterFromQuery(Name = "path")] public string? Path { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? Page { get; set; }
+
+    private List<BranchInfo> branches = [];
+    private List<string> tags = [];
+    private List<CommitInfo>? commits;
+    private bool hasMore;
+
+    private string CurrentRef => string.IsNullOrEmpty(Ref) ? Repo!.DefaultBranch : Ref;
+    private string? CleanPath => string.IsNullOrEmpty(Path?.Trim('/')) ? null : Path.Trim('/');
+    private int CurrentPage => Math.Max(1, Page ?? 1);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        var r = CurrentRef;
+        var p = CleanPath;
+        var skip = (CurrentPage - 1) * PageSize;
+        (branches, tags, var exists, var log) = await Git(path => (
+            GitOps.ListBranches(path, Repo!.DefaultBranch),
+            GitOps.ListTags(path),
+            GitOps.ResolveSha(path, r) != null,
+            GitOps.Log(path, r, p, skip, PageSize)));
+        commits = exists ? log.Items : null;
+        hasMore = log.HasMore;
+    }
+}

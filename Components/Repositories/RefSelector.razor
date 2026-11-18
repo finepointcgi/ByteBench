@@ -1,0 +1,28 @@
+@* Branch/tag picker. Arbitrary SHAs being viewed are shown as an extra option. *@
+<select class="form-select form-select-sm ref-select" value="@Value" @onchange="Changed" title="Switch branch or tag">
+    @if (!string.IsNullOrEmpty(Value) && !Branches.Any(b => b.Name == Value) && !Tags.Contains(Value))
+    {
+        <option value="@Value">@(Value.Length == 40 ? Value[..7] : Value) (commit)</option>
+    }
+    <optgroup label="Branches">
+        @foreach (var b in Branches)
+        {
+            <option value="@b.Name">⑂ @b.Name@(b.IsDefault ? " (default)" : "")</option>
+        }
+    </optgroup>
+    @if (Tags.Count > 0)
+    {
+        <optgroup label="Tags">
+            @foreach (var t in Tags) { <option value="@t">🏷 @t</option> }
+        </optgroup>
+    }
+</select>
+
+@code {
+    [Parameter] public IReadOnlyList<BranchInfo> Branches { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Tags { get; set; } = [];
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private Task Changed(ChangeEventArgs e) => ValueChanged.InvokeAsync(e.Value?.ToString() ?? "");
+}

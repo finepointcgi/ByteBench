@@ -1,0 +1,25 @@
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="clone-box">
+    <span class="clone-label">Clone</span>
+    <input class="form-control form-control-sm mono" readonly value="@Url" onfocus="this.select()" />
+    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="Copy">@(copied ? "Copied" : "Copy")</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+
+    private bool copied;
+    private string Url => RepoUrls.CloneUrl(Nav.BaseUri, Repo);
+
+    private async Task Copy()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", Url);
+            copied = true;
+        }
+        catch (JSException) { /* clipboard unavailable (e.g. insecure context); the field is still selectable */ }
+    }
+}

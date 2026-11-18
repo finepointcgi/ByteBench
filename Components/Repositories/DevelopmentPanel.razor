@@ -1,0 +1,72 @@
+@* Jira-style "Development" sidebar block for an issue: branches, pull requests and commits mentioning its key. *@
+@inject RepositoryService Repos
+
+<div class="field dev-panel">
+    <label>Development</label>
+    @if (info == null)
+    {
+        <div class="muted small">Loading…</div>
+    }
+    else if (info.IsEmpty)
+    {
+        <div class="muted small">
+            No branches, commits or pull requests yet. Include <code>@Issue.Key</code> in a branch name or commit message to link it.
+        </div>
+    }
+    else
+    {
+        @if (info.PullRequests.Count > 0)
+        {
+            <div class="dev-group">
+                <div class="dev-heading">⇄ @info.PullRequests.Count pull request@(info.PullRequests.Count == 1 ? "" : "s")</div>
+                @foreach (var pr in info.PullRequests)
+                {
+                    <a class="dev-item" href="@RepoUrls.PullRequest(pr)" title="@pr.Title">
+                        <PrStateBadge State="pr.State" />
+                        <span class="dev-text">@pr.Repository.Slug#@pr.Number @pr.Title</span>
+                    </a>
+                }
+            </div>
+        }
+        @if (info.Branches.Count > 0)
+        {
+            <div class="dev-group">
+                <div class="dev-heading">⑂ @info.Branches.Count branch@(info.Branches.Count == 1 ? "" : "es")</div>
+                @foreach (var b in info.Branches)
+                {
+                    <a class="dev-item mono" href="@RepoUrls.Source(b.Repo, b.Branch.Name)" title="@b.Repo.Slug: @b.Branch.Name">
+                        <span class="dev-text">@b.Branch.Name</span>
+                    </a>
+                }
+            </div>
+        }
+        @if (info.Commits.Count > 0)
+        {
+            <div class="dev-group">
+                <div class="dev-heading">● @info.Commits.Count recent commit@(info.Commits.Count == 1 ? "" : "s")</div>
+                @foreach (var c in info.Commits)
+                {
+                    <a class="dev-item" href="@RepoUrls.Commit(c.Repo, c.Commit.Sha)" title="@c.Commit.Message">
+                        <span class="sha-pill mono">@c.Commit.ShortSha</span>
+                        <span class="dev-text">@c.Commit.MessageShort</span>
+                    </a>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private DevelopmentInfo? info;
+    private int loadedFor = -1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == Issue.Id) return;
+        loadedFor = Issue.Id;
+        info = null;
+        info = await Repos.GetDevelopmentAsync(Issue.ProjectId, Issue.Project.Key, Issue.Number);
+    }
+}

@@ -1,0 +1,5 @@
+<span class="pr-state pr-state-@State.ToString().ToLowerInvariant()">@State</span>
+
+@code {
+    [Parameter] public PullRequestState State { get; set; }
+}

@@ -1,0 +1,211 @@
+@page "/p/{Key}/repos/{Slug}"
+@inherits RepoPageBase
+
+<PageTitle>@(string.IsNullOrEmpty(Path) ? Repo?.Name : $"{Path} · {Repo?.Name}")</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="source" Ref="@Ref">
+        <CloneBox Repo="Repo" />
+    </RepoHeader>
+
+    <div class="repo-toolbar">
+        <RefSelector Branches="branches" Tags="tags" Value="@CurrentRef" ValueChanged="SwitchRef" />
+        <div class="repo-path mono">
+            <a href="@RepoUrls.Source(Repo, Ref)">@Repo.Slug</a>
+            @foreach (var (name, full) in Crumbs)
+            {
+                <span class="sep">/</span>
+                @if (full == CleanPath) { <b>@name</b> }
+                else { <a href="@RepoUrls.Source(Repo, Ref, full)">@name</a> }
+            }
+        </div>
+        <div class="ms-auto d-flex gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath)">🕘 History</a>
+            @if (!IsTag && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
+            {
+                <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, CurrentRef, Repo.DefaultBranch)">Create pull request</a>
+            }
+        </div>
+    </div>
+
+    @if (empty)
+    {
+        <div class="empty">This repository is empty. Push a branch to get started:<br />
+            <code>git push @RepoUrls.CloneUrl(Nav.BaseUri, Repo) main</code></div>
+    }
+    else if (missing)
+    {
+        <div class="empty">
+            <b>@(CleanPath ?? CurrentRef)</b> doesn't exist at <span class="mono">@CurrentRef</span>.
+            <div class="mt-2"><a href="@RepoUrls.Source(Repo)">Back to @Repo.DefaultBranch</a></div>
+        </div>
+    }
+    else
+    {
+        @if (lastCommit != null)
+        {
+            <div class="last-commit-bar">
+                <GitAvatar Name="@lastCommit.AuthorName" Email="@lastCommit.AuthorEmail" Users="UsersByEmail" Size="22" />
+                <b>@lastCommit.AuthorName</b>
+                <a class="text-truncate commit-msg" href="@RepoUrls.Commit(Repo, lastCommit.Sha)">@lastCommit.MessageShort</a>
+                <span class="ms-auto muted small text-nowrap">
+                    <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, lastCommit.Sha)">@lastCommit.ShortSha</a>
+                    @Display.Ago(lastCommit.When.UtcDateTime)
+                </span>
+            </div>
+        }
+
+        @if (tree != null)
+        {
+            <div class="file-tree">
+                @if (!string.IsNullOrEmpty(CleanPath))
+                {
+                    <a class="tree-row" href="@RepoUrls.Source(Repo, Ref, ParentPath)">
+                        <span class="tree-icon">📁</span><span class="tree-name">..</span>
+                    </a>
+                }
+                @foreach (var e in tree)
+                {
+                    <div class="tree-row" @key="e.Path">
+                        <span class="tree-icon">@(e.IsDirectory ? "📁" : e.IsSubmodule ? "🔗" : "📄")</span>
+                        @if (e.IsSubmodule) { <span class="tree-name">@e.Name</span> }
+                        else { <a class="tree-name" href="@RepoUrls.Source(Repo, Ref, e.Path)">@e.Name</a> }
+                        @if (e.LastCommit is { } lc)
+                        {
+                            <a class="tree-commit muted" href="@RepoUrls.Commit(Repo, lc.Sha)" title="@lc.Message">@lc.MessageShort</a>
+                            <span class="tree-when muted">@Display.Ago(lc.When.UtcDateTime)</span>
+                        }
+                        else
+                        {
+                            <span class="tree-commit"></span><span class="tree-when"></span>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (readme?.Text != null)
+            {
+                <div class="readme-card">
+                    <div class="readme-head">📖 @readme.Path.Split('/').Last()</div>
+                    <div class="markdown readme-body">@Display.Markdown(readme.Text)</div>
+                </div>
+            }
+        }
+        else if (blob != null)
+        {
+            <div class="file-view">
+                <div class="file-view-head">
+                    <span class="mono"><b>@blob.Path.Split('/').Last()</b></span>
+                    <span class="muted small">
+                        @if (blob.Text != null) { <span>@blob.Lines.Length lines · </span> }
+                        @FormatSize(blob.Size)
+                    </span>
+                    @if (IsMarkdown && blob.Text != null)
+                    {
+                        <div class="md-tabs ms-auto file-mode">
+                            <button type="button" class="@(showSource ? "" : "active")" @onclick="() => showSource = false">Preview</button>
+                            <button type="button" class="@(showSource ? "active" : "")" @onclick="() => showSource = true">Code</button>
+                        </div>
+                    }
+                </div>
+                @if (blob.TooLarge)
+                {
+                    <div class="diff-note">This file is too large to display (@FormatSize(blob.Size); limit 1 MB).</div>
+                }
+                else if (blob.IsBinary)
+                {
+                    <div class="diff-note">Binary file not shown.</div>
+                }
+                else if (IsMarkdown && !showSource)
+                {
+                    <div class="markdown readme-body">@Display.Markdown(blob.Text)</div>
+                }
+                else
+                {
+                    <table class="code-table mono">
+                        @{ var n = 0; }
+                        @foreach (var line in blob.Lines)
+                        {
+                            n++;
+                            <tr><td class="ln">@n</td><td class="code">@line</td></tr>
+                        }
+                    </table>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "ref")] public string? Ref { get; set; }
+    [SupplyParameterFromQuery(Name = "path")] public string? Path { get; set; }
+
+    private List<BranchInfo> branches = [];
+    private List<string> tags = [];
+    private List<TreeItem>? tree;
+    private BlobInfo? blob, readme;
+    private CommitInfo? lastCommit;
+    private bool empty, missing, showSource;
+
+    private string CurrentRef => string.IsNullOrEmpty(Ref) ? Repo!.DefaultBranch : Ref;
+    private string? CleanPath => string.IsNullOrEmpty(Path?.Trim('/')) ? null : Path.Trim('/');
+    private string? ParentPath => CleanPath?.Contains('/') == true ? CleanPath[..CleanPath.LastIndexOf('/')] : null;
+    private bool IsTag => tags.Contains(CurrentRef);
+    private bool IsMarkdown => blob?.Path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) == true;
+
+    private IEnumerable<(string Name, string Full)> Crumbs
+    {
+        get
+        {
+            if (CleanPath == null) yield break;
+            var parts = CleanPath.Split('/');
+            for (var i = 0; i < parts.Length; i++) yield return (parts[i], string.Join('/', parts[..(i + 1)]));
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        var r = CurrentRef;
+        var p = CleanPath;
+        tree = null; blob = null; readme = null; lastCommit = null; missing = false; showSource = false;
+
+        (branches, tags, var kind, var log) = await Git(path => (
+            GitOps.ListBranches(path, Repo!.DefaultBranch),
+            GitOps.ListTags(path),
+            GitOps.PathKind(path, r, p),
+            GitOps.Log(path, r, p, 0, 1)));
+        empty = branches.Count == 0;
+        if (empty) return;
+        lastCommit = log.Items.FirstOrDefault();
+
+        if (kind == "tree")
+        {
+            (tree, readme) = await Git(path =>
+            {
+                var items = GitOps.ListTree(path, r, p);
+                var readmeItem = items?.FirstOrDefault(i => !i.IsDirectory && i.Name.Equals("README.md", StringComparison.OrdinalIgnoreCase));
+                return (items, readmeItem == null ? null : GitOps.GetBlob(path, r, readmeItem.Path));
+            });
+        }
+        else if (kind == "blob")
+        {
+            blob = await Git(path => GitOps.GetBlob(path, r, p!));
+        }
+        missing = tree == null && blob == null;
+    }
+
+    private void SwitchRef(string newRef) => Nav.NavigateTo(RepoUrls.Source(Repo!, newRef, CleanPath));
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024):0.#} MB",
+    };
+}

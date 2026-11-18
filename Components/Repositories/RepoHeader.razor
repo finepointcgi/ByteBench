@@ -1,0 +1,34 @@
+@* Breadcrumb, title and tab strip shared by every page of a repository. *@
+<div class="breadcrumbs">
+    <a href="/p/@Repo.Project.Key/issues">@Repo.Project.Name</a> /
+    <a href="@RepoUrls.List(Repo.Project.Key)">Repositories</a> /
+    <span>@Repo.Name</span>
+</div>
+<div class="repo-header">
+    <div class="repo-title">
+        <span class="repo-icon">⌥</span>
+        <div>
+            <h1>@Repo.Name</h1>
+            @if (!string.IsNullOrWhiteSpace(Repo.Description))
+            {
+                <div class="muted">@Repo.Description</div>
+            }
+        </div>
+    </div>
+    @ChildContent
+</div>
+<nav class="tabs repo-tabs">
+    <a class="tab @(Active == "source" ? "active" : "")" href="@RepoUrls.Source(Repo, Ref)">Source</a>
+    <a class="tab @(Active == "commits" ? "active" : "")" href="@RepoUrls.Commits(Repo, Ref)">Commits</a>
+    <a class="tab @(Active == "branches" ? "active" : "")" href="@RepoUrls.Branches(Repo)">Branches</a>
+    <a class="tab @(Active == "prs" ? "active" : "")" href="@RepoUrls.RepoPullRequests(Repo)">Pull requests</a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    /// <summary>One of: source, commits, branches, prs.</summary>
+    [Parameter] public string Active { get; set; } = "source";
+    /// <summary>The ref being viewed, carried across the Source/Commits tabs.</summary>
+    [Parameter] public string? Ref { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
