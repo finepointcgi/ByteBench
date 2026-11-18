@@ -4,6 +4,8 @@ using GitBench.Services;
 using GitBench.Services.Git;
 using GitBench.Services.Ai;
 using GitBench.Services.Ci;
+using GitBench.Services.Webhooks;
+using GitBench.Api;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -64,6 +66,8 @@ builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
 builder.Services.AddCiPipelines(builder.Configuration);
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
+builder.Services.AddWebhooks(builder.Configuration);
+builder.Services.AddGitBenchApi();
 
 var app = builder.Build();
 
@@ -94,8 +98,10 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.UseWebhookPushCapture();
 app.MapGitHttp();
 app.MapCiEndpoints();
+app.MapGitBenchApi();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -8,7 +8,7 @@ public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
 public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
-    MergeGate gate, ReviewerService reviewers, BranchProtectionService protection)
+    MergeGate gate, ReviewerService reviewers, BranchProtectionService protection, Webhooks.WebhookNotifier webhooks)
 {
     // ---------- Queries ----------
 
@@ -128,6 +128,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         await tx.CommitAsync();
         await notifications.OnPullRequestCreatedAsync(pr.Id, authorId);
         await reviewers.AddOnCreateAsync(pr.Id, authorId, reviewerIds);
+        await webhooks.PullRequestOpenedAsync(pr.Id, authorId);
         aiReviewQueue.Enqueue(pr.Id);
         return pr;
     }
@@ -147,6 +148,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         pr.Description = description;
         await db.SaveChangesAsync();
         await notifications.OnPullRequestUpdatedAsync(prId, actorId, oldDescription);
+        await webhooks.PullRequestUpdatedAsync(prId, actorId, "edited");
     }
 
     /// <summary>Merges the PR inside the bare repo; on success records state, activity and linked-issue activity.</summary>
@@ -204,6 +206,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
         await db.SaveChangesAsync();
         await notifications.OnPullRequestMergedAsync(prId, actor.Id);
+        await webhooks.PullRequestMergedAsync(prId, actor.Id);
         return outcome;
     }
 
@@ -222,6 +225,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         Log(db, pr, actorId, "declined this pull request");
         await db.SaveChangesAsync();
         await notifications.OnPullRequestDeclinedAsync(prId, actorId);
+        await webhooks.PullRequestDeclinedAsync(prId, actorId);
     }
 
     public async Task ReopenAsync(int prId, int actorId)
@@ -243,6 +247,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         Log(db, pr, actorId, "reopened this pull request");
         await db.SaveChangesAsync();
         await notifications.OnPullRequestReopenedAsync(prId, actorId);
+        await webhooks.PullRequestUpdatedAsync(prId, actorId, "reopened");
     }
 
     // ---------- Comments & reviews ----------
@@ -261,6 +266,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         await db.PullRequests.Where(p => p.Id == prId).ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();
         await notifications.OnPullRequestCommentedAsync(prId, c.Id, authorId, c.Body);
+        await webhooks.PullRequestCommentedAsync(prId, c.Id, authorId);
         return c;
     }
 
@@ -313,6 +319,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         Log(db, pr, userId, text);
         await db.SaveChangesAsync();
         await notifications.OnPullRequestReviewedAsync(prId, userId, state);
+        await webhooks.PullRequestUpdatedAsync(prId, userId, state switch { ReviewState.Approved => "approved", ReviewState.ChangesRequested => "changes_requested", _ => "review_dismissed" });
     }
 
     // ---------- Permission helpers ----------

@@ -317,7 +317,7 @@ public class ProjectMember
 }
 
 [Flags]
-public enum TokenScopes { None = 0, ReadRepository = 1, WriteRepository = 2 }
+public enum TokenScopes { None = 0, ReadRepository = 1, WriteRepository = 2, ReadApi = 4, WriteApi = 8 }
 
 /// <summary>
 /// A personal access token for Git over HTTP. Only the SHA-256 hash of the token is stored;
@@ -479,4 +479,53 @@ public class RepositoryRedirect
     public int RepositoryId { get; set; }
     public Repository Repository { get; set; } = null!;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- Webhooks & API -----
+
+/// <summary>
+/// An outgoing webhook of a project: GitBench POSTs a signed JSON payload to <see cref="Url"/> for each subscribed event.
+/// Managed by <see cref="GitBench.Services.Webhooks.WebhookService"/>, delivered by <see cref="GitBench.Services.Webhooks.WebhookWorker"/>.
+/// </summary>
+public class Webhook
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    [Required, MaxLength(2000)] public string Url { get; set; } = "";
+    /// <summary>HMAC-SHA256 signing key. Stored as-is because every delivery needs it; shown to users only once.</summary>
+    [Required, MaxLength(200)] public string Secret { get; set; } = "";
+    /// <summary>Comma-separated event names (see <see cref="GitBench.Services.Webhooks.WebhookEventNames"/>).</summary>
+    [Required, MaxLength(1000)] public string Events { get; set; } = "";
+    public bool IsActive { get; set; } = true;
+    /// <summary>Failed deliveries in a row; at <see cref="GitBench.Services.Webhooks.WebhookService.MaxConsecutiveFailures"/> the hook is disabled.</summary>
+    public int ConsecutiveFailures { get; set; }
+    /// <summary>Set when GitBench turned the hook off automatically; cleared when someone re-activates it.</summary>
+    public DateTime? DisabledAt { get; set; }
+    public int CreatedById { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastDeliveryAt { get; set; }
+}
+
+/// <summary>One delivery (with its retries) of an event to a webhook.</summary>
+public class WebhookDelivery
+{
+    public int Id { get; set; }
+    public int WebhookId { get; set; }
+    /// <summary>The X-GitBench-Delivery GUID. A redelivery reuses the original's.</summary>
+    [Required, MaxLength(36)] public string DeliveryId { get; set; } = "";
+    [Required, MaxLength(60)] public string Event { get; set; } = "";
+    /// <summary>The exact JSON body that was (or will be) sent and signed.</summary>
+    [Required] public string Payload { get; set; } = "";
+    public bool IsRedelivery { get; set; }
+    public bool? Success { get; set; }
+    /// <summary>HTTP status of the last attempt; null for network errors, timeouts and blocked addresses.</summary>
+    public int? StatusCode { get; set; }
+    [MaxLength(1000)] public string? Error { get; set; }
+    public int Attempts { get; set; }
+    /// <summary>Duration of the last attempt.</summary>
+    public int DurationMs { get; set; }
+    /// <summary>The first 4 KB of the last response body.</summary>
+    [MaxLength(4096)] public string? ResponseBody { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedAt { get; set; }
 }

@@ -88,7 +88,8 @@
         <h2 class="profile-section-title">Access tokens</h2>
         <p class="muted small">
             Use a personal access token instead of your password for Git over HTTP: enter your username and paste the
-            token when git asks for a password. Tokens are shown once; GitBench stores only a hash.
+            token when git asks for a password. Tokens with an API scope also work for the
+            <a href="/developers/api">REST API</a> (<code>Authorization: Bearer gbp_…</code>). Tokens are shown once; GitBench stores only a hash.
         </p>
         <StatusMessage Success="@tokenSuccess" Errors="tokenErrors" />
 
@@ -120,6 +121,14 @@
                 <label class="form-check">
                     <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.WriteRepository" />
                     <span class="form-check-label"><code>write_repository</code>: push (also allows clone and fetch)</span>
+                </label>
+                <label class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.ReadApi" />
+                    <span class="form-check-label"><code>read_api</code>: read-only <a href="/developers/api">REST API</a> access (GET requests)</span>
+                </label>
+                <label class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.WriteApi" />
+                    <span class="form-check-label"><code>write_api</code>: full REST API access (also allows reads)</span>
                 </label>
             </div>
             <div class="mb-3">
@@ -217,7 +226,8 @@
     private async Task CreateToken()
     {
         if (user is null || TokenInput is null) return;
-        var scopes = (TokenInput.ReadRepository ? TokenScopes.ReadRepository : 0) | (TokenInput.WriteRepository ? TokenScopes.WriteRepository : 0);
+        var scopes = (TokenInput.ReadRepository ? TokenScopes.ReadRepository : 0) | (TokenInput.WriteRepository ? TokenScopes.WriteRepository : 0)
+                     | (TokenInput.ReadApi ? TokenScopes.ReadApi : 0) | (TokenInput.WriteApi ? TokenScopes.WriteApi : 0);
         DateTime? expires = TokenInput.ExpiresInDays > 0 ? DateTime.UtcNow.AddDays(TokenInput.ExpiresInDays) : null;
         try
         {
@@ -238,7 +248,8 @@
     }
 
     private static string ScopeText(TokenScopes s) => string.Join(", ",
-        new[] { (TokenScopes.ReadRepository, "read_repository"), (TokenScopes.WriteRepository, "write_repository") }
+        new[] { (TokenScopes.ReadRepository, "read_repository"), (TokenScopes.WriteRepository, "write_repository"),
+                (TokenScopes.ReadApi, "read_api"), (TokenScopes.WriteApi, "write_api") }
             .Where(x => s.HasFlag(x.Item1)).Select(x => x.Item2));
 
     private async Task SaveProfile()
@@ -305,6 +316,8 @@
         // Defaults false: an unchecked box posts nothing, so a true default could never be cleared. The GET form pre-checks it.
         public bool ReadRepository { get; set; }
         public bool WriteRepository { get; set; }
+        public bool ReadApi { get; set; }
+        public bool WriteApi { get; set; }
         [Range(0, 365)] public int ExpiresInDays { get; set; } = 30;
     }
 
