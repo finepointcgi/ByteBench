@@ -1,0 +1,51 @@
+@* Web editor: commit the workspace to a new branch, optionally opening a pull request into the current branch. *@
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">Commit to a new branch</MudText></TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(Note)) { <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@Note</MudAlert> }
+        <MudStack Spacing="3">
+            <MudTextField T="string" @bind-Value="branch" Immediate="true" Label="New branch" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          AutoFocus="true" autocomplete="off" spellcheck="false" Class="mono" />
+            <MudCheckBox T="bool" @bind-Value="openPr" Disabled="@(!CanCreatePullRequest)" Dense="true" Size="Size.Small"
+                         Label="@($"Open a pull request into {Target}")" />
+            @if (openPr)
+            {
+                <MudTextField T="string" @bind-Value="title" Immediate="true" Label="Pull request title" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(branch)" OnClick="Confirm">
+            @(openPr ? "Commit and open pull request" : "Commit")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string Branch { get; set; } = "";
+    [Parameter] public string Target { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public bool CanCreatePullRequest { get; set; }
+
+    public sealed record Result(string Branch, string? PullRequestTitle);
+
+    private string branch = "", title = "";
+    private bool openPr;
+
+    protected override void OnInitialized()
+    {
+        branch = Branch;
+        title = Title ?? "";
+        openPr = CanCreatePullRequest;
+    }
+
+    private void Confirm()
+    {
+        if (string.IsNullOrWhiteSpace(branch)) return;
+        MudDialog.Close(DialogResult.Ok(new Result(branch.Trim(), openPr ? (string.IsNullOrWhiteSpace(title) ? "" : title.Trim()) : null)));
+    }
+}

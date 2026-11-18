@@ -18,6 +18,11 @@ public static class RepoUrls
         Base(r) + "/commits" + Query(("ref", NullIfDefault(r, @ref)), ("path", Trim(path)), ("page", page > 1 ? page.ToString() : null));
 
     public static string Commit(Repository r, string sha) => $"{Base(r)}/commits/{sha}";
+
+    /// <summary>The web editor on <paramref name="branch"/> (escaped as one segment: branch names contain '/'), optionally opening a file.</summary>
+    public static string Editor(Repository r, string branch, string? path = null) =>
+        $"{Base(r)}/edit/{Uri.EscapeDataString(branch)}"
+        + (Trim(path) is { } p ? "/" + string.Join("/", p.Split('/').Select(Uri.EscapeDataString)) : "");
     public static string Branches(Repository r) => Base(r) + "/branches";
     public static string BranchProtection(Repository r) => Base(r) + "/settings/branches";
     public static string DeployKeys(Repository r) => Base(r) + "/settings/deploy-keys";

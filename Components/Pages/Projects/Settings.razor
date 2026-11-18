@@ -5,6 +5,8 @@
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
+@inject GitBench.Services.Editor.Ai.EditorAiService EditorAi
+@inject CurrentUser Me
 
 <PageTitle>Settings · @project?.Name</PageTitle>
 
@@ -43,6 +45,21 @@ else if (project != null)
             </MudStack>
         </MudPaper>
     }
+
+    <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Web editor</MudText>
+        <MudSwitch T="bool" Value="editorAi" ValueChanged="SetEditorAi" Color="Color.Primary" Label="AI in the web editor (assistant, inline actions and completions)" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+            @if (editorAiStatus is { Backend: not null })
+            {
+                <span>Runs on @editorAiStatus.BackendName. Requests use the server's Claude account and cost tokens.</span>
+            }
+            else
+            {
+                <span>@editorAiStatus?.DisabledReason</span>
+            }
+        </MudText>
+    </MudPaper>
 
     <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Issue fields &amp; time tracking</MudText>
@@ -217,6 +234,8 @@ else if (project != null)
         description = project.Description;
         visibility = project.Visibility;
         transferTo = project.GroupId;
+        editorAi = await EditorAi.IsProjectEnabledAsync(project.Id);
+        editorAiStatus = await EditorAi.GetStatusAsync(project.Id);
         if (perms.Can(Permission.ManageProjectSettings))
         {
             transferTargets = await GroupSvc.CreatableInAsync();
@@ -244,6 +263,20 @@ else if (project != null)
         error = null;
         try { await action(); return true; }
         catch (InvalidOperationException ex) { error = ex.Message; return false; }
+    }
+
+    private bool editorAi = true;
+    private GitBench.Services.Editor.Ai.EditorAiStatus? editorAiStatus;
+
+    private async Task SetEditorAi(bool on)
+    {
+        await Me.EnsureLoadedAsync();
+        if (await Try(() => EditorAi.SetProjectEnabledAsync(project!.Id, on, Me.Id)))
+        {
+            editorAi = on;
+            editorAiStatus = await EditorAi.GetStatusAsync(project!.Id);
+            Snackbar.Add(on ? "AI is on in this project's web editor." : "AI is off in this project's web editor.", Severity.Success);
+        }
     }
 
     private async Task SaveGeneral()

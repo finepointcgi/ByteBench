@@ -1,0 +1,42 @@
+@* A one-field text prompt for the web editor (new file, rename, refactor instructions). Returns DialogResult.Ok(text). *@
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">@Title</MudText></TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(Message)) { <MudText Typo="Typo.body2" Class="mb-3">@Message</MudText> }
+        <MudTextField T="string" @bind-Value="value" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" AutoFocus="true"
+                      Label="@Label" HelperText="@HelperText" autocomplete="off" spellcheck="false" OnKeyDown="KeyDown"
+                      Lines="@(Multiline ? 3 : 1)" Sizing="@(Multiline ? InputSizing.Auto : InputSizing.Fixed)" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!AllowEmpty && string.IsNullOrWhiteSpace(value))" OnClick="Confirm">@ButtonText</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? HelperText { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public string ButtonText { get; set; } = "OK";
+    [Parameter] public bool Multiline { get; set; }
+    [Parameter] public bool AllowEmpty { get; set; }
+
+    private string? value;
+
+    protected override void OnInitialized() => value = Value;
+
+    private void Confirm()
+    {
+        if (!AllowEmpty && string.IsNullOrWhiteSpace(value)) return;
+        MudDialog.Close(DialogResult.Ok((value ?? "").Trim()));
+    }
+
+    private void KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (!Multiline || e.CtrlKey || e.MetaKey)) Confirm();
+    }
+}

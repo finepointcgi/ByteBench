@@ -39,6 +39,11 @@ else if (pr != null)
             <MudText Typo="Typo.h5" HtmlTag="h1" Class="pr-title">@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></MudText>
             <div class="d-flex gap-2 align-center">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" PullRequestId="pr.Id" />
+                @if (pr.State == PullRequestState.Open && (pr.IsCrossFork ? pr.SourceRepository?.Project : repo.Project) != null)
+                {
+                    <MudButton Href="@RepoUrls.Editor(pr.IsCrossFork ? pr.SourceRepository! : repo, pr.SourceBranch)" Variant="Variant.Outlined" Size="Size.Small"
+                               StartIcon="@Icons.Material.Outlined.Code" title="Edit the source branch in the web editor">Open in editor</MudButton>
+                }
                 @if (CanEditPr && pr.State == PullRequestState.Open)
                 {
                     <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit"

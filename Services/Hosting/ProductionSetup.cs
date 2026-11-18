@@ -201,6 +201,8 @@ public static class ProductionSetup
                     var csp = "default-src 'self'; " +
                               $"script-src 'self' 'nonce-{nonce}' 'unsafe-hashes' {hashes}; " +
                               "style-src 'self' 'unsafe-inline'; " +
+                              // Workers (Monaco in the web editor) only from this origin: no blob: or data: workers.
+                              "worker-src 'self'; " +
                               "img-src 'self' data: blob:; font-src 'self' data:; " +
                               $"connect-src 'self' ws://{host} wss://{host}; " +
                               "object-src 'none'; base-uri 'self'; " +

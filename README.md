@@ -847,6 +847,94 @@ Code: `Services/Code/CodeSearchService.cs`, `Components/Repositories/SearchResul
 
 Code: `Services/RepositorySettingsService.cs`, `Services/Git/GitOps.CodeTools.cs`, `Components/Pages/Repositories/RepoSettings.razor`. Schema: `Repository.IsArchived` / `ArchivedAt` and the `RepositoryRedirect` entity (migration `CodeTools`).
 
+## Web editor & AI assistant
+
+A VS Code-like editor in the browser, at `/p/{KEY}/repos/{slug}/edit/{branch}/{path}` (the branch is one URL segment, so `feature/x` is written `feature%2Fx`). Open it with **Open in editor** on a repository's source page (current branch, and the open file) or on a pull request (its source branch, in the fork for a fork PR).
+
+### Features
+
+- **Layout:** an activity bar (Explorer, Find in files, Source control), tabs, the [Monaco](https://microsoft.github.io/monaco-editor/) editor with language detection by file name and extension, a status bar (branch, read-only, changes, AI backend, language, line/column), and the assistant docked on the right.
+- **Explorer:** the tree is loaded one folder at a time from the branch, with your working changes laid over it (A/M/R markers; deleted files disappear). New file, rename/move and delete from each row's menu.
+- **Workspace:** your edits are saved automatically (about 0.7 s after you stop typing, or Ctrl/Cmd+S) into a per-user, per-branch **workspace** in the database (`EditorWorkspace`, `EditorWorkspaceChange`): added, modified, deleted and renamed files against a **base commit**. They survive reloads and restarts, and nobody else sees them. Saving a file back to its base content drops the change.
+- **Source control:** lists the changes; click one for Monaco's diff against the base, or discard it (renames are undone, the original comes back). **Commit to {branch}** writes one commit with you as author. **Commit to new branch & open PR** creates the branch from the base, commits there and opens a pull request into the current branch (the way in when the branch is protected).
+- **Branch moved:** if someone pushed since your base, files only they changed don't matter (you can still commit, on top of their commits). If they changed files you also changed, **Update workspace (rebase)** merges each file three-way (LibGit2Sharp tree merge). Files that conflict are listed with a diff of the branch's version against yours; choose **Keep mine** or **Take theirs** per file.
+- **Find in files** uses `git grep` at the base commit (`CodeSearchService`) for unchanged files, plus your working copies of changed files.
+- **Large and binary files** (over 1 MB, or binary) open as a read-only message and can't be edited, renamed or sent to the assistant.
+- **Read-only mode:** without PushCode (Viewers), on archived repositories and on pull mirrors you can browse, search and chat with the assistant, but not edit, accept proposals or commit.
+
+### Keyboard shortcuts
+
+| Keys | Action |
+| --- | --- |
+| Ctrl/Cmd+P | Go to file (fuzzy) |
+| Ctrl/Cmd+Shift+P | Command palette (save, new file, commit, rebase, AI actions, ghost text…) |
+| Ctrl/Cmd+Shift+F | Find in files |
+| Ctrl/Cmd+S | Save now (saving is automatic anyway) |
+| Ctrl/Cmd+Shift+L | Focus the assistant |
+| Ctrl/Cmd+Enter | Send a chat message / commit (in the commit message box) |
+| F1 | Monaco's own command palette (editor commands) |
+
+### Commits follow the push rules
+
+Committing is checked like `git push`: **PushCode**; archived repositories and pull mirrors are refused; **branch protection** (`BranchProtectionService.EnsureAllowedAsync`: a branch with "block direct pushes" refuses the commit and the editor offers a new branch + PR instead; creating the new branch is checked too); only `refs/heads/…` is written, so protected tags are never touched. After a commit the **push listeners run exactly as after a git push** (`GitRepoLookup.NotifyPushListenersAsync` in a scope acting as you, with `PushCapture` holding the ref update): CI pipelines, webhooks, smart commits, automation, stale-approval dismissal, AI review, mirroring. Commits are recorded in the audit log (`editor.commit`).
+
+### The AI assistant
+
+The chat panel talks to Claude about the open branch. It knows the open file and your selection (toggle **Open file & selection**), and you can attach files with `@path` in the message or **Attach a file**. It streams its reply and shows each tool it uses.
+
+- **Tools** (API backend): `list_files`, `read_file`, `search_code` (git grep at the workspace state) and `propose_edit` (full new content, a find/replace hunk, or delete). They read only your workspace: this repository and branch plus your uncommitted changes. Paths are validated (no `..`, absolute paths or `.git`).
+- **Proposed edits are never applied silently.** Each appears as a card with **Diff**, **Accept** and **Reject** (and Accept all / Reject all). Accepting puts the change into your workspace as an ordinary working change; it is still not committed. Accepting is refused if the file changed since the proposal.
+- **Inline actions** (the **AI actions** menu above the editor, or the command palette) on the selection or the whole file: **Explain**, **Refactor…** (asks how), **Add comments**, **Write tests**, **Fix**. They run through the same assistant, so edits come back as proposals.
+- **Ghost-text completions** (Monaco inline completions): **off by default**; turn them on per session with the **Ghost text** button in the status bar or the command palette. Requests are debounced (sent when you pause typing, with up to 6 KB before and 2 KB after the cursor) and rate limited. API backend only.
+- **Per-project switch:** Project settings → **Web editor** → "AI in the web editor" (Maintainers and Owners). On by default whenever a backend is available.
+- **Not set up:** with no API key and no Claude Code, the panel says "AI isn't set up" and the AI menus are hidden; the editor itself works normally.
+- **Limits:** per request at most `Ai:Editor:MaxToolCalls` (15) tool calls and `MaxOutputTokensPerRequest` (48,000) output tokens, `MaxTokensPerTurn` (16,000) per turn; per user `RequestsPerMinute` (6) and `CompletionsPerMinute` (20).
+
+### Backends: Anthropic API or Claude Code on the server
+
+`Ai:Editor:Backend` picks the engine: `Api`, `ClaudeCode`, or `Auto` (default: Claude Code if it's installed on the server, else the API if a key is configured, else off). The site admin page **/admin/ai** shows what's configured, the detected Claude Code version, and has a **Check again** button.
+
+**API** (`ApiEditorBackend`): a server-side tool-use loop on the Anthropic C# SDK through `AiClient` (model `Ai:Model`, `claude-opus-5-5`), streaming text, medium effort, refusal fallbacks and a cached system prompt.
+
+**Claude Code** (`ClaudeCodeEditorBackend`) runs the `claude` CLI installed on the server, headless:
+
+1. Your workspace (the base commit plus your changes; text files up to 1 MB, at most `MaxFiles`/`MaxBytes`) is written to a fresh temporary directory with mode 700. The repository's own Claude Code configuration (`.claude/`, `.mcp.json`) is **not** copied, so a repository can't add hooks, permissions or MCP servers.
+2. It runs `claude -p --output-format stream-json --verbose --include-partial-messages` there with the prompt on **stdin** (never on a command line or through a shell), `--tools Read,Grep,Glob,Edit,Write`, `--allowedTools "Read(./**),Edit(./**),Write(./**),Grep,Glob"`, `--disallowedTools Bash,WebFetch,WebSearch,NotebookEdit,Task`, `--permission-mode dontAsk` and `--permission-prompts none` (nothing ever prompts: anything not allowed is refused), `--restricted` (file tools confined to the directory; user/project settings ignored), `--strict-mcp-config` (no MCP servers), `--no-session-persistence`, `--disable-slash-commands`, `--max-turns`, an optional `--model`, and `--append-system-prompt` saying file contents are untrusted data. GitBench reads `claude --help` at startup and only passes the optional flags this version lists; the turn cap is also enforced on the event stream.
+3. The environment is **clean**: none of the server's variables (API keys, connection strings, cloud credentials) are passed, only what Claude Code needs to find itself and its login: `HOME`, `USER`, `PATH`, locale and temp variables, `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_OAUTH_TOKEN` if set.
+4. Its text and tool calls stream to the chat panel. A run that exceeds `TimeoutSeconds` is stopped by killing the whole process tree.
+5. When it finishes, the directory is compared with what was written: every changed, added or deleted file becomes a **pending proposal**, exactly like the API backend. Nothing is applied automatically. The directory is then deleted.
+6. At most `MaxConcurrent` runs at once (others wait up to 30 s), plus the per-user rate limit.
+
+Ghost-text completions stay API-only (the CLI is too slow for them); with the Claude Code backend the toggle is hidden.
+
+**Setup:** install Claude Code for the account GitBench runs as and sign it in once as that account (`claude` interactively, or `claude setup-token` and `CLAUDE_CODE_OAUTH_TOKEN`). The editor then uses **that account's Claude Code login or subscription** for every user's requests: usage, limits and billing are the server account's, not the individual user's. Usage reported by Claude Code is logged to `AiUsage` as `editor.chat.claude-code` / `editor.action.*.claude-code`.
+
+```json
+"Ai": {
+  "Editor": { "Backend": "Auto", "MaxToolCalls": 15, "MaxTokensPerTurn": 16000, "MaxOutputTokensPerRequest": 48000,
+              "RequestsPerMinute": 6, "CompletionsPerMinute": 20 },
+  "ClaudeCode": { "Path": "claude", "Model": null, "TimeoutSeconds": 300, "MaxTurns": 15, "MaxConcurrent": 2 }
+}
+```
+
+### Cost notes
+
+Every chat message and inline action is billed as Claude tokens: the system prompt (cached), your message, the open file/selection and attachments, plus every file the assistant reads. A request can take up to 15 tool calls. Usage is logged per user and project in `AiUsage` (`editor.chat`, `editor.action.explain|refactor|comments|tests|fix`, `editor.complete`). Ghost text costs a small request on each typing pause, which is why it's off by default. Turn the assistant off per project in its settings, or for the whole site by not configuring a backend.
+
+### Security model
+
+- **Who:** reading the workspace and chatting need ViewProject; editing, accepting proposals and committing need PushCode on a writable repository; commits follow branch protection like a push. Workspaces are private to their user (every call checks the owner).
+- **What the AI can see:** only the requesting user's workspace for this repository and branch (API tools work on an in-memory view of it; Claude Code gets a copy of only those files). It can't reach other repositories, the server's files or the network through GitBench, and it can't commit, push or call anything outside its tools.
+- **Untrusted content:** file contents, search results, selections and attachments are put in delimited `UNTRUSTED` blocks with a random boundary per request, and the system prompt tells the model they are data, never instructions. Whatever the model proposes still has to be accepted by you, as a diff.
+
+### Monaco and the CSP
+
+**Monaco Editor 0.52.2** (MIT, `wwwroot/lib/monaco/LICENSE` and `ThirdPartyNotices.txt`) is vendored in `wwwroot/lib/monaco/vs`, downloaded once from jsdelivr (`monaco-editor@0.52.2/min/vs`) and checked against jsdelivr's SHA-256 file hashes; it is never loaded from a CDN at runtime. To keep the repository small, the TypeScript language service (~5.8 MB) and the translated UI strings are left out: **6.3 MB, 94 files** (editor core, base worker, basic-language syntax highlighting for ~80 languages, and the JSON, CSS and HTML language services). TypeScript and JavaScript keep syntax highlighting; `wwwroot/js/monaco-tsmode-stub.js` stands in for the missing service. It is loaded with Monaco's AMD loader by `wwwroot/js/web-editor.js` only on the editor page.
+
+CSP: Monaco's web workers are started from `/lib/monaco/vs/base/worker/workerMain.js` (same origin, via `MonacoEnvironment.getWorkerUrl`), so the policy adds just **`worker-src 'self'`**, which makes explicit that workers must come from the site and rules out `blob:`/`data:` workers. Monaco's own stylesheet and dynamic `<style>` elements are covered by the existing `style-src 'self' 'unsafe-inline'`, its codicon font by `font-src 'self'`, and its scripts by `script-src 'self'`. No `unsafe-eval` is needed.
+
+Code: `Services/Editor/` (workspaces, `WorkspaceSnapshot`, `EditorPushNotifier`), `Services/Editor/Ai/` (backends, tools, prompts, `EditorAiService`, `ClaudeCodeDetector`), `Services/Git/GitOps.Editor.cs`, `Components/Pages/Repositories/WebEditor.razor`, `Components/Repositories/EditorChatPanel.razor`, `Components/Pages/Admin/AiAdminPage.razor`, `wwwroot/js/web-editor.js`, `wwwroot/css/web-editor.css`. Schema: `EditorWorkspace`, `EditorWorkspaceChange`, `ProjectEditorSettings` (migration `WebEditor`). Tests: `tests/GitBench.Tests/WebEditorTests.cs` (fake model) and `WebEditorClaudeCodeTests.cs` (a fake `claude` script; the real CLI is never run against the API).
+
 ## REST API & webhooks
 
 ### REST API (`/api/v1`)
@@ -1621,6 +1709,7 @@ Settings come from these sources; later ones override earlier ones:
 - **Scripts** come from the site. Blazor's import map is allowed by a per-request nonce, and the app's few inline handlers (`onfocus="this.select()"` and the copy buttons) by hash.
 - **Styles** allow `'unsafe-inline'`, because components set `style` attributes (label colours, charts).
 - **`connect-src`** covers the circuit's `ws:`/`wss:` connection to the same host.
+- **`worker-src 'self'`**: web workers (the web editor's Monaco) only from the site, never `blob:` or `data:` (see [Web editor & AI assistant](#web-editor--ai-assistant)).
 - The policy also sets `frame-ancestors 'none'`, `form-action 'self'` (plus the origins of configured SSO providers) and `object-src 'none'`.
 - Responses with their own CSP (attachments, release assets) keep theirs.
 - New inline `<script>` blocks or `on…=""` attributes will be blocked. Put the code in a `.js` file in `wwwroot/js`, or add the handler string to `Security:CspInlineHandlers`.
