@@ -339,6 +339,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureCustomFieldsTime(b);
         ConfigureCiExtras(b);
         ConfigureWebEditor(b);
+        ConfigureMergeQueue(b);
     }
 
     // ----- Forks -----
@@ -535,5 +536,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<EditorWorkspaceChange>().HasOne<EditorWorkspace>().WithMany(w => w.Changes).HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectEditorSettings>().HasKey(s => s.ProjectId);
         b.Entity<ProjectEditorSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    // ----- Merge queue -----
+    public DbSet<MergeQueueEntry> MergeQueueEntries => Set<MergeQueueEntry>();
+
+    private static void ConfigureMergeQueue(ModelBuilder b)
+    {
+        b.Entity<MergeQueueEntry>().HasIndex(e => new { e.RepositoryId, e.TargetBranch, e.State, e.Position });
+        b.Entity<MergeQueueEntry>().HasIndex(e => new { e.PullRequestId, e.State });
+        b.Entity<MergeQueueEntry>().HasOne(e => e.Repository).WithMany().HasForeignKey(e => e.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<MergeQueueEntry>().HasOne(e => e.PullRequest).WithMany().HasForeignKey(e => e.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<MergeQueueEntry>().HasOne(e => e.EnqueuedBy).WithMany().HasForeignKey(e => e.EnqueuedById).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<MergeQueueEntry>().HasOne(e => e.Pipeline).WithMany().HasForeignKey(e => e.PipelineId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<MergeQueueEntry>().HasOne<User>().WithMany().HasForeignKey(e => e.RemovedById).OnDelete(DeleteBehavior.SetNull);
     }
 }

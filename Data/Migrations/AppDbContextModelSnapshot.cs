@@ -528,6 +528,21 @@ namespace GitBench.Data.Migrations
                     b.Property<bool>("DismissStaleApprovals")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("MergeQueueEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MergeQueueMaxBatch")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MergeQueueRequireCi")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("MergeQueueStrategy")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MergeQueueTimeoutMinutes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Pattern")
                         .IsRequired()
                         .HasMaxLength(250)
@@ -1445,6 +1460,88 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("LfsObjects");
+                });
+
+            modelBuilder.Entity("GitBench.Data.MergeQueueEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BaseSha")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Builds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EnqueuedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HeadSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("PipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RemovedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SpeculativeSha")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Strategy")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TargetBranch")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("TestingSince")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnqueuedById");
+
+                    b.HasIndex("PipelineId");
+
+                    b.HasIndex("RemovedById");
+
+                    b.HasIndex("PullRequestId", "State");
+
+                    b.HasIndex("RepositoryId", "TargetBranch", "State", "Position");
+
+                    b.ToTable("MergeQueueEntries");
                 });
 
             modelBuilder.Entity("GitBench.Data.Milestone", b =>
@@ -4055,6 +4152,45 @@ namespace GitBench.Data.Migrations
                     b.Navigation("Repository");
 
                     b.Navigation("UploadedBy");
+                });
+
+            modelBuilder.Entity("GitBench.Data.MergeQueueEntry", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "EnqueuedBy")
+                        .WithMany()
+                        .HasForeignKey("EnqueuedById")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Pipeline", "Pipeline")
+                        .WithMany()
+                        .HasForeignKey("PipelineId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.PullRequest", "PullRequest")
+                        .WithMany()
+                        .HasForeignKey("PullRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("RemovedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EnqueuedBy");
+
+                    b.Navigation("Pipeline");
+
+                    b.Navigation("PullRequest");
+
+                    b.Navigation("Repository");
                 });
 
             modelBuilder.Entity("GitBench.Data.Milestone", b =>

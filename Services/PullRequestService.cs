@@ -172,6 +172,8 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         if (deleteSourceBranch && pr.IsCrossFork) throw new InvalidOperationException("The source branch is in a fork, so it can't be deleted from here.");
         if (!MergeStrategySettings.Allowed(pr.Repository).HasFlag(MergeStrategySettings.Flag(request.Strategy)))
             throw new InvalidOperationException($"This repository doesn't allow {MergeStrategySettings.Label(request.Strategy).ToLowerInvariant()} merges.");
+        // A merge queue on the target branch: merging goes through the queue (unless the actor bypasses the rule).
+        await EnsureNoMergeQueueAsync(pr, actor.Id);
         // Branch protection: approvals, change requests and required checks (throws with the reasons when blocked).
         var bypassed = await gate.EnsureCanMergeAsync(prId, actor.Id);
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
@@ -207,14 +209,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
             catch (InvalidOperationException) { /* already gone: nothing to do */ }
         }
 
-        // Jira-style: note the merge on each linked issue.
-        var linked = await GetLinkedIssuesAsync(pr, before?.Commits);
-        var link = $"[{pr.Repository.Slug}#{pr.Number}](/p/{pr.Repository.Project.Key}/repos/{pr.Repository.Slug}/pull-requests/{pr.Number})";
-        foreach (var issue in linked)
-        {
-            db.Activities.Add(new Activity { IssueId = issue.Id, ActorId = actor.Id, Text = $"merged pull request **{link}** into `{pr.TargetBranch}`" });
-            await db.Issues.Where(i => i.Id == issue.Id).ExecuteUpdateAsync(s => s.SetProperty(i => i.UpdatedAt, now));
-        }
+        await NoteMergeOnLinkedIssuesAsync(db, pr, actor.Id, before?.Commits, now);
 
         await db.SaveChangesAsync();
         await notifications.OnPullRequestMergedAsync(prId, actor.Id);

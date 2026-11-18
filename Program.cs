@@ -78,6 +78,7 @@ builder.Services.AddScoped<MergeGate>();
 builder.Services.AddScoped<ReviewerService>();
 builder.Services.AddScoped<CodeOwnersService>(); // PR features: CODEOWNERS
 builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
+GitBench.Services.MergeQueue.MergeQueueServiceCollectionExtensions.AddMergeQueue(builder.Services, builder.Configuration); // merge queues on protected branches
 builder.Services.AddCiPipelines(builder.Configuration);
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
