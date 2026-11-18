@@ -38,9 +38,9 @@ namespace GitBench.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ActorId");
-
                     b.HasIndex("IssueId");
+
+                    b.HasIndex("ActorId", "CreatedAt");
 
                     b.ToTable("Activities");
                 });
@@ -376,9 +376,9 @@ namespace GitBench.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AuthorId");
-
                     b.HasIndex("IssueId");
+
+                    b.HasIndex("AuthorId", "CreatedAt");
 
                     b.ToTable("Comments");
                 });
@@ -456,14 +456,14 @@ namespace GitBench.Data.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("ReporterId");
-
                     b.HasIndex("SprintId");
 
                     b.HasIndex("WorkflowStatusId");
 
                     b.HasIndex("ProjectId", "Number")
                         .IsUnique();
+
+                    b.HasIndex("ReporterId", "CreatedAt");
 
                     b.ToTable("Issues");
                 });
@@ -916,6 +916,31 @@ namespace GitBench.Data.Migrations
                     b.ToTable("ProjectMembers");
                 });
 
+            modelBuilder.Entity("GitBench.Data.ProjectStar", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId", "ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("ProjectStars");
+                });
+
             modelBuilder.Entity("GitBench.Data.PullRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -1117,6 +1142,51 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("PullRequestReviewers");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PushEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("After")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Before")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CommitCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("PushEvents");
                 });
 
             modelBuilder.Entity("GitBench.Data.Release", b =>
@@ -1439,6 +1509,9 @@ namespace GitBench.Data.Migrations
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("DeactivatedAt")
@@ -2178,6 +2251,23 @@ namespace GitBench.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GitBench.Data.ProjectStar", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("GitBench.Data.PullRequest", b =>
                 {
                     b.HasOne("GitBench.Data.User", "Author")
@@ -2273,6 +2363,31 @@ namespace GitBench.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PushEvent", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
 
                     b.Navigation("User");
                 });

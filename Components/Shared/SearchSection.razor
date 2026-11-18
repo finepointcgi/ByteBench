@@ -1,0 +1,19 @@
+@* One group of results on /search: a heading with the total and an optional "see all" link, then the rows. *@
+<section class="gb-ss">
+    <div class="gb-ss-head">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold">@Title</MudText>
+        <span class="gb-ss-count">@Count</span>
+        @if (More != null)
+        {
+            <a href="@More" class="gb-ss-more">See all @Count →</a>
+        }
+    </div>
+    <MudPaper Outlined="true" Class="gb-ss-body">@ChildContent</MudPaper>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public int Count { get; set; }
+    [Parameter] public string? More { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

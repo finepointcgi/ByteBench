@@ -90,6 +90,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<ReleaseAsset>().HasOne(a => a.Uploader).WithMany().HasForeignKey(a => a.UploaderId).OnDelete(DeleteBehavior.Restrict);
     }
 
+    // ----- Explore & profiles -----
+    public DbSet<ProjectStar> ProjectStars => Set<ProjectStar>();
+    public DbSet<PushEvent> PushEvents => Set<PushEvent>();
+
+    private static void ConfigureExploreProfiles(ModelBuilder b)
+    {
+        b.Entity<ProjectStar>().HasIndex(s => new { s.UserId, s.ProjectId }).IsUnique();
+        b.Entity<ProjectStar>().HasIndex(s => s.ProjectId);
+        b.Entity<ProjectStar>().HasOne(s => s.Project).WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ProjectStar>().HasOne<User>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PushEvent>().HasIndex(p => new { p.UserId, p.CreatedAt });
+        b.Entity<PushEvent>().HasIndex(p => new { p.ProjectId, p.CreatedAt });
+        b.Entity<PushEvent>().HasOne<Project>().WithMany().HasForeignKey(p => p.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PushEvent>().HasOne(p => p.Repository).WithMany().HasForeignKey(p => p.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PushEvent>().HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        // Profile feeds read these by author/actor and date.
+        b.Entity<Issue>().HasIndex(i => new { i.ReporterId, i.CreatedAt });
+        b.Entity<Activity>().HasIndex(a => new { a.ActorId, a.CreatedAt });
+        b.Entity<Comment>().HasIndex(c => new { c.AuthorId, c.CreatedAt });
+    }
+
     private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
     {
         b.Entity<WorkflowStatus>().HasIndex(s => new { s.ProjectId, s.Order });
@@ -237,5 +258,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureEmailAndPreferences(b);
         ConfigureAdminSecurity(b);
         ConfigureReleases(b);
+        ConfigureExploreProfiles(b);
     }
 }

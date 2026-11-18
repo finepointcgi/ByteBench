@@ -2,6 +2,7 @@
 @inject IssueService Issues
 @inject CurrentUser Me
 @inject LiveEvents Live
+@inject GitBench.Services.Explore.UserActivityService Feed
 @implements IDisposable
 
 <PageTitle>Dashboard · GitBench</PageTitle>
@@ -78,28 +79,12 @@
                 <CardHeaderContent>
                     <div class="d-flex align-center gap-2">
                         <MudIcon Icon="@Icons.Material.Outlined.History" Size="Size.Small" Color="Color.Primary" />
-                        <MudText Typo="Typo.subtitle1" Class="dash-section">Recent activity</MudText>
+                        <MudText Typo="Typo.subtitle1" Class="dash-section">Activity from your projects</MudText>
                     </div>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudDivider />
-            @if (activity.Count == 0)
-            {
-                <MudText Typo="Typo.body2" Class="mud-text-secondary pa-6" Align="Align.Center">No activity yet.</MudText>
-            }
-            <ul class="dash-feed">
-                @foreach (var a in activity)
-                {
-                    <li>
-                        <Avatar User="a.Actor" Size="22" />
-                        <div class="dash-min0">
-                            <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
-                            on <a href="/p/@a.Issue.Project.Key/issues/@a.Issue.Number">@a.Issue.Key</a>
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@Display.Ago(a.CreatedAt)</MudText>
-                        </div>
-                    </li>
-                }
-            </ul>
+            <ActivityFeed Items="activity" Empty="No activity in your projects yet." />
         </MudCard>
     </MudItem>
 </MudGrid>
@@ -108,7 +93,7 @@
 @code {
     private List<ProjectSummary> projects = [];
     private List<Issue> mine = [];
-    private List<Activity> activity = [];
+    private List<GitBench.Services.Explore.FeedItem> activity = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -119,7 +104,7 @@
     {
         projects = await Issues.GetProjectsAsync();
         mine = await Issues.GetAssignedToAsync(Me.Id);
-        activity = await Issues.GetRecentActivityAsync(15);
+        activity = await Feed.GetFeedAsync(take: 15); // issues, comments, pull requests and pushes
     }
 
     // ----- Live updates: new activity anywhere refreshes the feed (and counts / assigned work) -----

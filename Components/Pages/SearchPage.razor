@@ -1,0 +1,212 @@
+@page "/search"
+@using GitBench.Services.Explore
+@using GitBench.Components.Repositories
+@using GitBench.Services.Git
+@inject SearchService Search
+@inject NavigationManager Nav
+
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Search" : $"{Q} · Search") · GitBench</PageTitle>
+
+<div class="sr">
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold mb-3">Search</MudText>
+    <form method="get" action="/search" class="sr-form" @onsubmit="Submit" @onsubmit:preventDefault>
+        <MudTextField T="string" @bind-Value="draft" Placeholder="Issues, pull requests, projects, people, code…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true"
+                      Class="sr-input" aria-label="Search" autocomplete="off" />
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">Search</MudButton>
+    </form>
+
+    @if (!string.IsNullOrWhiteSpace(Q))
+    {
+        <nav class="gb-tabs" aria-label="Result types">
+            <TabLink Active="@(Current == null)" Href="@Url(null)">All</TabLink>
+            <TabLink Active="@(Current == SearchType.Issues)" Href="@Url(SearchType.Issues)" Icon="@Icons.Material.Outlined.ListAlt" Count="results?.IssueCount">Issues</TabLink>
+            <TabLink Active="@(Current == SearchType.PullRequests)" Href="@Url(SearchType.PullRequests)" Icon="@Icons.Material.Outlined.MergeType" Count="results?.PullRequestCount">Pull requests</TabLink>
+            <TabLink Active="@(Current == SearchType.Projects)" Href="@Url(SearchType.Projects)" Icon="@Icons.Material.Outlined.Folder" Count="results?.ProjectCount">Projects</TabLink>
+            <TabLink Active="@(Current == SearchType.Users)" Href="@Url(SearchType.Users)" Icon="@Icons.Material.Outlined.Person" Count="results?.UserCount">Users</TabLink>
+            <TabLink Active="@(Current == SearchType.Code)" Href="@Url(SearchType.Code)" Icon="@Icons.Material.Outlined.Code">Code</TabLink>
+        </nav>
+
+        @if (loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            @if (Current == SearchType.Code) { <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">Searching repositories…</MudText> }
+        }
+        else if (results != null)
+        {
+            var all = Current == null;
+            var take = all ? 5 : int.MaxValue;
+            @if (Current == SearchType.Code)
+            {
+                @if (results.Code.Count == 0)
+                {
+                    <div class="empty">No code matches “@Q” on the default branches of your repositories.</div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                        Plain-text, case-insensitive search of each repository's default branch (up to @SearchService.MaxCodeRepositories repositories and
+                        @SearchService.MaxCodeMatchesTotal matches). Use a project's Code search for regular expressions and other branches.
+                    </MudText>
+                    @foreach (var r in results.Code)
+                    {
+                        <div class="sr-code" @key="r.Repository.Id">
+                            <div class="sr-code-head">
+                                <MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" />
+                                <a href="@RepoUrls.Base(r.Repository)" class="gb-bold">@r.Repository.Project.Key / @r.Repository.Name</a>
+                                <span class="mud-text-secondary">@r.MatchCount match@(r.MatchCount == 1 ? "" : "es")@(r.FileNames.Count > 0 ? $" · {r.FileNames.Count} file name{(r.FileNames.Count == 1 ? "" : "s")}" : "")@(r.Truncated ? " (more not shown)" : "")</span>
+                            </div>
+                            <SearchResults Result="r" />
+                        </div>
+                    }
+                }
+            }
+            else if (results.IsEmpty)
+            {
+                <div class="empty">Nothing matches “@Q”. Try the <a href="@Url(SearchType.Code)">Code</a> tab to search repositories.</div>
+            }
+            else
+            {
+                @if ((all || Current == SearchType.Issues) && results.Issues.Count > 0)
+                {
+                    <SearchSection Title="Issues" Count="results.IssueCount" More="@(all && results.IssueCount > take ? Url(SearchType.Issues) : null)">
+                        @foreach (var i in results.Issues.Take(take))
+                        {
+                            <a class="sr-row" href="@i.Url">
+                                <span class="sr-type" title="@i.Type">@i.Type.Icon()</span>
+                                <span class="mono mud-text-secondary sr-key">@i.Key</span>
+                                <span class="sr-title">@i.Title</span>
+                                <span class="sr-right"><span class="sr-status">@i.Status.Name()</span> <span class="mud-text-secondary sr-small">@Display.Ago(i.UpdatedAt)</span></span>
+                            </a>
+                        }
+                    </SearchSection>
+                }
+                @if ((all || Current == SearchType.PullRequests) && results.PullRequests.Count > 0)
+                {
+                    <SearchSection Title="Pull requests" Count="results.PullRequestCount" More="@(all && results.PullRequestCount > take ? Url(SearchType.PullRequests) : null)">
+                        @foreach (var p in results.PullRequests.Take(take))
+                        {
+                            <a class="sr-row" href="@p.Url">
+                                <MudIcon Icon="@Icons.Material.Outlined.MergeType" Size="Size.Small" Class="sr-type" />
+                                <span class="mono mud-text-secondary sr-key">@($"{p.ProjectKey}/{p.Repository}#{p.Number}")</span>
+                                <span class="sr-title">@p.Title</span>
+                                <span class="sr-right"><PrStateBadge State="p.State" Compact="true" /> <span class="mud-text-secondary sr-small">by @p.Author.DisplayName · @Display.Ago(p.UpdatedAt)</span></span>
+                            </a>
+                        }
+                    </SearchSection>
+                }
+                @if ((all || Current == SearchType.Projects) && results.Projects.Count > 0)
+                {
+                    <SearchSection Title="Projects" Count="results.ProjectCount" More="@(all && results.ProjectCount > take ? Url(SearchType.Projects) : null)">
+                        @foreach (var p in results.Projects.Take(take))
+                        {
+                            <a class="sr-row" href="@p.Url">
+                                <span class="proj-avatar sm">@p.Key[..1]</span>
+                                <span class="sr-title gb-bold">@p.Name</span>
+                                <span class="mono mud-text-secondary sr-key">@p.Key</span>
+                                <span class="mud-text-secondary sr-desc">@p.Description</span>
+                            </a>
+                        }
+                    </SearchSection>
+                }
+                @if ((all || Current == SearchType.Users) && results.Users.Count > 0)
+                {
+                    <SearchSection Title="Users" Count="results.UserCount" More="@(all && results.UserCount > take ? Url(SearchType.Users) : null)">
+                        @foreach (var u in results.Users.Take(take))
+                        {
+                            <a class="sr-row" href="@u.Url">
+                                <Avatar User="u.User" Size="22" />
+                                <span class="sr-title gb-bold">@u.User.DisplayName</span>
+                                <span class="mud-text-secondary">@@@u.User.UserName</span>
+                            </a>
+                        }
+                    </SearchSection>
+                }
+                @if (!all && NoneOfType)
+                {
+                    <div class="empty">No @Label(Current!.Value) match “@Q”.</div>
+                }
+            }
+        }
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Search issues (by key, title or description), pull requests, projects and people. Type an issue key such as <span class="mono">WEB-12</span> to jump straight to it.
+            Press <kbd>/</kbd> anywhere to focus the search box in the top bar.
+        </MudText>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "type")] public string? Type { get; set; }
+
+    private GlobalSearchResults? results;
+    private string? draft;
+    private bool loading;
+
+    private SearchType? Current => ParseType(Type);
+
+    public static SearchType? ParseType(string? type) => type?.ToLowerInvariant() switch
+    {
+        "issues" or "issue" => SearchType.Issues,
+        "pull-requests" or "pullrequests" or "prs" or "pr" => SearchType.PullRequests,
+        "projects" or "project" => SearchType.Projects,
+        "users" or "user" => SearchType.Users,
+        "code" => SearchType.Code,
+        _ => null,
+    };
+
+    private static string Slug(SearchType t) => t == SearchType.PullRequests ? "pull-requests" : t.ToString().ToLowerInvariant();
+    private static string Label(SearchType t) => t == SearchType.PullRequests ? "pull requests" : t.ToString().ToLowerInvariant();
+
+    private bool NoneOfType => Current switch
+    {
+        SearchType.Issues => results!.Issues.Count == 0,
+        SearchType.PullRequests => results!.PullRequests.Count == 0,
+        SearchType.Projects => results!.Projects.Count == 0,
+        SearchType.Users => results!.Users.Count == 0,
+        _ => false,
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        draft = Q;
+        results = null;
+        if (string.IsNullOrWhiteSpace(Q)) return;
+        loading = true;
+        try
+        {
+            if (Current == SearchType.Code)
+            {
+                // Counts for the other tabs come from a quick query; code is searched only here.
+                var counts = await Search.SearchAsync(Q, limit: 0);
+                var code = await Search.SearchAsync(Q, [SearchType.Code], withCounts: false);
+                results = counts with { Code = code.Code };
+            }
+            else
+            {
+                results = await Search.SearchAsync(Q, limit: Current == null ? 6 : 50);
+                if (Current == null && results.JumpUrl != null)
+                {
+                    Nav.NavigateTo(results.JumpUrl, replace: true);
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private string Url(SearchType? type) =>
+        "/search?q=" + Uri.EscapeDataString(Q ?? "") + (type is { } t ? "&type=" + Slug(t) : "");
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(draft)) return;
+        Nav.NavigateTo("/search?q=" + Uri.EscapeDataString(draft.Trim()) + (Current is { } t && t != SearchType.Code ? "&type=" + Slug(t) : ""));
+    }
+}

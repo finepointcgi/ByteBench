@@ -1,0 +1,129 @@
+@page "/explore"
+@using GitBench.Services.Explore
+@using GitBench.Components.Repositories
+@inject ExploreService Explorer
+@inject NavigationManager Nav
+
+<PageTitle>Explore · GitBench</PageTitle>
+
+<div class="ex">
+    <div class="d-flex align-center justify-space-between flex-wrap gap-3 mb-4">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Explore projects</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Every project you can see. Star the ones you use most to pin them in the sidebar.</MudText>
+        </div>
+        <MudButton Href="/projects/new" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add">New project</MudButton>
+    </div>
+
+    <nav class="gb-tabs" aria-label="Project lists">
+        <TabLink Active="@(CurrentTab == ExploreTab.All)" Href="@Url(tab: ExploreTab.All)" Icon="@Icons.Material.Outlined.Public">All</TabLink>
+        <TabLink Active="@(CurrentTab == ExploreTab.Starred)" Href="@Url(tab: ExploreTab.Starred)" Icon="@Icons.Material.Outlined.StarBorder">Starred</TabLink>
+        <TabLink Active="@(CurrentTab == ExploreTab.Mine)" Href="@Url(tab: ExploreTab.Mine)" Icon="@Icons.Material.Outlined.Person">Mine</TabLink>
+    </nav>
+
+    <div class="ex-bar">
+        <MudTextField T="string" Value="search" ValueChanged="SearchChanged" Placeholder="Filter by name, key or description" Immediate="true" DebounceInterval="300"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Clearable="true" Class="ex-search" aria-label="Filter projects" />
+        <MudSelect T="ExploreSort" Value="CurrentSort" ValueChanged="SortChanged" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                   Label="Sort" OuterClass="ex-sort">
+            <MudSelectItem Value="ExploreSort.Name">Name</MudSelectItem>
+            <MudSelectItem Value="ExploreSort.Active">Recently active</MudSelectItem>
+            <MudSelectItem Value="ExploreSort.Stars">Most stars</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (projects == null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (projects.Count == 0)
+    {
+        <div class="empty">
+            @(CurrentTab switch
+            {
+                ExploreTab.Starred when string.IsNullOrEmpty(Q) => "You haven't starred any projects yet.",
+                ExploreTab.Mine when string.IsNullOrEmpty(Q) => "You aren't a member of any project yet.",
+                _ => "No projects match.",
+            })
+        </div>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="ex-list">
+            @foreach (var p in projects)
+            {
+                <div class="ex-row" @key="p.Id">
+                    <span class="proj-avatar">@p.Key[..1]</span>
+                    <div class="ex-main">
+                        <div class="ex-title">
+                            <a href="/p/@p.Key/issues" class="ex-name">@p.Name</a>
+                            <span class="mono mud-text-secondary ex-key">@p.Key</span>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ex-chip"
+                                     Icon="@(p.Visibility == ProjectVisibility.Internal ? Icons.Material.Outlined.Business : Icons.Material.Outlined.Lock)">@p.Visibility</MudChip>
+                            @if (p.Member)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Class="ex-chip">Member</MudChip>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(p.Description))
+                        {
+                            <div class="ex-desc">@p.Description</div>
+                        }
+                        <div class="ex-meta">
+                            <span title="Stars"><MudIcon Icon="@Icons.Material.Outlined.StarBorder" Size="Size.Small" /> @p.Stars</span>
+                            <span title="Open issues"><MudIcon Icon="@Icons.Material.Outlined.ListAlt" Size="Size.Small" /> @p.OpenIssues open</span>
+                            <span title="Repositories"><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /> @p.Repositories repo@(p.Repositories == 1 ? "" : "s")</span>
+                            <span title="@p.LastActivityAt.ToLocalTime().ToString("f")">Updated @Display.Ago(p.LastActivityAt)</span>
+                        </div>
+                    </div>
+                    <StarButton ProjectId="p.Id" Starred="p.Starred" Count="p.Stars" OnChanged="s => Starred(p, s)" />
+                </div>
+            }
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? Sort { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    private List<ExploreProject>? projects;
+    private string? search;
+
+    private ExploreSort CurrentSort => Enum.TryParse<ExploreSort>(Sort, true, out var s) ? s : ExploreSort.Name;
+    private ExploreTab CurrentTab => Enum.TryParse<ExploreTab>(Tab, true, out var t) ? t : ExploreTab.All;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        search = Q;
+        projects = await Explorer.ListAsync(Q, CurrentSort, CurrentTab);
+    }
+
+    private string Url(string? q = null, ExploreSort? sort = null, ExploreTab? tab = null)
+    {
+        var s = sort ?? CurrentSort;
+        var t = tab ?? CurrentTab;
+        return Nav.GetUriWithQueryParameters("/explore", new Dictionary<string, object?>
+        {
+            ["q"] = string.IsNullOrWhiteSpace(q ?? Q) ? null : (q ?? Q),
+            ["sort"] = s == ExploreSort.Name ? null : s.ToString().ToLowerInvariant(),
+            ["tab"] = t == ExploreTab.All ? null : t.ToString().ToLowerInvariant(),
+        });
+    }
+
+    private void SearchChanged(string? value)
+    {
+        search = value;
+        Nav.NavigateTo(Url(q: value ?? ""), replace: true);
+    }
+
+    private void SortChanged(ExploreSort s) => Nav.NavigateTo(Url(sort: s));
+
+    private void Starred(ExploreProject p, (bool Starred, int Count) s)
+    {
+        var i = projects!.IndexOf(p);
+        if (i >= 0) projects[i] = p with { Starred = s.Starred, Stars = s.Count };
+    }
+}

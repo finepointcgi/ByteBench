@@ -1,0 +1,5 @@
+.gb-ss { margin-bottom: 22px; }
+.gb-ss-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.gb-ss-count { background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary); border-radius: 10px; padding: 0 8px; font-size: 12px; }
+.gb-ss-more { margin-left: auto; font-size: 13px; }
+.gb-ss ::deep .gb-ss-body { overflow: hidden; }

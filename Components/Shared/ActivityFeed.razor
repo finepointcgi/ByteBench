@@ -1,0 +1,58 @@
+@* A list of FeedItems (UserActivityService): profile and dashboard activity. *@
+@using GitBench.Services.Explore
+
+@if (Items.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary pa-6" Align="Align.Center">@Empty</MudText>
+}
+else
+{
+    <ul class="gb-feed">
+        @foreach (var item in Items)
+        {
+            var (icon, color, verb) = Describe(item.Kind);
+            <li>
+                <span class="gb-feed-icon" style="color:@color"><MudIcon Icon="@icon" Size="Size.Small" /></span>
+                <div class="gb-feed-main">
+                    <div class="gb-feed-line">
+                        @if (ShowActor)
+                        {
+                            <Avatar User="item.Actor" Size="18" Link /> <UserLink User="item.Actor" />
+                        }
+                        <span class="gb-feed-verb">@verb</span>
+                        <a href="@item.Url" class="gb-feed-target">@item.Title</a>
+                        @if (item.Kind is FeedKind.Push or FeedKind.PullRequestMerged && item.Detail != null)
+                        {
+                            <span class="gb-feed-verb">@item.Detail</span>
+                        }
+                    </div>
+                    @if (item.Kind is FeedKind.IssueComment or FeedKind.PullRequestComment && !string.IsNullOrEmpty(item.Detail))
+                    {
+                        <div class="gb-feed-excerpt">@item.Detail</div>
+                    }
+                    <div class="gb-feed-meta">
+                        <a href="/p/@item.ProjectKey/issues" class="gb-feed-project">@item.ProjectName</a>
+                        · <span title="@item.At.ToLocalTime().ToString("f")">@Display.Ago(item.At)</span>
+                    </div>
+                </div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FeedItem> Items { get; set; } = [];
+    [Parameter] public bool ShowActor { get; set; } = true;
+    [Parameter] public string Empty { get; set; } = "No activity yet.";
+
+    private static (string Icon, string Color, string Verb) Describe(FeedKind k) => k switch
+    {
+        FeedKind.IssueOpened => (Icons.Material.Outlined.AddCircleOutline, "var(--mud-palette-success)", "opened issue"),
+        FeedKind.IssueClosed => (Icons.Material.Outlined.CheckCircleOutline, "var(--mud-palette-primary)", "closed issue"),
+        FeedKind.IssueComment => (Icons.Material.Outlined.ChatBubbleOutline, "var(--mud-palette-text-secondary)", "commented on"),
+        FeedKind.PullRequestOpened => (Icons.Material.Outlined.MergeType, "var(--mud-palette-success)", "opened pull request"),
+        FeedKind.PullRequestMerged => (Icons.Material.Outlined.CallMerge, "var(--mud-palette-primary)", "merged pull request"),
+        FeedKind.PullRequestComment => (Icons.Material.Outlined.RateReview, "var(--mud-palette-text-secondary)", "commented on"),
+        _ => (Icons.Material.Outlined.Commit, "var(--mud-palette-info)", "pushed to"),
+    };
+}

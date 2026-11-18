@@ -1,0 +1,3 @@
+.gb-user-link { color: inherit; }
+.gb-user-link:hover { color: var(--mud-palette-primary); text-decoration: underline; }
+.gb-user-link-bold { font-weight: 700; }

@@ -3,6 +3,17 @@
     <MudAvatar Class="gb-avatar gb-avatar-empty" title="Unassigned"
                Style="@($"background:transparent;border:1px dashed var(--mud-palette-text-disabled);color:var(--mud-palette-text-secondary);{SizeStyle}")">?</MudAvatar>
 }
+else if (Link && !string.IsNullOrEmpty(User.UserName))
+{
+    @* Links to the profile (/u/{username}). Only set Link where the avatar isn't already inside another link. *@
+    <a class="gb-avatar-link" href="@UserLink.Url(User)" title="@User.DisplayName">
+        <MudAvatar Class="gb-avatar" Style="@($"background:{User.Color};color:{Display.TextOn(User.Color)};{SizeStyle}")">@User.Initials</MudAvatar>
+        @if (ShowName)
+        {
+            <span class="gb-avatar-name">@User.DisplayName</span>
+        }
+    </a>
+}
 else
 {
     <MudAvatar Class="gb-avatar" title="@User.DisplayName"
@@ -17,6 +28,8 @@ else
     [Parameter] public User? User { get; set; }
     [Parameter] public int Size { get; set; } = 24;
     [Parameter] public bool ShowName { get; set; }
+    /// <summary>Wraps the avatar (and name) in a link to the user's profile.</summary>
+    [Parameter] public bool Link { get; set; }
 
     private string SizeStyle => FormattableString.Invariant($"width:{Size}px;height:{Size}px;font-size:{Size * 0.4:0.#}px;font-weight:600;vertical-align:middle;flex-shrink:0");
 }

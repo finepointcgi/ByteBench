@@ -113,7 +113,8 @@ Seeded demo data:
 - **Milestones** with progress and story-point burn-up
 - **Sprints**: backlog planning, start/complete, burndown and velocity reports (see [Sprints](#sprints))
 - **Project settings**: rename, manage labels, delete the project
-- **Dashboard**: your assigned work, all projects, recent activity
+- **Dashboard**: your assigned work, all projects, activity from your projects
+- **Explore, stars, profiles, global search and keyboard shortcuts** (see [Explore, profiles & search](#explore-profiles--search))
 
 ## Sprints
 
@@ -812,6 +813,57 @@ Pipelines can get secrets (deploy keys, API tokens, …) as environment variable
 - **Masking:** every value at least 4 characters long is replaced with `***` in step logs. The whole log is masked each time it's stored (about once a second), not each chunk, so a value that arrives in several pieces is still masked, and a tail that looks like the start of a value is hidden until the rest arrives.
 - **Audit events:** `ci_variable.created`, `ci_variable.updated` and `ci_variable.deleted` with the name, scope and protected flag, never the value (`valueChanged` says whether the value was replaced).
 - **Limits of masking:** anyone who can change `.gitbench-ci.yml` on a branch that gets a variable (Developer+ for unprotected variables) can still leak it, e.g. by base64-encoding it or sending it over the network. Use **Protected** for anything sensitive, and protect the branches that get it so changes go through review.
+
+## Explore, profiles & search
+
+Code: `Services/Explore/` (`StarService`, `ExploreService`, `UserActivityService`, `SearchService`, `PushActivityListener`), pages `Components/Pages/Explore.razor`, `UserProfilePage.razor` and `SearchPage.razor`, the app-bar box `Components/Layout/GlobalSearchBox.razor`, and `wwwroot/js/shortcuts.js`. Everything is filtered with `ProjectAccess.VisibleProjectIdsAsync`, so nothing from a project you can't see shows up anywhere: not in search, not in Explore, and not on someone else's profile.
+
+### Explore & stars
+
+- **`/explore`** (sidebar **Explore**) lists every project you can view, with its visibility, open issues, repositories, star count and last activity (the newest issue update, pull request update or push).
+- **Tabs:** All, Starred, Mine (projects you're a member of). **Filter** by key, name or description. **Sort** by name, recently active or most stars.
+- **Stars:** the star button on each Explore row, and next to the project name in the sidebar on any project page, stars or unstars it and shows the count. Starred projects come first in the sidebar's **Projects** list, marked ★. Anyone who can view a project can star it (`ProjectStar`, one per user and project). A star on a project you lose access to stays in the table but is never shown.
+
+### User profiles
+
+- **`/u/{username}`** (case-insensitive): avatar, display name, `@username`, member since (`User.CreatedAt`; for accounts created before it was recorded, the date of their first project membership), and the projects they're a member of that you can see.
+- **Activity feed:** issues opened and closed (a status change into a Done-category workflow status), issue comments, pull requests opened and merged, pull request comments, and pushes.
+- **Pushes:** `PushActivityListener` (an `IGitPushListener`) records a `PushEvent` for each branch or tag a push actually moved, with the number of new commits (capped at 100). Pushes made before this feature existed aren't in the feed.
+- **Contribution calendar:** a GitHub-style SVG heatmap of the last 52 weeks (plus the current one). Each day counts the feed events above, plus one per pushed commit. Hover a day for its count. Colors use the MudBlazor palette, so it works in both themes. On narrow screens it scrolls and opens on the newest weeks.
+- **Links:** issue and pull request authors, commenters, activity actors and assignees on the issue and pull request pages link to profiles, and so do names in activity feeds.
+- **Dashboard:** "Activity from your projects" uses the same feed across every project you can see.
+
+### Global search
+
+- **App bar:** type in **Search or jump to…** (or press `/`). After a short pause it suggests the top 3 issues, pull requests, projects and users. The first suggestion is the issue when you type a key such as `WEB-12`, otherwise "Search for …", so **Enter** jumps to the issue or opens the results page.
+- **`/search?q=`** groups the results into issues (by key, title or description), pull requests (title, description), projects (key, name, description) and users (username, display name). Each group has a tab with its total. A query that is a visible issue key redirects straight to that issue.
+- **Code** is a separate tab, because it runs `git grep` (`CodeSearchService`). It searches the default branch of each visible, non-archived repository, as plain case-insensitive text, with caps of 25 repositories, 20 matches per repository and 100 matches in all. Use a project's **Code search** for regular expressions and other branches.
+- **Matching** is SQL `LIKE` (case-insensitive for ASCII in SQLite), with `%`, `_` and `\` in your query matched literally. There's no full-text index.
+
+### Keyboard shortcuts
+
+Press `?` for the list. Shortcuts are ignored while you type in an input, textarea, select or contenteditable, and while a dialog is open. The switch in the `?` dialog turns them off for this browser (`localStorage` key `gitbench-shortcuts`).
+
+| Keys | Action |
+|---|---|
+| `?` | Show the shortcuts |
+| `/` | Focus the search box |
+| `g d` / `g e` | Dashboard / Explore |
+| `g i` / `g b` / `g p` / `g r` | The current project's issues / board / pull requests / repositories |
+| `c` | New issue in the current project |
+| `j` / `k`, then `o` or Enter | Move the selection on an issue list, then open it |
+| `e` / `a` | On an issue: edit the description / assign to me |
+
+The script is a file (`wwwroot/js/shortcuts.js`) with one `keydown` listener and no inline handlers, so it works under the CSP. It calls back into `MainLayout.ShowShortcutHelp` for the dialog. Pages opt buttons in with `data-shortcut="edit"` and `data-shortcut="assign-me"`.
+
+### API
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/v1/search?q=&type=` | `type` is `issues`, `pull_requests`, `projects`, `users` or `code`. Without it, every type except code is searched. `perPage` caps each group. `jumpUrl` is set for a visible issue key. |
+| GET | `/api/v1/users/{username}` | Profile: member since, visible projects with roles, and the latest 30 activity items you can see |
+| GET | `/api/v1/user/starred` | Projects you have starred |
+| PUT / DELETE | `/api/v1/projects/{key}/star` | Star / unstar. Returns `{ project, starred, stars }`. |
 
 ## Deploying GitBench
 

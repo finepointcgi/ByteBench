@@ -48,6 +48,12 @@ public class GitHttpTests(KestrelApp app) : IClassFixture<KestrelApp>, IDisposab
         Assert.Contains(branches, b => b.Name == "main");
         var log = await s.Get<RepositoryService>().Git(r, path => GitBench.Services.Git.GitOps.Log(path, "main", null, 0, 5));
         Assert.Equal("edit a.txt", log.Items[0].MessageShort);
+
+        // The push shows up in Bob's activity (PushActivityListener).
+        var push = Assert.Single(await s.Get<GitBench.Services.Explore.UserActivityService>().GetFeedAsync(app.UserId("bob"), [p.Id]),
+            f => f.Kind == GitBench.Services.Explore.FeedKind.Push);
+        Assert.Equal($"{r.Slug}:main", push.Title);
+        Assert.Equal("1 commit", push.Detail);
     }
 
     [Fact]

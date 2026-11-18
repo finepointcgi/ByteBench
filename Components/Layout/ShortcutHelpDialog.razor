@@ -1,0 +1,81 @@
+@* The "?" help: every keyboard shortcut (wwwroot/js/shortcuts.js) and the switch that turns them off for this browser. *@
+@inject IJSRuntime JS
+
+<MudDialog>
+    <DialogContent>
+        <MudSwitch T="bool" Value="enabled" ValueChanged="SetEnabled" Color="Color.Primary" Class="mb-3">
+            Keyboard shortcuts @(enabled ? "on" : "off") in this browser
+        </MudSwitch>
+        @foreach (var (group, keys) in Groups)
+        {
+            <MudText Typo="Typo.overline" Class="gb-kb-group">@group</MudText>
+            <table class="gb-kb-table">
+                @foreach (var (combo, what) in keys)
+                {
+                    <tr>
+                        <td class="gb-kb-keys">
+                            @foreach (var k in combo.Split(' '))
+                            {
+                                <kbd>@k</kbd>
+                            }
+                        </td>
+                        <td>@what</td>
+                    </tr>
+                }
+            </table>
+        }
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">Shortcuts are ignored while you type in a text field.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private bool enabled = true;
+
+    private static readonly (string Group, (string Keys, string What)[] Keys)[] Groups =
+    [
+        ("Anywhere", [
+            ("?", "Show this help"),
+            ("/", "Focus the search box"),
+            ("g d", "Go to the dashboard"),
+            ("g e", "Go to Explore"),
+        ]),
+        ("In a project", [
+            ("g i", "Go to issues"),
+            ("g b", "Go to the board"),
+            ("g p", "Go to pull requests"),
+            ("g r", "Go to repositories"),
+            ("c", "Create an issue"),
+        ]),
+        ("Issue list", [
+            ("j", "Select the next issue"),
+            ("k", "Select the previous issue"),
+            ("o", "Open the selected issue (or Enter)"),
+        ]),
+        ("Issue", [
+            ("e", "Edit the description"),
+            ("a", "Assign to me"),
+        ]),
+    ];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            enabled = await JS.InvokeAsync<bool>("gitbenchShortcuts.isEnabled");
+            StateHasChanged();
+        }
+        catch (JSException) { }
+    }
+
+    private async Task SetEnabled(bool on)
+    {
+        enabled = on;
+        await JS.InvokeVoidAsync("gitbenchShortcuts.setEnabled", on);
+    }
+}
