@@ -4,6 +4,9 @@
 @inject CurrentUser Me
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject NotificationService Notifications
+@inject LiveEvents Live
+@implements IDisposable
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -33,10 +36,13 @@ else if (pr != null)
         else
         {
             <h1>@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></h1>
-            @if (pr.AuthorId == Me.Id && pr.State == PullRequestState.Open)
-            {
-                <button class="btn btn-outline-secondary btn-sm" @onclick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</button>
-            }
+            <div class="d-flex gap-2">
+                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
+                @if (pr.AuthorId == Me.Id && pr.State == PullRequestState.Open)
+                {
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</button>
+                }
+            </div>
         }
     </div>
     <div class="issue-subhead">
@@ -122,7 +128,7 @@ else if (pr != null)
                     {
                         if (entry is PullRequestComment c)
                         {
-                            <div class="comment-card" @key="c">
+                            <div class="comment-card" @key="(1, c.Id)">
                                 <div class="comment-head">
                                     <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
                                     <span class="muted small">
@@ -159,7 +165,7 @@ else if (pr != null)
                         }
                         else if (entry is PullRequestActivity a)
                         {
-                            <div class="activity-line" @key="a">
+                            <div class="activity-line" @key="(2, a.Id)">
                                 <Avatar User="a.Actor" Size="18" />
                                 <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
                                 <span class="muted">@Display.Ago(a.CreatedAt)</span>
@@ -349,6 +355,8 @@ else if (pr != null)
         pr = await PRs.GetAsync(Key, Slug, Number);
         notFound = pr == null;
         if (pr == null) return;
+        watching = await Notifications.IsWatchingPullRequestAsync(Me.Id, pr.Id);
+        watcherCount = await Notifications.CountPullRequestWatchersAsync(pr.Id);
         if (full)
         {
             changes = await PRs.GetChangesAsync(pr);
@@ -356,6 +364,37 @@ else if (pr != null)
             linked = await PRs.GetLinkedIssuesAsync(pr, changes?.Commits);
         }
     }
+
+    // ----- Watching -----
+    private bool watching;
+    private int watcherCount;
+
+    private async Task ToggleWatch()
+    {
+        await Notifications.SetPullRequestWatchAsync(Me.Id, pr!.Id, !watching);
+        await Reload(full: false);
+    }
+
+    // ----- Live updates -----
+    // Reload replaces `pr` (and, when the state changed, diff/merge status); drafts and editing flags are separate
+    // fields, and DiffView keeps its own inline-comment drafts, so unsaved edits survive.
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<PullRequestChanged>(OnPullRequestChanged);
+    }
+
+    private Task OnPullRequestChanged(PullRequestChanged e) => pr?.Id != e.PullRequestId ? Task.CompletedTask : InvokeAsync(async () =>
+    {
+        var state = pr?.State;
+        var title = pr?.Title;
+        await Reload(full: false);
+        if (pr != null && (pr.State != state || pr.Title != title)) await Reload(full: true);
+        StateHasChanged();
+    });
+
+    public void Dispose() => liveSubscription?.Dispose();
 
     private async Task Run(Func<Task> action, bool full)
     {

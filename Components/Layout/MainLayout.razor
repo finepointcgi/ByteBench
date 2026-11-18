@@ -27,6 +27,7 @@
             }
             @if (Me.User != null)
             {
+                <NotificationBell />
                 <div class="user-menu">
                     @* Profile is static SSR ([ExcludeFromInteractiveRouting]); force a full load from interactive pages. *@
                     <a class="user-menu-profile" href="account/profile" title="Your profile"

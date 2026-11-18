@@ -19,6 +19,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PullRequestComment> PullRequestComments => Set<PullRequestComment>();
     public DbSet<PullRequestReview> PullRequestReviews => Set<PullRequestReview>();
     public DbSet<PullRequestActivity> PullRequestActivities => Set<PullRequestActivity>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Watch> Watches => Set<Watch>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -48,5 +50,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequestReview>().HasIndex(r => new { r.PullRequestId, r.UserId }).IsUnique();
         b.Entity<PullRequestReview>().HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestActivity>().HasOne(a => a.Actor).WithMany().HasForeignKey(a => a.ActorId).OnDelete(DeleteBehavior.Restrict);
+
+        // ----- Notifications & watches -----
+        b.Entity<Notification>().HasIndex(n => new { n.UserId, n.IsRead, n.CreatedAt });
+        b.Entity<Notification>().HasOne(n => n.User).WithMany().HasForeignKey(n => n.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Notification>().HasOne(n => n.Actor).WithMany().HasForeignKey(n => n.ActorId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Notification>().HasOne<Project>().WithMany().HasForeignKey(n => n.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Watch>().ToTable(t => t.HasCheckConstraint("CK_Watch_OneTarget", "(IssueId IS NULL) <> (PullRequestId IS NULL)"));
+        b.Entity<Watch>().HasIndex(w => new { w.UserId, w.IssueId }).IsUnique();
+        b.Entity<Watch>().HasIndex(w => new { w.UserId, w.PullRequestId }).IsUnique();
+        b.Entity<Watch>().HasOne<User>().WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Watch>().HasOne<Issue>().WithMany().HasForeignKey(w => w.IssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Watch>().HasOne<PullRequest>().WithMany().HasForeignKey(w => w.PullRequestId).OnDelete(DeleteBehavior.Cascade);
     }
 }

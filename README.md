@@ -96,8 +96,35 @@ Refs and paths are passed as query parameters because branch names contain `/`.
 
 The demo seed (`Data/RepoSeeder.cs`) creates `WEB/web-app` with history on `main`, a `feature/WEB-3-kanban-dnd` branch, and an open, reviewed PR #1. It runs only when the `web-app` row doesn't exist. If you delete `gitbench.db*` and a stale `repos/WEB/web-app.git` is left over, the seeder rebuilds it.
 
+## Notifications & live updates
+
+**Notifications** (`Services/NotificationService.cs`, `Notification` entity) show in the 🔔 bell in the top bar, which has a live unread count and a dropdown with the latest 10. Click one to mark it read and open it, or use **Mark all read**. `/notifications` lists all of them, with All/Unread tabs and pagination.
+
+| Event | Who is notified |
+|-------|-----------------|
+| Issue assigned (on create or change) | The new assignee |
+| `@username` in an issue description, issue comment, PR description or PR comment | That user |
+| Comment, status change, close or reopen on an issue | The issue's watchers |
+| Comment, review, merge, decline or reopen on a PR | The PR's watchers. Reviews also always go to the PR author |
+
+- The person who acted is never notified, and each user gets at most one notification per event. Assignment and mention take priority over the watcher notification.
+- Every recipient list goes through `NotificationService.FilterRecipientsAsync(projectId, userIds)`, the single place to restrict notifications to users who can see the project.
+- Edited descriptions notify only users who are newly mentioned. Edited comments don't notify anyone.
+
+**Watching** (`Watch` entity: a user plus exactly one issue or PR). The reporter, the assignee and every commenter auto-watch an issue. The author, reviewers and commenters auto-watch a PR. The **Watch / Watching** button on the issue and PR pages toggles it. On a fresh database, existing seeded issues and PRs are backfilled at startup.
+
+**Mentions** (`Services/Mentions.cs`) are a Markdig inline parser. Mentions are matched case-insensitively against existing usernames and are never recognized inside code spans or code blocks. Known users render as a highlighted `<span class="mention">`. Raw HTML stays disabled, so text like `@<script>` is escaped.
+
+**Live updates** (`Services/LiveEvents.cs`, a singleton in-process hub). Services publish typed events after saving: `IssueChanged(projectId, issueId)`, `BoardChanged(projectId)`, `PullRequestChanged(prId, projectId)`, `NotificationsChanged(userId)` and `ActivityChanged`. The board, issue list, issue detail, PR list, PR detail, dashboard activity feed, notifications page and bell subscribe once interactive (`OnAfterRender(firstRender)`), refresh with `InvokeAsync(StateHasChanged)`, and unsubscribe in `Dispose`. For example, two browsers on the same board see a card move without reloading. A refresh replaces only the loaded data, so a description, title or comment you are editing is left alone. The hub is in-process, so a multi-server deployment would need a backplane such as Redis or the SignalR backplane.
+
+```csharp
+// Publish from any service, after SaveChangesAsync:
+live.Publish(new IssueChanged(projectId, issueId), new BoardChanged(projectId));
+// Subscribe in a component (dispose in Dispose()):
+sub = Live.Subscribe<IssueChanged>(e => e.IssueId == id ? InvokeAsync(ReloadAndRender) : Task.CompletedTask);
+```
+
 ## Next steps
 
 - **Migrations:** switch from `EnsureCreated` to EF Core migrations before the schema changes.
-- **Real-time:** push board and issue updates to other open circuits (for example with a singleton event hub).
-- **More features:** issue links and sub-tasks, attachments, @mentions and notifications, merge requests and repositories.
+- **More features:** issue links and sub-tasks, attachments, email delivery of notifications, @mention autocomplete.

@@ -4,6 +4,8 @@
 @inject RepositoryService Repos
 @inject PullRequestService PRs
 @inject NavigationManager Nav
+@inject LiveEvents Live
+@implements IDisposable
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -115,6 +117,22 @@ else if (project != null)
         counts = await PRs.CountAsync(project.Id, repoId);
         commentCounts = await PRs.CommentCountsAsync(prs.Select(p => p.Id));
     }
+
+    // ----- Live updates: any PR in this project changed -----
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<PullRequestChanged>(OnPullRequestChanged);
+    }
+
+    private Task OnPullRequestChanged(PullRequestChanged e) => project?.Id != e.ProjectId ? Task.CompletedTask : InvokeAsync(async () =>
+    {
+        await OnParametersSetAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => liveSubscription?.Dispose();
 
     private string StateUrl(PullRequestState s)
     {

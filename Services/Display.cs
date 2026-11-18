@@ -58,8 +58,9 @@ public static class Display
         return utc.ToLocalTime().ToString("MMM d, yyyy");
     }
 
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+    internal static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
+        .Use<MentionExtension>() // @username → highlighted mention (Services/Mentions.cs)
         .DisableHtml() // raw HTML in user content is escaped, preventing XSS
         .Build();
 

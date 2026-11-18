@@ -1,6 +1,8 @@
 ﻿@page "/"
 @inject IssueService Issues
 @inject CurrentUser Me
+@inject LiveEvents Live
+@implements IDisposable
 
 <PageTitle>Dashboard · GitBench</PageTitle>
 
@@ -82,6 +84,20 @@
         mine = await Issues.GetAssignedToAsync(Me.Id);
         activity = await Issues.GetRecentActivityAsync(15);
     }
+
+    // ----- Live updates: new activity anywhere refreshes the feed (and counts / assigned work) -----
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<ActivityChanged>(_ => InvokeAsync(async () =>
+        {
+            await Load();
+            StateHasChanged();
+        }));
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
 
 
 }

@@ -1,6 +1,8 @@
 @page "/p/{Key}/board"
 @inject IssueService Issues
 @inject CurrentUser Me
+@inject LiveEvents Live
+@implements IDisposable
 
 <PageTitle>Board · @project?.Name</PageTitle>
 
@@ -106,6 +108,22 @@ else if (project != null)
     {
         if (project != null) issues = await Issues.GetBoardAsync(project.Id, milestoneId, assigneeId);
     }
+
+    // ----- Live updates: another user moved, created or edited a card in this project -----
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<BoardChanged>(OnBoardChanged);
+    }
+
+    private Task OnBoardChanged(BoardChanged e) => project?.Id != e.ProjectId ? Task.CompletedTask : InvokeAsync(async () =>
+    {
+        await Load();
+        StateHasChanged();
+    });
+
+    public void Dispose() => liveSubscription?.Dispose();
 
     private async Task Drop(IssueStatus status, int? beforeId)
     {

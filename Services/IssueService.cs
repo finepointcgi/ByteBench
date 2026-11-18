@@ -16,7 +16,7 @@ public class IssueFilter
     public string Sort { get; set; } = "updated";
 }
 
-public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
+public class IssueService(IDbContextFactory<AppDbContext> dbFactory, NotificationService notifications)
 {
     // ---------- Projects ----------
 
@@ -173,6 +173,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         issue.Project = project;
+        await notifications.OnIssueCreatedAsync(issue.Id, actorId);
         return issue;
     }
 
@@ -182,6 +183,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
         await using var db = await dbFactory.CreateDbContextAsync();
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
         var wasClosed = issue.Status.IsClosed();
+        var before = IssueSnapshot.Of(issue);
         var text = await change(issue, db);
         if (text == null) return;
 
@@ -190,6 +192,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
         issue.UpdatedAt = DateTime.UtcNow;
         db.Activities.Add(new Activity { IssueId = issueId, ActorId = actorId, Text = text });
         await db.SaveChangesAsync();
+        await notifications.OnIssueUpdatedAsync(issueId, actorId, before);
     }
 
     public Task SetStatusAsync(int issueId, IssueStatus status, int actorId) =>
@@ -220,6 +223,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
             await db.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.SortOrder, order));
         }
         await SetStatusAsync(issueId, status, actorId);
+        await notifications.OnIssueMovedAsync(issueId);
     }
 
     public async Task<Comment> AddCommentAsync(int issueId, int authorId, string body)
@@ -229,6 +233,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
         db.Comments.Add(c);
         await db.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();
+        await notifications.OnIssueCommentedAsync(issueId, c.Id, authorId, body);
         return c;
     }
 
@@ -237,12 +242,15 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Comments.Where(c => c.Id == commentId).ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Body, body).SetProperty(c => c.EditedAt, DateTime.UtcNow));
+        await notifications.OnIssueCommentChangedAsync(await db.Comments.Where(c => c.Id == commentId).Select(c => (int?)c.IssueId).FirstOrDefaultAsync());
     }
 
     public async Task DeleteCommentAsync(int commentId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
+        var issueId = await db.Comments.Where(c => c.Id == commentId).Select(c => (int?)c.IssueId).FirstOrDefaultAsync();
         await db.Comments.Where(c => c.Id == commentId).ExecuteDeleteAsync();
+        await notifications.OnIssueCommentChangedAsync(issueId);
     }
 
     public async Task DeleteIssueAsync(int issueId)
@@ -251,6 +259,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory)
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
         db.Issues.Remove(issue);
         await db.SaveChangesAsync();
+        await notifications.OnIssueDeletedAsync(issue.ProjectId, issueId);
     }
 
     public async Task<List<Activity>> GetRecentActivityAsync(int take = 20)
