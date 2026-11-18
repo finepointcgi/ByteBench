@@ -255,6 +255,124 @@ namespace GitBench.Data.Migrations
                     b.ToTable("AuditEvents");
                 });
 
+            modelBuilder.Entity("GitBench.Data.AutomationRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AllowRuleTriggers")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("AuthorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Definition")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastScheduledRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RoundRobinLastUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RunAs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Trigger")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("AutomationRules", t =>
+                        {
+                            t.HasCheckConstraint("CK_AutomationRules_Scope", "(\"ProjectId\" IS NULL) <> (\"GroupId\" IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("GitBench.Data.AutomationRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Actions")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ActorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Depth")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IssueKey")
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RuleId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuleId", "StartedAt");
+
+                    b.ToTable("AutomationRuns");
+                });
+
             modelBuilder.Entity("GitBench.Data.BranchProtectionRule", b =>
                 {
                     b.Property<int>("Id")
@@ -2215,6 +2333,41 @@ namespace GitBench.Data.Migrations
                     b.Navigation("Issue");
 
                     b.Navigation("Uploader");
+                });
+
+            modelBuilder.Entity("GitBench.Data.AutomationRule", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Group", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("GitBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Group");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("GitBench.Data.AutomationRun", b =>
+                {
+                    b.HasOne("GitBench.Data.AutomationRule", "Rule")
+                        .WithMany()
+                        .HasForeignKey("RuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Rule");
                 });
 
             modelBuilder.Entity("GitBench.Data.BranchProtectionRule", b =>

@@ -302,6 +302,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureGroups(b);
         ConfigurePrFeatures(b);
         ConfigureSsh(b);
+        ConfigureAutomation(b);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
@@ -310,5 +311,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequestComment>().HasOne<PullRequestComment>().WithMany().HasForeignKey(c => c.ParentId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestComment>().HasIndex(c => c.ParentId);
         b.Entity<PullRequestComment>().HasOne(c => c.ResolvedBy).WithMany().HasForeignKey(c => c.ResolvedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
+    // ----- Automation -----
+    public DbSet<AutomationRule> AutomationRules => Set<AutomationRule>();
+    public DbSet<AutomationRun> AutomationRuns => Set<AutomationRun>();
+
+    private static void ConfigureAutomation(ModelBuilder b)
+    {
+        b.Entity<AutomationRule>().HasIndex(r => r.ProjectId);
+        b.Entity<AutomationRule>().HasIndex(r => r.GroupId);
+        b.Entity<AutomationRule>().HasOne(r => r.Project).WithMany().HasForeignKey(r => r.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<AutomationRule>().HasOne(r => r.Group).WithMany().HasForeignKey(r => r.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<AutomationRule>().HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<AutomationRule>().ToTable(t => t.HasCheckConstraint("CK_AutomationRules_Scope", "(\"ProjectId\" IS NULL) <> (\"GroupId\" IS NULL)"));
+        b.Entity<AutomationRun>().HasIndex(r => new { r.RuleId, r.StartedAt });
+        b.Entity<AutomationRun>().HasOne(r => r.Rule).WithMany().HasForeignKey(r => r.RuleId).OnDelete(DeleteBehavior.Cascade);
     }
 }

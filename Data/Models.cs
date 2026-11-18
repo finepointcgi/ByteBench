@@ -242,6 +242,7 @@ public enum NotificationKind
     ReviewRequested,
     PipelineFailed,
     IssueLinked, IssueHierarchyChanged,
+    Automation,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -1077,4 +1078,81 @@ public class SshKey
 
     public bool IsDeployKey => RepositoryId != null;
     public bool IsExpired(DateTime utcNow) => ExpiresAt != null && ExpiresAt <= utcNow;
+}
+
+// ----- Automation -----
+
+/// <summary>What starts an <see cref="AutomationRule"/>. Stored as an int: append new values at the end.</summary>
+public enum AutomationTrigger
+{
+    IssueCreated, IssueTransitioned, FieldChanged, CommentAdded,
+    PullRequestOpened, PullRequestMerged, PullRequestDeclined,
+    PipelineFailed, PipelinePassed,
+    Scheduled, Manual,
+}
+
+/// <summary>Whose permissions a rule's actions use.</summary>
+public enum AutomationRunAs
+{
+    /// <summary>The "GitBench Automation" bot (<see cref="GitBench.Services.Automation.AutomationBot"/>), trusted within the rule's project.</summary>
+    AutomationBot,
+    /// <summary>The user who last saved the rule: actions are checked against their current role.</summary>
+    RuleAuthor,
+}
+
+public enum AutomationRunStatus { Success, Failure, NoActions, Throttled, LoopPrevented }
+
+/// <summary>
+/// A Jira-style automation rule (<c>Services/Automation/</c>): a trigger, conditions and actions, for one project
+/// (<see cref="ProjectId"/>) or for every project in a group and its subgroups (<see cref="GroupId"/>). The trigger options,
+/// conditions and actions are JSON (<see cref="GitBench.Services.Automation.RuleDefinition"/>), so new kinds need no migration.
+/// </summary>
+public class AutomationRule
+{
+    public int Id { get; set; }
+    public int? ProjectId { get; set; }
+    public Project? Project { get; set; }
+    public int? GroupId { get; set; }
+    public Group? Group { get; set; }
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    public bool IsEnabled { get; set; } = true;
+    public AutomationTrigger Trigger { get; set; }
+    /// <summary>JSON: trigger options, conditions and actions.</summary>
+    [Required] public string Definition { get; set; } = "{}";
+    public AutomationRunAs RunAs { get; set; }
+    /// <summary>Let changes made by this rule's actions trigger other rules (and itself), up to the depth limit.</summary>
+    public bool AllowRuleTriggers { get; set; }
+    /// <summary>Who last saved the rule (the actor for <see cref="AutomationRunAs.RuleAuthor"/>).</summary>
+    public int? AuthorId { get; set; }
+    public User? Author { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Scheduled rules: when the timer last ran it.</summary>
+    public DateTime? LastScheduledRunAt { get; set; }
+    /// <summary>Round-robin assignment: the user who got the last issue.</summary>
+    public int? RoundRobinLastUserId { get; set; }
+}
+
+/// <summary>One execution of an <see cref="AutomationRule"/> (its audit log). No foreign key to the issue, so entries outlive it.</summary>
+public class AutomationRun
+{
+    public long Id { get; set; }
+    public int RuleId { get; set; }
+    public AutomationRule Rule { get; set; } = null!;
+    public int? ProjectId { get; set; }
+    /// <summary>What happened, e.g. "Issue transitioned" or "Manual".</summary>
+    [Required, MaxLength(60)] public string Trigger { get; set; } = "";
+    public int? IssueId { get; set; }
+    [MaxLength(30)] public string? IssueKey { get; set; }
+    public int? PullRequestId { get; set; }
+    /// <summary>The user whose change triggered the run (null for the scheduler).</summary>
+    public int? ActorId { get; set; }
+    public AutomationRunStatus Status { get; set; }
+    [MaxLength(1000)] public string? Message { get; set; }
+    /// <summary>The actions taken, one per line.</summary>
+    public string? Actions { get; set; }
+    public int DurationMs { get; set; }
+    /// <summary>0 for a change by a person; n when the change came from an automation n rules deep.</summary>
+    public int Depth { get; set; }
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
 }

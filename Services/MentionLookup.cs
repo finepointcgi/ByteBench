@@ -29,7 +29,8 @@ public partial class MentionLookup(IDbContextFactory<AppDbContext> dbFactory, Pr
         var bot = AiBot.UserName.ToUpperInvariant();
         var q = query.ToUpperInvariant();
 
-        var users = db.Users.Where(u => u.NormalizedUserName != bot);
+        var automationBot = Automation.AutomationBot.UserName.ToUpperInvariant();
+        var users = db.Users.Where(u => u.NormalizedUserName != bot && u.NormalizedUserName != automationBot);
         if (project.Visibility != ProjectVisibility.Internal)
             users = users.Where(u => u.IsAdmin || db.ProjectMembers.Any(m => m.ProjectId == projectId && m.UserId == u.Id));
         if (q.Length > 0)
