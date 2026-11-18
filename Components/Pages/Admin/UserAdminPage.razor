@@ -1,0 +1,227 @@
+@page "/admin/users"
+@inject CurrentUser Me
+@inject AdminUserService Admin
+
+<PageTitle>Users · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can manage users." />
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <h1>Users</h1>
+            <div class="muted">Every account on this GitBench server. Actions are recorded in the <a href="/admin/audit">audit log</a> as <code>admin.user_*</code>.</div>
+        </div>
+    </div>
+
+    <form class="filter-bar" @onsubmit="Search" @onsubmit:preventDefault>
+        <input class="form-control form-control-sm search" placeholder="Search username, name or email" aria-label="Search users" @bind="search" />
+        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+        @if (!string.IsNullOrEmpty(applied))
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Clear">Clear</button>
+        }
+    </form>
+
+    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+
+    @if (pending is { } p)
+    {
+        <div class="card-panel mb-3" role="alertdialog" aria-labelledby="confirm-title">
+            <h2 class="section-title" id="confirm-title">@p.Title</h2>
+            <p class="mb-2">@p.Body</p>
+            @if (p.Kind == ActionKind.Lock)
+            {
+                <label class="form-label small" for="lock-for">Lock for</label>
+                <select id="lock-for" class="form-select form-select-sm mb-2" style="max-width:220px" @bind="lockHours">
+                    <option value="1">1 hour</option>
+                    <option value="24">1 day</option>
+                    <option value="168">7 days</option>
+                    <option value="0">Until unlocked</option>
+                </select>
+            }
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm @(p.Danger ? "btn-danger" : "btn-primary")" @onclick="Confirm">@p.ConfirmLabel</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => pending = null">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (result != null)
+    {
+        <div class="small muted mb-2">
+            @if (result.Total == 0) { <span>No users match.</span> }
+            else { <span>Showing @(Skip + 1)–@(Skip + result.Users.Count) of @result.Total users.</span> }
+        </div>
+        @if (result.Users.Count > 0)
+        {
+            var now = DateTimeOffset.UtcNow;
+            <div class="table-responsive">
+            <table class="table table-sm align-middle audit-table">
+                <thead>
+                    <tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>2FA</th><th>Last sign-in</th><th class="text-end">Projects</th><th class="text-end">Actions</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in result.Users)
+                    {
+                        <tr @key="u.Id">
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="avatar" style="background:@u.Color;color:@Display.TextOn(u.Color);width:28px;height:28px;font-size:11px">@Initials(u.DisplayName)</span>
+                                    <div>
+                                        <div>@u.DisplayName @if (u.Id == Me.User.Id) { <span class="muted small">(you)</span> }</div>
+                                        <div class="muted small mono">@@@u.UserName</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="small">@u.Email</td>
+                            <td>
+                                @if (u.IsBot) { <span class="badge text-bg-secondary">Bot</span> }
+                                else if (u.IsAdmin) { <span class="badge text-bg-primary">Admin</span> }
+                                else { <span class="muted small">User</span> }
+                            </td>
+                            <td class="small">
+                                @if (u.IsDeactivated) { <span class="badge text-bg-danger" title="Deactivated @u.DeactivatedAt!.Value.ToString("yyyy-MM-dd")">Deactivated</span> }
+                                else if (u.IsLockedOut(now))
+                                {
+                                    <span class="badge text-bg-warning" title="@LockText(u)">Locked</span>
+                                    <div class="muted small">@LockText(u)</div>
+                                }
+                                else { <span class="muted">Active</span> }
+                            </td>
+                            <td class="small">@(u.TwoFactorEnabled ? "On" : "Off")</td>
+                            <td class="small" title="@(u.LastSignIn?.ToString("yyyy-MM-dd HH:mm") + " UTC")">@(u.LastSignIn is { } ls ? Display.Ago(ls) : "Never")</td>
+                            <td class="text-end">@u.ProjectCount</td>
+                            <td class="text-end">
+                                @if (!u.IsBot)
+                                {
+                                    <div class="d-inline-flex flex-wrap gap-1 justify-content-end">
+                                        @if (u.IsAdmin)
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ask(u, ActionKind.RevokeAdmin)">Revoke admin</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ask(u, ActionKind.GrantAdmin)">Make admin</button>
+                                        }
+                                        @if (u.IsLockedOut(now) || u.IsDeactivated)
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ask(u, ActionKind.Unlock)">@(u.IsDeactivated ? "Reactivate" : "Unlock")</button>
+                                        }
+                                        else if (u.Id != Me.User.Id)
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ask(u, ActionKind.Lock)">Lock</button>
+                                        }
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ask(u, ActionKind.SignOut)">Sign out</button>
+                                        @if (u.TwoFactorEnabled)
+                                        {
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => Ask(u, ActionKind.ResetTwoFactor)">Reset 2FA</button>
+                                        }
+                                        @if (!u.IsDeactivated && u.Id != Me.User.Id)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => Ask(u, ActionKind.Deactivate)">Deactivate</button>
+                                        }
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <button class="btn btn-outline-secondary btn-sm" disabled="@(pageNumber <= 1)" @onclick="() => Go(pageNumber - 1)">← Previous</button>
+                <span class="small muted">Page @pageNumber of @Math.Max(1, (result.Total + PageSize - 1) / PageSize)</span>
+                <button class="btn btn-outline-secondary btn-sm" disabled="@(Skip + result.Users.Count >= result.Total)" @onclick="() => Go(pageNumber + 1)">Next →</button>
+            </div>
+        }
+    }
+}
+
+@code {
+    private const int PageSize = 25;
+    private AdminUserPage? result;
+    private string? search, applied, error, message;
+    private int pageNumber = 1;
+    private int lockHours = 24;
+    private Pending? pending;
+
+    private int Skip => (pageNumber - 1) * PageSize;
+
+    private enum ActionKind { GrantAdmin, RevokeAdmin, Lock, Unlock, SignOut, ResetTwoFactor, Deactivate }
+
+    private sealed record Pending(AdminUserRow User, ActionKind Kind, string Title, string Body, string ConfirmLabel, bool Danger);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin == true) await Load();
+    }
+
+    private async Task Load()
+    {
+        try { result = await Admin.SearchAsync(applied, pageNumber, PageSize); }
+        catch (ForbiddenException ex) { error = ex.Message; }
+    }
+
+    private async Task Search() { applied = search?.Trim(); pageNumber = 1; await Load(); }
+    private async Task Clear() { search = applied = null; pageNumber = 1; await Load(); }
+    private async Task Go(int page) { pageNumber = Math.Max(1, page); await Load(); }
+
+    private void Ask(AdminUserRow u, ActionKind kind)
+    {
+        error = message = null;
+        var who = $"{u.DisplayName} (@{u.UserName})";
+        pending = kind switch
+        {
+            ActionKind.GrantAdmin => new(u, kind, "Make site admin?", $"{who} will have Owner rights in every project, including private ones, and can manage users.", "Make admin", false),
+            ActionKind.RevokeAdmin => new(u, kind, "Revoke site admin?", $"{who} will keep only their own project memberships." + (u.Id == Me.User!.Id ? " You will lose access to this page." : ""), "Revoke admin", true),
+            ActionKind.Lock => new(u, kind, "Lock account?", $"{who} will be signed out and can't sign in, use git or the API until the lock ends or an admin unlocks the account.", "Lock account", true),
+            ActionKind.Unlock => new(u, kind, u.IsDeactivated ? "Reactivate account?" : "Unlock account?", $"{who} will be able to sign in again." + (u.IsDeactivated ? " Their revoked access tokens stay revoked." : ""), u.IsDeactivated ? "Reactivate" : "Unlock", false),
+            ActionKind.SignOut => new(u, kind, "Sign out everywhere?", $"Every browser session of {who} ends within a minute. Personal access tokens keep working.", "Sign out", false),
+            ActionKind.ResetTwoFactor => new(u, kind, "Reset two-factor sign-in?", $"Two-factor sign-in is turned off for {who}, and their authenticator key and recovery codes stop working. They can set it up again from their profile.", "Reset 2FA", true),
+            _ => new(u, kind, "Deactivate account?", $"{who} is locked indefinitely, signed out everywhere, and every personal access token they own is revoked. An admin can reactivate the account later, but the tokens stay revoked.", "Deactivate", true),
+        };
+    }
+
+    private async Task Confirm()
+    {
+        if (pending is not { } p) return;
+        pending = null;
+        error = message = null;
+        var who = "@" + p.User.UserName;
+        try
+        {
+            switch (p.Kind)
+            {
+                case ActionKind.GrantAdmin: await Admin.SetAdminAsync(p.User.Id, true); message = $"{who} is now a site admin."; break;
+                case ActionKind.RevokeAdmin: await Admin.SetAdminAsync(p.User.Id, false); message = $"{who} is no longer a site admin."; break;
+                case ActionKind.Lock:
+                    await Admin.LockAsync(p.User.Id, lockHours > 0 ? DateTimeOffset.UtcNow.AddHours(lockHours) : null);
+                    message = $"{who} is locked{(lockHours > 0 ? "" : " until unlocked")}."; break;
+                case ActionKind.Unlock: await Admin.UnlockAsync(p.User.Id); message = $"{who} can sign in again."; break;
+                case ActionKind.SignOut: await Admin.ForceSignOutAsync(p.User.Id); message = $"{who} will be signed out of every browser session."; break;
+                case ActionKind.ResetTwoFactor: await Admin.ResetTwoFactorAsync(p.User.Id); message = $"Two-factor sign-in was reset for {who}."; break;
+                case ActionKind.Deactivate: await Admin.DeactivateAsync(p.User.Id); message = $"{who} was deactivated and their access tokens revoked."; break;
+            }
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; } // ForbiddenException included
+        if (p.Kind == ActionKind.RevokeAdmin && p.User.Id == Me.User!.Id && error == null)
+        {
+            result = null; // no longer allowed to see the list
+            Me.User.IsAdmin = false;
+            return;
+        }
+        await Load();
+    }
+
+    private static string LockText(AdminUserRow u) =>
+        u.LockoutEnd is { } end && end.Year >= 9999 ? "until unlocked" : $"until {u.LockoutEnd!.Value.UtcDateTime:yyyy-MM-dd HH:mm} UTC";
+
+    private static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+}

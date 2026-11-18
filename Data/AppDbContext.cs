@@ -64,6 +64,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Notification>().HasIndex(n => n.EmailPending).HasFilter("\"EmailPending\" = 1");
     }
 
+    // ----- Admin, 2FA & CI secrets -----
+    public DbSet<CiVariable> CiVariables => Set<CiVariable>();
+
+    private static void ConfigureAdminSecurity(ModelBuilder b)
+    {
+        b.Entity<CiVariable>().HasIndex(v => new { v.ProjectId, v.RepositoryId, v.Name });
+        b.Entity<CiVariable>().HasOne<Project>().WithMany().HasForeignKey(v => v.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CiVariable>().HasOne<Repository>().WithMany().HasForeignKey(v => v.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CiVariable>().HasOne(v => v.UpdatedBy).WithMany().HasForeignKey(v => v.UpdatedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
     private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
     {
         b.Entity<WorkflowStatus>().HasIndex(s => new { s.ProjectId, s.Order });
@@ -209,5 +220,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Issue>().HasOne(i => i.Sprint).WithMany().HasForeignKey(i => i.SprintId).OnDelete(DeleteBehavior.SetNull);
         ConfigureWorkflowsAndAudit(b);
         ConfigureEmailAndPreferences(b);
+        ConfigureAdminSecurity(b);
     }
 }

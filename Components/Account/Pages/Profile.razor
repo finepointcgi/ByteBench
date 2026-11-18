@@ -90,6 +90,21 @@
         </EditForm>
     </section>
 
+    <section class="profile-section" id="two-factor">
+        <h2 class="profile-section-title">Two-factor sign-in</h2>
+        <p class="small mb-2">
+            @if (user?.TwoFactorEnabled == true)
+            {
+                <span class="badge text-bg-success">On</span> <span>You sign in with a code from your authenticator app.</span>
+            }
+            else
+            {
+                <span class="badge text-bg-secondary">Off</span> <span>Add a code from an authenticator app to your sign-in.</span>
+            }
+        </p>
+        <a class="btn btn-outline-secondary btn-sm" href="account/two-factor">@(user?.TwoFactorEnabled == true ? "Manage two-factor sign-in" : "Set up two-factor sign-in")</a>
+    </section>
+
     <section class="profile-section" id="tokens">
         <h2 class="profile-section-title">Access tokens</h2>
         <p class="muted small">

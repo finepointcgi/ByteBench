@@ -111,6 +111,7 @@ public class AuditLog(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess a
         var userId = await db.Users.Where(u => u.NormalizedUserName == norm || u.NormalizedEmail == norm).Select(u => (int?)u.Id).FirstOrDefaultAsync();
         if (result.Succeeded) await RecordAsync("auth.sign_in", "user", userId, actorId: userId);
         else if (result.IsLockedOut) await RecordAsync("auth.lockout", "user", userId, details: new { login }, anonymous: true);
+        else if (result.RequiresTwoFactor) { } // password was right; the two-factor step records the outcome (auth.sign_in / auth.2fa_failed)
         else await RecordAsync("auth.sign_in_failed", userId == null ? null : "user", userId,
             details: new { login, reason = result.IsNotAllowed ? "not_allowed" : "invalid_credentials" }, anonymous: true);
     }

@@ -78,6 +78,11 @@ builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndo
 builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
 builder.Services.AddScoped<WorkflowService>();
 GitBench.Services.Email.EmailServiceCollectionExtensions.AddEmail(builder.Services, builder.Configuration, builder.Environment); // email, preferences, autocomplete
+// ----- Admin, 2FA & CI secrets -----
+builder.Services.AddScoped<AdminUserService>(); // /admin/users
+builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Protection)
+// Re-check cookies against the security stamp every minute, so an admin's "sign out" or lock takes effect quickly.
+builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 
 var app = builder.Build();
 

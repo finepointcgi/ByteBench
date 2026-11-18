@@ -37,6 +37,7 @@ The seed data creates four demo accounts. All of them use the password in `SeedD
 - **Sign in** at `/account/login` with a username or an email. Five failed attempts lock an account for five minutes.
 - **Register** at `/account/register`. New users get a random avatar color and are signed in right away.
 - **Profile** at `/account/profile` (click your avatar in the top bar): change display name, email, avatar color and password.
+- **Two-factor sign-in** at `/account/two-factor` (see [Two-factor sign-in](#two-factor-sign-in-totp)). Site admins manage accounts at `/admin/users` (see [User administration](#user-administration)).
 - **Sign out** with the button in the top bar.
 
 Account pages run as static server-side rendering (`[ExcludeFromInteractiveRouting]`) because sign-in has to write cookies; the rest of the app stays Interactive Server.
@@ -424,7 +425,7 @@ jobs:
 **Pipelines run arbitrary code from the repository on the server host, inside Docker.** Anyone who can push (Developer or higher) can run any command in any image they choose. Treat PushCode as "can run code on the CI host".
 
 - The docker CLI is always started with an argument list, never a shell command line, and image names are validated so they can't be read as flags.
-- Containers never get the Docker socket, host environment variables or any GitBench secret. They get only the `GITBENCH_*` variables above.
+- Containers never get the Docker socket, host environment variables or any GitBench secret. They get only the `GITBENCH_*` variables above, plus the [CI variables](#ci-secret-variables) the pipeline is allowed to see.
 - Containers run with `--security-opt no-new-privileges`, memory, CPU and PID limits, a per-job timeout, and `--rm`.
 - Only the exported workspace is mounted. Symlinks in the repository are created after every regular file, so nothing is written through them. Submodules aren't fetched.
 - Containers still have network access by default (`bridge`). They run as the image's user, often root inside the container, and Docker isolation is not a hard security boundary. On a shared or exposed server, use `Network: none`, rootless Docker or a separate CI host, and let only trusted people push.
@@ -707,6 +708,53 @@ Each project has its own **workflow**: an ordered list of statuses (name, colour
   - `/p/{KEY}/settings/audit` (project Owners, linked from project Settings) shows the same view limited to that project.
   - **Export CSV** downloads every matching event (up to 100,000) from `GET /admin/audit/export.csv?project=&actor=&action=&from=&to=`, which is checked the same way. Cells that start like a spreadsheet formula are prefixed with `'`.
 - **Recording from new code:** `await audit.RecordAsync("area.verb", "target_type", targetId, projectId, new { …details… });`. For example, a bulk delete would record `issue.bulk_deleted` with the issue numbers. Recording never throws.
+
+## User admin, two-factor sign-in & CI secrets
+
+### User administration
+
+Site admins manage accounts at `/admin/users` (sidebar **👥 Users**, next to the Audit log). Logic: `Services/AdminUserService.cs`; page: `Components/Pages/Admin/UserAdminPage.razor`.
+
+- **List:** search by username, display name or email, 25 per page. Each row shows the username and display name, email, admin flag, status (active, locked until …, or deactivated), whether 2FA is on, the last sign-in (the newest `auth.sign_in` audit event, so it's limited by audit retention) and the number of project memberships.
+- **Actions** (each asks for confirmation on the page and records an audit event):
+
+  | Action | Effect | Audit event |
+  |---|---|---|
+  | Make admin / Revoke admin | Sets `User.IsAdmin`. GitBench refuses to revoke the last admin, so you can't lock everyone out | `admin.user_admin_granted` / `admin.user_admin_revoked` |
+  | Lock | Identity lockout for 1 hour, 1 day, 7 days or until unlocked, and signs the user out everywhere | `admin.user_locked` |
+  | Unlock / Reactivate | Clears the lockout, the failed sign-in counter and the deactivation | `admin.user_unlocked` |
+  | Sign out | Rotates the security stamp: every browser session ends within a minute. Access tokens keep working | `admin.user_signed_out` |
+  | Reset 2FA | For a user who lost their device: turns 2FA off, replaces the authenticator key and deletes the recovery codes | `admin.user_2fa_reset` |
+  | Deactivate | Locks the account indefinitely (`User.DeactivatedAt`), signs it out and revokes every personal access token. Reactivating doesn't bring the tokens back | `admin.user_deactivated` |
+
+- You can't lock or deactivate yourself. The GitBench AI bot account is listed but can't be changed.
+- **Locked and deactivated accounts can't use tokens either:** `AccessTokenService` refuses tokens of locked or deactivated users (REST API Bearer and git), and git's Basic auth checks lockout before the password or token.
+- **How fast it applies:** the cookie's security stamp is re-checked every minute (`SecurityStampValidatorOptions.ValidationInterval`), and open Blazor circuits re-check it every minute too (`IdentityRevalidatingAuthenticationStateProvider`).
+
+### Two-factor sign-in (TOTP)
+
+Users turn it on at `/account/two-factor` (**Profile → Two-factor sign-in**). It uses ASP.NET Core Identity's authenticator support (RFC 6238 time-based codes, 6 digits, 30 seconds).
+
+- **Set up:** the page shows a QR code (the `otpauth://` URI drawn as an inline SVG with [QRCoder](https://github.com/codebude/QRCoder)) and the key for manual entry. Enter a current code to turn 2FA on. GitBench then shows **10 recovery codes once**; each works one time.
+- **Manage:** see how many recovery codes are left, generate new ones (the old ones stop working), or turn 2FA off (asks for your password; the key and recovery codes are discarded).
+- **Signing in:** after a correct password, `/account/login-2fa` asks for the authenticator code, with **Remember this device** (14 days, Identity's two-factor remember-me cookie), or a recovery code (`?mode=recovery`). Wrong codes count toward the normal lockout (5 failures, 5 minutes).
+- **Git and the API:** personal access tokens keep working. Git Basic auth with the account **password** is refused for 2FA users with `401 Password authentication is not supported for accounts with two-factor sign-in. Use a personal access token…` (only after the password was checked, so it doesn't reveal who has 2FA).
+- **Audit events:** `user.2fa_enabled`, `user.2fa_disabled`, `user.2fa_recovery_codes_regenerated`, `auth.2fa_failed` (wrong code; details say `authenticator` or `recovery_code`), and `auth.sign_in` with `twoFactor` in its details for a successful two-factor sign-in.
+- A lost device: use a recovery code, or ask a site admin to **Reset 2FA** at `/admin/users`.
+
+### CI secret variables
+
+Pipelines can get secrets (deploy keys, API tokens, …) as environment variables. Code: `Services/Ci/CiVariableService.cs`, `Services/Ci/CiSecretMasker.cs`, `CiRunner`; UI: `Components/Shared/CiVariablesEditor.razor`.
+
+- **Where:** per project in the **CI variables** card at `/p/{KEY}/settings` (every repository in the project gets them), and per repository at `/p/{KEY}/repos/{slug}/settings/ci-variables` (**Settings → CI variables**). A repository variable overrides a project variable with the same name.
+- **Who:** Maintainers and Owners (`ManageRepositories`).
+- **Fields:** a name (letters, digits and `_`, not starting with a digit; `CI` and `GITBENCH_*` are reserved), a single-line value (up to 10,000 characters), and **Protected**.
+- **Storage:** values are encrypted with ASP.NET Core Data Protection (purpose `GitBench.CiVariables.v1`) and never shown again. The list only says "updated *date* by *user*". Editing with an empty value keeps the stored value. If the Data Protection keys are lost, the variable is skipped with a note in the step log, and must be saved again.
+- **Protected variables** only reach pipelines whose branch matches a [branch protection rule](#branch-protection-reviewers--pr-templates). Pull request pipelines run on the PR's source branch, so a PR from an unprotected branch never sees them. The step log says how many protected variables were held back.
+- **Injection:** for each step GitBench writes the variables to a temp file (mode 600, in a mode-700 folder under the CI work directory, outside the mounted workspace) and passes it with `docker run --env-file`. The file is deleted when the step ends (and the folder at startup). Values never appear on a command line. The step log lists the variable names it got.
+- **Masking:** every value at least 4 characters long is replaced with `***` in step logs. The whole log is masked each time it's stored (about once a second), not each chunk, so a value that arrives in several pieces is still masked, and a tail that looks like the start of a value is hidden until the rest arrives.
+- **Audit events:** `ci_variable.created`, `ci_variable.updated` and `ci_variable.deleted` with the name, scope and protected flag, never the value (`valueChanged` says whether the value was replaced).
+- **Limits of masking:** anyone who can change `.gitbench-ci.yml` on a branch that gets a variable (Developer+ for unprotected variables) can still leak it, e.g. by base64-encoding it or sending it over the network. Use **Protected** for anything sensitive, and protect the branches that get it so changes go through review.
 
 ## Next steps
 
