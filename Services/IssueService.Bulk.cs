@@ -87,7 +87,7 @@ public partial class IssueService
         if (change.SetMilestone && change.MilestoneId is { } mid)
         {
             milestone = await db.Milestones.FindAsync(mid) ?? throw new InvalidOperationException("That milestone doesn't exist.");
-            if (projectIds.Any(p => p != milestone.ProjectId)) throw new InvalidOperationException("That milestone belongs to another project.");
+            if (!await GroupService.UsableInAllAsync(db, projectIds, milestone.ProjectId, milestone.GroupId)) throw new InvalidOperationException("That milestone belongs to another project.");
         }
         if (change.WorkflowStatusId is { } wsId)
         {
@@ -99,12 +99,12 @@ public partial class IssueService
         if (change.AddLabelId is { } al)
         {
             addLabel = await db.Labels.FindAsync(al) ?? throw new InvalidOperationException("That label doesn't exist.");
-            if (projectIds.Any(p => p != addLabel.ProjectId)) throw new InvalidOperationException("That label belongs to another project.");
+            if (!await GroupService.UsableInAllAsync(db, projectIds, addLabel.ProjectId, addLabel.GroupId)) throw new InvalidOperationException("That label belongs to another project.");
         }
         if (change.RemoveLabelId is { } rl)
         {
             removeLabel = await db.Labels.FindAsync(rl) ?? throw new InvalidOperationException("That label doesn't exist.");
-            if (projectIds.Any(p => p != removeLabel.ProjectId)) throw new InvalidOperationException("That label belongs to another project.");
+            if (!await GroupService.UsableInAllAsync(db, projectIds, removeLabel.ProjectId, removeLabel.GroupId)) throw new InvalidOperationException("That label belongs to another project.");
         }
 
         // ----- Apply -----

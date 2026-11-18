@@ -1,0 +1,79 @@
+@* A group's subgroups and projects as a tree, with counts. *@
+@inject GroupService GroupSvc
+
+@if (tree != null)
+{
+    <div class="go-stats">
+        <span><MudIcon Icon="@Icons.Material.Outlined.Workspaces" Size="Size.Small" /> <b>@tree.TotalSubgroups</b> subgroups</span>
+        <span><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" /> <b>@tree.TotalProjects</b> projects</span>
+        <span><MudIcon Icon="@Icons.Material.Outlined.RadioButtonUnchecked" Size="Size.Small" /> <b>@tree.TotalOpenIssues</b> open issues</span>
+    </div>
+    <MudPaper Outlined="true" Class="go-tree">
+        @if (tree.TotalProjects == 0 && tree.TotalSubgroups == 0)
+        {
+            <div class="go-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.FolderOpen" Size="Size.Large" />
+                <div>This group has no projects or subgroups yet.@if (Perms.Can(GroupPermission.CreateInGroup)) { <span> <a href="/projects/new?group=@Group.Id">Create a project</a>.</span> }</div>
+            </div>
+        }
+        else
+        {
+            @RenderNode(tree, 0)
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public Group Group { get; set; } = null!;
+    [Parameter] public GroupPermissions Perms { get; set; } = GroupPermissions.None;
+
+    private GroupNode? tree;
+    private readonly HashSet<int> collapsed = [];
+
+    protected override async Task OnParametersSetAsync() => tree = await GroupSvc.GetTreeAsync(Group.Id);
+
+    private void Toggle(int id)
+    {
+        if (!collapsed.Remove(id)) collapsed.Add(id);
+    }
+
+    private RenderFragment RenderNode(GroupNode node, int level) => __builder =>
+    {
+        foreach (var sub in node.Subgroups)
+        {
+            var open = !collapsed.Contains(sub.Group.Id);
+            <div class="go-row go-group" style="@($"padding-left:{12 + level * 24}px")" @key="@($"g{sub.Group.Id}")">
+                <MudIconButton Icon="@(open ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)" Size="Size.Small"
+                               aria-label="@($"{(open ? "Collapse" : "Expand")} {sub.Group.Name}")" aria-expanded="@(open ? "true" : "false")"
+                               OnClick="() => Toggle(sub.Group.Id)" Disabled="@(sub.Subgroups.Count == 0 && sub.Projects.Count == 0)" />
+                <GroupAvatar Name="@sub.Group.Name" Color="@sub.Group.Color" Size="28" />
+                <div class="go-main">
+                    <a href="/g/@sub.Group.FullPath" class="go-name">@sub.Group.Name</a>
+                    @if (sub.Group.Visibility == ProjectVisibility.Private) { <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" Class="go-lock" title="Private" /> }
+                    <div class="go-meta">@(sub.Group.Description ?? sub.Group.FullPath)</div>
+                </div>
+                <div class="go-counts">
+                    <span title="Subgroups"><MudIcon Icon="@Icons.Material.Outlined.Workspaces" Size="Size.Small" /> @sub.TotalSubgroups</span>
+                    <span title="Projects"><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" /> @sub.TotalProjects</span>
+                    <span title="Open issues"><MudIcon Icon="@Icons.Material.Outlined.RadioButtonUnchecked" Size="Size.Small" /> @sub.TotalOpenIssues</span>
+                </div>
+            </div>
+            @if (open) { @RenderNode(sub, level + 1) }
+        }
+        foreach (var p in node.Projects)
+        {
+            <a class="go-row go-project" href="/p/@p.Key/issues" style="@($"padding-left:{12 + level * 24 + 34}px")" @key="@($"p{p.Id}")">
+                <span class="proj-avatar sm">@p.Key[..1]</span>
+                <div class="go-main">
+                    <span class="go-name">@p.Name</span> <span class="go-key mono">@p.Key</span>
+                    @if (p.Visibility == ProjectVisibility.Private) { <MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" Class="go-lock" title="Private" /> }
+                    @if (!string.IsNullOrEmpty(p.Description)) { <div class="go-meta">@p.Description</div> }
+                </div>
+                <div class="go-counts">
+                    <span title="Open issues"><MudIcon Icon="@Icons.Material.Outlined.RadioButtonUnchecked" Size="Size.Small" /> @p.OpenIssues</span>
+                    <span title="Open pull requests"><MudIcon Icon="@Icons.Material.Outlined.MergeType" Size="Size.Small" /> @p.OpenPullRequests</span>
+                </div>
+            </a>
+        }
+    };
+}

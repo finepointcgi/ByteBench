@@ -83,6 +83,7 @@ public static class ApiEndpoints
         api.MapAttachmentEndpoints();
         api.MapSprintEndpoints();
         api.MapReleaseEndpoints();
+        api.MapGroupEndpoints();
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

@@ -1,0 +1,8 @@
+.gp ::deep .gp-list { overflow: hidden; }
+.gp-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+.gp-row:last-child { border-bottom: none; }
+.gp-row:hover { background: var(--mud-palette-action-default-hover); text-decoration: none; }
+.gp-main { flex: 1; min-width: 0; }
+.gp-title { font-weight: 600; }
+.gp-meta { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-empty { padding: 32px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 8px; }

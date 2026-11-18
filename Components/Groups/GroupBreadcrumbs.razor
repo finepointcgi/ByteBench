@@ -1,0 +1,46 @@
+@* Group › subgroup › project trail. Shown above project pages (MainLayout) for projects in a group, and on group pages. *@
+@inject GroupService GroupSvc
+@inject CurrentUser Me
+
+@if (crumbs.Count > 0)
+{
+    <nav class="gb-crumbs" aria-label="Breadcrumb">
+        <a href="/groups" class="gb-crumb">Groups</a>
+        @foreach (var c in crumbs)
+        {
+            <span class="gb-crumb-sep" aria-hidden="true">›</span>
+            @if (c.FullPath == CurrentGroupPath && ProjectKey == null)
+            {
+                <span class="gb-crumb gb-crumb-current" aria-current="page">@c.Name</span>
+            }
+            else
+            {
+                <a href="/g/@c.FullPath" class="gb-crumb">@c.Name</a>
+            }
+        }
+        @if (ProjectKey != null)
+        {
+            <span class="gb-crumb-sep" aria-hidden="true">›</span>
+            <a href="/p/@ProjectKey/issues" class="gb-crumb gb-crumb-current">@(ProjectName ?? ProjectKey)</a>
+        }
+    </nav>
+}
+
+@code {
+    /// <summary>Project pages: the project's key (crumbs are its group chain).</summary>
+    [Parameter] public string? ProjectKey { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    /// <summary>Group pages: the group's id.</summary>
+    [Parameter] public int? GroupId { get; set; }
+    [Parameter] public string? CurrentGroupPath { get; set; }
+
+    private List<GroupCrumb> crumbs = [];
+
+    // Reloaded whenever the parent re-renders (navigation), so renames and transfers show up.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Me.IsSignedIn) { crumbs = []; return; }
+        crumbs = ProjectKey != null ? await GroupSvc.ProjectCrumbsAsync(ProjectKey)
+            : GroupId is { } id ? await GroupSvc.CrumbsAsync(id) : [];
+    }
+}

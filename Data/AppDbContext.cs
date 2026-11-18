@@ -55,6 +55,33 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<UserNotificationSettings> UserNotificationSettings => Set<UserNotificationSettings>();
 
+    // ----- Groups -----
+    public DbSet<Group> Groups => Set<Group>();
+    public DbSet<GroupMember> GroupMembers => Set<GroupMember>();
+    public DbSet<GroupRedirect> GroupRedirects => Set<GroupRedirect>();
+
+    private static void ConfigureGroups(ModelBuilder b)
+    {
+        b.Entity<Group>().HasIndex(g => g.FullPath).IsUnique();
+        b.Entity<Group>().HasIndex(g => g.ParentId);
+        // GroupService deletes subgroups and projects explicitly (deepest first), so these never cascade by accident.
+        b.Entity<Group>().HasOne(g => g.Parent).WithMany(g => g.Children).HasForeignKey(g => g.ParentId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<Project>().HasOne(p => p.Group).WithMany(g => g.Projects).HasForeignKey(p => p.GroupId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<GroupMember>().HasIndex(m => new { m.GroupId, m.UserId }).IsUnique();
+        b.Entity<GroupMember>().HasIndex(m => m.UserId);
+        b.Entity<GroupMember>().HasOne(m => m.Group).WithMany(g => g.Members).HasForeignKey(m => m.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<GroupMember>().HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<GroupRedirect>().HasIndex(r => r.OldPath).IsUnique();
+        b.Entity<GroupRedirect>().HasOne(r => r.Group).WithMany().HasForeignKey(r => r.GroupId).OnDelete(DeleteBehavior.Cascade);
+        // Labels and milestones belong to a project or to a group (inherited by its projects). Project ones still cascade with the project.
+        b.Entity<Label>().HasOne<Project>().WithMany(p => p.Labels).HasForeignKey(l => l.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Label>().HasOne<Group>().WithMany().HasForeignKey(l => l.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Label>().HasIndex(l => new { l.GroupId, l.Name }).IsUnique();
+        b.Entity<Milestone>().HasOne<Project>().WithMany(p => p.Milestones).HasForeignKey(m => m.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Milestone>().HasOne<Group>().WithMany().HasForeignKey(m => m.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Milestone>().HasIndex(m => m.GroupId);
+    }
+
     private static void ConfigureEmailAndPreferences(ModelBuilder b)
     {
         b.Entity<NotificationPreference>().HasIndex(p => new { p.UserId, p.Group }).IsUnique();
@@ -237,5 +264,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureEmailAndPreferences(b);
         ConfigureAdminSecurity(b);
         ConfigureReleases(b);
+        ConfigureGroups(b);
     }
 }

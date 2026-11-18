@@ -1,0 +1,11 @@
+@* A group's square avatar: its first letter on its colour. *@
+<span class="gb-group-avatar" title="@Name" aria-hidden="true"
+      style="@FormattableString.Invariant($"background:{Color};color:{Display.TextOn(Color)};width:{Size}px;height:{Size}px;font-size:{Size * 0.45:0.#}px")">@Letter</span>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string Color { get; set; } = "#6366f1";
+    [Parameter] public int Size { get; set; } = 32;
+
+    private string Letter => string.IsNullOrEmpty(Name) ? "?" : char.ToUpperInvariant(Name[0]).ToString();
+}

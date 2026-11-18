@@ -71,6 +71,7 @@ else if (project != null)
                             <MudIcon Icon="@Icons.Material.Outlined.Flag" Size="Size.Small" Class="mst-flag" />
                             <span>@m.Title</span>
                             @if (m.IsClosed) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">Closed</MudChip> }
+                            @if (m.GroupId != null) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Icon="@Icons.Material.Outlined.Workspaces" Class="ma-0" title="Group milestone: managed on the group's Labels & milestones page">Group</MudChip> }
                             @if (overdue) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Overdue</MudChip> }
                         </div>
                         <div class="mst-sub">
@@ -90,7 +91,7 @@ else if (project != null)
                     <div class="mst-actions">
                         <GitBench.Components.Ai.ReleaseNotesButton Project="project" Milestone="m" />
                         <MudButton Href="@($"/p/{project.Key}/board")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.ViewKanban">Board</MudButton>
-                        @if (canManage)
+                        @if (canManage && m.GroupId == null)
                         {
                             <MudTooltip Text="Edit">
                                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Variant="Variant.Outlined" OnClick="() => Edit(m)" aria-label="@($"Edit {m.Title}")" />

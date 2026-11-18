@@ -53,6 +53,7 @@ builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<ProjectAccess>();
 builder.Services.AddScoped<MemberService>();
+builder.Services.AddScoped<GroupService>(); // groups: namespaces, inherited roles, group labels/milestones
 builder.Services.AddScoped<AccessTokenService>();
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));

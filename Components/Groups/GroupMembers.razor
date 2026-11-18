@@ -1,0 +1,109 @@
+@* Group members: direct ones (Owners manage them) and those inherited from parent groups (read-only here). *@
+@inject GroupService GroupSvc
+@inject CurrentUser Me
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+    Members get their role in this group, every subgroup and every project under it. A project member's effective role is the higher of
+    their project role and their group roles.
+</MudText>
+@if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3 gb-group-card">@error</MudAlert> }
+
+@if (canManage)
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-3 gb-group-card">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title">Add a member</MudText>
+        <div class="d-flex flex-wrap gap-2 align-center">
+            <MudTextField T="string" Placeholder="Username or e-mail" @bind-Value="newLogin" Immediate="true" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" aria-label="Username or e-mail" Class="flex-grow-1" />
+            <MudSelect T="ProjectRole" @bind-Value="newRole" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft"
+                       aria-label="Role" OuterClass="flex-grow-0">
+                @foreach (var role in Roles) { <MudSelectItem Value="role">@role</MudSelectItem> }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PersonAdd"
+                       Disabled="@string.IsNullOrWhiteSpace(newLogin)" OnClick="Add">Add member</MudButton>
+        </div>
+    </MudPaper>
+}
+
+<MudPaper Outlined="true" Class="pa-4 gb-group-card">
+    @if (members.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No members.</MudText> }
+    @foreach (var m in members)
+    {
+        <div class="gb-group-row" @key="(m.GroupId, m.User.Id, version)">
+            <Avatar User="m.User" Size="28" />
+            <div class="gb-group-row-main">
+                <div><b>@m.User.DisplayName</b> @if (m.User.Id == Me.User?.Id) { <span class="gb-group-meta">(you)</span> }</div>
+                <div class="gb-group-meta">
+                    @@@m.User.UserName ·
+                    @if (m.Inherited) { <span>via <a href="/g/@m.GroupPath/-/members">@m.GroupPath</a></span> }
+                    else { <span>member since @m.Since.ToLocalTime().ToString("d")</span> }
+                </div>
+            </div>
+            @if (canManage && !m.Inherited)
+            {
+                <MudSelect T="ProjectRole" Value="m.Role" ValueChanged="role => ChangeRole(m, role)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           AnchorOrigin="Origin.BottomLeft" OuterClass="flex-grow-0" aria-label="@($"Role of {m.User.DisplayName}")">
+                    @foreach (var role in Roles) { <MudSelectItem Value="role">@role</MudSelectItem> }
+                </MudSelect>
+                <MudTooltip Text="Remove from group">
+                    <MudIconButton Icon="@Icons.Material.Outlined.PersonRemove" Color="Color.Error" Size="Size.Small"
+                                   aria-label="@($"Remove {m.User.DisplayName}")" OnClick="() => Remove(m)" />
+                </MudTooltip>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@m.Role</MudChip>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Group Group { get; set; } = null!;
+    [Parameter] public GroupPermissions Perms { get; set; } = GroupPermissions.None;
+
+    private static readonly ProjectRole[] Roles = Enum.GetValues<ProjectRole>();
+    private bool canManage => Perms.Can(GroupPermission.ManageGroupMembers);
+    private List<GroupMemberInfo> members = [];
+    private string? newLogin, error;
+    private ProjectRole newRole = ProjectRole.Developer;
+    private int version;
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        members = await GroupSvc.GetMembersAsync(Group.Id);
+        version++;
+    }
+
+    private async Task Run(Func<Task> action, string success)
+    {
+        error = null;
+        try
+        {
+            await action();
+            Snackbar.Add(success, Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private async Task Add()
+    {
+        var login = newLogin?.Trim() ?? "";
+        await Run(() => GroupSvc.AddMemberAsync(Group.Id, login, newRole), $"Added {login} as {newRole}.");
+        if (error == null) newLogin = null;
+    }
+
+    private Task ChangeRole(GroupMemberInfo m, ProjectRole role) =>
+        Run(() => GroupSvc.ChangeMemberRoleAsync(Group.Id, m.User.Id, role), $"{m.User.DisplayName} is now {role}.");
+
+    private async Task Remove(GroupMemberInfo m)
+    {
+        if (!await Dialogs.ConfirmAsync("Remove member?", $"Remove {m.User.DisplayName} from {Group.FullPath}? They lose the roles this membership gives them in its subgroups and projects.", "Remove")) return;
+        await Run(() => GroupSvc.RemoveMemberAsync(Group.Id, m.User.Id), $"Removed {m.User.DisplayName}.");
+    }
+}

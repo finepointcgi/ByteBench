@@ -69,6 +69,24 @@ public static class SeedData
         };
         db.Projects.AddRange(web, ops);
 
+        // Groups: Acme › Platform owns WEB and OPS. dan inherits Developer from Acme (his direct project roles are at least that).
+        var acme = new Group
+        {
+            Name = "Acme", Path = "acme", FullPath = "acme", Description = "Acme Corp: everything we build.", Visibility = ProjectVisibility.Internal,
+            Color = "#0ea5e9", Members = [new() { User = alice, Role = ProjectRole.Owner }, new() { User = dan, Role = ProjectRole.Developer }],
+        };
+        var platform = new Group
+        {
+            Name = "Platform", Path = "platform", FullPath = "acme/platform", Description = "The web platform and the infrastructure under it.",
+            Visibility = ProjectVisibility.Internal, Color = "#8b5cf6", Parent = acme,
+        };
+        db.Groups.AddRange(acme, platform);
+        web.Group = platform;
+        ops.Group = platform;
+        db.SaveChanges(); // group labels need the group's id
+        db.Labels.Add(new Label { GroupId = acme.Id, Name = "customer-reported", Color = "#db2777" });
+        db.Milestones.Add(new Milestone { GroupId = acme.Id, Title = "Acme Q1 launch", DueDate = now.AddDays(60).Date, Description = "Cross-project launch for the whole group." });
+
         int n = 1; double order = 1;
         Issue Make(Project p, string title, IssueType type, IssueStatus status, IssuePriority prio, User reporter, User? assignee,
                    Milestone? ms, int? points, string? desc, params Label[] labels)

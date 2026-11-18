@@ -134,3 +134,22 @@ input.invalid, textarea.invalid, select.invalid { outline: 1px solid var(--mud-p
 .totp-qr svg { width: 180px; height: 180px; display: block; border-radius: 6px; }
 .totp-key { font-size: 15px; letter-spacing: .04em; word-break: break-all; }
 .recovery-codes { columns: 2; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 14px; }
+
+/* ----- Groups ----- */
+.gb-group-avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 700; flex-shrink: 0; }
+.gb-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+.gb-crumbs a.gb-crumb { color: var(--muted); }
+.gb-crumbs a.gb-crumb:hover { color: var(--text); }
+.gb-crumbs .gb-crumb-current { color: var(--text); font-weight: 500; }
+.gb-crumb-sep { opacity: .6; }
+.gb-color-input {
+    width: 40px; height: 36px; padding: 3px; cursor: pointer; flex-shrink: 0;
+    background: var(--mud-palette-surface); border: 1px solid var(--mud-palette-lines-inputs); border-radius: var(--mud-default-borderradius);
+}
+.gb-group-card { max-width: 860px; }
+.gb-group-card-title { font-weight: 600 !important; margin-bottom: 12px !important; }
+.gb-group-danger { border-color: rgba(var(--mud-palette-error-rgb), .45) !important; }
+.gb-group-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.gb-group-row:last-child { border-bottom: none; }
+.gb-group-row-main { flex: 1; min-width: 0; }
+.gb-group-meta { color: var(--muted); font-size: 12.5px; }

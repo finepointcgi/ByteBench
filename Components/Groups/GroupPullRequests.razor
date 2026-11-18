@@ -1,0 +1,64 @@
+@* Pull requests from every project in the group and its subgroups that the user can view. *@
+@using GitBench.Services.Git
+@inject GroupService GroupSvc
+
+<div class="gp">
+    <nav class="gb-tabs" aria-label="Pull request state">
+        @foreach (var s in Enum.GetValues<PullRequestState>())
+        {
+            <TabLink Active="@(state == s)" OnClick="() => SetState(s)" Count="@counts.GetValueOrDefault(s)">@s</TabLink>
+        }
+    </nav>
+
+    <MudPaper Outlined="true" Class="gp-list">
+        @if (loaded && prs.Count == 0)
+        {
+            <div class="gp-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.MergeType" Size="Size.Large" />
+                <div>No @state.ToString().ToLowerInvariant() pull requests in this group.</div>
+            </div>
+        }
+        @foreach (var pr in prs)
+        {
+            <a class="gp-row" href="@RepoUrls.PullRequest(pr.Repository, pr.Number)" @key="pr.Id">
+                <PrStateBadge State="pr.State" Compact="true" />
+                <div class="gp-main">
+                    <div class="gp-title">@pr.Title</div>
+                    <div class="gp-meta">
+                        <span class="mono">@pr.Repository.Project.Key/@pr.Repository.Slug#@pr.Number</span>
+                        · <span class="mono">@pr.SourceBranch → @pr.TargetBranch</span>
+                        · opened @Display.Ago(pr.CreatedAt) by @pr.Author.DisplayName · updated @Display.Ago(pr.UpdatedAt)
+                    </div>
+                </div>
+                <Avatar User="pr.Author" />
+            </a>
+        }
+    </MudPaper>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Group Group { get; set; } = null!;
+
+    private PullRequestState state = PullRequestState.Open;
+    private List<PullRequest> prs = [];
+    private Dictionary<PullRequestState, int> counts = [];
+    private bool loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        counts = await GroupSvc.CountPullRequestsAsync(Group.Id);
+        await Load();
+    }
+
+    private async Task SetState(PullRequestState s)
+    {
+        state = s;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        prs = await GroupSvc.GetPullRequestsAsync(Group.Id, state);
+        loaded = true;
+    }
+}

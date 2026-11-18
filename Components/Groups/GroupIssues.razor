@@ -1,0 +1,116 @@
+@* Issues from every project in the group and its subgroups that the user can view. *@
+@inject GroupService GroupSvc
+@inject IssueService Issues
+
+<div class="gi">
+<div class="gi-tabs" role="tablist" aria-label="Open or closed">
+    @foreach (var (label, value) in Tabs)
+    {
+        <button type="button" role="tab" aria-selected="@(filter.Open == value ? "true" : "false")" class="gi-tab @(filter.Open == value ? "active" : "")"
+                @onclick="() => SetOpen(value)">@label</button>
+    }
+</div>
+
+<MudPaper Outlined="true" Class="gi-filters">
+    <MudTextField T="string" @bind-Value="filter.Search" @bind-Value:after="Load" Immediate="true" DebounceInterval="300" Placeholder="Search title, description or key…"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
+                  Clearable="true" Class="gi-search" aria-label="Search issues" />
+    <MudSelect T="int?" @bind-Value="projectId" @bind-Value:after="Load" Label="Project" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+               OuterClass="gi-select" ToStringFunc="@(id => projects.FirstOrDefault(p => p.Id == id)?.Name ?? "")">
+        @foreach (var p in projects) { <MudSelectItem T="int?" Value="p.Id">@p.Key · @p.Name</MudSelectItem> }
+    </MudSelect>
+    <MudSelect T="int?" @bind-Value="filter.AssigneeId" @bind-Value:after="Load" Label="Assignee" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+               OuterClass="gi-select" ToStringFunc="@(id => id == 0 ? "Unassigned" : users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "")">
+        <MudSelectItem T="int?" Value="0">Unassigned</MudSelectItem>
+        @foreach (var u in users) { <MudSelectItem T="int?" Value="u.Id">@u.DisplayName</MudSelectItem> }
+    </MudSelect>
+    @if (labels.Count > 0)
+    {
+        <MudSelect T="int?" @bind-Value="filter.LabelId" @bind-Value:after="Load" Label="Group label" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   OuterClass="gi-select" ToStringFunc="@(id => labels.FirstOrDefault(l => l.Item.Id == id)?.Item.Name ?? "")">
+            @foreach (var l in labels) { <MudSelectItem T="int?" Value="l.Item.Id"><LabelChip Label="l.Item" /></MudSelectItem> }
+        </MudSelect>
+    }
+    @if (milestones.Count > 0)
+    {
+        <MudSelect T="int?" @bind-Value="filter.MilestoneId" @bind-Value:after="Load" Label="Group milestone" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   OuterClass="gi-select" ToStringFunc="@(id => milestones.FirstOrDefault(m => m.Item.Milestone.Id == id)?.Item.Milestone.Title ?? "")">
+            @foreach (var m in milestones) { <MudSelectItem T="int?" Value="m.Item.Milestone.Id">@m.Item.Milestone.Title</MudSelectItem> }
+        </MudSelect>
+    }
+    <MudSelect T="IssueType?" @bind-Value="filter.Type" @bind-Value:after="Load" Label="Type" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+               OuterClass="gi-select" ToStringFunc="@(t => t is { } v ? $"{v.Icon()} {v}" : "")">
+        @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem T="IssueType?" Value="t">@t.Icon() @t</MudSelectItem> }
+    </MudSelect>
+    <MudSelect T="string" @bind-Value="filter.Sort" @bind-Value:after="Load" Label="Sort" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+               OuterClass="gi-select" ToStringFunc="@(s => SortOptions.FirstOrDefault(o => o.Value == s).Name ?? s)">
+        @foreach (var s in SortOptions) { <MudSelectItem T="string" Value="s.Value">@s.Name</MudSelectItem> }
+    </MudSelect>
+</MudPaper>
+
+<MudPaper Outlined="true" Class="gi-list">
+    @if (loaded && issues.Count == 0)
+    {
+        <div class="gi-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" />
+            <div>No issues match these filters.</div>
+        </div>
+    }
+    @foreach (var i in issues.Take(Shown))
+    {
+        <IssueRow Issue="i" @key="i.Id" />
+    }
+    @if (issues.Count > Shown)
+    {
+        <div class="gi-more">
+            <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="() => shown += PageSize">Show more (@(issues.Count - Shown) left)</MudButton>
+        </div>
+    }
+</MudPaper>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Group Group { get; set; } = null!;
+
+    private const int PageSize = 50;
+    private static readonly (string Label, bool? Value)[] Tabs = [("Open", true), ("Closed", false), ("All", null)];
+    private static readonly (string Value, string Name)[] SortOptions =
+        [("updated", "Recently updated"), ("created", "Newest"), ("priority", "Priority"), ("due", "Due date")];
+
+    private IssueFilter filter = new();
+    private int? projectId;
+    private List<Issue> issues = [];
+    private List<ProjectSummary> projects = [];
+    private List<User> users = [];
+    private List<GroupOwned<Label>> labels = [];
+    private List<GroupOwned<MilestoneSummary>> milestones = [];
+    private bool loaded;
+    private int shown = PageSize;
+    private int Shown => Math.Min(shown, issues.Count);
+    private int? loadedGroup;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedGroup == Group.Id) return;
+        loadedGroup = Group.Id;
+        var ids = (await GroupSvc.ProjectIdsAsync(Group.Id)).ToHashSet();
+        projects = (await Issues.GetProjectsAsync()).Where(p => ids.Contains(p.Id)).ToList();
+        users = await Issues.GetUsersAsync();
+        labels = await GroupSvc.GetLabelsAsync(Group.Id);
+        milestones = await GroupSvc.GetMilestonesAsync(Group.Id);
+        await Load();
+    }
+
+    private async Task SetOpen(bool? open)
+    {
+        filter.Open = open;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        issues = await GroupSvc.GetIssuesAsync(Group.Id, filter, projectId);
+        shown = PageSize;
+        loaded = true;
+    }
+}

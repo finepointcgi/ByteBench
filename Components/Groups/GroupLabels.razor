@@ -1,0 +1,191 @@
+@* Group labels and milestones. Every project and subgroup below inherits them (read-only there). *@
+@inject GroupService GroupSvc
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+    Labels and milestones defined here can be used on issues in every project of this group and its subgroups.
+    @if (!canManage) { <span>Maintainers and Owners can manage them.</span> }
+</MudText>
+@if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3 gb-group-card">@error</MudAlert> }
+
+<MudPaper Outlined="true" Class="pa-5 mb-4 gb-group-card">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title">Labels</MudText>
+    @if (labels.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No group labels yet.</MudText> }
+    @foreach (var l in labels)
+    {
+        <div class="gb-group-row" @key="l.Item.Id">
+            @if (editLabel?.Id == l.Item.Id)
+            {
+                <input type="color" class="gb-color-input" aria-label="Label colour" @bind="editLabel.Color" />
+                <MudTextField T="string" @bind-Value="editLabel.Name" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="Label name" Class="flex-grow-0" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveLabel">Save</MudButton>
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => editLabel = null">Cancel</MudButton>
+            }
+            else
+            {
+                <LabelChip Label="l.Item" />
+                <span class="gb-group-row-main gb-group-meta">@(l.Inherited ? $"inherited from {l.OwnerPath}" : "")</span>
+                @if (canManage && !l.Inherited)
+                {
+                    <MudTooltip Text="Edit">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Edit label {l.Item.Name}")"
+                                       OnClick="() => editLabel = new Label { Id = l.Item.Id, Name = l.Item.Name, Color = l.Item.Color }" />
+                    </MudTooltip>
+                    <MudTooltip Text="Delete">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete label {l.Item.Name}")"
+                                       OnClick="() => DeleteLabel(l.Item)" />
+                    </MudTooltip>
+                }
+            }
+        </div>
+    }
+    @if (canManage)
+    {
+        <div class="gb-group-row">
+            <input type="color" class="gb-color-input" aria-label="New label colour" @bind="newLabelColor" />
+            <MudTextField T="string" Placeholder="New label name" @bind-Value="newLabelName" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          aria-label="New label name" Class="flex-grow-0" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@string.IsNullOrWhiteSpace(newLabelName)" OnClick="AddLabel">Add label</MudButton>
+        </div>
+    }
+</MudPaper>
+
+<MudPaper Outlined="true" Class="pa-5 mb-4 gb-group-card">
+    <div class="d-flex align-center justify-space-between mb-2">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title">Milestones</MudText>
+        @if (canManage && editing == null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="() => editing = new Milestone { StartDate = DateTime.Today, DueDate = DateTime.Today.AddDays(30) }">New milestone</MudButton>
+        }
+    </div>
+    @if (editing != null)
+    {
+        <MudGrid Spacing="2" Class="mb-2">
+            <MudItem xs="12" md="4">
+                <MudTextField T="string" @bind-Value="editing.Title" Label="Title" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudDatePicker @bind-Date="editing.StartDate" Label="Start" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" DateFormat="yyyy-MM-dd" />
+            </MudItem>
+            <MudItem xs="6" md="2">
+                <MudDatePicker @bind-Date="editing.DueDate" Label="Due" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" DateFormat="yyyy-MM-dd" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField T="string" @bind-Value="editing.Description" Label="Description" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+        <div class="d-flex gap-2 mb-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(editing.Title)" OnClick="SaveMilestone">@(editing.Id == 0 ? "Create" : "Save")</MudButton>
+            <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => editing = null">Cancel</MudButton>
+        </div>
+    }
+    @if (milestones.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No group milestones yet.</MudText> }
+    @foreach (var ms in milestones)
+    {
+        var m = ms.Item.Milestone;
+        <div class="gb-group-row" @key="m.Id">
+            <MudIcon Icon="@Icons.Material.Outlined.Flag" Size="Size.Small" />
+            <div class="gb-group-row-main">
+                <div>
+                    <b>@m.Title</b>
+                    @if (m.IsClosed) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0 ml-1">Closed</MudChip> }
+                </div>
+                <div class="gb-group-meta">
+                    @(m.DueDate?.ToString("MMM d, yyyy") ?? "No due date") · @ms.Item.Percent% complete · @ms.Item.Open open · @ms.Item.Closed closed
+                    @if (ms.Inherited) { <span> · inherited from @ms.OwnerPath</span> }
+                </div>
+            </div>
+            @if (canManage && !ms.Inherited)
+            {
+                <MudTooltip Text="Edit">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Edit {m.Title}")" OnClick="() => EditMilestone(m)" />
+                </MudTooltip>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => ToggleClosed(m)">@(m.IsClosed ? "Reopen" : "Close")</MudButton>
+                <MudTooltip Text="Delete">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete {m.Title}")" OnClick="() => DeleteMilestone(m)" />
+                </MudTooltip>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Group Group { get; set; } = null!;
+    [Parameter] public GroupPermissions Perms { get; set; } = GroupPermissions.None;
+
+    private bool canManage => Perms.Can(GroupPermission.ManageGroupLabelsAndMilestones);
+    private List<GroupOwned<Label>> labels = [];
+    private List<GroupOwned<MilestoneSummary>> milestones = [];
+    private Label? editLabel;
+    private Milestone? editing;
+    private string? newLabelName, error;
+    private string newLabelColor = RandomColor();
+
+    private static string RandomColor() => $"#{Random.Shared.Next(0x1000000):x6}";
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        labels = await GroupSvc.GetLabelsAsync(Group.Id);
+        milestones = await GroupSvc.GetMilestonesAsync(Group.Id);
+    }
+
+    private async Task<bool> Try(Func<Task> action, string? success = null)
+    {
+        error = null;
+        try
+        {
+            await action();
+            if (success != null) Snackbar.Add(success, Severity.Success);
+            await Load();
+            return true;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; return false; }
+    }
+
+    private async Task AddLabel()
+    {
+        if (await Try(() => GroupSvc.SaveLabelAsync(Group.Id, 0, newLabelName!, newLabelColor), $"Label \"{newLabelName!.Trim()}\" added."))
+        {
+            newLabelName = null;
+            newLabelColor = RandomColor();
+        }
+    }
+
+    private async Task SaveLabel()
+    {
+        if (await Try(() => GroupSvc.SaveLabelAsync(Group.Id, editLabel!.Id, editLabel.Name, editLabel.Color), "Label saved.")) editLabel = null;
+    }
+
+    private async Task DeleteLabel(Label l)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete label?", $"Delete the group label \"{l.Name}\"? It will be removed from issues in every project of this group.")) return;
+        await Try(() => GroupSvc.DeleteLabelAsync(Group.Id, l.Id), "Label deleted.");
+    }
+
+    private void EditMilestone(Milestone m) => editing = new Milestone
+    {
+        Id = m.Id, Title = m.Title, Description = m.Description, StartDate = m.StartDate, DueDate = m.DueDate, IsClosed = m.IsClosed,
+    };
+
+    private async Task SaveMilestone()
+    {
+        if (await Try(() => GroupSvc.SaveMilestoneAsync(Group.Id, editing!), "Milestone saved.")) editing = null;
+    }
+
+    private async Task ToggleClosed(Milestone m)
+    {
+        var copy = new Milestone { Id = m.Id, Title = m.Title, Description = m.Description, StartDate = m.StartDate, DueDate = m.DueDate, IsClosed = !m.IsClosed };
+        await Try(() => GroupSvc.SaveMilestoneAsync(Group.Id, copy), m.IsClosed ? "Milestone reopened." : "Milestone closed.");
+    }
+
+    private async Task DeleteMilestone(Milestone m)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete milestone?", $"Delete the group milestone \"{m.Title}\"? Issues in it keep existing but lose the milestone.")) return;
+        await Try(() => GroupSvc.DeleteMilestoneAsync(Group.Id, m.Id), "Milestone deleted.");
+    }
+}
