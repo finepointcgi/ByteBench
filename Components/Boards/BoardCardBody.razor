@@ -1,0 +1,34 @@
+@* The inside of a board card: title plus the fields the board shows (Board.CardFields). The page owns the drag wrapper. *@
+<a class="board-card-title" href="/p/@ProjectKey/issues/@Issue.Number" draggable="false">@Issue.Title</a>
+@if (Has(BoardCardFields.Epic) && Epic != null)
+{
+    <a class="board-card-epic" href="/p/@Epic.Key[..Epic.Key.LastIndexOf('-')]/issues/@Epic.Key[(Epic.Key.LastIndexOf('-') + 1)..]" title="Epic: @Epic.Title" draggable="false">⚡ @Epic.Title</a>
+}
+@if (Has(BoardCardFields.Labels) && Issue.Labels.Count > 0)
+{
+    <div class="board-card-labels">
+        @foreach (var l in Issue.Labels) { <LabelChip Label="l" /> }
+    </div>
+}
+<div class="board-card-foot">
+    @if (Has(BoardCardFields.Type)) { <span title="@Issue.Type">@Issue.Type.Icon()</span> }
+    @if (Has(BoardCardFields.Key)) { <span class="mono board-key">@Issue.Key</span> }
+    @if (Has(BoardCardFields.LinkedWork)) { <GitBench.Components.LinkedWork.IssueWorkChips Issue="Issue" Links Compact /> }
+    @if (Has(BoardCardFields.Priority)) { <PriorityIcon Priority="Issue.Priority" /> }
+    @if (Has(BoardCardFields.StoryPoints) && Issue.StoryPoints is { } sp) { <span class="board-points" title="Story points">@sp</span> }
+    @if (Has(BoardCardFields.DueDate) && Issue.DueDate is { } due)
+    {
+        <span class="board-due @(due.Date < DateTime.UtcNow.Date && Issue.Status != IssueStatus.Done ? "overdue" : "")" title="Due date">📅 @due.ToString("MMM d")</span>
+    }
+    @if (Has(BoardCardFields.Milestone) && Issue.Milestone is { } m) { <span class="board-milestone" title="Milestone">🏁 @m.Title</span> }
+    @if (Has(BoardCardFields.Assignee)) { <span class="board-assignee"><Avatar User="Issue.Assignee" Size="22" /></span> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public BoardCardFields Fields { get; set; } = BoardCardFields.Default;
+    [Parameter] public EpicRef? Epic { get; set; }
+
+    private bool Has(BoardCardFields f) => (Fields & f) == f;
+}

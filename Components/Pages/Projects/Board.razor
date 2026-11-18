@@ -1,29 +1,69 @@
 @page "/p/{Key}/board"
+@page "/p/{Key}/boards/{BoardId:int}"
+@using GitBench.Services.Boards
+@using GitBench.Components.Boards
+@using BoardEntity = GitBench.Data.Board
 @inject IssueService Issues
+@inject BoardService Boards
 @inject CurrentUser Me
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
-@inject WorkflowService Workflows
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
 
-<PageTitle>Board · @project?.Name</PageTitle>
+<PageTitle>@(board?.Name ?? "Board") · @project?.Name</PageTitle>
 
 @if (notFound)
 {
     <ProjectNotFound />
 }
-else if (project != null)
+else if (project != null && board == null && boardMissing)
+{
+    <MudAlert Severity="Severity.Warning" Class="mt-4">
+        That board doesn't exist (it may have been deleted). <MudLink Href="@($"/p/{project.Key}/board")">Open the default board</MudLink>.
+    </MudAlert>
+}
+else if (project != null && board != null && data != null)
 {
     <div class="gb-board-page">
-        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-4">
-            <div>
-                <MudText Typo="Typo.h5" Class="board-heading">Board</MudText>
-                <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name</MudText>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-3">
+            <div class="d-flex align-center gap-1">
+                <div>
+                    <div class="d-flex align-center gap-2">
+                        <MudText Typo="Typo.h5" HtmlTag="h1" Class="board-heading">@board.Name</MudText>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="board-type-chip">@board.Type</MudChip>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        @project.Name
+                        @if (board.Type == BoardType.Scrum && data.Sprint is { } sp) { <span> · 🏃 @sp.Name@(sp.EndDate is { } end ? $" (ends {end:MMM d})" : "")</span> }
+                    </MudText>
+                </div>
+                <MudMenu Icon="@Icons.Material.Filled.ArrowDropDown" AriaLabel="Switch board" Dense="true" MaxHeight="420" Class="board-switcher"
+                         AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft">
+                    <div class="bulk-menu-group">Boards</div>
+                    @foreach (var b in boards)
+                    {
+                        <MudMenuItem Href="@BoardHref(b)" Icon="@(b.Id == board.Id ? Icons.Material.Filled.Check : null)">
+                            @b.Name@(b.IsDefault ? " · default" : "") <span class="mud-text-secondary">(@b.Type)</span>
+                        </MudMenuItem>
+                    }
+                    @if (canManage)
+                    {
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Filled.Add" OnClick="CreateBoard">Create board</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Outlined.Settings" Href="@($"/p/{project.Key}/boards/{board.Id}/settings")">Board settings</MudMenuItem>
+                    }
+                </MudMenu>
             </div>
             <div class="board-filters">
-                <div class="board-filter">
-                    <BoardSprintSelect ProjectId="project.Id" @bind-SprintId="sprintId" />
-                </div>
+                @if (board.Type == BoardType.Kanban)
+                {
+                    <div class="board-filter">
+                        <BoardSprintSelect @key="board.Id" ProjectId="project.Id" DefaultToActive="board.StartOnActiveSprint" @bind-SprintId="sprintId" />
+                    </div>
+                }
                 <div class="board-filter">
                     <MudSelect T="int" Value="@(milestoneId ?? 0)" ValueChanged="SetMilestone" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
                                aria-label="Milestone">
@@ -32,9 +72,10 @@ else if (project != null)
                     </MudSelect>
                 </div>
                 <div class="board-filter">
-                    <MudSelect T="int" Value="@(assigneeId ?? 0)" ValueChanged="SetAssignee" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                    <MudSelect T="int" Value="@(assigneeId ?? -1)" ValueChanged="SetAssignee" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
                                aria-label="Assignee">
-                        <MudSelectItem T="int" Value="0">Everyone</MudSelectItem>
+                        <MudSelectItem T="int" Value="-1">Everyone</MudSelectItem>
+                        <MudSelectItem T="int" Value="0">Unassigned</MudSelectItem>
                         @foreach (var u in users) { <MudSelectItem T="int" Value="@u.Id">@u.DisplayName</MudSelectItem> }
                     </MudSelect>
                 </div>
@@ -42,92 +83,169 @@ else if (project != null)
                     <MudTextField T="string" @bind-Value="search" Immediate="true" Placeholder="Filter cards…" Variant="Variant.Outlined" Margin="Margin.Dense"
                                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" aria-label="Filter cards" />
                 </div>
+                @if (canManage)
+                {
+                    <MudTooltip Text="Board settings">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Settings" Href="@($"/p/{project.Key}/boards/{board.Id}/settings")" aria-label="Board settings" />
+                    </MudTooltip>
+                }
             </div>
         </div>
 
-        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+        @if (board.QuickFilters.Count > 0)
+        {
+            <div class="board-quick" role="group" aria-label="Quick filters">
+                <span class="mud-text-secondary board-quick-label">Quick filters:</span>
+                @foreach (var q in board.QuickFilters.OrderBy(q => q.Order))
+                {
+                    var on = activeQuick.Contains(q.Id);
+                    <MudChip T="string" @key="q.Id" Size="Size.Small" Color="@(on ? Color.Primary : Color.Default)" Variant="@(on ? Variant.Filled : Variant.Outlined)"
+                             Icon="@(on ? Icons.Material.Filled.Check : null)" OnClick="() => ToggleQuick(q.Id)" title="@q.Query" aria-pressed="@(on ? "true" : "false")">@q.Name</MudChip>
+                }
+                @if (activeQuick.Count > 0) { <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="ClearQuick">Clear</MudButton> }
+            </div>
+        }
+
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => error = null">@error</MudAlert> }
         @if (warning != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@warning</MudAlert> }
-        <div class="board" style="grid-template-columns: repeat(@Math.Max(workflow.Statuses.Count, 1), minmax(220px, 1fr))">
-            @foreach (var status in workflow.Statuses)
-            {
-                var col = Visible.Where(i => workflow.Effective(i)?.Id == status.Id).ToList();
-                var allowed = CanDropOn(status);
-                @* Columns the workflow doesn't allow the dragged card to move to don't accept the drop. *@
-                <div class="board-col @(dragOverStatus == status.Id && allowed ? "drag-over" : "") @(allowed ? "" : "drop-disabled")"
-                     @ondragover:preventDefault="allowed"
-                     @ondragenter="() => dragOverStatus = status.Id"
-                     @ondrop="() => Drop(status, null)">
-                    <div class="board-col-head" title="@status.Category.Name()">
-                        <span class="status-dot" style="background:@status.Color"></span>
-                        <span class="board-col-name">@status.Name</span>
-                        <span class="board-count" title="Issues">@col.Count</span>
-                        <span class="board-col-pts" title="Story points">@col.Sum(i => i.StoryPoints ?? 0) pts</span>
-                    </div>
-                    <div class="board-cards">
-                        @foreach (var i in col)
+        @if (board.Type == BoardType.Scrum && data.Sprint == null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                This Scrum board shows the active sprint, and there is none. Start one from the <MudLink Href="@($"/p/{project.Key}/backlog")">backlog</MudLink>.
+            </MudAlert>
+        }
+
+        @{
+            // Only issues some column shows (not those in unmapped statuses), so lane counts match the cards.
+            var onBoard = Visible.Where(i => BoardLayout.ColumnOf(data.Columns, data.Workflow, i) != null).ToList();
+            var lanes = BoardLayout.Lanes(onBoard, board.Swimlane, data.Epics);
+            var showLanes = board.Swimlane != BoardSwimlane.None;
+            var grid = $"grid-template-columns: repeat({Math.Max(data.Columns.Count, 1)}, minmax(220px, 1fr))";
+            var allByColumn = BoardLayout.Group(data.Columns, data.Workflow, Visible);
+        }
+        <div class="board-scroll">
+            <div class="board-grid" style="@grid">
+                @foreach (var col in data.Columns)
+                {
+                    var over = data.IsOverWip(col);
+                    var shown = allByColumn[col.Key];
+                    <div class="board-col-head @(over ? "wip-over" : "")" @key="@("h" + col.Key)" title="@string.Join(", ", col.Statuses.Select(s => s.Name))">
+                        <span class="status-dots">@foreach (var s in col.Statuses) { <span class="status-dot" style="background:@s.Color"></span> }</span>
+                        <span class="board-col-name">@col.Name</span>
+                        <span class="board-count" title="Issues">@shown.Count</span>
+                        @if (col.WipLimit is { } wip)
                         {
-                            <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="@(canEdit ? "true" : "false")" @key="i.Id"
-                                 @ondragstart="() => dragging = i"
-                                 @ondragend="() => { dragging = null; dragOverStatus = null; }"
-                                 @ondrop="() => Drop(status, i.Id)" @ondrop:stopPropagation>
-                                <a class="board-card-title" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Title</a>
-                                @if (i.Labels.Count > 0)
-                                {
-                                    <div class="board-card-labels">
-                                        @foreach (var l in i.Labels) { <LabelChip Label="l" /> }
-                                    </div>
-                                }
-                                <div class="board-card-foot">
-                                    <span title="@i.Type">@i.Type.Icon()</span>
-                                    <span class="mono board-key">@i.Key</span>
-                                    <GitBench.Components.LinkedWork.IssueWorkChips Issue="i" Links Compact />
-                                    <PriorityIcon Priority="i.Priority" />
-                                    @if (i.StoryPoints is { } sp) { <span class="board-points" title="Story points">@sp</span> }
-                                    <span class="board-assignee"><Avatar User="i.Assignee" Size="22" /></span>
+                            <span class="board-wip @(over ? "over" : "")" title="@($"WIP limit {wip}: {data.ScopeCounts.GetValueOrDefault(col.Key)} on the board{(board.BlockOverWip ? "; drops past the limit are refused" : "")}")">
+                                @data.ScopeCounts.GetValueOrDefault(col.Key)/@wip
+                            </span>
+                        }
+                        <span class="board-col-pts" title="Story points">@shown.Sum(i => i.StoryPoints ?? 0) pts</span>
+                    </div>
+                }
+                @foreach (var lane in lanes)
+                {
+                    var byCol = BoardLayout.Group(data.Columns, data.Workflow, lane.Issues);
+                    @if (showLanes)
+                    {
+                        <div class="board-lane-head" @key="@("l" + lane.Key)">
+                            @if (lane.Assignee != null) { <Avatar User="lane.Assignee" Size="20" /> }
+                            <span>@lane.Title</span>
+                            <span class="board-count">@lane.Issues.Count</span>
+                        </div>
+                    }
+                    @foreach (var col in data.Columns)
+                    {
+                        var cards = byCol[col.Key];
+                        var allowed = CanDropOn(col);
+                        var cellKey = lane.Key + "|" + col.Key;
+                        @* Columns the workflow (or a full WIP limit) won't let the dragged card into don't accept the drop. *@
+                        <div class="board-cell @(dragOver == cellKey && allowed ? "drag-over" : "") @(allowed ? "" : "drop-disabled") @(data.IsOverWip(col) ? "wip-over" : "") @(showLanes ? "laned" : "")"
+                             @key="@("c" + cellKey)"
+                             @ondragover:preventDefault="allowed"
+                             @ondragenter="() => dragOver = cellKey"
+                             @ondrop="() => Drop(col, null)">
+                            @foreach (var i in cards)
+                            {
+                                <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="@(canEdit ? "true" : "false")" @key="i.Id"
+                                     @ondragstart="() => dragging = i"
+                                     @ondragend="() => { dragging = null; dragOver = null; }"
+                                     @ondrop="() => Drop(col, i.Id)" @ondrop:stopPropagation>
+                                    <BoardCardBody Issue="i" ProjectKey="@project.Key" Fields="board.CardFields" Epic="@data.Epics.GetValueOrDefault(i.Id)" />
                                 </div>
-                            </div>
-                        }
-                        @if (col.Count == 0)
-                        {
-                            <div class="board-empty">Drop issues here</div>
-                        }
-                    </div>
-                </div>
-            }
+                            }
+                            @if (cards.Count == 0 && !showLanes)
+                            {
+                                <div class="board-empty">Drop issues here</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
         </div>
+        @if (data.Columns.Count == 0)
+        {
+            <MudText Class="mud-text-secondary">This board has no columns. @(canManage ? "Add some in its settings." : "")</MudText>
+        }
+        else if (unmapped.Count > 0 && canManage)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">
+                Not on this board: issues in @string.Join(", ", unmapped.Select(s => s.Name)) (no column shows @(unmapped.Count == 1 ? "that status" : "those statuses")).
+            </MudText>
+        }
     </div>
 }
 
 @code {
     [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int? BoardId { get; set; }
 
     private Project? project;
-    private bool notFound, canEdit;
+    private BoardEntity? board;
+    private BoardData? data;
+    private List<BoardEntity> boards = [];
+    private List<WorkflowStatus> unmapped = [];
+    private bool notFound, boardMissing, canEdit, canManage;
     private string? error, warning;
     private List<User> users = [];
-    private List<Issue> issues = [];
     private int? milestoneId, assigneeId;
     private string? search;
     private Issue? dragging;
-    private int? dragOverStatus;
-    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private string? dragOver;
+    private HashSet<int> activeQuick = [];
+    private int? sprintId; // Kanban: set by BoardSprintSelect (maybe defaulting to the active sprint); null = all issues
+    private int? shownBoardId;
 
-    /// <summary>While dragging: whether the workflow lets the dragged issue move to <paramref name="status"/>.</summary>
-    private bool CanDropOn(WorkflowStatus status) => dragging == null || workflow.IsAllowed(workflow.Effective(dragging)?.Id, status.Id);
+    private IEnumerable<Issue> Visible
+    {
+        get
+        {
+            IEnumerable<Issue> list = data?.Issues ?? [];
+            if (board?.Type == BoardType.Kanban && sprintId is { } sid) list = list.Where(i => i.SprintId == sid);
+            if (!string.IsNullOrWhiteSpace(search))
+                list = list.Where(i => i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) || i.Key.Contains(search, StringComparison.OrdinalIgnoreCase));
+            return list;
+        }
+    }
 
-    private int? sprintId; // set by BoardSprintSelect (defaults to the active sprint); null = all issues
-    private IEnumerable<Issue> SprintIssues => sprintId is { } sid ? issues.Where(i => i.SprintId == sid) : issues;
+    private string BoardHref(BoardEntity b) => b.IsDefault ? $"/p/{project!.Key}/board" : $"/p/{project!.Key}/boards/{b.Id}";
 
-    private IEnumerable<Issue> Visible => string.IsNullOrWhiteSpace(search)
-        ? SprintIssues
-        : SprintIssues.Where(i => i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) || i.Key.Contains(search, StringComparison.OrdinalIgnoreCase));
+    /// <summary>While dragging: whether the card can go to <paramref name="col"/> (workflow transitions, and a blocking WIP limit).</summary>
+    private bool CanDropOn(BoardColumnView col)
+    {
+        if (dragging == null || data == null || board == null) return true;
+        if (BoardLayout.DropTarget(col, data.Workflow, dragging) == null) return false;
+        var alreadyIn = col.Contains(data.Workflow.Effective(dragging)?.Id);
+        return !(board.BlockOverWip && BoardLayout.WouldExceedWip(col, data.ScopeCounts.GetValueOrDefault(col.Key), alreadyIn));
+    }
 
     protected override async Task OnParametersSetAsync()
     {
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (project == null) return;
-        canEdit = await Access.CanAsync(project.Id, Permission.EditIssues);
+        var perms = await Access.GetPermissionsAsync(project.Id);
+        canEdit = perms.Can(Permission.EditIssues);
+        canManage = perms.Role >= ProjectRole.Maintainer;
         users = await Issues.GetUsersAsync();
         await Load();
     }
@@ -135,8 +253,21 @@ else if (project != null)
     private async Task Load()
     {
         if (project == null) return;
-        workflow = await Workflows.GetAsync(project.Id);
-        issues = await Issues.GetBoardAsync(project.Id, milestoneId, assigneeId);
+        boards = await Boards.GetBoardsAsync(project.Id);
+        board = await Boards.GetBoardAsync(project.Id, BoardId);
+        boardMissing = board == null;
+        if (board == null) { data = null; return; }
+        if (shownBoardId != board.Id)
+        {
+            // Another board: start over with its own defaults.
+            shownBoardId = board.Id;
+            sprintId = null;
+            activeQuick = [];
+            error = warning = null;
+        }
+        activeQuick.IntersectWith(board.QuickFilters.Select(q => q.Id));
+        data = await Boards.GetDataAsync(board, new BoardViewOptions { MilestoneId = milestoneId, AssigneeId = assigneeId, QuickFilterIds = activeQuick });
+        unmapped = BoardLayout.UnmappedStatuses(data.Columns, data.Workflow);
     }
 
     private async Task SetMilestone(int id)
@@ -147,11 +278,36 @@ else if (project != null)
 
     private async Task SetAssignee(int id)
     {
-        assigneeId = id == 0 ? null : id;
+        assigneeId = id < 0 ? null : id;
         await Load();
     }
 
-    // ----- Live updates: another user moved, created or edited a card in this project -----
+    private async Task ToggleQuick(int id)
+    {
+        if (!activeQuick.Remove(id)) activeQuick.Add(id);
+        await Load();
+    }
+
+    private async Task ClearQuick()
+    {
+        activeQuick.Clear();
+        await Load();
+    }
+
+    private async Task CreateBoard()
+    {
+        var dialog = await Dialogs.ShowAsync<NewBoardDialog>("Create board", new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is not { Canceled: false, Data: NewBoardDialog.Result r } || project == null) return;
+        try
+        {
+            var created = await Boards.CreateBoardAsync(project.Id, r.Name, r.Type);
+            Snackbar.Add($"Board \"{created.Name}\" created.", Severity.Success);
+            Nav.NavigateTo($"/p/{project.Key}/boards/{created.Id}/settings");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    // ----- Live updates: another user moved, created or edited a card, or changed the workflow or this board -----
     private IDisposable? liveSubscription;
 
     protected override void OnAfterRender(bool firstRender)
@@ -167,23 +323,25 @@ else if (project != null)
 
     public void Dispose() => liveSubscription?.Dispose();
 
-    private async Task Drop(WorkflowStatus status, int? beforeId)
+    private async Task Drop(BoardColumnView col, int? beforeId)
     {
         var moved = dragging;
-        var allowed = CanDropOn(status);
+        var allowed = CanDropOn(col);
         dragging = null;
-        dragOverStatus = null;
-        if (moved == null || moved.Id == beforeId || !allowed) return;
+        dragOver = null;
+        if (moved == null || moved.Id == beforeId || !allowed || data == null || board == null) return;
+        var target = BoardLayout.DropTarget(col, data.Workflow, moved);
+        if (target == null) return;
 
-        // Optimistic local reorder so the UI responds instantly.
-        issues.Remove(moved);
-        warning = moved.WorkflowStatusId == status.Id ? null : HierarchyRules.BlockedMoveWarning(moved.Key, status.Category, moved.Work?.BlockedBy ?? []);
-        (moved.Status, moved.WorkflowStatusId, moved.WorkflowStatus) = (status.Category, status.Id, status);
-        var idx = beforeId is { } b ? issues.FindIndex(x => x.Id == b) : -1;
-        if (idx < 0) issues.Add(moved); else issues.Insert(idx, moved);
+        // Optimistic local move so the UI responds instantly.
+        data.Issues.Remove(moved);
+        warning = moved.WorkflowStatusId == target.Id ? null : HierarchyRules.BlockedMoveWarning(moved.Key, target.Category, moved.Work?.BlockedBy ?? []);
+        (moved.Status, moved.WorkflowStatusId, moved.WorkflowStatus) = (target.Category, target.Id, target);
+        var idx = beforeId is { } b ? data.Issues.FindIndex(x => x.Id == b) : -1;
+        if (idx < 0) data.Issues.Add(moved); else data.Issues.Insert(idx, moved);
 
         error = null;
-        try { await Issues.MoveOnBoardAsync(moved.Id, status.Id, beforeId, Me.Id); }
+        try { await Boards.MoveAsync(board.Id, moved.Id, col.Key, beforeId, Me.Id); }
         catch (InvalidOperationException ex) { error = ex.Message; }
         await Load();
     }

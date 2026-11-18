@@ -72,6 +72,8 @@
         ("GET", "/projects/{key}/milestones", "Milestones"),
         ("GET", "/projects/{key}/sprints", "Sprints (?state=); issues of one: /issues?sprint={id}&status=all"),
         ("GET", "/projects/{key}/sprints/{id}", "A sprint with counts and points"),
+        ("GET", "/projects/{key}/boards", "Boards, the default board first"),
+        ("GET", "/projects/{key}/boards/{id}", "A board's columns (statuses, WIP limit, issues); ?quickFilters=1,2"),
         ("GET", "/projects/{key}/repos", "Repositories"),
         ("GET", "/projects/{key}/repos/{slug}", "A repository"),
         ("GET", "/projects/{key}/repos/{slug}/branches", "Branches"),

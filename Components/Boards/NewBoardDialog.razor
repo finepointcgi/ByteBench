@@ -1,0 +1,38 @@
+@* "Create board" dialog: name and type. Returns DialogResult.Ok(NewBoardDialog.Result). *@
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">Create board</MudText></TitleContent>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="name" Immediate="true" Label="Name" MaxLength="80" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      AutoFocus="true" ShrinkLabel="true" OnKeyDown="KeyDown" Class="mb-4" />
+        <MudRadioGroup T="BoardType" @bind-Value="type">
+            <div><MudRadio Value="BoardType.Kanban" Color="Color.Primary"><b>Kanban</b> <span class="mud-text-secondary">· open issues, plus Done issues of the last @BoardService.DefaultKanbanDoneDays days</span></MudRadio></div>
+            <div><MudRadio Value="BoardType.Scrum" Color="Color.Primary"><b>Scrum</b> <span class="mud-text-secondary">· the issues of the active sprint</span></MudRadio></div>
+        </MudRadioGroup>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3">
+            The new board has one column per workflow status. Change its columns, filter and swimlanes in its settings.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(name)" OnClick="Create">Create</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public sealed record Result(string Name, BoardType Type);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private string? name;
+    private BoardType type = BoardType.Kanban;
+
+    private void Create()
+    {
+        if (!string.IsNullOrWhiteSpace(name)) MudDialog.Close(DialogResult.Ok(new Result(name.Trim(), type)));
+    }
+
+    private void KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Create();
+    }
+}

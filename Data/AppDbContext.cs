@@ -302,6 +302,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureGroups(b);
         ConfigurePrFeatures(b);
         ConfigureSsh(b);
+        ConfigureBoards(b);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
@@ -310,5 +311,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequestComment>().HasOne<PullRequestComment>().WithMany().HasForeignKey(c => c.ParentId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestComment>().HasIndex(c => c.ParentId);
         b.Entity<PullRequestComment>().HasOne(c => c.ResolvedBy).WithMany().HasForeignKey(c => c.ResolvedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
+    // ----- Boards -----
+    public DbSet<Board> Boards => Set<Board>();
+    public DbSet<BoardColumn> BoardColumns => Set<BoardColumn>();
+    public DbSet<BoardQuickFilter> BoardQuickFilters => Set<BoardQuickFilter>();
+
+    private static void ConfigureBoards(ModelBuilder b)
+    {
+        b.Entity<Board>().HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        // One default board per project, enforced by the database too (so a lazy-creation race can't make two).
+        b.Entity<Board>().HasIndex(x => x.ProjectId, "IX_Boards_OneDefaultPerProject").IsUnique().HasFilter("\"IsDefault\" = 1");
+        b.Entity<BoardColumn>().HasOne<Board>().WithMany(x => x.Columns).HasForeignKey(c => c.BoardId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<BoardQuickFilter>().HasOne<Board>().WithMany(x => x.QuickFilters).HasForeignKey(q => q.BoardId).OnDelete(DeleteBehavior.Cascade);
     }
 }

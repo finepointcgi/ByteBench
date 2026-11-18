@@ -1,4 +1,4 @@
-@* Board filter: one sprint, or all issues. Defaults (once) to the active sprint when there is one. *@
+@* Board filter: one sprint, or all issues. Defaults (once) to the active sprint when there is one, unless DefaultToActive is false. *@
 @implements IDisposable
 @inject SprintService Sprints
 @inject LiveEvents Live
@@ -16,6 +16,7 @@
     [Parameter, EditorRequired] public int ProjectId { get; set; }
     [Parameter] public int? SprintId { get; set; }
     [Parameter] public EventCallback<int?> SprintIdChanged { get; set; }
+    [Parameter] public bool DefaultToActive { get; set; } = true;
 
     private List<Sprint> sprints = [];
     private int loadedFor;
@@ -26,7 +27,7 @@
         if (loadedFor == ProjectId) return;
         loadedFor = ProjectId;
         await LoadAsync();
-        if (sprints.FirstOrDefault(s => s.State == SprintState.Active) is { } active && SprintId == null)
+        if (sprints.FirstOrDefault(s => s.State == SprintState.Active) is { } active && SprintId == null && DefaultToActive)
             await SprintIdChanged.InvokeAsync(active.Id);
     }
 

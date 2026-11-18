@@ -1078,3 +1078,92 @@ public class SshKey
     public bool IsDeployKey => RepositoryId != null;
     public bool IsExpired(DateTime utcNow) => ExpiresAt != null && ExpiresAt <= utcNow;
 }
+
+// ----- Boards -----
+
+public enum BoardType { Kanban, Scrum }
+
+/// <summary>How a board groups its cards into horizontal lanes.</summary>
+public enum BoardSwimlane { None, Assignee, Epic, Priority, Type }
+
+/// <summary>What a board card shows besides its title.</summary>
+[Flags]
+public enum BoardCardFields
+{
+    None = 0,
+    Key = 1,
+    Type = 2,
+    Labels = 4,
+    Priority = 8,
+    StoryPoints = 16,
+    Assignee = 32,
+    /// <summary>Parent key, sub-task progress and the blocked flag.</summary>
+    LinkedWork = 64,
+    Epic = 128,
+    DueDate = 256,
+    Milestone = 512,
+    /// <summary>What the board showed before boards were configurable.</summary>
+    Default = Key | Type | Labels | Priority | StoryPoints | Assignee | LinkedWork,
+}
+
+/// <summary>
+/// One of a project's boards (see <see cref="GitBench.Services.BoardService"/>). Every project has exactly one
+/// <see cref="IsDefault"/> board, created lazily, which is what <c>/p/{KEY}/board</c> opens.
+/// </summary>
+public class Board
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public Project Project { get; set; } = null!;
+    [Required, MaxLength(80)] public string Name { get; set; } = "";
+    public BoardType Type { get; set; } = BoardType.Kanban;
+    public bool IsDefault { get; set; }
+    /// <summary>
+    /// True: the columns are the project's workflow statuses, one each, always in step with the workflow (no rows in
+    /// <see cref="Columns"/>). Editing the columns turns this off.
+    /// </summary>
+    public bool FollowsWorkflow { get; set; }
+
+    /// <summary>Issue list query string (<see cref="GitBench.Services.IssueFilterQuery"/>) limiting the board's issues; null = all.</summary>
+    [MaxLength(2000)] public string? FilterQuery { get; set; }
+    /// <summary>Simple filter fields, applied on top of <see cref="FilterQuery"/>. Labels: issues with any of them.</summary>
+    public List<int> FilterLabelIds { get; set; } = [];
+    public int? FilterAssigneeId { get; set; }
+    public IssueType? FilterType { get; set; }
+    public int? FilterEpicId { get; set; }
+
+    public BoardSwimlane Swimlane { get; set; }
+    public BoardCardFields CardFields { get; set; } = BoardCardFields.Default;
+    /// <summary>Refuse drops that would take a column past its WIP limit (otherwise the column only turns red).</summary>
+    public bool BlockOverWip { get; set; }
+    /// <summary>Kanban: Done-category issues only show if closed in the last this many days; null = all of them.</summary>
+    public int? DoneDays { get; set; }
+    /// <summary>Kanban: the sprint picker starts on the active sprint (the classic board does); otherwise on all issues.</summary>
+    public bool StartOnActiveSprint { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public List<BoardColumn> Columns { get; set; } = [];
+    public List<BoardQuickFilter> QuickFilters { get; set; } = [];
+}
+
+/// <summary>A board column: one or more workflow statuses, an optional WIP limit.</summary>
+public class BoardColumn
+{
+    public int Id { get; set; }
+    public int BoardId { get; set; }
+    [Required, MaxLength(40)] public string Name { get; set; } = "";
+    public int Order { get; set; }
+    public int? WipLimit { get; set; }
+    /// <summary>Workflow status ids, in drop preference order. Ids of deleted statuses are ignored.</summary>
+    public List<int> StatusIds { get; set; } = [];
+}
+
+/// <summary>A named toggle chip on a board: an issue list query string (<c>assigneeId=me</c> means the viewer).</summary>
+public class BoardQuickFilter
+{
+    public int Id { get; set; }
+    public int BoardId { get; set; }
+    [Required, MaxLength(40)] public string Name { get; set; } = "";
+    [Required, MaxLength(2000)] public string Query { get; set; } = "";
+    public int Order { get; set; }
+}

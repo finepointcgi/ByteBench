@@ -128,7 +128,7 @@ GitLab-style namespaces that own projects (`Group`, `GroupMember`, `GroupRedirec
 - **Projects** with a short key (`WEB`), and issues numbered per project (`WEB-12`)
 - **Issues** with type (task, bug, feature, story, epic), status, priority, assignee, labels, milestone, story points and due date
 - **Issue list** with open/closed tabs, search (including by key), filters and sorting
-- **Kanban board** with drag-and-drop between and within columns, filtered by sprint or assignee
+- **Boards**: several Kanban and Scrum boards per project, with configurable columns, WIP limits, filters, swimlanes, quick filters and card fields (see [Boards](#boards))
 - **Issue detail** with inline editing, Markdown descriptions and comments (Write/Preview), and an activity timeline
 - **Milestones** with progress and story-point burn-up
 - **Sprints**: backlog planning, start/complete, burndown and velocity reports (see [Sprints](#sprints))
@@ -154,6 +154,26 @@ Scrum-style sprints per project (`Sprint` in `Data/Models.cs`, `Issue.SprintId`;
 - **Live updates:** sprint changes publish `SprintChanged` (plus `BoardChanged`, and `IssueChanged` for moved issues), so open backlogs, boards, reports and issue pages refresh. Moving an issue also fires the `issue.updated` webhook with the activity text.
 - **API:** `GET /api/v1/projects/{key}/sprints` (`?state=`) and `/sprints/{id}`; issues carry `sprintId` and can be filtered with `?sprint={id}`, `none` or `active`.
 - **Seed:** WEB has six completed sprints, an active one (WEB Sprint 7) and a planned one, with backdated activity so the charts have data (`Data/SprintSeeder.cs`; runs once, on a database whose WEB project has no sprints).
+
+## Boards
+
+Each project can have several boards (`Board`, `BoardColumn`, `BoardQuickFilter` in `Data/Models.cs`; logic in `Services/Boards/BoardService.cs`, with the pure rules in `Services/Boards/BoardLayout.cs`).
+
+- **Default board:** every project has exactly one default board (a filtered unique index, `IX_Boards_OneDefaultPerProject`, enforces it), created lazily the first time the project's boards are read. It is the classic board: it *follows the workflow* (one column per workflow status, in workflow order, updated when the workflow changes), shows every issue including all Done ones, and its sprint picker starts on the active sprint. `/p/{KEY}/board` opens it; other boards are at `/p/{KEY}/boards/{id}`. **Make default board** in a board's settings moves the flag; the default board can't be deleted.
+- **Switcher:** the ▾ next to the board name lists the project's boards, and (Maintainer+) **Create board** and **Board settings**.
+- **Types:**
+  - **Kanban:** every issue matching the board's filter, but Done-category issues only if closed in the last *N* days (`DoneDays`; 14 for new boards, empty = all). The toolbar's sprint picker narrows further (it starts on the active sprint if `StartOnActiveSprint` is set).
+  - **Scrum:** only the project's active sprint (`SprintService`); with no active sprint the board is empty and links to the backlog.
+- **Columns** map to one or more workflow statuses. A status can be in at most one column of a board; a status in no column is not on that board (the board and its settings list such statuses). Customizing the columns stops a board following the workflow; **Follow the workflow again** goes back.
+- **Drag and drop** goes through `BoardService.MoveAsync` → `IssueService.MoveOnBoardAsync`, so workflow transitions are enforced exactly as before. Dropping on a column that already shows the card's status just reorders it; otherwise the card moves to the column's first status (in the column's order) that the workflow allows. Columns that can't take the dragged card are hatched and refuse the drop. With swimlanes, dropping changes only the status, not the lane's field.
+- **WIP limits** (optional, per column) count the column's issues within the board's scope (filter and sprint), ignoring the toolbar and quick filters. A column over its limit turns red. With **Refuse drops that go past a column's WIP limit**, a full column refuses new cards (reordering within it still works).
+- **Filter:** a query string in the issue list's format (`Services/IssueFilterQuery.cs`; copy it from a filtered issue list or pick a saved filter), plus simple fields: labels (any of), assignee, type and epic. Unlike the issue list, a board query without `open=` includes closed issues. In board and quick filter queries, `assigneeId=me` means the person viewing the board.
+- **Quick filters:** named toggle chips above the board, each a query (suggestions: *Only my issues* `assigneeId=me`, *Bugs* `type=Bug`, …). Several active chips must all match.
+- **Swimlanes:** none, assignee (Unassigned last), epic (an issue's epic is its parent, or its grandparent for sub-tasks; *No epic* last), priority (highest first) or type.
+- **Card fields:** key, type, labels, priority, story points, assignee, parent/sub-tasks/blocked chips, epic, due date and milestone (the default board shows what the classic board did).
+- **Permissions:** viewing needs ViewProject; moving cards needs EditIssues; creating, configuring and deleting boards needs Maintainer+ (`ProjectAccess.RequireRoleAsync`). Board changes are audited (`board.*`) and publish `BoardChanged`, so open boards refresh, as they do when cards move or the workflow changes.
+- **API:** `GET /api/v1/projects/{key}/boards` (default first) and `GET /api/v1/projects/{key}/boards/{id}` (columns with statuses, WIP limit, scope count, over-limit flag and issues; `?quickFilters=1,2` applies quick filters). Move cards with `PATCH …/issues/{number}` (`workflowStatusId`).
+- **Tests:** `tests/GitBench.Tests/BoardTests.cs` (default board equals the classic board, column mapping, drop status choice and transitions, WIP limits, swimlanes, Scrum/Kanban scope, filters, permissions, API).
 
 ## Cloning & pushing
 

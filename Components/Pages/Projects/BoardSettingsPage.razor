@@ -1,0 +1,385 @@
+@page "/p/{Key}/boards/{BoardId:int}/settings"
+@using GitBench.Services.Boards
+@using GitBench.Components.Repositories
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject BoardService Boards
+@inject WorkflowService Workflows
+@inject SavedFilterService SavedFilters
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Board settings · @board?.Name</PageTitle>
+
+<div class="bs-page">
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && role < ProjectRole.Maintainer)
+{
+    <Forbidden Message="Only Maintainers and Owners can change boards." BackHref="@($"/p/{Key}/board")" />
+}
+else if (project != null && board == null)
+{
+    <MudAlert Severity="Severity.Warning" Class="mt-4">That board doesn't exist. <MudLink Href="@($"/p/{project.Key}/board")">Open the default board</MudLink>.</MudAlert>
+}
+else if (project != null && board != null)
+{
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Board settings</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name · @board.Name@(board.IsDefault ? " (default board)" : "")</MudText>
+        </div>
+        <MudButton Href="@BoardHref" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.ViewKanban">Open board</MudButton>
+    </div>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="bs-narrow mb-3" ShowCloseIcon="true" CloseIconClicked="() => error = null">@error</MudAlert> }
+
+    @* ----- General, filter and display ----- *@
+    <MudPaper Outlined="true" Class="bs-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="bs-title">General</MudText>
+        <div class="bs-row">
+            <MudTextField T="string" @bind-Value="s.Name" Label="Name" MaxLength="80" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Class="bs-field-wide" />
+            <MudSelect T="BoardType" @bind-Value="s.Type" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" OuterClass="bs-field" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem Value="BoardType.Kanban">Kanban</MudSelectItem>
+                <MudSelectItem Value="BoardType.Scrum">Scrum</MudSelectItem>
+            </MudSelect>
+        </div>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @if (s.Type == BoardType.Scrum)
+            {
+                <span>Scrum boards show the issues of the project's active sprint.</span>
+            }
+            else
+            {
+                <span>Kanban boards show every issue matching the filter; the sprint picker on the board narrows them further.</span>
+            }
+        </MudText>
+        @if (s.Type == BoardType.Kanban)
+        {
+            <div class="bs-row">
+                <MudNumericField T="int?" @bind-Value="s.DoneDays" Label="Done issues: last N days" Min="1" Max="3650" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 ShrinkLabel="true" HelperText="Empty: show every Done issue" Class="bs-field" />
+                <MudCheckBox T="bool" @bind-Value="s.StartOnActiveSprint" Color="Color.Primary" Label="Sprint picker starts on the active sprint" />
+            </div>
+        }
+
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="bs-title mt-4">Filter</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+            Only issues matching the filter are on the board. The query uses the issue list's URL parameters (copy them from a filtered
+            issue list, or pick a saved filter), e.g. <code>type=Bug&amp;priority=High</code>; <code>assigneeId=me</code> means whoever views the board.
+            Without <code>open=</code>, closed issues are included (for the Done column).
+        </MudText>
+        <div class="bs-row">
+            <MudTextField T="string" @bind-Value="s.FilterQuery" Label="Filter query" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true"
+                          Placeholder="e.g. labelId=3&amp;type=Bug" Class="bs-field-wide mono" Clearable="true" />
+            @if (savedFilters.Count > 0)
+            {
+                <MudMenu Label="Use saved filter" Variant="Variant.Outlined" Size="Size.Small" EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360">
+                    @foreach (var f in savedFilters) { <MudMenuItem OnClick="() => s.FilterQuery = f.Query">@f.Name</MudMenuItem> }
+                </MudMenu>
+            }
+        </div>
+        <div class="bs-row">
+            <MudSelect T="int" Label="Labels (any of)" MultiSelection="true" @bind-SelectedValues="labelIds" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       OuterClass="bs-field" AnchorOrigin="Origin.BottomLeft" ToStringFunc="LabelName" Clearable="true">
+                @foreach (var l in project.Labels) { <MudSelectItem T="int" Value="@l.Id">@l.Name</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="int" Value="@(s.FilterAssigneeId ?? -1)" ValueChanged="v => s.FilterAssigneeId = v < 0 ? null : v" Label="Assignee" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" OuterClass="bs-field" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem T="int" Value="-1">Anyone</MudSelectItem>
+                <MudSelectItem T="int" Value="0">Unassigned</MudSelectItem>
+                @foreach (var u in users) { <MudSelectItem T="int" Value="@u.Id">@u.DisplayName</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="int" Value="@(s.FilterType is { } t ? (int)t : -1)" ValueChanged="v => s.FilterType = v < 0 ? null : (IssueType)v" Label="Type"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" OuterClass="bs-field" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem T="int" Value="-1">Any type</MudSelectItem>
+                @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem T="int" Value="@((int)t)">@t.Icon() @t</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="int" Value="@(s.FilterEpicId ?? 0)" ValueChanged="v => s.FilterEpicId = v == 0 ? null : v" Label="Epic" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" OuterClass="bs-field" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem T="int" Value="0">Any epic</MudSelectItem>
+                @foreach (var e in epics) { <MudSelectItem T="int" Value="@e.Id">@e.Key @e.Title</MudSelectItem> }
+            </MudSelect>
+        </div>
+
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="bs-title mt-4">Display</MudText>
+        <div class="bs-row">
+            <MudSelect T="BoardSwimlane" @bind-Value="s.Swimlane" Label="Swimlanes" Variant="Variant.Outlined" Margin="Margin.Dense" OuterClass="bs-field" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem Value="BoardSwimlane.None">None</MudSelectItem>
+                <MudSelectItem Value="BoardSwimlane.Assignee">By assignee</MudSelectItem>
+                <MudSelectItem Value="BoardSwimlane.Epic">By epic</MudSelectItem>
+                <MudSelectItem Value="BoardSwimlane.Priority">By priority</MudSelectItem>
+                <MudSelectItem Value="BoardSwimlane.Type">By type</MudSelectItem>
+            </MudSelect>
+            <MudCheckBox T="bool" @bind-Value="s.BlockOverWip" Color="Color.Primary" Label="Refuse drops that go past a column's WIP limit" />
+        </div>
+        <MudText Typo="Typo.body2" Class="mb-1">Card fields</MudText>
+        <div class="bs-fields">
+            @foreach (var (flag, label) in CardFieldOptions)
+            {
+                <MudCheckBox T="bool" Value="@((s.CardFields & flag) == flag)" ValueChanged="on => s.CardFields = on ? s.CardFields | flag : s.CardFields & ~flag"
+                             Color="Color.Primary" Dense="true" Label="@label" @key="flag" />
+            }
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings">Save settings</MudButton>
+            @if (!board.IsDefault)
+            {
+                <MudButton Variant="Variant.Outlined" OnClick="MakeDefault">Make default board</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeleteBoard">Delete board</MudButton>
+            }
+        </div>
+    </MudPaper>
+
+    @* ----- Columns ----- *@
+    <MudPaper Outlined="true" Class="bs-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="bs-title">Columns</MudText>
+        @if (board.FollowsWorkflow && !customizing)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                This board follows the <MudLink Href="@($"/p/{project.Key}/settings/workflow")">workflow</MudLink>: one column per status, in workflow order,
+                updated when the workflow changes. Customize the columns to group statuses, rename columns or set WIP limits.
+            </MudText>
+            <div class="bs-chips">
+                @foreach (var st in workflow.Statuses) { <span class="bs-status"><span class="bs-dot" style="background:@st.Color"></span>@st.Name</span> }
+            </div>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="mt-3" OnClick="Customize">Customize columns</MudButton>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Each column shows the issues in its statuses. Dropping a card on a column with several statuses moves it to the first one the workflow
+                allows (top of the list first). A status in no column is not on this board.
+            </MudText>
+            <div class="bs-scroll">
+                <MudSimpleTable Dense="true" Elevation="0" Class="bs-table">
+                    <thead><tr><th style="width:80px">Order</th><th>Name</th><th>Statuses</th><th style="width:110px">WIP limit</th><th style="width:48px"></th></tr></thead>
+                    <tbody>
+                        @for (var idx = 0; idx < columns.Count; idx++)
+                        {
+                            var c = columns[idx];
+                            var i = idx;
+                            <tr @key="c">
+                                <td class="nowrap">
+                                    <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" aria-label="Move column left" title="Move left" Disabled="@(i == 0)" OnClick="() => MoveColumn(i, -1)" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" aria-label="Move column right" title="Move right" Disabled="@(i == columns.Count - 1)" OnClick="() => MoveColumn(i, 1)" />
+                                </td>
+                                <td><MudTextField T="string" @bind-Value="c.Name" MaxLength="40" Variant="Variant.Outlined" Margin="Margin.Dense" Class="bs-input" aria-label="Column name" /></td>
+                                <td>
+                                    <MudSelect T="int" MultiSelection="true" SelectedValues="c.StatusIds" SelectedValuesChanged="v => SetStatuses(c, v)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                               OuterClass="bs-statuses" AnchorOrigin="Origin.BottomLeft" ToStringFunc="StatusName" aria-label="@($"Statuses of {c.Name}")">
+                                        @foreach (var st in workflow.Statuses)
+                                        {
+                                            var elsewhere = columns.FirstOrDefault(o => o != c && o.StatusIds.Contains(st.Id));
+                                            <MudSelectItem T="int" Value="@st.Id">@st.Name@(elsewhere != null ? $" (in {elsewhere.Name})" : "")</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </td>
+                                <td><MudNumericField T="int?" @bind-Value="c.WipLimit" Min="1" Max="999" Variant="Variant.Outlined" Margin="Margin.Dense" Class="bs-input" Placeholder="none" aria-label="WIP limit" /></td>
+                                <td><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Remove column {c.Name}")" OnClick="() => columns.Remove(c)" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+            @if (Unmapped.Count > 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-3">
+                    <b>Not on the board:</b> @string.Join(", ", Unmapped.Select(u => u.Name))
+                </MudText>
+            }
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Disabled="@(columns.Count >= BoardService.MaxColumns)" OnClick="AddColumn">Add column</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveColumns">Save columns</MudButton>
+                @if (!board.FollowsWorkflow)
+                {
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ResetColumns">Follow the workflow again</MudButton>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => customizing = false">Cancel</MudButton>
+                }
+            </div>
+        }
+    </MudPaper>
+
+    @* ----- Quick filters ----- *@
+    <MudPaper Outlined="true" Class="bs-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="bs-title">Quick filters</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Toggle chips above the board. Each is an issue list query (same format as the board filter); turning on several shows issues matching all of them.
+        </MudText>
+        @foreach (var q in quick)
+        {
+            <div class="bs-row" @key="q">
+                <MudTextField T="string" @bind-Value="q.Name" Label="Name" MaxLength="40" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Class="bs-field" />
+                <MudTextField T="string" @bind-Value="q.Query" Label="Query" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Class="bs-field-wide mono" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Remove quick filter {q.Name}")" OnClick="() => quick.Remove(q)" />
+            </div>
+        }
+        <div class="d-flex flex-wrap gap-2 mt-2">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Disabled="@(quick.Count >= BoardService.MaxQuickFilters)"
+                       OnClick="() => quick.Add(new QuickDraft())">Add quick filter</MudButton>
+            <MudMenu Label="Add suggested" Variant="Variant.Outlined" Size="Size.Small" EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true"
+                     Disabled="@(quick.Count >= BoardService.MaxQuickFilters)">
+                <MudMenuItem OnClick="@(() => quick.Add(new QuickDraft { Name = "Only my issues", Query = "assigneeId=me" }))">Only my issues</MudMenuItem>
+                <MudMenuItem OnClick="@(() => quick.Add(new QuickDraft { Name = "Bugs", Query = "type=Bug" }))">Bugs</MudMenuItem>
+                <MudMenuItem OnClick="@(() => quick.Add(new QuickDraft { Name = "High priority", Query = "priority=High" }))">High priority</MudMenuItem>
+                <MudMenuItem OnClick="@(() => quick.Add(new QuickDraft { Name = "Unassigned", Query = "assigneeId=0" }))">Unassigned</MudMenuItem>
+            </MudMenu>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveQuick">Save quick filters</MudButton>
+        </div>
+    </MudPaper>
+}
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int BoardId { get; set; }
+
+    private sealed class Draft
+    {
+        public string Name = "";
+        public BoardType Type;
+        public string? FilterQuery;
+        public int? FilterAssigneeId, FilterEpicId, DoneDays;
+        public IssueType? FilterType;
+        public BoardSwimlane Swimlane;
+        public BoardCardFields CardFields;
+        public bool BlockOverWip, StartOnActiveSprint;
+    }
+
+    private sealed class ColumnDraft { public string Name = ""; public int? WipLimit; public List<int> StatusIds = []; }
+    private sealed class QuickDraft { public string Name = ""; public string Query = ""; }
+
+    private static readonly (BoardCardFields Flag, string Label)[] CardFieldOptions =
+    [
+        (BoardCardFields.Key, "Key"), (BoardCardFields.Type, "Type"), (BoardCardFields.Labels, "Labels"), (BoardCardFields.Priority, "Priority"),
+        (BoardCardFields.StoryPoints, "Story points"), (BoardCardFields.Assignee, "Assignee"), (BoardCardFields.LinkedWork, "Parent, sub-tasks & blocked"),
+        (BoardCardFields.Epic, "Epic"), (BoardCardFields.DueDate, "Due date"), (BoardCardFields.Milestone, "Milestone"),
+    ];
+
+    private Project? project;
+    private GitBench.Data.Board? board;
+    private ProjectRole? role;
+    private bool notFound, customizing;
+    private string? error;
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private List<User> users = [];
+    private List<Issue> epics = [];
+    private List<SavedFilterView> savedFilters = [];
+    private Draft s = new();
+    private IReadOnlyCollection<int> labelIds = [];
+    private List<ColumnDraft> columns = [];
+    private List<QuickDraft> quick = [];
+
+    private string BoardHref => board!.IsDefault ? $"/p/{project!.Key}/board" : $"/p/{project!.Key}/boards/{board.Id}";
+    private List<WorkflowStatus> Unmapped => workflow.Statuses.Where(st => !columns.Any(c => c.StatusIds.Contains(st.Id))).ToList();
+    private string LabelName(int id) => project?.Labels.FirstOrDefault(l => l.Id == id)?.Name ?? "";
+    private string StatusName(int id) => workflow.Find(id)?.Name ?? "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        role = await Access.GetRoleAsync(project.Id);
+        if (role < ProjectRole.Maintainer) return;
+        users = await Issues.GetUsersAsync();
+        epics = await Issues.GetIssuesAsync(project.Id, new IssueFilter { Type = IssueType.Epic, Open = null, Sort = "number" });
+        savedFilters = await SavedFilters.ListAsync(project.Id);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        board = await Boards.GetBoardAsync(project!.Id, BoardId);
+        if (board == null) return;
+        workflow = await Workflows.GetAsync(project.Id);
+        s = new Draft
+        {
+            Name = board.Name, Type = board.Type, FilterQuery = board.FilterQuery, FilterAssigneeId = board.FilterAssigneeId, FilterEpicId = board.FilterEpicId,
+            FilterType = board.FilterType, DoneDays = board.DoneDays, Swimlane = board.Swimlane, CardFields = board.CardFields,
+            BlockOverWip = board.BlockOverWip, StartOnActiveSprint = board.StartOnActiveSprint,
+        };
+        labelIds = board.FilterLabelIds.ToList();
+        LoadColumns();
+        quick = board.QuickFilters.OrderBy(q => q.Order).Select(q => new QuickDraft { Name = q.Name, Query = q.Query }).ToList();
+    }
+
+    private void LoadColumns()
+    {
+        customizing = false;
+        columns = BoardLayout.Columns(board!, workflow)
+            .Select(c => new ColumnDraft { Name = c.Name, WipLimit = c.WipLimit, StatusIds = c.Statuses.Select(st => st.Id).ToList() }).ToList();
+    }
+
+    private async Task Run(Func<Task> action, string success)
+    {
+        error = null;
+        try
+        {
+            await action();
+            Snackbar.Add(success, Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private Task SaveSettings() => Run(() => Boards.UpdateBoardAsync(board!.Id, new BoardSettings(
+        s.Name, s.Type, s.FilterQuery, labelIds.ToList(), s.FilterAssigneeId, s.FilterType, s.FilterEpicId,
+        s.Swimlane, s.CardFields, s.BlockOverWip, s.DoneDays, s.StartOnActiveSprint)), "Board settings saved.");
+
+    private void Customize()
+    {
+        LoadColumns();
+        customizing = true;
+    }
+
+    private void SetStatuses(ColumnDraft c, IReadOnlyCollection<int> ids)
+    {
+        // Keep the existing order (drop preference) and append newly picked statuses in workflow order.
+        var picked = ids.ToHashSet();
+        c.StatusIds = c.StatusIds.Where(picked.Contains).Concat(workflow.Statuses.Select(st => st.Id).Where(id => picked.Contains(id) && !c.StatusIds.Contains(id))).ToList();
+        // A status lives in one column. New lists (not RemoveAll) so the other columns' pickers see the change.
+        foreach (var other in columns.Where(o => o != c && o.StatusIds.Any(picked.Contains))) other.StatusIds = other.StatusIds.Where(id => !picked.Contains(id)).ToList();
+    }
+
+    private void MoveColumn(int idx, int delta)
+    {
+        var target = idx + delta;
+        if (target < 0 || target >= columns.Count) return;
+        (columns[idx], columns[target]) = (columns[target], columns[idx]);
+    }
+
+    private void AddColumn() => columns.Add(new ColumnDraft { Name = $"Column {columns.Count + 1}" });
+
+    private Task SaveColumns() => Run(() => Boards.SaveColumnsAsync(board!.Id,
+        columns.Select(c => new BoardColumnDraft(c.Name, c.WipLimit, c.StatusIds)).ToList()), "Columns saved.");
+
+    private async Task ResetColumns()
+    {
+        if (!await Dialogs.ConfirmAsync("Follow the workflow?", "The board's columns, names and WIP limits are replaced by one column per workflow status.", "Reset columns")) return;
+        await Run(() => Boards.ResetColumnsAsync(board!.Id), "The board follows the workflow again.");
+    }
+
+    private Task SaveQuick() => Run(() => Boards.SaveQuickFiltersAsync(board!.Id,
+        quick.Select(q => new BoardQuickFilterDraft(q.Name, q.Query)).ToList()), "Quick filters saved.");
+
+    private Task MakeDefault() => Run(() => Boards.MakeDefaultAsync(board!.Id), $"\"{board!.Name}\" is now the default board.");
+
+    private async Task DeleteBoard()
+    {
+        if (!await Dialogs.ConfirmAsync("Delete board?", $"Delete the board \"{board!.Name}\"? Its issues are not affected.")) return;
+        error = null;
+        try
+        {
+            await Boards.DeleteBoardAsync(board.Id);
+            Snackbar.Add($"Board \"{board.Name}\" deleted.", Severity.Success);
+            Nav.NavigateTo($"/p/{project!.Key}/board");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}
