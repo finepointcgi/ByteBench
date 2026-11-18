@@ -62,6 +62,7 @@ else if (pr != null)
         <a class="branch-pill mono" href="@RepoUrls.Source(repo, pr.SourceBranch)">@pr.SourceBranch</a>
         <span class="muted">→</span>
         <a class="branch-pill mono" href="@RepoUrls.Source(repo, pr.TargetBranch)">@pr.TargetBranch</a>
+        <PipelineBadge Repo="repo" Branch="@pr.SourceBranch" Sha="@(pr.State == PullRequestState.Open ? null : pr.SourceCommitSha)" />
     </div>
 
     <div class="tabs">

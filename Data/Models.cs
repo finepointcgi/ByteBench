@@ -235,6 +235,7 @@ public enum NotificationKind
     Assigned, Mentioned,
     IssueCommented, IssueStatusChanged, IssueClosed, IssueReopened,
     PullRequestCommented, PullRequestReviewed, PullRequestMerged, PullRequestDeclined, PullRequestReopened,
+    PipelineFailed,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -336,4 +337,78 @@ public class PersonalAccessToken
     public DateTime? RevokedAt { get; set; }
 
     public bool IsActive(DateTime utcNow) => RevokedAt == null && (ExpiresAt == null || ExpiresAt > utcNow);
+}
+
+// ----- Pipelines -----
+
+/// <summary>Status of a pipeline, job or step. <see cref="Skipped"/> is used for jobs and steps only.</summary>
+public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, Skipped }
+
+/// <summary>What started a pipeline.</summary>
+public enum PipelineTrigger { Push, PullRequest, Manual, Retry }
+
+/// <summary>One CI run of <c>.gitbench-ci.yml</c> at a commit on a branch. Run by <see cref="GitBench.Services.Ci.CiRunner"/>.</summary>
+public class Pipeline
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    /// <summary>Branch name (e.g. <c>main</c>, <c>feature/x</c>).</summary>
+    [Required, MaxLength(250)] public string Ref { get; set; } = "";
+    [Required, MaxLength(40)] public string CommitSha { get; set; } = "";
+    [MaxLength(200)] public string? CommitMessage { get; set; }
+    public int? PullRequestId { get; set; }
+    public PipelineStatus Status { get; set; } = PipelineStatus.Queued;
+    public PipelineTrigger Trigger { get; set; }
+    public int? TriggeredById { get; set; }
+    public User? TriggeredBy { get; set; }
+    /// <summary>Why the pipeline is in the Error state (invalid YAML, Docker unavailable, ...).</summary>
+    public string? Error { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+    public List<PipelineJob> Jobs { get; set; } = [];
+
+    public bool IsFinished => Status is not (PipelineStatus.Queued or PipelineStatus.Running);
+}
+
+public class PipelineJob
+{
+    public int Id { get; set; }
+    public int PipelineId { get; set; }
+    public Pipeline Pipeline { get; set; } = null!;
+    [Required, MaxLength(64)] public string Name { get; set; } = "";
+    [Required, MaxLength(300)] public string Image { get; set; } = "";
+    /// <summary>Comma-separated names of jobs that must pass first.</summary>
+    [MaxLength(1000)] public string Needs { get; set; } = "";
+    public int Order { get; set; }
+    public PipelineStatus Status { get; set; } = PipelineStatus.Queued;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+    public List<PipelineStep> Steps { get; set; } = [];
+
+    public IEnumerable<string> NeedsList => Needs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+}
+
+public class PipelineStep
+{
+    public int Id { get; set; }
+    public int JobId { get; set; }
+    public PipelineJob Job { get; set; } = null!;
+    public int Order { get; set; }
+    [Required, MaxLength(200)] public string Name { get; set; } = "";
+    [Required] public string Run { get; set; } = "";
+    public PipelineStatus Status { get; set; } = PipelineStatus.Queued;
+    public int? ExitCode { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+    public PipelineStepLog? Log { get; set; }
+}
+
+/// <summary>A step's combined stdout/stderr, kept apart from the step row so listing steps never loads logs.</summary>
+public class PipelineStepLog
+{
+    public int StepId { get; set; }
+    public string Text { get; set; } = "";
+    public bool Truncated { get; set; }
 }

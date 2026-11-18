@@ -17,6 +17,9 @@ public sealed record PullRequestChanged(int PullRequestId, int ProjectId) : Live
 /// <summary>A user's notifications changed (new ones, or read state).</summary>
 public sealed record NotificationsChanged(int UserId) : LiveEvent;
 
+/// <summary>A CI pipeline was created, or its status, jobs, steps or logs changed.</summary>
+public sealed record PipelineChanged(int PipelineId, int RepositoryId) : LiveEvent;
+
 /// <summary>The global activity feed (dashboard) has new entries.</summary>
 public sealed record ActivityChanged : LiveEvent;
 

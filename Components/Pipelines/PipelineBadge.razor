@@ -1,0 +1,39 @@
+@* Status of the latest pipeline on a branch's tip (or a fixed commit), updating live. Renders nothing if there is none. *@
+@inject PipelineService Pipelines
+@inject RepositoryService Repos
+@inject LiveEvents Live
+@implements IDisposable
+
+@if (latest != null)
+{
+    <PipelineStatusIcon Status="latest.Status" Href="@PipelineUrls.Detail(Repo, latest.Id)" Title="@($"Pipeline #{latest.Id}")" ShowLabel="ShowLabel" />
+}
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter, EditorRequired] public string Branch { get; set; } = "";
+    /// <summary>A fixed commit (e.g. a merged PR's recorded source tip). When null, the branch's current tip is used.</summary>
+    [Parameter] public string? Sha { get; set; }
+    [Parameter] public bool ShowLabel { get; set; } = true;
+
+    private PipelineBadgeInfo? latest;
+    private IDisposable? sub;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            sub = Live.Subscribe<PipelineChanged>(e => e.RepositoryId == Repo.Id ? InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); }) : Task.CompletedTask);
+    }
+
+    private async Task LoadAsync()
+    {
+        var sha = Sha ?? await Repos.Git(Repo, path => GitOps.BranchExists(path, Branch) ? GitOps.ResolveSha(path, Branch) : null);
+        if (sha == null) { latest = null; return; }
+        var found = await Pipelines.LatestForCommitsAsync(Repo, [sha], Sha == null ? Branch : null);
+        latest = found.GetValueOrDefault(sha);
+    }
+
+    public void Dispose() => sub?.Dispose();
+}

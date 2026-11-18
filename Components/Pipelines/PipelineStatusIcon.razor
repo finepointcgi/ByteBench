@@ -1,0 +1,31 @@
+@* Pipeline/job/step status: ✓ passed, ✗ failed or error, ● queued, spinner running, ⊘ canceled, – skipped. *@
+@if (Href != null)
+{
+    <a class="ci-icon ci-@Css" href="@Href" title="@Tooltip">@Glyph@if (ShowLabel) {<span class="ci-label">@Label</span>}</a>
+}
+else
+{
+    <span class="ci-icon ci-@Css" title="@Tooltip">@Glyph@if (ShowLabel) {<span class="ci-label">@Label</span>}</span>
+}
+
+@code {
+    [Parameter] public PipelineStatus Status { get; set; }
+    [Parameter] public string? Href { get; set; }
+    /// <summary>Prefix for the tooltip, e.g. "Pipeline #12".</summary>
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public bool ShowLabel { get; set; }
+
+    private string Css => Status.ToString().ToLowerInvariant();
+    private string Label => Status.ToString();
+    private string Tooltip => Title != null ? $"{Title}: {Label.ToLowerInvariant()}" : Label;
+
+    private RenderFragment Glyph => Status switch
+    {
+        PipelineStatus.Passed => @<span class="ci-glyph">✓</span>,
+        PipelineStatus.Failed or PipelineStatus.Error => @<span class="ci-glyph">✗</span>,
+        PipelineStatus.Running => @<span class="ci-glyph ci-spinner"></span>,
+        PipelineStatus.Canceled => @<span class="ci-glyph">⊘</span>,
+        PipelineStatus.Skipped => @<span class="ci-glyph">–</span>,
+        _ => @<span class="ci-glyph">●</span>,
+    };
+}

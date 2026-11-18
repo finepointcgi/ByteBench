@@ -3,6 +3,7 @@ using GitBench.Data;
 using GitBench.Services;
 using GitBench.Services.Git;
 using GitBench.Services.Ai;
+using GitBench.Services.Ci;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -55,6 +56,7 @@ builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
 builder.Services.AddSingleton<LiveEvents>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddCiPipelines(builder.Configuration);
 
 var app = builder.Build();
 
@@ -86,6 +88,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapGitHttp();
+app.MapCiEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

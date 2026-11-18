@@ -1,0 +1,134 @@
+@page "/p/{Key}/repos/{Slug}/pipelines"
+@inherits RepoPageBase
+@inject PipelineService Pipelines
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@implements IDisposable
+
+<PageTitle>Pipelines · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="pipelines" />
+
+    <div class="repo-toolbar">
+        @if (!Pipelines.Enabled)
+        {
+            <span class="muted small">CI pipelines are turned off on this server.</span>
+        }
+        else if (perms.Can(Permission.PushCode) && branches.Count > 0)
+        {
+            <select class="form-select form-select-sm ref-select mono" @bind="runBranch">
+                @foreach (var b in branches) { <option value="@b">@b</option> }
+            </select>
+            <button class="btn btn-sm btn-primary" disabled="@busy" @onclick="Run">▶ Run pipeline</button>
+        }
+        <span class="ms-auto muted small">Pipelines run <span class="mono">@CiFile.FileName</span> from the repository root.</span>
+    </div>
+    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+
+    <div class="issue-list ci-list">
+        @if (list == null || list.Items.Count == 0)
+        {
+            <div class="empty">
+                No pipelines yet. Add a <span class="mono">@CiFile.FileName</span> file to the repository root and push to run one.
+            </div>
+        }
+        else
+        {
+            @foreach (var p in list.Items)
+            {
+                <div class="issue-row ci-row" @key="p.Id">
+                    <div class="ci-col-status"><PipelineStatusIcon Status="p.Status" ShowLabel="true" Href="@PipelineUrls.Detail(Repo, p.Id)" /></div>
+                    <div class="issue-main">
+                        <div class="issue-title">
+                            <a href="@PipelineUrls.Detail(Repo, p.Id)">#@p.Id</a>
+                            <span class="ci-msg">@(p.CommitMessage ?? "")</span>
+                        </div>
+                        <div class="issue-meta">
+                            <a class="branch-pill mono" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
+                            <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, p.CommitSha)">@p.CommitSha[..7]</a>
+                            · @PipelineFormat.Trigger(p)@if (p.TriggeredBy != null) {<span> by <b>@p.TriggeredBy.DisplayName</b></span>}
+                            @if (p.Error != null) { <span class="text-danger"> · @Shorten(p.Error)</span> }
+                        </div>
+                    </div>
+                    <div class="ci-col-time muted small text-end">
+                        @if (p.StartedAt != null) { <div title="Duration">⏱ @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</div> }
+                        <div title="@p.CreatedAt.ToLocalTime().ToString("g")">@Display.Ago(p.CreatedAt)</div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+    @if (list != null && list.Pages > 1)
+    {
+        <div class="pager">
+            @if (list.Page > 1) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(list.Page - 1)">← Newer</a> }
+            <span class="muted small">Page @list.Page of @list.Pages</span>
+            @if (list.Page < list.Pages) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(list.Page + 1)">Older →</a> }
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PipelinePage? list;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<string> branches = [];
+    private string? runBranch;
+    private bool busy;
+    private IDisposable? sub;
+    private int reloadPending;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        branches = (await Git(path => GitOps.ListBranches(path, Repo!.DefaultBranch))).Select(b => b.Name).ToList();
+        if (runBranch == null || !branches.Contains(runBranch))
+            runBranch = branches.Contains(Repo.DefaultBranch) ? Repo.DefaultBranch : branches.FirstOrDefault();
+        await LoadAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+    }
+
+    private async Task OnPipelineChanged(PipelineChanged e)
+    {
+        if (Repo == null || e.RepositoryId != Repo.Id) return;
+        // Logs flush every second while jobs run; coalesce bursts of events into one reload.
+        if (Interlocked.Exchange(ref reloadPending, 1) == 1) return;
+        await Task.Delay(500);
+        Interlocked.Exchange(ref reloadPending, 0);
+        await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
+    private async Task LoadAsync() => list = await Pipelines.ListAsync(Repo!, PageNumber ?? 1);
+
+    private async Task Run()
+    {
+        if (runBranch == null) return;
+        Error = null;
+        busy = true;
+        try
+        {
+            var id = await Pipelines.RunAsync(Repo!, runBranch);
+            Nav.NavigateTo(PipelineUrls.Detail(Repo!, id));
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private string PageUrl(int n) => PipelineUrls.List(Repo!) + (n > 1 ? $"?page={n}" : "");
+
+    private static string Shorten(string s) => s.Length > 120 ? s[..119] + "…" : s;
+
+    public void Dispose() => sub?.Dispose();
+}

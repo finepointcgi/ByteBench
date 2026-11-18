@@ -3,6 +3,7 @@
 @inject PullRequestService PRs
 @inject IJSRuntime JS
 @inject ProjectAccess Access
+@inject PipelineService Pipelines
 
 <PageTitle>Branches · @Repo?.Name</PageTitle>
 
@@ -37,6 +38,10 @@ else if (Repo != null)
             <div class="branch-row" @key="b.Name">
                 <div class="issue-main">
                     <div class="issue-title">
+                        @if (ciStatus.GetValueOrDefault(b.Name) is { } ci)
+                        {
+                            <PipelineStatusIcon Status="ci.Status" Href="@PipelineUrls.Detail(Repo, ci.Id)" Title="@($"Pipeline #{ci.Id}")" />
+                        }
                         <a class="mono" href="@RepoUrls.Source(Repo, b.Name)">@b.Name</a>
                         @if (b.IsDefault) { <span class="count">default</span> }
                         <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@b.Name" />
@@ -82,6 +87,7 @@ else if (Repo != null)
 @code {
     private List<BranchDivergence> branches = [];
     private List<PullRequest> openPrs = [];
+    private Dictionary<string, PipelineBadgeInfo> ciStatus = [];
     private string? newName, fromRef, message;
     private ProjectPermissions perms = ProjectPermissions.None;
 
@@ -96,6 +102,7 @@ else if (Repo != null)
     {
         branches = await Git(path => GitOps.ListBranchesWithDivergence(path, Repo!.DefaultBranch));
         openPrs = await PRs.ListAsync(Repo!.ProjectId, PullRequestState.Open, Repo.Id);
+        ciStatus = await Pipelines.LatestForBranchesAsync(Repo, branches.Where(b => b.Tip != null).Select(b => (b.Name, b.Tip!.Sha)));
         if (fromRef == null || branches.All(b => b.Name != fromRef)) fromRef = Repo.DefaultBranch;
     }
 

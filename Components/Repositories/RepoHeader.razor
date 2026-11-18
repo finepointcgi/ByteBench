@@ -22,11 +22,12 @@
     <a class="tab @(Active == "commits" ? "active" : "")" href="@RepoUrls.Commits(Repo, Ref)">Commits</a>
     <a class="tab @(Active == "branches" ? "active" : "")" href="@RepoUrls.Branches(Repo)">Branches</a>
     <a class="tab @(Active == "prs" ? "active" : "")" href="@RepoUrls.RepoPullRequests(Repo)">Pull requests</a>
+    <a class="tab @(Active == "pipelines" ? "active" : "")" href="@PipelineUrls.List(Repo)">Pipelines</a>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>One of: source, commits, branches, prs.</summary>
+    /// <summary>One of: source, commits, branches, prs, pipelines.</summary>
     [Parameter] public string Active { get; set; } = "source";
     /// <summary>The ref being viewed, carried across the Source/Commits tabs.</summary>
     [Parameter] public string? Ref { get; set; }
