@@ -1,0 +1,107 @@
+@* Sidebar block on the PR page: AI review status line plus "Ask GitBench AI to review" / "Re-run AI review". Live-updates. *@
+@using GitBench.Services.Ai
+@implements IDisposable
+@inject AiClient Ai
+@inject AiReviewService Reviews
+@inject AiReviewQueue Queue
+@inject CurrentUser Me
+
+<div class="field ai-review-panel">
+    <label>AI review</label>
+    @if (!Ai.IsConfigured)
+    {
+        <div class="muted small">AI review isn't set up (set ANTHROPIC_API_KEY).</div>
+    }
+    else
+    {
+        <div class="ai-review-status small @StatusCss">
+            AI review: @StatusText
+        </div>
+        @if (latest?.Status == AiReviewStatus.Completed && latest.Error != null)
+        {
+            <div class="small muted mt-1">@latest.Error</div>
+        }
+        @if (latest == null && !PullRequest.Repository.Project.AiReviewEnabled)
+        {
+            <div class="small muted mt-1">Automatic review is off for this project.</div>
+        }
+        @if (PullRequest.State == PullRequestState.Open)
+        {
+            <button class="btn btn-outline-primary btn-sm w-100 mt-2" disabled="@(Busy || requesting)" @onclick="Request">
+                @(latest == null ? "Ask GitBench AI to review" : "Re-run AI review")
+            </button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PullRequest PullRequest { get; set; } = null!;
+    /// <summary>Invoked when a review finishes, so the page can reload comments and reviews.</summary>
+    [Parameter] public EventCallback OnReviewFinished { get; set; }
+
+    private AiReview? latest;
+    private bool requesting;
+    private int? loadedFor;
+
+    private bool Busy => latest?.Status is AiReviewStatus.Queued or AiReviewStatus.Running;
+
+    private string StatusCss => latest?.Status switch
+    {
+        AiReviewStatus.Failed => "bad",
+        AiReviewStatus.Completed => "good",
+        _ => "",
+    };
+
+    private string StatusText => latest?.Status switch
+    {
+        _ when !Busy && Queue.IsWaiting(PullRequest.Id) => "new commits pushed, reviewing shortly…",
+        null => "not run yet.",
+        AiReviewStatus.Queued => "queued…",
+        AiReviewStatus.Running => "running…",
+        AiReviewStatus.Completed => $"completed, {Plural(latest.FindingsCount, "finding")}" +
+                                    (latest.UnplacedCount > 0 ? $" ({latest.InlineCount} inline)" : "") +
+                                    $" on {Short(latest.HeadSha)} · {Display.Ago(latest.CompletedAt ?? latest.CreatedAt)}",
+        AiReviewStatus.Failed => $"failed ({latest.Error ?? "unknown error"})",
+        AiReviewStatus.Skipped => $"skipped ({latest.Error})",
+        _ => "",
+    };
+
+    private static string Plural(int n, string word) => $"{n} {word}{(n == 1 ? "" : "s")}";
+    private static string Short(string sha) => sha.Length > 7 ? sha[..7] : sha;
+
+    protected override void OnInitialized() => Queue.Changed += OnChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == PullRequest.Id) return;
+        loadedFor = PullRequest.Id;
+        latest = await Reviews.GetLatestAsync(PullRequest.Id);
+    }
+
+    private void OnChanged(int prId)
+    {
+        if (prId != PullRequest.Id) return;
+        _ = InvokeAsync(async () =>
+        {
+            var wasBusy = Busy;
+            latest = await Reviews.GetLatestAsync(PullRequest.Id);
+            if (wasBusy && !Busy) await OnReviewFinished.InvokeAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task Request()
+    {
+        requesting = true;
+        try
+        {
+            Queue.EnqueueManual(PullRequest.Id, Me.Id);
+            // The worker creates the queued row almost immediately; Changed then keeps the status current.
+            await Task.Delay(300);
+            latest = await Reviews.GetLatestAsync(PullRequest.Id);
+        }
+        finally { requesting = false; }
+    }
+
+    public void Dispose() => Queue.Changed -= OnChanged;
+}

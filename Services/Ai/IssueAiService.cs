@@ -180,7 +180,7 @@ public class IssueAiService(AiClient ai, IssueService issues, PullRequestService
             response.Usage.InputTokens, response.Usage.OutputTokens,
             response.Usage.CacheReadInputTokens ?? 0, response.Usage.CacheCreationInputTokens ?? 0, ct);
 
-        var stop = response.StopReason?.ToString();
+        var stop = response.StopReason?.Raw();
         var text = string.Concat(response.Content.Select(b => b.TryPickText(out var t) ? t.Text : ""));
         if (stop == "refusal") log.LogWarning("Claude declined a {Feature} request", feature);
         return new AiResult(text, stop, stop == "refusal");
@@ -222,7 +222,7 @@ public class IssueAiService(AiClient ai, IssueService issues, PullRequestService
                 else if (ev.TryPickDelta(out var md))
                 {
                     output = md.Usage.OutputTokens;
-                    stop = md.Delta.StopReason?.ToString() ?? stop;
+                    stop = md.Delta.StopReason?.Raw() ?? stop;
                 }
             }
         }

@@ -63,6 +63,8 @@ else if (project != null)
         @if (labelError != null) { <div class="text-danger small mt-2">@labelError</div> }
     </div>
 
+    <AiReviewSettings Project="project" />
+
     <div class="card-panel narrow danger-zone">
         <h2 class="section-title">Danger zone</h2>
         <p class="small muted">Deleting a project permanently removes all of its issues, comments, labels and milestones.</p>

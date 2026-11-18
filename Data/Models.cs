@@ -29,6 +29,8 @@ public class Project
     public List<Issue> Issues { get; set; } = [];
     public List<Label> Labels { get; set; } = [];
     public List<Milestone> Milestones { get; set; } = [];
+    /// <summary>When true (default), GitBench AI reviews new pull requests and new pushes automatically (if AI is configured).</summary>
+    public bool AiReviewEnabled { get; set; } = true;
 }
 
 public class Issue
@@ -254,4 +256,32 @@ public class Watch
     public int? IssueId { get; set; }
     public int? PullRequestId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- AI code review -----
+
+public enum AiReviewStatus { Queued, Running, Completed, Failed, Skipped }
+
+/// <summary>One GitBench AI review run of a pull request at a given head commit. Written by <see cref="GitBench.Services.Ai.AiReviewService"/>.</summary>
+public class AiReview
+{
+    public int Id { get; set; }
+    public int PullRequestId { get; set; }
+    /// <summary>Source-branch tip that was (or will be) reviewed. The same head is reviewed once unless someone re-runs it.</summary>
+    [MaxLength(40)] public string HeadSha { get; set; } = "";
+    public AiReviewStatus Status { get; set; } = AiReviewStatus.Queued;
+    /// <summary>"created", "push" or "manual".</summary>
+    [MaxLength(20)] public string Trigger { get; set; } = "";
+    public int? RequestedById { get; set; }
+    public string? Error { get; set; }
+    /// <summary>Findings returned by the model, how many were posted inline, and how many could not be placed on the diff.</summary>
+    public int FindingsCount { get; set; }
+    public int InlineCount { get; set; }
+    public int UnplacedCount { get; set; }
+    /// <summary>Files left out (binary, lockfiles, generated, over budget) and the number of model calls the review took.</summary>
+    public int SkippedFilesCount { get; set; }
+    public int BatchCount { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
 }

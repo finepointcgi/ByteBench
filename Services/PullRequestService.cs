@@ -7,7 +7,7 @@ namespace GitBench.Services;
 public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
-public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, NotificationService notifications)
+public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue)
 {
     // ---------- Queries ----------
 
@@ -119,6 +119,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         await notifications.OnPullRequestCreatedAsync(pr.Id, authorId);
+        aiReviewQueue.Enqueue(pr.Id);
         return pr;
     }
 

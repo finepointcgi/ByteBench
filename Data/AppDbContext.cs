@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PullRequestActivity> PullRequestActivities => Set<PullRequestActivity>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Watch> Watches => Set<Watch>();
+    public DbSet<AiReview> AiReviews => Set<AiReview>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -62,5 +63,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Watch>().HasOne<User>().WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Watch>().HasOne<Issue>().WithMany().HasForeignKey(w => w.IssueId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Watch>().HasOne<PullRequest>().WithMany().HasForeignKey(w => w.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- AI code review -----
+        b.Entity<AiReview>().HasIndex(r => new { r.PullRequestId, r.HeadSha });
+        b.Entity<AiReview>().HasOne<PullRequest>().WithMany().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
     }
 }

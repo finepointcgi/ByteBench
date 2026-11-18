@@ -130,7 +130,7 @@ else if (pr != null)
                         {
                             <div class="comment-card" @key="(1, c.Id)">
                                 <div class="comment-head">
-                                    <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
+                                    <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b> <AiBadge User="c.Author" />
                                     <span class="muted small">
                                         @if (c.IsInline)
                                         {
@@ -167,7 +167,7 @@ else if (pr != null)
                         {
                             <div class="activity-line" @key="(2, a.Id)">
                                 <Avatar User="a.Actor" Size="18" />
-                                <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                                <b>@a.Actor.DisplayName</b> <AiBadge User="a.Actor" /> <span class="md-inline">@Display.Markdown(a.Text)</span>
                                 <span class="muted">@Display.Ago(a.CreatedAt)</span>
                             </div>
                         }
@@ -236,7 +236,7 @@ else if (pr != null)
                 @foreach (var r in pr.Reviews.OrderBy(r => r.CreatedAt))
                 {
                     <div class="reviewer" @key="r.Id">
-                        <Avatar User="r.User" Size="22" ShowName />
+                        <Avatar User="r.User" Size="22" ShowName /> <AiBadge User="r.User" />
                         @if (r.State == ReviewState.Approved) { <span class="review-chip approved ms-auto">✓ Approved</span> }
                         else { <span class="review-chip changes ms-auto">✎ Changes requested</span> }
                     </div>
@@ -268,6 +268,8 @@ else if (pr != null)
                     <div class="muted small mt-1">You can't review your own pull request.</div>
                 }
             </div>
+
+            <AiReviewPanel PullRequest="pr" OnReviewFinished="() => Reload(full: false)" />
 
             <div class="field">
                 <label>Linked issues</label>

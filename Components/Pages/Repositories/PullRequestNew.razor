@@ -4,6 +4,8 @@
 @inject PullRequestService PRs
 @inject CurrentUser Me
 @inject NavigationManager Nav
+@inject GitBench.Services.Ai.AiClient Ai
+@inject GitBench.Services.Ai.AiReviewService AiReviews
 
 <PageTitle>New pull request · @project?.Name</PageTitle>
 
@@ -94,7 +96,16 @@ else if (project != null)
                             <input class="form-control" @bind="title" @bind:event="oninput" maxlength="200" />
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Description</label>
+                            <div class="d-flex align-items-center">
+                                <label class="form-label">Description</label>
+                                @if (Ai.IsConfigured)
+                                {
+                                    <button class="btn btn-link btn-sm ms-auto" disabled="@writing" @onclick="WriteDescriptionWithAi"
+                                            title="Replaces the description with one written by GitBench AI from the commits and diff. You can edit it before creating the pull request.">
+                                        <span class="ai-badge">AI</span> @(writing ? "Writing…" : "Write description with AI")
+                                    </button>
+                                }
+                            </div>
                             <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
                         </div>
                         @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
@@ -204,6 +215,33 @@ else if (project != null)
 
     private void Go(string? repoSlug, string? source, string? target) =>
         Nav.NavigateTo(RepoUrls.NewPullRequest(project!.Key, repoSlug, string.IsNullOrEmpty(source) ? null : source, string.IsNullOrEmpty(target) ? null : target));
+
+    private bool writing;
+
+    /// <summary>Streams an AI-written description into the editor; the user can edit it before creating the PR.</summary>
+    private async Task WriteDescriptionWithAi()
+    {
+        if (compare == null || repo == null || string.IsNullOrEmpty(Source)) return;
+        writing = true;
+        error = null;
+        description = "";
+        var lastRender = DateTime.UtcNow;
+        try
+        {
+            await foreach (var chunk in AiReviews.StreamDescriptionAsync(repo, compare, Source, TargetOrDefault, title, Me.Id))
+            {
+                description += chunk;
+                if ((DateTime.UtcNow - lastRender).TotalMilliseconds >= 50)
+                {
+                    lastRender = DateTime.UtcNow;
+                    StateHasChanged();
+                }
+            }
+            description = description?.Trim();
+        }
+        catch (Exception ex) { error = "Couldn't write a description: " + ex.Message; }
+        finally { writing = false; }
+    }
 
     private async Task Create()
     {
