@@ -3,48 +3,52 @@
 
 <PageTitle>REST API · GitBench</PageTitle>
 
-<div class="page-header"><h1>REST API</h1></div>
+<div class="api-page">
+<div class="page-header"><MudText Typo="Typo.h5" HtmlTag="h1">REST API</MudText></div>
 
-<div class="card-panel narrow mb-4">
-    <p>
+<MudPaper Outlined="true" Class="api-panel pa-5 mb-4">
+    <MudText Typo="Typo.body2" GutterBottom="true">
         GitBench has a JSON REST API at <code>@BaseUrl/api/v1</code>. The full description is an OpenAPI document:
         <a href="/api/v1/openapi.json" target="_blank" rel="noopener"><code>/api/v1/openapi.json</code></a>
         (load it into Swagger UI, Postman or a client generator).
-    </p>
+    </MudText>
 
-    <h2 class="section-title mt-3">Authentication</h2>
-    <p>
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="api-section-title">Authentication</MudText>
+    <MudText Typo="Typo.body2" GutterBottom="true">
         Create a personal access token under <a href="account/profile#tokens" @onclick="OpenProfile" @onclick:preventDefault>Profile → Access tokens</a>
         with the <code>read_api</code> scope (GET requests) or <code>write_api</code> (everything), and send it as a bearer token.
         Your project roles still apply: a project you can't see answers <code>404</code>, and a missing permission answers <code>403</code>.
-    </p>
-    <pre class="mono small border rounded p-2">curl -H "Authorization: Bearer gbp_…" @BaseUrl/api/v1/user</pre>
-    <p class="small muted">In the browser, your signed-in session works too. Writes made with the session must send JSON (or an <code>X-Requested-With</code> header).</p>
+    </MudText>
+    <pre class="api-code mono">curl -H "Authorization: Bearer gbp_…" @BaseUrl/api/v1/user</pre>
+    <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="p">In the browser, your signed-in session works too. Writes made with the session must send JSON (or an <code>X-Requested-With</code> header).</MudText>
 
-    <h2 class="section-title mt-3">Conventions</h2>
-    <ul class="small">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="api-section-title">Conventions</MudText>
+    <ul class="api-list">
         <li>camelCase JSON; enums are camelCase strings (e.g. <code>inProgress</code>); timestamps are ISO 8601 UTC.</li>
         <li>Lists take <code>?page=</code> and <code>?perPage=</code> (default 30, max 100) and return <code>X-Total-Count</code> and <code>Link</code> headers.</li>
         <li>Errors are <a href="https://www.rfc-editor.org/rfc/rfc9457" target="_blank" rel="noopener">problem details</a>: <code>{ "status", "title", "detail" }</code>.</li>
     </ul>
 
-    <h2 class="section-title mt-3">Endpoints</h2>
-    <table class="table table-sm small mb-0">
-        <tbody>
-            @foreach (var (method, path, what) in Endpoints)
-            {
-                <tr><td class="mono">@method</td><td class="mono">@path</td><td>@what</td></tr>
-            }
-        </tbody>
-    </table>
-</div>
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="api-section-title">Endpoints</MudText>
+    <div class="api-table">
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                @foreach (var (method, path, what) in Endpoints)
+                {
+                    <tr><td class="mono api-method">@method</td><td class="mono">@path</td><td>@what</td></tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </div>
+</MudPaper>
 
-<div class="card-panel narrow mb-4">
-    <h2 class="section-title">Webhooks</h2>
-    <p class="mb-0">
+<MudPaper Outlined="true" Class="api-panel pa-5 mb-4">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="api-section-title mt-0">Webhooks</MudText>
+    <MudText Typo="Typo.body2">
         Maintainers can send events (pushes, issues, pull requests, pipelines) to other services from a project's
         <b>Settings → Webhooks</b>. Each delivery is signed with <code>X-GitBench-Signature-256</code>; see the README for how to verify it.
-    </p>
+    </MudText>
+</MudPaper>
 </div>
 
 @code {

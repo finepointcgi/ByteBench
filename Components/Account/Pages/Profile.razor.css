@@ -1,0 +1,18 @@
+.auth-back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 14px; font-size: 13px; }
+.profile-id { display: flex; align-items: center; gap: 12px; }
+.profile-section { border-top: 1px solid var(--mud-palette-lines-default); margin-top: 20px; padding-top: 18px; }
+.profile-section ::deep .profile-section-title { font-weight: 600; margin-bottom: 12px; }
+.profile-signout { border-top: 1px solid var(--mud-palette-lines-default); margin-top: 20px; padding-top: 16px; }
+
+.color-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-swatch { position: relative; cursor: pointer; margin: 0; }
+.color-swatch ::deep input { position: absolute; opacity: 0; width: 0; height: 0; }
+.color-swatch span { display: block; width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 2px var(--mud-palette-surface); }
+.color-swatch ::deep input:checked + span { border-color: var(--mud-palette-text-primary); }
+.color-swatch ::deep input:focus-visible + span { outline: 2px solid var(--mud-palette-primary); outline-offset: 2px; }
+
+.token-copy { display: flex; gap: 8px; align-items: stretch; }
+.token-copy input { flex: 1; min-width: 0; }
+.token-table { overflow-x: auto; }
+.token-inactive td { color: var(--mud-palette-text-disabled); }
+.token-action { text-align: right; white-space: nowrap; }

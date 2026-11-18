@@ -206,10 +206,6 @@ h1 { font-size: 1.6rem; font-weight: 600; margin: 0; }
 .milestone.closed { opacity: .7; }
 .milestone-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
 .milestone-actions { display: flex; gap: 6px; }
-.label-table { display: flex; flex-direction: column; }
-.label-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.label-row .form-control-sm { max-width: 260px; }
-.label-row .label-chip { margin-left: 0; }
 
 @media (max-width: 1000px) {
     .dash-grid, .detail-grid { grid-template-columns: 1fr; }
@@ -238,32 +234,6 @@ h1 { font-size: 1.6rem; font-weight: 600; margin: 0; }
 .user-menu-signout { margin: 0; }
 .btn-signout { color: #c9c6d9; border: 1px solid #3a3456; background: transparent; }
 .btn-signout:hover, .btn-signout:focus { color: #fff; background: #24203a; border-color: #4b4470; }
-
-.auth-shell {
-    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 20px; padding: 32px 16px;
-    background: radial-gradient(ellipse at top, #2a2245 0%, #151322 60%);
-}
-.auth-brand { font-size: 22px; }
-.auth-card { width: 100%; max-width: 420px; padding: 28px; box-shadow: 0 12px 40px rgba(0, 0, 0, .35); border-color: transparent; }
-.auth-card:has(.profile-page) { max-width: 560px; }
-.auth-title { font-size: 1.4rem; margin-bottom: 4px; }
-.auth-sub { margin-bottom: 20px; }
-.auth-alert { padding: 10px 12px; font-size: 13px; }
-.auth-footer { margin: 18px 0 0; text-align: center; }
-.auth-back { display: inline-block; margin-bottom: 14px; font-size: 13px; }
-
-.profile-id { display: flex; align-items: center; gap: 12px; }
-.profile-section { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 18px; }
-.profile-section-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
-.profile-signout { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 16px; }
-
-.color-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.color-swatch { position: relative; cursor: pointer; margin: 0; }
-.color-swatch input { position: absolute; opacity: 0; width: 0; height: 0; }
-.color-swatch span { display: block; width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 2px #fff; }
-.color-swatch input:checked + span { border-color: var(--text); }
-.color-swatch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ----- Repositories ----- */
 .min-w-0 { min-width: 0; }
@@ -489,12 +459,6 @@ a.tree-commit:hover { color: var(--accent); }
 
 /* ----- Workflows & audit ----- */
 .board-col.drop-disabled { opacity: .45; background: repeating-linear-gradient(45deg, #eceef2, #eceef2 8px, #e2e4e9 8px, #e2e4e9 16px); }
-.wf-table td, .wf-table th { vertical-align: middle; }
-.wf-matrix th.rot { white-space: nowrap; font-weight: 500; font-size: 12px; }
-.wf-matrix td { text-align: center; }
-.audit-table { font-size: 13px; }
-.audit-table td { vertical-align: top; }
-.audit-details { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: #f6f7f9; border-radius: 6px; padding: 8px; margin: 4px 0 0; max-width: 640px; }
 
 
 /* ===== MudBlazor shell (MainLayout) ===== */

@@ -1,0 +1,11 @@
+.api-page ::deep .api-panel { max-width: 720px; }
+.api-page ::deep .api-section-title { font-weight: 600; margin: 20px 0 8px; }
+.api-code {
+    font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 8px 0;
+    padding: 8px 10px; border: 1px solid var(--mud-palette-lines-default); border-radius: var(--mud-default-borderradius);
+    background: var(--mud-palette-background);
+}
+.api-list { font-size: .8125rem; padding-left: 20px; margin: 0; }
+.api-list li { margin-bottom: 4px; }
+.api-table { overflow-x: auto; font-size: .8125rem; }
+.api-method { white-space: nowrap; color: var(--mud-palette-primary); font-weight: 600; }

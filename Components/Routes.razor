@@ -8,9 +8,10 @@
                 }
                 else
                 {
-                    <div class="empty">
-                        <h1>Access denied</h1>
-                        <p class="muted">You don't have permission to view this page.</p>
+                    <div class="gb-empty-state">
+                        <MudIcon Class="mud-text-secondary" Icon="@Icons.Material.Outlined.Lock" Size="Size.Large" />
+                        <MudText Typo="Typo.h5" HtmlTag="h1">Access denied</MudText>
+                        <MudText Class="mud-text-secondary" Typo="Typo.body2">You don't have permission to view this page.</MudText>
                     </div>
                 }
             </NotAuthorized>

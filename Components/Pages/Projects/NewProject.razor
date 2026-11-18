@@ -4,39 +4,49 @@
 
 <PageTitle>New project · GitBench</PageTitle>
 
-<div class="page-header"><h1>New project</h1></div>
+<div class="new-project">
+<div class="page-header"><MudText Typo="Typo.h5" HtmlTag="h1">New project</MudText></div>
 
-<div class="card-panel narrow">
+<MudPaper Outlined="true" Class="pa-5" Style="max-width:720px">
     <EditForm Model="model" OnValidSubmit="Create" FormName="new-project">
         <DataAnnotationsValidator />
-        <div class="mb-3">
-            <label class="form-label">Name</label>
-            <InputText class="form-control" @bind-Value="model.Name" @bind-Value:after="SuggestKey" placeholder="My awesome project" />
-            <ValidationMessage For="() => model.Name" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Key</label>
-            <InputText class="form-control mono" @bind-Value="model.Key" @bind-Value:after="() => model.Key = model.Key.ToUpperInvariant()" @oninput="_ => keyTouched = true" placeholder="MAP" />
-            <div class="form-text">Prefix for issue keys, e.g. <span class="mono">@(string.IsNullOrEmpty(model.Key) ? "KEY" : model.Key.ToUpper())-1</span></div>
-            <ValidationMessage For="() => model.Key" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Description</label>
-            <InputTextArea class="form-control" rows="3" @bind-Value="model.Description" />
-        </div>
-        @if (error != null)
-        {
-            <div class="alert alert-danger">@error</div>
-        }
-        <button class="btn btn-primary" type="submit">Create project</button>
-        <a class="btn btn-link" href="/">Cancel</a>
+        <MudStack Spacing="3">
+            <MudTextField T="string" Label="Name" Value="model.Name" ValueChanged="NameChanged" Immediate="true" For="() => model.Name"
+                          Placeholder="My awesome project" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" Label="Key" Value="model.Key" ValueChanged="KeyChanged" Immediate="true" For="() => model.Key"
+                          Placeholder="MAP" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                          HelperText="@($"Prefix for issue keys, e.g. {(string.IsNullOrEmpty(model.Key) ? "KEY" : model.Key.ToUpper())}-1")" />
+            <MudTextField T="string" Label="Description" @bind-Value="model.Description" Lines="3" Sizing="InputSizing.Auto"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+            @if (error != null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert>
+            }
+            <div class="d-flex gap-2">
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">Create project</MudButton>
+                <MudButton Href="/" Variant="Variant.Text">Cancel</MudButton>
+            </div>
+        </MudStack>
     </EditForm>
+</MudPaper>
 </div>
 
 @code {
     private Project model = new();
     private bool keyTouched;
     private string? error;
+
+    private void NameChanged(string? value)
+    {
+        model.Name = value ?? "";
+        SuggestKey();
+    }
+
+    private void KeyChanged(string? value)
+    {
+        keyTouched = true;
+        model.Key = (value ?? "").ToUpperInvariant();
+    }
 
     private void SuggestKey()
     {

@@ -1,0 +1,20 @@
+.members-page ::deep .members-title { font-weight: 600; margin-bottom: 10px; }
+.add-member { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.add-member ::deep .add-login { flex: 0 1 20rem; margin-top: 0; }
+.add-member ::deep .add-role { flex: 0 1 12rem; margin-top: 0; }
+
+.member-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--mud-palette-lines-default); }
+.member-row:last-child { border-bottom: none; }
+.member-main { flex: 1; min-width: 0; }
+.member-name { font-weight: 500; }
+.member-meta { color: var(--mud-palette-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.member-right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.member-right ::deep .member-role { width: 140px; margin-top: 0; }
+
+.members-page ::deep .role-table { max-width: 48rem; overflow-x: auto; font-size: 12px; }
+.role-col { text-align: center; }
+
+@media (max-width: 600px) {
+    .member-row { flex-wrap: wrap; }
+    .member-right { width: 100%; justify-content: flex-end; }
+}

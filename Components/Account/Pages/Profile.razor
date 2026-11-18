@@ -12,172 +12,180 @@
 
 <div class="profile-page">
     <div class="profile-head">
-        <a class="auth-back" href="/">← Back to GitBench</a>
+        <a class="auth-back" href="/"><MudIcon Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" /> Back to GitBench</a>
         @if (user != null)
         {
             <div class="profile-id">
                 <Avatar User="user" Size="48" />
                 <div>
-                    <h1 class="auth-title mb-0">@user.DisplayName</h1>
-                    <div class="muted small">@@@user.UserName</div>
+                    <MudText Typo="Typo.h5" HtmlTag="h1">@user.DisplayName</MudText>
+                    <MudText Class="mud-text-secondary" Typo="Typo.body2">@@@user.UserName</MudText>
                 </div>
             </div>
         }
     </div>
 
     <section class="profile-section">
-        <h2 class="profile-section-title">Profile</h2>
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Profile</MudText>
         <StatusMessage Success="@profileSuccess" Errors="profileErrors" />
 
         <EditForm Model="ProfileInput" FormName="profile" OnValidSubmit="SaveProfile" method="post">
             <DataAnnotationsValidator />
-            <div class="mb-3">
-                <label class="form-label" for="pf-name">Display name</label>
-                <InputText id="pf-name" class="form-control" @bind-Value="ProfileInput!.DisplayName" autocomplete="name" />
-                <ValidationMessage For="() => ProfileInput!.DisplayName" class="text-danger small" />
+            <div class="gb-field">
+                <label class="gb-field-label" for="pf-name">Display name</label>
+                <InputText id="pf-name" class="gb-input" @bind-Value="ProfileInput!.DisplayName" autocomplete="name" />
+                <ValidationMessage For="() => ProfileInput!.DisplayName" />
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="pf-email">Email</label>
-                <InputText id="pf-email" type="email" class="form-control" @bind-Value="ProfileInput!.Email" autocomplete="email" />
-                <ValidationMessage For="() => ProfileInput!.Email" class="text-danger small" />
+            <div class="gb-field">
+                <label class="gb-field-label" for="pf-email">Email</label>
+                <InputText id="pf-email" type="email" class="gb-input" @bind-Value="ProfileInput!.Email" autocomplete="email" />
+                <ValidationMessage For="() => ProfileInput!.Email" />
             </div>
-            <div class="mb-3">
-                <span class="form-label d-block">Avatar color</span>
+            <div class="gb-field">
+                <span class="gb-field-label">Avatar color</span>
                 <InputRadioGroup @bind-Value="ProfileInput!.Color" Name="color">
                     <div class="color-swatches">
                         @foreach (var c in AvatarPalette.Colors)
                         {
                             <label class="color-swatch" title="@c">
-                                <InputRadio Value="c" />
+                                <InputRadio Value="c" aria-label="@c" />
                                 <span style="background:@c"></span>
                             </label>
                         }
                     </div>
                 </InputRadioGroup>
-                <ValidationMessage For="() => ProfileInput!.Color" class="text-danger small" />
+                <ValidationMessage For="() => ProfileInput!.Color" />
             </div>
-            <button type="submit" class="btn btn-primary">Save profile</button>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Save profile</MudButton>
         </EditForm>
     </section>
 
     <section class="profile-section">
-        <h2 class="profile-section-title">Change password</h2>
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Change password</MudText>
         <StatusMessage Success="@passwordSuccess" Errors="passwordErrors" />
 
         <EditForm Model="PasswordInput" FormName="password" OnValidSubmit="ChangePassword" method="post">
             <DataAnnotationsValidator />
-            <div class="mb-3">
-                <label class="form-label" for="pw-current">Current password</label>
-                <InputText id="pw-current" type="password" class="form-control" @bind-Value="PasswordInput!.CurrentPassword" autocomplete="current-password" />
-                <ValidationMessage For="() => PasswordInput!.CurrentPassword" class="text-danger small" />
+            <div class="gb-field">
+                <label class="gb-field-label" for="pw-current">Current password</label>
+                <InputText id="pw-current" type="password" class="gb-input" @bind-Value="PasswordInput!.CurrentPassword" autocomplete="current-password" />
+                <ValidationMessage For="() => PasswordInput!.CurrentPassword" />
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="pw-new">New password</label>
-                <InputText id="pw-new" type="password" class="form-control" @bind-Value="PasswordInput!.NewPassword" autocomplete="new-password" />
-                <ValidationMessage For="() => PasswordInput!.NewPassword" class="text-danger small" />
+            <div class="gb-field">
+                <label class="gb-field-label" for="pw-new">New password</label>
+                <InputText id="pw-new" type="password" class="gb-input" @bind-Value="PasswordInput!.NewPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => PasswordInput!.NewPassword" />
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="pw-confirm">Confirm new password</label>
-                <InputText id="pw-confirm" type="password" class="form-control" @bind-Value="PasswordInput!.ConfirmPassword" autocomplete="new-password" />
-                <ValidationMessage For="() => PasswordInput!.ConfirmPassword" class="text-danger small" />
+            <div class="gb-field">
+                <label class="gb-field-label" for="pw-confirm">Confirm new password</label>
+                <InputText id="pw-confirm" type="password" class="gb-input" @bind-Value="PasswordInput!.ConfirmPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => PasswordInput!.ConfirmPassword" />
             </div>
-            <button type="submit" class="btn btn-primary">Change password</button>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Change password</MudButton>
         </EditForm>
     </section>
 
     <section class="profile-section" id="tokens">
-        <h2 class="profile-section-title">Access tokens</h2>
-        <p class="muted small">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Access tokens</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
             Use a personal access token instead of your password for Git over HTTP: enter your username and paste the
             token when git asks for a password. Tokens with an API scope also work for the
             <a href="/developers/api">REST API</a> (<code>Authorization: Bearer gbp_…</code>). Tokens are shown once; GitBench stores only a hash.
-        </p>
+        </MudText>
         <StatusMessage Success="@tokenSuccess" Errors="tokenErrors" />
 
         @if (newToken != null)
         {
-            <div class="alert alert-success">
+            <MudAlert Severity="Severity.Success" Class="auth-alert" NoIcon="true">
                 <div class="mb-2"><b>Copy your new token now.</b> You won't be able to see it again.</div>
-                <div class="input-group">
-                    <input id="new-token" class="form-control mono" readonly value="@newToken" onfocus="this.select()" />
-                    <button type="button" class="btn btn-outline-secondary"
+                <div class="token-copy">
+                    <input id="new-token" class="gb-input mono" readonly value="@newToken" onfocus="this.select()" aria-label="New token" />
+                    @* A plain button: MudButton's OnClick parameter would claim the inline JS onclick (static SSR has no events). *@
+                    <button type="button" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-medium"
                             onclick="navigator.clipboard.writeText(document.getElementById('new-token').value); this.textContent='Copied';">Copy</button>
                 </div>
-            </div>
+            </MudAlert>
         }
 
         <EditForm Model="TokenInput" FormName="create-token" OnValidSubmit="CreateToken" method="post">
             <DataAnnotationsValidator />
-            <div class="mb-3">
-                <label class="form-label" for="tk-name">Token name</label>
-                <InputText id="tk-name" class="form-control" @bind-Value="TokenInput!.Name" placeholder="e.g. Laptop git" />
-                <ValidationMessage For="() => TokenInput!.Name" class="text-danger small" />
+            <div class="gb-field">
+                <label class="gb-field-label" for="tk-name">Token name</label>
+                <InputText id="tk-name" class="gb-input" @bind-Value="TokenInput!.Name" placeholder="e.g. Laptop git" />
+                <ValidationMessage For="() => TokenInput!.Name" />
             </div>
-            <div class="mb-3">
-                <span class="form-label d-block">Scopes</span>
-                <label class="form-check">
-                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.ReadRepository" />
-                    <span class="form-check-label"><code>read_repository</code>: clone and fetch</span>
+            <div class="gb-field">
+                <span class="gb-field-label">Scopes</span>
+                <label class="gb-check">
+                    <InputCheckbox @bind-Value="TokenInput!.ReadRepository" />
+                    <span><code>read_repository</code>: clone and fetch</span>
                 </label>
-                <label class="form-check">
-                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.WriteRepository" />
-                    <span class="form-check-label"><code>write_repository</code>: push (also allows clone and fetch)</span>
+                <label class="gb-check">
+                    <InputCheckbox @bind-Value="TokenInput!.WriteRepository" />
+                    <span><code>write_repository</code>: push (also allows clone and fetch)</span>
                 </label>
-                <label class="form-check">
-                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.ReadApi" />
-                    <span class="form-check-label"><code>read_api</code>: read-only <a href="/developers/api">REST API</a> access (GET requests)</span>
+                <label class="gb-check">
+                    <InputCheckbox @bind-Value="TokenInput!.ReadApi" />
+                    <span><code>read_api</code>: read-only <a href="/developers/api">REST API</a> access (GET requests)</span>
                 </label>
-                <label class="form-check">
-                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.WriteApi" />
-                    <span class="form-check-label"><code>write_api</code>: full REST API access (also allows reads)</span>
+                <label class="gb-check">
+                    <InputCheckbox @bind-Value="TokenInput!.WriteApi" />
+                    <span><code>write_api</code>: full REST API access (also allows reads)</span>
                 </label>
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="tk-exp">Expires</label>
-                <InputSelect id="tk-exp" class="form-select" @bind-Value="TokenInput!.ExpiresInDays">
-                    <option value="7">In 7 days</option>
-                    <option value="30">In 30 days</option>
-                    <option value="90">In 90 days</option>
-                    <option value="365">In a year</option>
-                    <option value="0">Never</option>
+            <div class="gb-field">
+                <label class="gb-field-label" for="tk-exp">Expires</label>
+                <InputSelect id="tk-exp" class="gb-input" @bind-Value="TokenInput!.ExpiresInDays">
+                    @* Static SSR: browsers ignore <select value>, so mark the chosen option itself (else the first, 7 days, wins). *@
+                    @foreach (var (days, text) in ExpiryChoices)
+                    {
+                        <option value="@days" selected="@(TokenInput!.ExpiresInDays == days)">@text</option>
+                    }
                 </InputSelect>
             </div>
-            <button type="submit" class="btn btn-primary">Create token</button>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+                       StartIcon="@Icons.Material.Filled.Key">Create token</MudButton>
         </EditForm>
 
         @if (tokens.Count > 0)
         {
-            <form method="post" @formname="revoke-token" @onsubmit="RevokeToken" class="mt-4">
+            <form method="post" @formname="revoke-token" @onsubmit="RevokeToken" class="mt-6">
                 <AntiforgeryToken />
-                <table class="table table-sm small align-middle">
-                    <thead><tr><th>Name</th><th>Token</th><th>Scopes</th><th>Created</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
-                    <tbody>
-                        @foreach (var t in tokens)
-                        {
-                            var now = DateTime.UtcNow;
-                            <tr class="@(t.IsActive(now) ? "" : "text-muted")">
-                                <td>@t.Name</td>
-                                <td class="mono">@t.Prefix…</td>
-                                <td>@ScopeText(t.Scopes)</td>
-                                <td>@t.CreatedAt.ToLocalTime().ToString("d")</td>
-                                <td>@(t.ExpiresAt?.ToLocalTime().ToString("d") ?? "Never")</td>
-                                <td>@(t.LastUsedAt?.ToLocalTime().ToString("g") ?? "Never")</td>
-                                <td class="text-end">
-                                    @if (t.RevokedAt != null) { <span>Revoked</span> }
-                                    else if (!t.IsActive(now)) { <span>Expired</span> }
-                                    else { <button type="submit" name="RevokeTokenId" value="@t.Id" class="btn btn-sm btn-outline-danger">Revoke</button> }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <div class="token-table">
+                    <MudSimpleTable Dense="true" Outlined="true" Elevation="0">
+                        <thead><tr><th>Name</th><th>Token</th><th>Scopes</th><th>Created</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var t in tokens)
+                            {
+                                var now = DateTime.UtcNow;
+                                <tr class="@(t.IsActive(now) ? "" : "token-inactive")">
+                                    <td>@t.Name</td>
+                                    <td class="mono">@t.Prefix…</td>
+                                    <td>@ScopeText(t.Scopes)</td>
+                                    <td>@t.CreatedAt.ToLocalTime().ToString("d")</td>
+                                    <td>@(t.ExpiresAt?.ToLocalTime().ToString("d") ?? "Never")</td>
+                                    <td>@(t.LastUsedAt?.ToLocalTime().ToString("g") ?? "Never")</td>
+                                    <td class="token-action">
+                                        @if (t.RevokedAt != null) { <span>Revoked</span> }
+                                        else if (!t.IsActive(now)) { <span>Expired</span> }
+                                        else
+                                        {
+                                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                                       name="RevokeTokenId" value="@t.Id">Revoke</MudButton>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
             </form>
         }
     </section>
 
     <form class="profile-signout" method="post" action="account/logout">
         <AntiforgeryToken />
-        <button type="submit" class="btn btn-outline-secondary btn-sm">Sign out</button>
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Logout">Sign out</MudButton>
     </form>
 </div>
 
@@ -247,6 +255,9 @@
         tokenSuccess = "Token revoked. It can no longer be used.";
         tokens = await Tokens.ListAsync(user.Id);
     }
+
+    private static readonly (int Days, string Text)[] ExpiryChoices =
+        [(7, "In 7 days"), (30, "In 30 days"), (90, "In 90 days"), (365, "In a year"), (0, "Never")];
 
     private static string ScopeText(TokenScopes s) => string.Join(", ",
         new[] { (TokenScopes.ReadRepository, "read_repository"), (TokenScopes.WriteRepository, "write_repository"),

@@ -1,0 +1,36 @@
+@* Type-to-confirm dialog for deleting a project: the Delete button only enables once the key is typed. *@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6"><MudIcon Icon="@Icons.Material.Outlined.WarningAmber" Color="Color.Error" Class="mr-2" Style="vertical-align:middle" />Delete @ProjectName?</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            This permanently removes all of the project's issues, comments, labels and milestones. It can't be undone.
+        </MudText>
+        <MudTextField T="string" @bind-Value="typed" Immediate="true" Label="@($"Type the project key ({ProjectKey}) to confirm")"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" AutoFocus="true" OnKeyDown="KeyDown" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" Disabled="@(!Matches)" OnClick="Confirm">Delete project</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string ProjectKey { get; set; } = "";
+    [Parameter] public string ProjectName { get; set; } = "";
+
+    private string? typed;
+    private bool Matches => typed?.Trim().ToUpperInvariant() == ProjectKey;
+
+    private void Confirm()
+    {
+        if (Matches) MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private void KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Confirm();
+    }
+}

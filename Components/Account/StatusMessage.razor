@@ -1,24 +1,24 @@
 @if (Errors is { Count: > 0 })
 {
-    <div class="alert alert-danger auth-alert" role="alert">
+    <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">
         @if (Errors.Count == 1)
         {
             @Errors[0]
         }
         else
         {
-            <ul class="mb-0 ps-3">
+            <ul class="status-list">
                 @foreach (var e in Errors)
                 {
                     <li>@e</li>
                 }
             </ul>
         }
-    </div>
+    </MudAlert>
 }
 else if (!string.IsNullOrEmpty(Success))
 {
-    <div class="alert alert-success auth-alert" role="status">@Success</div>
+    <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert" role="status">@Success</MudAlert>
 }
 
 @code {

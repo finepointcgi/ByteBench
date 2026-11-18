@@ -2,36 +2,34 @@
 @using GitBench.Services.Ai
 @inject AiClient Ai
 @inject AiReviewService Reviews
+@inject ISnackbar Snackbar
 
-<div class="card-panel narrow mb-4">
-    <h2 class="section-title">AI code review</h2>
-    <label class="form-check">
-        <input class="form-check-input" type="checkbox" checked="@enabled" @onchange="Toggle" />
-        <span class="form-check-label">Review pull requests automatically with GitBench AI</span>
-    </label>
-    <div class="form-text">
+<MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width:720px">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2" Style="font-weight:600">AI code review</MudText>
+    <MudSwitch T="bool" Value="enabled" ValueChanged="Toggle" Color="Color.Primary"
+               Label="Review pull requests automatically with GitBench AI" />
+    <MudText Typo="Typo.caption" HtmlTag="p" Class="mud-text-secondary mt-1">
         When on, GitBench AI reviews each new pull request and each new push to an open pull request's source branch,
         and posts its findings as comments. Anyone can still ask for a review from the pull request page.
-    </div>
+    </MudText>
     @if (!Ai.IsConfigured)
     {
-        <div class="small muted mt-2">AI review isn't set up (set ANTHROPIC_API_KEY), so nothing is reviewed yet.</div>
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">AI review isn't set up (set ANTHROPIC_API_KEY), so nothing is reviewed yet.</MudAlert>
     }
-    @if (saved) { <span class="text-success small">Saved ✓</span> }
-</div>
+</MudPaper>
 
 @code {
     [Parameter, EditorRequired] public Project Project { get; set; } = null!;
 
-    private bool enabled, saved;
+    private bool enabled;
 
     protected override void OnParametersSet() => enabled = Project.AiReviewEnabled;
 
-    private async Task Toggle(ChangeEventArgs e)
+    private async Task Toggle(bool on)
     {
-        enabled = e.Value is true;
+        enabled = on;
         await Reviews.SetAutoReviewAsync(Project.Id, enabled);
         Project.AiReviewEnabled = enabled;
-        saved = true;
+        Snackbar.Add(enabled ? "AI code review turned on." : "AI code review turned off.", Severity.Success);
     }
 }

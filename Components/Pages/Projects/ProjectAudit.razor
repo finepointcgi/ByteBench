@@ -16,10 +16,10 @@ else if (project != null)
 {
     <div class="page-header">
         <div>
-            <h1>Audit log</h1>
-            <div class="muted">@project.Name: settings, members, repositories, branch protection, webhooks, workflow and deleted issues.</div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Audit log</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name: settings, members, repositories, branch protection, webhooks, workflow and deleted issues.</MudText>
         </div>
-        <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/settings">← Settings</a>
+        <MudButton Href="@($"/p/{project.Key}/settings")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Settings</MudButton>
     </div>
     <AuditViewer ProjectId="project.Id" ProjectKey="@project.Key" />
 }
