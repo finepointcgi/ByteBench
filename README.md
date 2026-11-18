@@ -472,6 +472,7 @@ They require `Permission.ManageRepositories`. Webhooks are integration settings 
 
 - Set a URL, a secret, the events and an Active flag.
 - Leave the secret blank and GitBench generates one. The secret is shown once and masked afterwards. **New secret** rotates it.
+- **Secrets are encrypted at rest** with ASP.NET Core Data Protection (purpose `GitBench.Webhooks.Secret.v1`, `Services/Webhooks/WebhookSecrets.cs`). The stored value is `dp:` + ciphertext, and only the delivery worker decrypts it to sign; the settings page gets a masked value. Secrets saved before encryption (no `dp:` prefix) still work and are encrypted at the next start. If the Data Protection keys are lost, stored secrets can't be decrypted: deliveries fail with a message saying so, and **New secret** fixes the hook.
 - Use **Send test ping**.
 - Look at the last 25 deliveries: status, duration, attempts, the payload and the first 4 KB of the response. Each has a **Redeliver** button, which resends the same body under the same delivery id with `X-GitBench-Redelivery: true`.
 

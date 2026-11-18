@@ -90,6 +90,7 @@ using (var scope = app.Services.CreateScope())
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     SprintSeeder.Initialize(db);
     WorkflowService.EnsureDefaults(db); // default workflow for projects without one; maps issues to workflow statuses
+    scope.ServiceProvider.GetRequiredService<WebhookSecrets>().EncryptLegacy(db); // webhook secrets stored before encryption
 }
 
 if (!app.Environment.IsDevelopment())

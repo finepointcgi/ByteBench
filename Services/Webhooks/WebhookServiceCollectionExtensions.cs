@@ -12,6 +12,7 @@ public static class WebhookServiceCollectionExtensions
         services.AddSingleton<PublicBaseUrl>();
         services.AddSingleton<WebhookDispatcher>();
         services.AddSingleton<WebhookSender>();
+        services.AddSingleton<WebhookSecrets>();
         services.AddHostedService<WebhookWorker>();
         services.AddScoped<WebhookService>();
         services.AddScoped<WebhookNotifier>();
