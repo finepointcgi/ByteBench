@@ -23,7 +23,8 @@ public partial record IssueFilter
 /// </summary>
 public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications, Webhooks.WebhookNotifier webhooks,
     Attachments.AttachmentStorage attachmentFiles,
-    Audit.AuditLog audit)
+    Audit.AuditLog audit,
+    RepoStorage repoStorage)
 {
     // ---------- Projects ----------
 
@@ -102,6 +103,8 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         var gone = await db.Projects.Where(p => p.Id == id).Select(p => new { p.Key, p.Name, Issues = p.Issues.Count }).FirstOrDefaultAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
         attachmentFiles.Delete(files); // rows first, then files
+        // The FK cascade removed the repository rows but not the bare repos: delete {RepositoryRoot}/{KEY} too.
+        if (gone != null) repoStorage.DeleteProjectDirectory(gone.Key);
         await audit.RecordAsync("project.deleted", "project", id, id, gone);
     }
 
