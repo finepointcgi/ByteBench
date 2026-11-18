@@ -140,7 +140,7 @@ public enum PullRequestState { Open, Merged, Declined }
 public enum ReviewState { Approved, ChangesRequested }
 
 /// <summary>A request to merge <see cref="SourceBranch"/> into <see cref="TargetBranch"/> within one repository.</summary>
-public class PullRequest
+public partial class PullRequest
 {
     public int Id { get; set; }
     public int RepositoryId { get; set; }
@@ -174,7 +174,7 @@ public class PullRequest
 }
 
 /// <summary>A comment on a PR. With <see cref="FilePath"/> set it is an inline comment on a diff line.</summary>
-public class PullRequestComment
+public partial class PullRequestComment
 {
     public int Id { get; set; }
     public int PullRequestId { get; set; }
@@ -350,7 +350,7 @@ public class PersonalAccessToken
 /// <c>*</c> and <c>?</c> stay within one path segment, <c>**</c> matches across <c>/</c>). Enforced by
 /// <see cref="GitBench.Services.BranchProtectionService"/> on git push, branch create/delete and PR merge.
 /// </summary>
-public class BranchProtectionRule
+public partial class BranchProtectionRule
 {
     public int Id { get; set; }
     public int RepositoryId { get; set; }
@@ -860,4 +860,68 @@ public class ReleaseAsset
     public User Uploader { get; set; } = null!;
     public int DownloadCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- PR features -----
+
+/// <summary>How a pull request's commits reach the target branch.</summary>
+public enum MergeStrategy
+{
+    /// <summary>A two-parent merge commit (or a fast-forward, when asked for and possible).</summary>
+    Merge,
+    /// <summary>One new commit on the target with the PR's combined changes.</summary>
+    Squash,
+    /// <summary>The PR's commits replayed one by one onto the target, which is then fast-forwarded.</summary>
+    Rebase,
+}
+
+/// <summary>A set of <see cref="MergeStrategy"/> values (bit = 1 &lt;&lt; strategy).</summary>
+[Flags]
+public enum MergeStrategies { None = 0, Merge = 1, Squash = 2, Rebase = 4, All = Merge | Squash | Rebase }
+
+public partial class PullRequest
+{
+    /// <summary>Work in progress: can't be merged, and assigned reviewers aren't notified until it's marked ready.</summary>
+    public bool IsDraft { get; set; }
+    /// <summary>How the PR was merged (null while unmerged, and for PRs merged before strategies existed).</summary>
+    public MergeStrategy? MergeStrategy { get; set; }
+}
+
+/// <summary>
+/// Threads: an inline comment without <see cref="ParentId"/> starts a thread; replies point at it and copy its
+/// position. Resolution state lives on the thread's first comment.
+/// </summary>
+public partial class PullRequestComment
+{
+    public int? ParentId { get; set; }
+    public bool IsResolved { get; set; }
+    public int? ResolvedById { get; set; }
+    public User? ResolvedBy { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    /// <summary>Source-branch head the inline comment was written on (null for older comments and replies).</summary>
+    [MaxLength(40)] public string? CommitSha { get; set; }
+    /// <summary>First new-side line of a multi-line comment (null: the comment covers <see cref="PullRequestComment.Line"/> only).</summary>
+    public int? StartLine { get; set; }
+    /// <summary>The commented line(s) as they read at <see cref="CommitSha"/>, joined with \n. Used to spot outdated threads and stale suggestions.</summary>
+    public string? LineText { get; set; }
+    /// <summary>The commit that applied this comment's suggestion, once applied.</summary>
+    [MaxLength(40)] public string? AppliedCommitSha { get; set; }
+
+    public bool IsThreadRoot => FilePath != null && ParentId == null;
+}
+
+public partial class BranchProtectionRule
+{
+    /// <summary>Every inline comment thread on the PR must be resolved before merging.</summary>
+    public bool RequireThreadResolution { get; set; }
+    /// <summary>Each changed file with CODEOWNERS owners needs an approval from one of them.</summary>
+    public bool RequireCodeOwnerApproval { get; set; }
+}
+
+public partial class Repository
+{
+    /// <summary>Merge strategies pull requests may use (null: all of them).</summary>
+    public MergeStrategies? AllowedMergeStrategies { get; set; }
+    /// <summary>The strategy preselected in the merge box (null: merge commit).</summary>
+    public MergeStrategy? DefaultMergeStrategy { get; set; }
 }

@@ -30,6 +30,7 @@ else if (Repo != null)
                        Disabled="@string.IsNullOrWhiteSpace(newName)" OnClick="Create">Create branch</MudButton>
         }
         <span class="toolbar-note muted small">Ahead/behind relative to <span class="mono">@Repo.DefaultBranch</span></span>
+        <MudButton Href="@PrUrls.Compare(Repo, Repo.DefaultBranch)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CompareArrows">Compare</MudButton>
     </div>
     @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
@@ -73,9 +74,16 @@ else if (Repo != null)
                     <div class="ahead-behind ab-default muted small">default branch</div>
                 }
                 <div class="branch-actions">
+                    @if (!b.IsDefault)
+                    {
+                        <MudTooltip Text="@($"Compare with {Repo.DefaultBranch}")">
+                            <MudIconButton Href="@PrUrls.Compare(Repo, Repo.DefaultBranch, b.Name)" Icon="@Icons.Material.Outlined.CompareArrows" Size="Size.Small"
+                                           Variant="Variant.Outlined" aria-label="@($"Compare {b.Name} with {Repo.DefaultBranch}")" />
+                        </MudTooltip>
+                    }
                     @if (pr != null)
                     {
-                        <a href="@RepoUrls.PullRequest(pr)" class="branch-pr"><PrStateBadge State="pr.State" Compact="true" /> #@pr.Number</a>
+                        <a href="@RepoUrls.PullRequest(pr)" class="branch-pr"><PrStateBadge State="pr.State" Draft="pr.IsDraft" Compact="true" /> #@pr.Number</a>
                     }
                     else if (!b.IsDefault && b.Ahead > 0 && perms.Can(Permission.CreatePullRequest) && !Repo.IsArchived)
                     {

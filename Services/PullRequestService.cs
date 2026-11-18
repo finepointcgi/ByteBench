@@ -7,9 +7,9 @@ namespace GitBench.Services;
 public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
-public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
+public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
     MergeGate gate, ReviewerService reviewers, BranchProtectionService protection, Webhooks.WebhookNotifier webhooks,
-    Audit.AuditLog audit, Webhooks.WebhookPushEvents pushEvents)
+    Audit.AuditLog audit, Webhooks.WebhookPushEvents pushEvents, CodeOwnersService codeOwners)
 {
     // ---------- Queries ----------
 
@@ -93,7 +93,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
     // ---------- Lifecycle ----------
 
     public async Task<PullRequest> CreateAsync(Repository repo, string title, string? description, string source, string target, int authorId,
-        IEnumerable<int>? reviewerIds = null)
+        IEnumerable<int>? reviewerIds = null, bool draft = false)
     {
         await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest, authorId);
         await RepositorySettingsService.EnsureNotArchivedAsync(dbFactory, repo.Id);
@@ -121,14 +121,14 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         {
             RepositoryId = repo.Id, Number = number, Title = title,
             Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
-            SourceBranch = source, TargetBranch = target, AuthorId = authorId,
+            SourceBranch = source, TargetBranch = target, AuthorId = authorId, IsDraft = draft,
         };
-        pr.Activities.Add(new PullRequestActivity { ActorId = authorId, Text = "opened this pull request" });
+        pr.Activities.Add(new PullRequestActivity { ActorId = authorId, Text = draft ? "opened this pull request as a draft" : "opened this pull request" });
         db.PullRequests.Add(pr);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         await notifications.OnPullRequestCreatedAsync(pr.Id, authorId);
-        await reviewers.AddOnCreateAsync(pr.Id, authorId, reviewerIds);
+        await reviewers.AddOnCreateAsync(pr.Id, authorId, reviewerIds, await CodeOwnerReviewersAsync(repo, target, cmp.Files, authorId));
         await webhooks.PullRequestOpenedAsync(pr.Id, authorId);
         aiReviewQueue.Enqueue(pr.Id);
         return pr;
@@ -153,8 +153,13 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
     }
 
     /// <summary>Merges the PR inside the bare repo; on success records state, activity and linked-issue activity.</summary>
-    public async Task<MergeOutcome> MergeAsync(int prId, User actor, bool deleteSourceBranch, bool allowFastForward)
+    public Task<MergeOutcome> MergeAsync(int prId, User actor, bool deleteSourceBranch, bool allowFastForward) =>
+        MergeAsync(prId, actor, new MergeRequest(MergeStrategy.Merge, deleteSourceBranch, allowFastForward));
+
+    /// <summary>Merges the PR with <see cref="MergeRequest.Strategy"/> (which the repository must allow).</summary>
+    public async Task<MergeOutcome> MergeAsync(int prId, User actor, MergeRequest request)
     {
+        var deleteSourceBranch = request.DeleteSourceBranch;
         await access.RequireForPullRequestAsync(prId, Permission.MergePullRequest, actor.Id);
         if (deleteSourceBranch) await access.RequireForPullRequestAsync(prId, Permission.DeleteBranch, actor.Id);
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -162,6 +167,8 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be merged.");
         RepositorySettingsService.EnsureNotArchived(pr.Repository);
+        if (!MergeStrategySettings.Allowed(pr.Repository).HasFlag(MergeStrategySettings.Flag(request.Strategy)))
+            throw new InvalidOperationException($"This repository doesn't allow {MergeStrategySettings.Label(request.Strategy).ToLowerInvariant()} merges.");
         // Branch protection: approvals, change requests and required checks (throws with the reasons when blocked).
         var bypassed = await gate.EnsureCanMergeAsync(prId, actor.Id);
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
@@ -169,9 +176,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
         // Collect commit messages before merging: afterwards the commits are reachable from the target too.
         var before = await GetChangesAsync(pr);
-        var message = $"Merge pull request #{pr.Number} from {pr.SourceBranch} into {pr.TargetBranch}\n\n{pr.Title}";
-        var outcome = await repos.Git(pr.Repository, path =>
-            GitOps.Merge(path, pr.SourceBranch, pr.TargetBranch, message, RepositoryService.IdentityOf(actor), allowFastForward));
+        var outcome = await RunMergeAsync(pr, actor, request, before);
         if (!outcome.Success) return outcome;
 
         var now = DateTime.UtcNow;
@@ -181,11 +186,10 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         pr.SourceCommitSha = outcome.SourceSha;
         pr.TargetCommitSha = outcome.TargetSha;
         pr.ClosedAt = now;
-        Log(db, pr, actor.Id, outcome.FastForwarded
-            ? $"merged this pull request (fast-forward to `{outcome.MergeCommitSha![..7]}`)"
-            : $"merged this pull request with commit `{outcome.MergeCommitSha![..7]}`");
+        pr.MergeStrategy = request.Strategy;
+        Log(db, pr, actor.Id, MergedActivity(request.Strategy, outcome));
         if (bypassed) Log(db, pr, actor.Id, "bypassed branch protection on `" + pr.TargetBranch + "` to merge", now.AddMilliseconds(-1));
-        if (bypassed) await audit.RecordAsync("pull_request.merged_bypassing_protection", "pull_request", pr.Id, pr.Repository.ProjectId, new { repository = pr.Repository.Slug, pr.Number, pr.TargetBranch, outcome.MergeCommitSha }, actor.Id);
+        if (bypassed) await audit.RecordAsync("pull_request.merged_bypassing_protection", "pull_request", pr.Id, pr.Repository.ProjectId, new { repository = pr.Repository.Slug, pr.Number, pr.TargetBranch, outcome.MergeCommitSha, strategy = request.Strategy.ToString().ToLowerInvariant() }, actor.Id);
 
         // The merge moved the target branch (and may delete the source branch): report them like a git push would.
         var pushed = new List<Webhooks.PushedRef> { Webhooks.WebhookPushEvents.Branch(pr.TargetBranch, outcome.TargetSha, outcome.MergeCommitSha) };
@@ -258,7 +262,10 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     // ---------- Comments & reviews ----------
 
-    public async Task<PullRequestComment> AddCommentAsync(int prId, int authorId, string body, string? filePath = null, int? line = null, int? oldLine = null)
+    /// <param name="parentId">Reply to this comment's thread (position and anchors are copied from the thread's first comment).</param>
+    /// <param name="startLine">For a multi-line inline comment: its first new-side line (<paramref name="line"/> is the last).</param>
+    public async Task<PullRequestComment> AddCommentAsync(int prId, int authorId, string body, string? filePath = null, int? line = null, int? oldLine = null,
+        int? parentId = null, int? startLine = null)
     {
         await access.RequireForPullRequestAsync(prId, Permission.Comment, authorId);
         if (string.IsNullOrWhiteSpace(body)) throw new InvalidOperationException("Comment can't be empty.");
@@ -268,6 +275,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
             PullRequestId = prId, AuthorId = authorId, Body = body.Trim(),
             FilePath = filePath, Line = filePath == null ? null : line, OldLine = filePath == null ? null : oldLine,
         };
+        await AnchorAsync(db, c, parentId, startLine);
         db.PullRequestComments.Add(c);
         await db.PullRequests.Where(p => p.Id == prId).ExecuteUpdateAsync(s => s.SetProperty(p => p.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();

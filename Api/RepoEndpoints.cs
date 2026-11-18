@@ -136,7 +136,7 @@ public static class RepoEndpoints
         await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest);
         if (string.IsNullOrWhiteSpace(body.SourceBranch) || string.IsNullOrWhiteSpace(body.TargetBranch))
             throw ApiException.Unprocessable("sourceBranch and targetBranch are required.");
-        var pr = await prs.CreateAsync(repo, body.Title ?? "", body.Description, body.SourceBranch, body.TargetBranch, caller.Id);
+        var pr = await prs.CreateAsync(repo, body.Title ?? "", body.Description, body.SourceBranch, body.TargetBranch, caller.Id, draft: body.Draft);
         var baseUrl = url.For(http.Request);
         var dto = Dto.PullRequest(await RequirePullRequestAsync(prs, key, slug, pr.Number), baseUrl);
         return TypedResults.Created($"{baseUrl}/api/v1/projects/{repo.Project.Key}/repos/{repo.Slug}/pull-requests/{pr.Number}", dto);
@@ -153,7 +153,10 @@ public static class RepoEndpoints
         if (pr.State != PullRequestState.Open)
             throw new ApiException(StatusCodes.Status409Conflict, "Conflict", $"The pull request is already {pr.State.ToString().ToLowerInvariant()}.");
 
-        var outcome = await prs.MergeAsync(pr.Id, caller.User, body.DeleteSourceBranch, body.FastForward);
+        MergeStrategy strategy;
+        if (string.IsNullOrWhiteSpace(body.Strategy)) strategy = MergeStrategySettings.Default(pr.Repository);
+        else strategy = MergeStrategySettings.Parse(body.Strategy) ?? throw ApiException.Unprocessable("strategy must be merge, squash or rebase.");
+        var outcome = await prs.MergeAsync(pr.Id, caller.User, new MergeRequest(strategy, body.DeleteSourceBranch, body.FastForward, body.CommitMessage));
         if (!outcome.Success)
             throw new ApiException(StatusCodes.Status409Conflict, "Conflict", outcome.Error ?? "The pull request can't be merged.",
                 new Dictionary<string, object?> { ["conflictPaths"] = outcome.ConflictPaths });
@@ -176,8 +179,9 @@ public static class RepoEndpoints
         var body = await ApiResults.ReadBodyAsync<AddPullRequestCommentRequest>(http.Request);
         await access.RequireAsync(pr.Repository.ProjectId, Permission.Comment);
         if (string.IsNullOrWhiteSpace(body.Body)) throw ApiException.Unprocessable("body is required.");
-        if (body.Path != null && body.Line == null && body.OldLine == null) throw ApiException.Unprocessable("An inline comment needs line or oldLine.");
-        var c = await prs.AddCommentAsync(pr.Id, caller.Id, body.Body, string.IsNullOrWhiteSpace(body.Path) ? null : body.Path.Trim('/'), body.Line, body.OldLine);
+        if (body.ParentId == null && body.Path != null && body.Line == null && body.OldLine == null) throw ApiException.Unprocessable("An inline comment needs line or oldLine.");
+        var c = await prs.AddCommentAsync(pr.Id, caller.Id, body.Body, string.IsNullOrWhiteSpace(body.Path) ? null : body.Path.Trim('/'), body.Line, body.OldLine,
+            body.ParentId, body.StartLine);
         c.Author = caller.User;
         return TypedResults.Created($"{url.For(http.Request)}/api/v1/projects/{pr.Repository.Project.Key}/repos/{pr.Repository.Slug}/pull-requests/{number}/comments", Dto.PullRequestComment(c));
     }

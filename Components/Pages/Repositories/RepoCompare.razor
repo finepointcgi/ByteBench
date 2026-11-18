@@ -1,0 +1,135 @@
+@page "/p/{Key}/repos/{Slug}/compare"
+@page "/p/{Key}/repos/{Slug}/compare/{*Spec}"
+@inherits RepoPageBase
+@inject PullRequestService PRs
+@inject ProjectAccess Access
+
+<PageTitle>Compare · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="branches" />
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">Compare changes</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Pick a base branch and the branch to compare it with. You'll see the commits on the compare branch that aren't on the base,
+            and the changes since they diverged.
+        </MudText>
+        <div class="compare-bar">
+            <MudSelect T="string" Label="Base" Value="@baseRef" ValueChanged="v => Go(v, headRef)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       OuterClass="compare-ref gb-mono-input">
+                @foreach (var b in branches) { <MudSelectItem T="string" Value="@b.Name"><span class="mono">@b.Name</span></MudSelectItem> }
+            </MudSelect>
+            <MudTooltip Text="Swap base and compare">
+                <MudIconButton Icon="@Icons.Material.Filled.SwapHoriz" aria-label="Swap base and compare" Disabled="@(headRef == null)" OnClick="() => Go(headRef, baseRef)" />
+            </MudTooltip>
+            <MudSelect T="string" Label="Compare" Value="@(headRef ?? "")" ValueChanged="v => Go(baseRef, v)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       OuterClass="compare-ref gb-mono-input">
+                <MudSelectItem T="string" Value="@("")">Choose a branch…</MudSelectItem>
+                @foreach (var b in branches) { <MudSelectItem T="string" Value="@b.Name"><span class="mono">@b.Name</span></MudSelectItem> }
+            </MudSelect>
+        </div>
+    </MudPaper>
+
+    @if (headRef == null)
+    {
+        <div class="empty">Choose a branch to compare with <span class="mono">@baseRef</span>.</div>
+    }
+    else if (baseRef == headRef)
+    {
+        <div class="empty">These are the same branch. Pick a different one to compare.</div>
+    }
+    else if (compare == null)
+    {
+        <div class="empty">One of these refs doesn't exist.</div>
+    }
+    else
+    {
+        <div class="compare-summary">
+            <div>
+                <b>@compare.Commits.Count</b> commit@(compare.Commits.Count == 1 ? "" : "s") ·
+                <b>@compare.Files.Count</b> file@(compare.Files.Count == 1 ? "" : "s") changed ·
+                <span class="mud-text-secondary"><span class="mono">@headRef</span> is @compare.Ahead ahead, @compare.Behind behind <span class="mono">@baseRef</span></span>
+            </div>
+            <div class="ml-auto d-flex gap-2 align-center">
+                @if (existing != null)
+                {
+                    <MudButton Href="@RepoUrls.PullRequest(existing)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.MergeType">
+                        View pull request #@existing.Number
+                    </MudButton>
+                }
+                else if (canCreate && compare.Commits.Count > 0 && !Repo.IsArchived && isBranch)
+                {
+                    <MudButton Href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, headRef, baseRef)" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Outlined.MergeType">Create pull request</MudButton>
+                }
+            </div>
+        </div>
+
+        @if (compare.Commits.Count == 0)
+        {
+            <div class="empty mt-3"><span class="mono">@baseRef</span> already contains every commit from <span class="mono">@headRef</span>.</div>
+        }
+        else
+        {
+            <nav class="gb-tabs mt-3" aria-label="Changes">
+                <TabLink Active="@(tab == "commits")" OnClick='() => tab = "commits"' Icon="@Icons.Material.Outlined.Commit" Count="compare.Commits.Count">Commits</TabLink>
+                <TabLink Active="@(tab == "files")" OnClick='() => tab = "files"' Icon="@Icons.Material.Outlined.Difference" Count="compare.Files.Count">Files changed</TabLink>
+            </nav>
+            @if (tab == "commits")
+            {
+                <CommitList Commits="compare.Commits" Repo="Repo" Users="UsersByEmail" />
+            }
+            else
+            {
+                <DiffView Files="compare.Files" Repo="Repo" ViewRef="@compare.HeadSha" />
+            }
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? Spec { get; set; }
+
+    private List<BranchInfo> branches = [];
+    private string baseRef = "main";
+    private string? headRef;
+    private CompareResult? compare;
+    private PullRequest? existing;
+    private bool canCreate, isBranch;
+    private string tab = "commits";
+    private string? loadedKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        var r = Repo!;
+        var parsed = PrUrls.ParseSpec(Spec);
+        baseRef = parsed?.Base ?? r.DefaultBranch;
+        headRef = string.IsNullOrEmpty(parsed?.Head) ? null : parsed.Value.Head;
+        var key = $"{r.Id}|{baseRef}|{headRef}";
+        if (key == loadedKey) return;
+        loadedKey = key;
+
+        canCreate = await Access.CanAsync(r.ProjectId, Permission.CreatePullRequest);
+        branches = await Git(path => GitOps.Exists(path) ? GitOps.ListBranches(path, r.DefaultBranch) : []);
+        compare = null;
+        existing = null;
+        if (headRef == null || headRef == baseRef) return;
+        var (b, h) = (baseRef, headRef);
+        compare = await Git(path => GitOps.Exists(path) ? GitOps.Compare(path, b, h) : null);
+        isBranch = branches.Any(x => x.Name == h) && branches.Any(x => x.Name == b);
+        existing = (await PRs.ListAsync(r.ProjectId, PullRequestState.Open, r.Id)).FirstOrDefault(p => p.SourceBranch == h && p.TargetBranch == b);
+    }
+
+    private void Go(string? @base, string? head)
+    {
+        if (string.IsNullOrEmpty(@base)) return;
+        Nav.NavigateTo(PrUrls.Compare(Repo!, @base, string.IsNullOrEmpty(head) ? null : head));
+    }
+}

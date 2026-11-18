@@ -1,4 +1,5 @@
-@* Unified diff: per-file collapsible sections with old/new line numbers and optional inline comments. *@
+@* Unified diff: per-file collapsible sections with old/new line numbers and optional inline comment threads,
+   suggested changes and CODEOWNERS owners per file. *@
 @inject CurrentUser Me
 
 @if (Files.Count == 0)
@@ -12,6 +13,11 @@ else
             <span class="diff-add-count">@Files.Sum(f => f.Additions) addition@(Files.Sum(f => f.Additions) == 1 ? "" : "s")</span> and
             <span class="diff-del-count">@Files.Sum(f => f.Deletions) deletion@(Files.Sum(f => f.Deletions) == 1 ? "" : "s")</span></span>
         <span class="diff-summary-actions">
+            @if (CanApplySuggestions && PendingSuggestionIds.Count > 1)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.DoneAll" Disabled="saving"
+                           OnClick="ApplyAll" title="Apply every pending suggestion in one commit">Apply all suggestions (@PendingSuggestionIds.Count)</MudButton>
+            }
             <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.UnfoldMore" OnClick="() => collapsed.Clear()">Expand all</MudButton>
             <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.UnfoldLess" OnClick="CollapseAll">Collapse all</MudButton>
         </span>
@@ -26,6 +32,13 @@ else
                 <MudIcon Icon="@(isCollapsed ? Icons.Material.Filled.ChevronRight : Icons.Material.Filled.ExpandMore)" Size="Size.Small" Class="diff-chevron" />
                 <span class="diff-status diff-status-@f.Status.Replace(' ', '-')">@f.Status</span>
                 <span class="mono diff-path">@f.DisplayPath</span>
+                @if (FileOwners?.GetValueOrDefault(f.Path) is { Count: > 0 } owners)
+                {
+                    <span class="diff-owners" title="Code owners (CODEOWNERS)">
+                        <MudIcon Icon="@Icons.Material.Outlined.Shield" Size="Size.Small" />
+                        @string.Join(", ", owners.Select(o => "@" + o.UserName))
+                    </span>
+                }
                 @if (fileComments.Count > 0)
                 {
                     <span class="diff-comment-count" title="Inline comments"><MudIcon Icon="@Icons.Material.Outlined.ChatBubbleOutline" Size="Size.Small" /> @fileComments.Count</span>
@@ -65,6 +78,7 @@ else
                             @foreach (var line in h.Lines)
                             {
                                 var lineComments = fileComments.Where(c => Matches(c, line)).ToList();
+                                var roots = lineComments.Where(c => c.ParentId == null || lineComments.All(p => p.Id != c.ParentId)).ToList();
                                 var composingHere = composing is { } cp && cp.Path == f.Path && cp.Old == line.OldLine && cp.New == line.NewLine;
                                 <tr class="diff-line diff-@line.Kind.ToString().ToLowerInvariant()">
                                     <td class="ln">@line.OldLine</td>
@@ -82,29 +96,31 @@ else
                                     <tr class="diff-thread-row">
                                         <td colspan="3">
                                             <div class="diff-thread">
-                                                @foreach (var c in lineComments)
+                                                @foreach (var root in roots)
                                                 {
-                                                    <div class="inline-comment" @key="c.Id">
-                                                        <div class="inline-comment-head">
-                                                            <Avatar User="c.Author" Size="20" /> <b>@c.Author.DisplayName</b> <AiBadge User="c.Author" />
-                                                            <span class="muted small">@Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
-                                                        </div>
-                                                        <div class="markdown">@Display.Markdown(c.Body)</div>
-                                                    </div>
+                                                    <DiffThread @key="root.Id" Root="root" Replies="@lineComments.Where(c => c.ParentId == root.Id).ToList()"
+                                                                Outdated="@(Outdated?.Contains(root.Id) == true)" CanComment="CanComment"
+                                                                CanResolve="@(CanResolve?.Invoke(root) == true)" CanApply="CanApplySuggestions" ProjectId="Repo?.ProjectId"
+                                                                OnReply="OnComment" OnResolve="OnResolve" OnApply="OnApplySuggestions" />
                                                 }
                                                 @if (composingHere)
                                                 {
                                                     <div class="inline-compose">
                                                         <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Leave an inline comment…" ProjectId="Repo?.ProjectId" />
+                                                        @if (line.NewLine != null)
+                                                        {
+                                                            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Difference" Class="mt-1"
+                                                                       title="Propose a replacement for this line" OnClick="() => InsertSuggestion(line)">Suggest a change</MudButton>
+                                                        }
                                                         <div class="mt-2 d-flex gap-2">
                                                             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(draft) || saving)" OnClick="Submit">Comment</MudButton>
                                                             <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => composing = null">Cancel</MudButton>
                                                         </div>
                                                     </div>
                                                 }
-                                                else if (CanComment)
+                                                else if (CanComment && roots.Count == 0)
                                                 {
-                                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Reply" OnClick="() => StartComment(f.Path, line)">Reply…</MudButton>
+                                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddComment" OnClick="() => StartComment(f.Path, line)">Start a new thread</MudButton>
                                                 }
                                             </div>
                                         </td>
@@ -120,7 +136,8 @@ else
 }
 
 @code {
-    public record InlineCommentRequest(string Path, int? Line, int? OldLine, string Body);
+    /// <param name="ParentId">Set for a reply: the thread's first comment.</param>
+    public record InlineCommentRequest(string Path, int? Line, int? OldLine, string Body, int? ParentId = null);
 
     [Parameter, EditorRequired] public IReadOnlyList<FileDiff> Files { get; set; } = [];
     /// <summary>Existing inline comments (only those with a FilePath are shown).</summary>
@@ -131,6 +148,32 @@ else
     [Parameter] public Repository? Repo { get; set; }
     [Parameter] public string? ViewRef { get; set; }
     [Parameter] public string EmptyText { get; set; } = "No changes.";
+    /// <summary>Thread roots whose line changed after the comment.</summary>
+    [Parameter] public IReadOnlySet<int>? Outdated { get; set; }
+    /// <summary>Whether the current user may resolve the thread starting with this comment.</summary>
+    [Parameter] public Func<PullRequestComment, bool>? CanResolve { get; set; }
+    [Parameter] public EventCallback<(int CommentId, bool Resolved)> OnResolve { get; set; }
+    /// <summary>The current user can commit suggestions to the source branch.</summary>
+    [Parameter] public bool CanApplySuggestions { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<int>> OnApplySuggestions { get; set; }
+    /// <summary>CODEOWNERS owners per changed path.</summary>
+    [Parameter] public IReadOnlyDictionary<string, IReadOnlyList<User>>? FileOwners { get; set; }
+
+    /// <summary>Suggestions that can still be applied: not applied, not outdated, with their original lines recorded.</summary>
+    private List<int> PendingSuggestionIds => (Comments ?? [])
+        .Where(c => c.FilePath != null && c.Line != null && c.LineText != null && c.AppliedCommitSha == null
+                    && !(Outdated?.Contains(c.ParentId ?? c.Id) ?? false) && Suggestions.Has(c.Body))
+        .Select(c => c.Id).ToList();
+
+    private async Task ApplyAll()
+    {
+        saving = true;
+        try { await OnApplySuggestions.InvokeAsync(PendingSuggestionIds); }
+        finally { saving = false; }
+    }
+
+    private void InsertSuggestion(DiffLine line) =>
+        draft = (string.IsNullOrWhiteSpace(draft) ? "" : draft.TrimEnd() + "\n\n") + "```suggestion\n" + line.Text + "\n```";
 
     private readonly HashSet<string> collapsed = [];
     private (string Path, int? Old, int? New)? composing;

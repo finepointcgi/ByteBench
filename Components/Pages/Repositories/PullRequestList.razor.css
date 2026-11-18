@@ -3,6 +3,7 @@
 .pr-bar .pr-state-tabs { flex: 1 1 auto; border-bottom: none; margin-bottom: 0; }
 .pr-actions { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; flex-wrap: wrap; }
 .pr-actions ::deep .pr-repo-filter { width: 200px; flex: none; margin: 0; }
+.pr-actions ::deep .pr-draft-filter { width: 190px; flex: none; margin: 0; }
 .pr-stat { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); border-radius: 10px; padding: 0 7px; white-space: nowrap; }
 .pr-stat.approved { background: rgba(var(--mud-palette-success-rgb), .15); color: var(--mud-palette-success); }
 .pr-stat.changes { background: rgba(var(--mud-palette-warning-rgb), .15); color: var(--mud-palette-warning); }

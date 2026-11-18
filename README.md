@@ -380,6 +380,39 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 **Assigned reviewers.** Pick reviewers on the New PR page (project members with ReviewPullRequest) or with **Edit reviewers** in the PR sidebar (the author or a Maintainer+). The sidebar shows each one as Pending, Approved or Changes requested. Added reviewers get a "requested your review on" notification and start watching the PR. The PR list's **Review requested** button (`?filter=review-requested`) shows open PRs waiting for your verdict.
 
 **PR templates.** The New PR description is prefilled from the target branch's `.gitbench/pull_request_template.md`, falling back to `PULL_REQUEST_TEMPLATE.md`, then `.github/pull_request_template.md`.
+## Pull request features: drafts, threads, suggestions, code owners & merge strategies
+
+**Draft pull requests.** Click **Create draft** on the New PR page (or send `"draft": true` to the API). A draft shows a grey **Draft** badge, can never be merged (MergeGate adds a failed "Draft" check that admins can't bypass, protected branch or not), and its assigned reviewers are recorded but **not notified** until the author or a Maintainer+ clicks **Ready for review**. **Convert to draft** goes back. The PR list has a **Drafts and ready / Ready for review / Drafts only** filter (`?draft=ready|only`). Webhooks: `pull_request.updated` with action `ready_for_review` or `converted_to_draft`.
+
+**Comment threads.** An inline diff comment starts a thread; **Reply…** adds to it (replies copy the thread's file and line, `PullRequestComment.ParentId`). The PR's author, the thread's author or a Maintainer+ can **Resolve** or **Unresolve** it. Resolved threads collapse in the diff. The PR header shows the number of unresolved threads. A thread is marked **Outdated** when a later push changed its line: each new inline comment records the head commit (`CommitSha`) and the commented line's text (`LineText`), and the line at the current head is compared with it.
+
+**Suggested changes.** In an inline comment on a new-side line, a fenced block opened with ` ```suggestion ` proposes its content as the replacement for the commented line(s) (an empty block deletes them; the API's `startLine` makes a comment cover several lines). **Suggest a change** in the comment box inserts one prefilled with the line. It renders as a mini diff with **Apply suggestion** for users who can push to the source branch (Developer+, branch protection on the source branch allowing it, repository not archived). Applying writes a commit to the source branch in the bare repo, authored by the applier, with the message "Apply suggestion from @user" and `Co-authored-by` the suggester, then resolves the thread. **Apply all suggestions** commits every pending one in a single commit. It's refused, with nothing written, if the suggested lines changed since the comment or two suggestions overlap.
+
+**Code owners.** A `CODEOWNERS` file on the target branch (`.gitbench/CODEOWNERS`, then `CODEOWNERS`, then `docs/CODEOWNERS`) in GitHub syntax: `pattern @username @other email@example.com`, `#` comments, last matching rule wins, gitignore-style patterns (`*.md`, `/build/`, `docs/*`, `src/**/test.cs`). Owners of the changed files are added as reviewers when a PR is created (if they can review), and the Files tab shows the owners of each file. Owners that aren't users who can see the project, and `@group/path` entries (groups aren't supported yet), are ignored with a warning on the PR. The branch protection option **Require code owner approval** blocks merging until each changed file with owners is approved by one of them (files owned only by the PR's author need none).
+
+**Require all threads resolved** is another branch protection option: any unresolved inline thread blocks merging.
+
+**Merge strategies.** The merge box offers **Merge commit** (and fast-forward if possible), **Squash** (one commit on the target with an editable message, authored by the PR's author, with `Co-authored-by` trailers for the other commit authors) and **Rebase** (the PR's commits replayed onto the target, which is fast-forwarded; merge commits are dropped, and a conflict refuses cleanly). Maintainers choose the allowed strategies and the default under the repository's **Settings → Pull requests** (`/settings/merge`). The strategy is recorded on the PR (`mergeStrategy` in the API and the `pull_request.merged` payload), in the activity ("squashed and merged…"), and as a `Merge-Strategy:` trailer on merge and squash commits.
+
+**Compare branches.** `/p/{KEY}/repos/{slug}/compare/{base}...{head}` picks two branches and shows the commits on head that aren't on base plus the diff since their merge base, with a prefilled **Create pull request** button. The Branches page links to it (toolbar **Compare** and a per-branch button).
+
+**API.**
+
+| Endpoint | |
+|---|---|
+| `POST …/pull-requests` | `draft` (bool) |
+| `PATCH …/pull-requests/{n}` | `title`, `description`, `draft` (only fields present change) |
+| `POST …/pull-requests/{n}/comments` | `parentId` (reply), `startLine` (multi-line comment) |
+| `POST …/pull-requests/{n}/comments/{id}/resolve` / `unresolve` | resolve or reopen the comment's thread |
+| `POST …/pull-requests/{n}/comments/{id}/apply-suggestion` | commit one suggestion (409 if its lines changed) |
+| `POST …/pull-requests/{n}/apply-suggestions` | `{ "commentIds": [..] }` in one commit |
+| `POST …/pull-requests/{n}/merge` | `strategy`: `merge`, `squash` or `rebase` (default: the repository's default); `commitMessage` for squash |
+| `GET …/repos/{slug}/compare?base=&head=` | commits and changed files |
+
+Comments in the API carry `parentId`, `startLine`, `resolved`, `commitSha`, `hasSuggestion` and `appliedCommitSha`; pull requests carry `isDraft` and `mergeStrategy`.
+
+Code: `Services/PullRequestService.Features.cs`, `Services/PullRequests/` (CODEOWNERS, suggestions), `Services/Git/GitOps.PrFeatures.cs` (squash, rebase, line edits), `Components/Repositories/DiffThread.razor`, `Components/Pages/Repositories/RepoCompare.razor` and `RepoMergeSettings.razor`. Tests: `tests/GitBench.Tests/PullRequestFeatureTests.cs`.
+
 ## CI pipelines
 
 Each repository can run a CI pipeline from a `.gitbench-ci.yml` file at its root. Jobs run in **Docker** containers on the GitBench server.

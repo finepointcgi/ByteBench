@@ -237,5 +237,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureEmailAndPreferences(b);
         ConfigureAdminSecurity(b);
         ConfigureReleases(b);
+        ConfigurePrFeatures(b);
+    }
+
+    // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
+    private static void ConfigurePrFeatures(ModelBuilder b)
+    {
+        b.Entity<PullRequestComment>().HasOne<PullRequestComment>().WithMany().HasForeignKey(c => c.ParentId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestComment>().HasIndex(c => c.ParentId);
+        b.Entity<PullRequestComment>().HasOne(c => c.ResolvedBy).WithMany().HasForeignKey(c => c.ResolvedById).OnDelete(DeleteBehavior.SetNull);
     }
 }

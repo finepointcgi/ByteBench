@@ -1,0 +1,19 @@
+.diff-thread-box { max-width: 760px; margin-bottom: 10px; }
+.diff-thread-box.resolved { opacity: .92; }
+.thread-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 28px; margin-bottom: 4px; }
+.thread-actions { display: flex; gap: 4px; } /* left-aligned: wide diffs scroll sideways and would hide right-aligned buttons */
+.inline-comment { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; }
+.inline-comment-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.thread-compose { margin-top: 4px; }
+
+/* Suggested change: a mini diff of the commented line(s) and their replacement */
+.suggestion { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 6px 0; }
+.suggestion-head {
+    display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--mud-palette-background-gray); border-bottom: 1px solid var(--border); min-height: 34px;
+}
+.suggestion-diff { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.suggestion-diff td { padding: 0 10px; white-space: pre-wrap; word-break: break-all; }
+.suggestion-diff td.sg-sign { width: 18px; padding-right: 0; user-select: none; color: var(--mud-palette-text-disabled); }
+.sg-del td { background: var(--diff-del-bg); }
+.sg-add td { background: var(--diff-add-bg); }

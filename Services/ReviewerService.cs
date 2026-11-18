@@ -78,14 +78,21 @@ public class ReviewerService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
         await ApplyAsync(db, pr, actorId, userIds.ToHashSet(), removeOthers: true);
     }
 
-    /// <summary>On PR creation: the reviewers chosen by the author plus the default reviewers of matching branch rules.</summary>
-    internal async Task AddOnCreateAsync(int pullRequestId, int actorId, IEnumerable<int>? chosen)
+    /// <summary>
+    /// On PR creation: the reviewers chosen by the author plus the default reviewers of matching branch rules, plus
+    /// <paramref name="codeOwners"/> (CODEOWNERS owners of the changed files) who can review; other owners are skipped.
+    /// </summary>
+    internal async Task AddOnCreateAsync(int pullRequestId, int actorId, IEnumerable<int>? chosen, IEnumerable<int>? codeOwners = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Repository).FirstAsync(p => p.Id == pullRequestId);
         var wanted = (chosen ?? []).ToHashSet();
         foreach (var rule in (await protection.ForBranchAsync(pr.RepositoryId, pr.TargetBranch)).Rules)
             wanted.UnionWith(rule.DefaultReviewerIds);
+        foreach (var owner in codeOwners ?? [])
+            if (await db.ProjectMembers.AnyAsync(m => m.ProjectId == pr.Repository.ProjectId && m.UserId == owner)
+                && await access.CanAsync(pr.Repository.ProjectId, Permission.ReviewPullRequest, owner))
+                wanted.Add(owner);
         if (wanted.Count > 0) await ApplyAsync(db, pr, actorId, wanted, removeOthers: false);
     }
 
@@ -120,6 +127,7 @@ public class ReviewerService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
                 Text = "removed " + string.Join(", ", removed.Select(r => names[r.UserId])) + " from the reviewers" });
         pr.UpdatedAt = now;
         await db.SaveChangesAsync();
-        await notifications.OnReviewersAddedAsync(pr.Id, actorId, added);
+        // Drafts don't ask anyone for a review yet: PullRequestService.SetDraftAsync notifies them when it's marked ready.
+        await notifications.OnReviewersAddedAsync(pr.Id, actorId, pr.IsDraft ? [] : added);
     }
 }

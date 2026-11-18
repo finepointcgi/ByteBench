@@ -24,11 +24,15 @@ public sealed record MergeGateResult(
 /// "dismiss stale approvals" is on) must reach the required number.</item>
 /// <item>Any "changes requested" verdict blocks.</item>
 /// <item>With "require checks to pass", any external check that is Pending or Failed blocks. Neutral never blocks.</item>
+/// <item>With "require all threads resolved", any unresolved inline comment thread blocks.</item>
+/// <item>With "require code owner approval", each changed file with CODEOWNERS owners needs an approval from one of them
+/// (files owned only by the PR's author need none).</item>
 /// </list>
+/// Draft pull requests can never be merged, protected branch or not, and admins can't bypass that.
 /// External checks are resolved lazily per call, so a check may itself depend on PR services without a DI cycle.
 /// </summary>
 public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, BranchProtectionService protection,
-    IServiceProvider services, ILogger<MergeGate> log)
+    IServiceProvider services, ILogger<MergeGate> log, CodeOwnersService codeOwners)
 {
     /// <summary>Evaluates the PR for <paramref name="actorId"/> (used only to work out admin bypass).</summary>
     public async Task<MergeGateResult> EvaluateAsync(int pullRequestId, int? actorId = null, CancellationToken ct = default)
@@ -43,8 +47,11 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
         var rules = await protection.RulesForAsync(pr.RepositoryId);
         var all = BranchProtectionService.ApplicableTo(rules, pr.TargetBranch, isAdmin: false);
         var checks = new List<MergeCheckResult>();
+        // Not a branch rule: a draft is never mergeable (and can't be bypassed).
+        List<string> draftBlockers = pr.IsDraft ? ["it is a draft (mark it ready for review first)"] : [];
+        if (pr.IsDraft) checks.Add(new MergeCheckResult("Draft", MergeCheckState.Failed, "Draft pull requests can't be merged. Mark it ready for review first."));
         if (!all.IsProtected)
-            return new MergeGateResult([.. external], [], all, false);
+            return new MergeGateResult([.. checks, .. external], draftBlockers, all, false);
 
         var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceBranch));
         var approvers = pr.Reviews.Where(r => r.State == ReviewState.Approved && r.UserId != pr.AuthorId).ToList();
@@ -67,6 +74,31 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
             ? new MergeCheckResult("Change requests", MergeCheckState.Failed,
                 "Changes requested by " + string.Join(", ", changes.Select(c => c.User.DisplayName)))
             : new MergeCheckResult("Change requests", MergeCheckState.Passed, "No changes requested"));
+
+        var unresolved = all.RequireThreadResolution
+            ? await db.PullRequestComments.CountAsync(c => c.PullRequestId == pullRequestId && c.FilePath != null && c.ParentId == null && !c.IsResolved, ct)
+            : 0;
+        if (all.RequireThreadResolution)
+            checks.Add(new MergeCheckResult("Threads", unresolved == 0 ? MergeCheckState.Passed : MergeCheckState.Pending,
+                unresolved == 0 ? "All threads resolved" : $"{unresolved} unresolved thread{(unresolved == 1 ? "" : "s")}"));
+
+        // Code owners: changed files (per CODEOWNERS on the target) whose owners haven't approved yet.
+        List<string> unownedApproval = [];
+        if (all.RequireCodeOwnerApproval)
+        {
+            var report = await codeOwners.ForPullRequestAsync(pr);
+            var approverIds = (all.DismissStaleApprovals ? freshApprovers : approvers).Select(r => r.UserId).ToHashSet();
+            foreach (var (path, owners) in report.Owners.OrderBy(o => o.Key, StringComparer.Ordinal))
+            {
+                if (owners.All(o => o.Id == pr.AuthorId)) continue; // only the author owns it: nobody else can approve
+                if (!owners.Any(o => approverIds.Contains(o.Id))) unownedApproval.Add(path);
+            }
+            checks.Add(new MergeCheckResult("Code owners",
+                unownedApproval.Count == 0 ? MergeCheckState.Passed : MergeCheckState.Pending,
+                report.FilePath == null ? "No CODEOWNERS file on the target branch"
+                : unownedApproval.Count == 0 ? "Every owned file is approved by an owner"
+                : $"Needs owner approval for {unownedApproval.Count} file{(unownedApproval.Count == 1 ? "" : "s")}: " + string.Join(", ", unownedApproval.Take(5)) + (unownedApproval.Count > 5 ? ", …" : "")));
+        }
         checks.AddRange(external);
 
         List<string> BlockersFor(EffectiveProtection p)
@@ -81,6 +113,10 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
                 foreach (var c in external.Where(c => c.State is MergeCheckState.Pending or MergeCheckState.Failed))
                     b.Add($"check \"{c.Name}\" is {c.State.ToString().ToLowerInvariant()}");
             }
+            if (p.RequireThreadResolution && unresolved > 0)
+                b.Add($"{unresolved} comment thread{(unresolved == 1 ? " is" : "s are")} unresolved");
+            if (p.RequireCodeOwnerApproval && unownedApproval.Count > 0)
+                b.Add($"code owners haven't approved {unownedApproval.Count} file{(unownedApproval.Count == 1 ? "" : "s")}");
             return b;
         }
 
@@ -91,6 +127,7 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
         {
             canBypass = BlockersFor(BranchProtectionService.ApplicableTo(rules, pr.TargetBranch, isAdmin: true)).Count == 0;
         }
+        if (draftBlockers.Count > 0) { blockers.InsertRange(0, draftBlockers); canBypass = false; }
         return new MergeGateResult(checks, blockers, all, canBypass);
     }
 

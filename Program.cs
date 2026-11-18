@@ -68,6 +68,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<BranchProtectionService>();
 builder.Services.AddScoped<MergeGate>();
 builder.Services.AddScoped<ReviewerService>();
+builder.Services.AddScoped<CodeOwnersService>(); // PR features: CODEOWNERS
 builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
 builder.Services.AddCiPipelines(builder.Configuration);
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete

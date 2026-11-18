@@ -1,0 +1,3 @@
+.strategy-row { display: flex; flex-direction: column; align-items: flex-start; }
+.strategy-row > span { padding-left: 40px; margin-top: -6px; margin-bottom: 4px; }
+.settings-layout ::deep .default-strategy { max-width: 320px; }

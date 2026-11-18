@@ -74,6 +74,12 @@ else if (Repo != null)
                         <b>Require checks to pass</b> <span class="muted small">(pending or failed checks such as pipelines block merging)</span>
                     </MudCheckBox>
                     <MudCheckBox T="bool" @bind-Value="draft.DismissStaleApprovals" Color="Color.Primary" Dense="true"><b>Dismiss approvals when new commits are pushed</b></MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.RequireThreadResolution" Color="Color.Primary" Dense="true">
+                        <b>Require all threads resolved</b> <span class="muted small">(every inline comment thread must be resolved before merging)</span>
+                    </MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.RequireCodeOwnerApproval" Color="Color.Primary" Dense="true">
+                        <b>Require code owner approval</b> <span class="muted small">(each changed file listed in CODEOWNERS needs an approval from one of its owners)</span>
+                    </MudCheckBox>
                     <MudCheckBox T="bool" @bind-Value="draft.AllowAdminBypass" Color="Color.Primary" Dense="true">
                         <b>Allow admins to bypass</b> <span class="muted small">(site admins and project Owners)</span>
                     </MudCheckBox>
@@ -158,6 +164,8 @@ else if (Repo != null)
         if (r.BlockDeletion) yield return "no deletion";
         if (r.RequireChecksToPass) yield return "checks must pass";
         if (r.DismissStaleApprovals) yield return "stale approvals dismissed";
+        if (r.RequireThreadResolution) yield return "threads must be resolved";
+        if (r.RequireCodeOwnerApproval) yield return "code owners must approve";
         if (r.AllowAdminBypass) yield return "admins can bypass";
         if (r.DefaultReviewerIds.Count > 0)
             yield return "default reviewers: " + string.Join(", ", candidates.Where(u => r.DefaultReviewerIds.Contains(u.Id)).Select(u => u.DisplayName));
@@ -177,6 +185,7 @@ else if (Repo != null)
             Id = r.Id, Pattern = r.Pattern, RequiredApprovals = r.RequiredApprovals, BlockDirectPushes = r.BlockDirectPushes,
             BlockForcePushes = r.BlockForcePushes, BlockDeletion = r.BlockDeletion, RequireChecksToPass = r.RequireChecksToPass,
             DismissStaleApprovals = r.DismissStaleApprovals, AllowAdminBypass = r.AllowAdminBypass, DefaultReviewerIds = [.. r.DefaultReviewerIds],
+            RequireThreadResolution = r.RequireThreadResolution, RequireCodeOwnerApproval = r.RequireCodeOwnerApproval,
         };
     }
 
