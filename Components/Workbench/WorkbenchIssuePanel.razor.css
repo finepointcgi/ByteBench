@@ -1,0 +1,6 @@
+.wb-panel { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.wb-panel ::deep .wb-label { display: block; font-weight: 500; }
+.wb-code { font-size: 12px; overflow-wrap: anywhere; }
+.wb-code code { font-size: 12px; }
+.wb-edit { display: flex; flex-direction: column; gap: 4px; }
+.wb-panel ::deep .wb-link-btn { align-self: flex-start; padding-left: 0; padding-right: 0; min-width: 0; text-transform: none; }

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GitBench.Data;
 
 /// <summary>
-/// Demo custom fields, components, versions, an issue template, estimates and work logs for WEB. Runs once: skipped when
+/// Demo custom fields, components, versions, an issue template and estimates for WEB. Runs once: skipped when
 /// WEB already has custom fields or components, or isn't the demo project.
 /// </summary>
 public static class FieldsSeeder
@@ -120,36 +120,17 @@ public static class FieldsSeeder
         Versions(docs, v10);
         Versions(dark, v10);
 
-        // ----- Estimates and work logs -----
+        // ----- Estimates -----
         void Estimate(Issue? i, int originalHours, int remainingHours)
         {
             if (i == null) return;
             (i.OriginalEstimateMinutes, i.RemainingEstimateMinutes) = (originalHours * 60, remainingHours * 60);
-        }
-        void Log(Issue? i, string user, int daysAgo, int minutes, string? comment = null)
-        {
-            if (i == null) return;
-            db.WorkLogs.Add(new WorkLog
-            {
-                IssueId = i.Id, UserId = users[user].Id, Minutes = minutes, Date = today.AddDays(-daysAgo), Comment = comment,
-                CreatedAt = today.AddDays(-daysAgo).AddHours(17),
-            });
         }
         Estimate(kanban, 24, 10);
         Estimate(slow, 8, 3);
         Estimate(email, 12, 12);
         Estimate(safari, 2, 2);
         Estimate(skeleton, 6, 0);
-        Log(skeleton, "alice", 20, 240, "Solution layout and build.");
-        Log(skeleton, "alice", 19, 180, "CI workflow.");
-        Log(login, "bob", 16, 150, "Fixed the email regex and added tests.");
-        Log(kanban, "alice", 9, 300, "Columns and drag between columns.");
-        Log(kanban, "alice", 6, 240);
-        Log(kanban, "bob", 3, 300, "Started on reordering.");
-        Log(kanban, "alice", 1, 120);
-        Log(slow, "bob", 4, 180, "Profiled the list; the query is the problem.");
-        Log(slow, "bob", 2, 120, "Added the UpdatedAt index.");
-        Log(email, "carol", 0, 30, "Looked at the email queue.");
         db.SaveChanges();
     }
 }

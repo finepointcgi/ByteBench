@@ -10,7 +10,7 @@ public sealed record ReleaseLink(int Id, string Title, string TagName, string Ur
 
 /// <summary>A version with the progress of the issues that have it as a fix version.</summary>
 public sealed record VersionSummary(ProjectVersion Version, int Open, int Done, int AffectsCount, int Points, int DonePoints,
-    int TimeSpentMinutes, int RemainingMinutes, ReleaseLink? Release)
+    ReleaseLink? Release)
 {
     public int Total => Open + Done;
     public int Percent => Total == 0 ? 0 : Done * 100 / Total;
@@ -87,11 +87,8 @@ public class ComponentVersionService(IDbContextFactory<AppDbContext> dbFactory, 
                            select new
                            {
                                l.VersionId, l.Kind, l.IssueId, Done = i.Status == IssueStatus.Done,
-                               Points = i.StoryPoints ?? 0, Remaining = i.RemainingEstimateMinutes ?? 0,
+                               Points = i.StoryPoints ?? 0,
                            }).ToListAsync();
-        var fixIssueIds = links.Where(l => l.Kind == VersionLinkKind.Fix).Select(l => l.IssueId).Distinct().ToList();
-        var spent = await db.WorkLogs.Where(w => fixIssueIds.Contains(w.IssueId)).GroupBy(w => w.IssueId)
-            .Select(g => new { g.Key, Minutes = g.Sum(w => w.Minutes) }).ToDictionaryAsync(x => x.Key, x => x.Minutes);
         var releases = await FindReleasesAsync(db, projectId, versions);
         return Sort(versions).Select(v =>
         {
@@ -99,7 +96,6 @@ public class ComponentVersionService(IDbContextFactory<AppDbContext> dbFactory, 
             return new VersionSummary(v, fix.Count(l => !l.Done), fix.Count(l => l.Done),
                 links.Count(l => l.VersionId == v.Id && l.Kind == VersionLinkKind.Affects),
                 fix.Sum(l => l.Points), fix.Where(l => l.Done).Sum(l => l.Points),
-                fix.Sum(l => spent.GetValueOrDefault(l.IssueId)), fix.Where(l => !l.Done).Sum(l => l.Remaining),
                 releases.GetValueOrDefault(v.Id));
         }).ToList();
     }

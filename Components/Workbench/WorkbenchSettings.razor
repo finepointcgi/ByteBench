@@ -1,0 +1,61 @@
+@* Project setting (Maintainer+): the Workbench charge code (WBS) and project code that "Log time in Workbench" uses.
+   Self-contained so the Settings page only renders it. *@
+@using GitBench.Services.Workbench
+@inject WorkbenchService Workbench
+@inject ProjectAccess Access
+@inject ISnackbar Snackbar
+
+@if (canManage)
+{
+    <MudPaper Outlined="true" Class="settings-card pa-5 mb-4" id="workbench">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Workbench (time &amp; cost)</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Time is recorded in Workbench timesheets, the company's cost record. Issues in this project show a
+            "Log time in Workbench" button with this charge code. An issue can override the code.
+        </MudText>
+        @if (!Workbench.IsConfigured)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Workbench isn't set up on this site (Workbench:BaseUrl), so the button stays hidden until an administrator configures it.
+            </MudAlert>
+        }
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+        <div class="d-flex flex-wrap gap-2 align-start">
+            <MudTextField T="string" @bind-Value="wbs" Label="Workbench charge code (WBS)" Placeholder="e.g. 1.2.3" Immediate="true"
+                          MaxLength="WorkbenchService.MaxCodeLength" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono"
+                          HelperText="Leave empty to hide the button." />
+            <MudTextField T="string" @bind-Value="projectCode" Label="Workbench project code (optional)" Immediate="true"
+                          MaxLength="WorkbenchService.MaxCodeLength" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono" />
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="mt-2" Disabled="@(!Changed)" OnClick="Save">Save</MudButton>
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+
+    private bool canManage;
+    private string? wbs, projectCode, error;
+
+    private bool Changed => Norm(wbs) != Project.WorkbenchWbs || Norm(projectCode) != Project.WorkbenchProjectCode;
+
+    private static string? Norm(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        canManage = (await Access.GetPermissionsAsync(Project.Id)).Role >= ProjectRole.Maintainer;
+        (wbs, projectCode) = (Project.WorkbenchWbs, Project.WorkbenchProjectCode);
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        try
+        {
+            await Workbench.SetProjectMappingAsync(Project.Id, wbs, projectCode);
+            (Project.WorkbenchWbs, Project.WorkbenchProjectCode) = (Norm(wbs), Norm(projectCode));
+            Snackbar.Add("Workbench charge code saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

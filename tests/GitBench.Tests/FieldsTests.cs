@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Tests;
 
-/// <summary>Custom fields, components and versions, issue templates and time tracking.</summary>
+/// <summary>Custom fields, components and versions, issue templates and estimates.</summary>
 public class FieldsTests(TestApp app) : IClassFixture<TestApp>
 {
     // ---------- Durations ----------
@@ -275,61 +275,35 @@ public class FieldsTests(TestApp app) : IClassFixture<TestApp>
     }
 
     [Fact]
-    public async Task Work_logs_follow_their_permissions_and_adjust_the_estimate()
+    public async Task Estimates_are_plain_editable_fields()
     {
-        var project = await app.CreateProjectAsync("alice", ProjectVisibility.Private,
-            ("bob", ProjectRole.Developer), ("dan", ProjectRole.Developer), ("carol", ProjectRole.Maintainer));
+        var project = await app.CreateProjectAsync("alice", ProjectVisibility.Private, ("bob", ProjectRole.Developer));
         var issue = await app.CreateIssueAsync(project.Id, "bob");
         await using var bob = app.Scope(app.UserId("bob"));
-        await using var dan = app.Scope(app.UserId("dan"));
-        await using var carol = app.Scope(app.UserId("carol"));
-        var time = bob.Get<TimeTrackingService>();
+        var estimates = bob.Get<EstimateService>();
 
-        await time.SetEstimatesAsync(issue.Id, true, 600, false, null);
-        Assert.Equal((600, 600, 0), Tuple(await time.GetSummaryAsync(issue.Id)));
-        var log = await time.AddWorkLogAsync(issue.Id, 90, DateTime.UtcNow.Date, "first");
-        Assert.Equal((600, 510, 90), Tuple(await time.GetSummaryAsync(issue.Id)));
+        // Setting only the original estimate starts the remaining one at the same value.
+        await estimates.SetEstimatesAsync(issue.Id, true, 600, false, null);
+        Assert.Equal((600, 600), Tuple(await estimates.GetSummaryAsync(issue.Id)));
+        // After that, each is edited on its own: nothing adjusts the remaining estimate.
+        await estimates.SetEstimatesAsync(issue.Id, false, null, true, 90);
+        await estimates.SetEstimatesAsync(issue.Id, true, 720, false, null);
+        Assert.Equal((720, 90), Tuple(await estimates.GetSummaryAsync(issue.Id)));
+        await estimates.SetEstimatesAsync(issue.Id, false, null, true, null);
+        Assert.Equal((720, null), Tuple(await estimates.GetSummaryAsync(issue.Id)));
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => estimates.SetEstimatesAsync(issue.Id, true, -1, false, null));
 
-        // Only the author edits; the remaining estimate moves by the difference.
-        await Assert.ThrowsAsync<ForbiddenException>(() => dan.Get<TimeTrackingService>().UpdateWorkLogAsync(log.Id, 30, DateTime.UtcNow.Date, null));
-        await Assert.ThrowsAsync<ForbiddenException>(() => carol.Get<TimeTrackingService>().UpdateWorkLogAsync(log.Id, 30, DateTime.UtcNow.Date, null));
-        await time.UpdateWorkLogAsync(log.Id, 120, DateTime.UtcNow.Date.AddDays(-1), "edited");
-        Assert.Equal((600, 480, 120), Tuple(await time.GetSummaryAsync(issue.Id)));
+        await using var db = app.Db();
+        Assert.Contains(db.Activities.Where(x => x.IssueId == issue.Id).Select(x => x.Text), t => t == "set the remaining estimate to **1h 30m**");
 
-        // Another Developer can't delete it; a Maintainer can.
-        await Assert.ThrowsAsync<ForbiddenException>(() => dan.Get<TimeTrackingService>().DeleteWorkLogAsync(log.Id));
-        await carol.Get<TimeTrackingService>().DeleteWorkLogAsync(log.Id);
-        Assert.Equal((600, 600, 0), Tuple(await time.GetSummaryAsync(issue.Id)));
-
-        // The author can delete their own; validation.
-        var own = await dan.Get<TimeTrackingService>().AddWorkLogAsync(issue.Id, 30, DateTime.UtcNow.Date, null);
-        await dan.Get<TimeTrackingService>().DeleteWorkLogAsync(own.Id);
-        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => time.AddWorkLogAsync(issue.Id, 0, DateTime.UtcNow.Date, null));
-        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => time.AddWorkLogAsync(issue.Id, 60, DateTime.UtcNow.Date.AddDays(5), null));
-
-        // Viewers (and non-members of a private project) can't log work.
+        // Viewers can't change estimates.
         var viewer = await app.CreateUserAsync("fields_viewer");
         await using (var owner = app.Scope(app.UserId("alice"))) await owner.Get<MemberService>().AddMemberAsync(project.Id, viewer.UserName!, ProjectRole.Viewer);
         await using var v = app.Scope(viewer.Id);
-        await Assert.ThrowsAsync<ForbiddenException>(() => v.Get<TimeTrackingService>().AddWorkLogAsync(issue.Id, 30, DateTime.UtcNow.Date, null));
-
-        // Timesheets.
-        await time.AddWorkLogAsync(issue.Id, 60, DateTime.UtcNow.Date, null);
-        var week = TimeTrackingService.WeekStart(DateTime.UtcNow.Date);
-        Assert.Single(await time.GetUserEntriesAsync(app.UserId("bob"), week, week.AddDays(7)), e => e.IssueId == issue.Id);
-        Assert.Single(await carol.Get<TimeTrackingService>().GetProjectEntriesAsync(project.Id, week, week.AddDays(7)));
-        // Someone outside the private project doesn't see its entries in bob's timesheet.
-        var outsider = await app.CreateUserAsync("fields_outsider2");
-        await using var o = app.Scope(outsider.Id);
-        Assert.DoesNotContain(await o.Get<TimeTrackingService>().GetUserEntriesAsync(app.UserId("bob"), week, week.AddDays(7)), e => e.IssueId == issue.Id);
-        Assert.Empty(await o.Get<TimeTrackingService>().GetProjectEntriesAsync(project.Id, week, week.AddDays(7)));
+        await Assert.ThrowsAsync<ForbiddenException>(() => v.Get<EstimateService>().SetEstimatesAsync(issue.Id, true, 60, false, null));
     }
 
-    private static (int?, int?, int) Tuple(TimeSummary? s) => (s!.OriginalMinutes, s.RemainingMinutes, s.SpentMinutes);
-
-    [Fact]
-    public void Week_starts_on_monday() =>
-        Assert.Equal(new DateTime(2026, 11, 16), TimeTrackingService.WeekStart(new DateTime(2026, 11, 22, 13, 0, 0)));
+    private static (int?, int?) Tuple(EstimateSummary? s) => (s!.OriginalMinutes, s.RemainingMinutes);
 
     [Fact]
     public void Repository_templates_parse_front_matter()
@@ -364,7 +338,7 @@ public class FieldsTests(TestApp app) : IClassFixture<TestApp>
     private static StringContent Json(object body) => new(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
     [Fact]
-    public async Task Api_reads_and_writes_custom_fields_versions_and_work_logs()
+    public async Task Api_reads_and_writes_custom_fields_versions_and_estimates()
     {
         var (project, _, _) = await ProjectWithFieldsAsync();
         await using (var carol = app.Scope(app.UserId("carol")))
@@ -384,7 +358,9 @@ public class FieldsTests(TestApp app) : IClassFixture<TestApp>
         Assert.Equal("carol", issue.GetProperty("customFields").GetProperty("reviewer").GetString());
         Assert.Equal("UI", issue.GetProperty("components")[0].GetString());
         Assert.Equal("1.0", issue.GetProperty("fixVersions")[0].GetString());
-        Assert.Equal(480, issue.GetProperty("timeTracking").GetProperty("remainingEstimateMinutes").GetInt32());
+        Assert.Equal(480, issue.GetProperty("estimates").GetProperty("remainingEstimateMinutes").GetInt32());
+        Assert.Equal("1d", issue.GetProperty("estimates").GetProperty("originalEstimate").GetString());
+        Assert.False(issue.TryGetProperty("timeTracking", out _));
         var number = issue.GetProperty("number").GetInt32();
 
         // Unknown keys and bad values are 422; PATCH changes only the named fields.
@@ -403,16 +379,12 @@ public class FieldsTests(TestApp app) : IClassFixture<TestApp>
         var list = JsonDocument.Parse(await client.GetStringAsync($"/api/v1/projects/{project.Key}/issues?fixVersion=1.0&cf=severity:Major")).RootElement;
         Assert.Equal(1, list.GetArrayLength());
 
-        // Work logs.
-        r = await client.PostAsync($"/api/v1/projects/{project.Key}/issues/{number}/worklogs", Json(new { timeSpent = "1h 30m", comment = "api" }));
-        Assert.Equal(HttpStatusCode.Created, r.StatusCode);
-        var logId = JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetInt32();
-        var logs = JsonDocument.Parse(await client.GetStringAsync($"/api/v1/projects/{project.Key}/issues/{number}/worklogs")).RootElement;
-        Assert.Equal(90, logs[0].GetProperty("timeSpentMinutes").GetInt32());
-        var dan = await app.ApiClientAsync("dan"); // a Viewer
-        Assert.Equal(HttpStatusCode.Forbidden, (await dan.DeleteAsync($"/api/v1/projects/{project.Key}/issues/{number}/worklogs/{logId}")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.PatchAsync($"/api/v1/projects/{project.Key}/issues/{number}/worklogs/{logId}", Json(new { timeSpent = "2h" }))).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/v1/projects/{project.Key}/issues/{number}/worklogs/{logId}")).StatusCode);
+        // Estimates are plain fields; the work log endpoints are gone.
+        r = await client.PatchAsync($"/api/v1/projects/{project.Key}/issues/{number}", Json(new { remainingEstimate = "2h" }));
+        issue = JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal((480, 120), (issue.GetProperty("estimates").GetProperty("originalEstimateMinutes").GetInt32(),
+            issue.GetProperty("estimates").GetProperty("remainingEstimateMinutes").GetInt32()));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/v1/projects/{project.Key}/issues/{number}/worklogs")).StatusCode);
 
         var fields = JsonDocument.Parse(await client.GetStringAsync($"/api/v1/projects/{project.Key}/fields")).RootElement;
         Assert.Equal("singleSelect", fields[0].GetProperty("type").GetString());
@@ -426,6 +398,6 @@ public class FieldsTests(TestApp app) : IClassFixture<TestApp>
         Assert.True(await db.CustomFields.CountAsync(f => f.ProjectId == web) >= 2);
         Assert.True(await db.ProjectComponents.CountAsync(c => c.ProjectId == web) >= 2);
         Assert.True(await db.ProjectVersions.CountAsync(v => v.ProjectId == web) >= 2);
-        Assert.True(await db.WorkLogs.AnyAsync(w => w.Issue.ProjectId == web));
+        Assert.True(await db.Issues.AnyAsync(i => i.ProjectId == web && i.OriginalEstimateMinutes != null));
     }
 }

@@ -13,7 +13,7 @@ public record UserDto(int Id, string Username, string DisplayName, string Avatar
 public record CurrentUserDto(int Id, string Username, string DisplayName, string? Email, string AvatarColor, bool IsAdmin, IReadOnlyList<string>? Scopes);
 
 public record ProjectDto(int Id, string Key, string Name, string? Description, ProjectVisibility Visibility,
-    DateTimeOffset CreatedAt, ProjectRole? Role, string WebUrl);
+    DateTimeOffset CreatedAt, ProjectRole? Role, string WebUrl, string? WorkbenchWbs = null, string? WorkbenchProjectCode = null);
 
 /// <summary>The small project object embedded in webhook payloads.</summary>
 public record ProjectRefDto(int Id, string Key, string Name, string WebUrl);
@@ -130,7 +130,7 @@ public static class Dto
     public static UserDto? UserOrNull(User? u) => u == null ? null : User(u);
 
     public static ProjectDto Project(Project p, ProjectRole? role, string baseUrl) =>
-        new(p.Id, p.Key, p.Name, p.Description, p.Visibility, Utc(p.CreatedAt), role, $"{baseUrl}/p/{p.Key}");
+        new(p.Id, p.Key, p.Name, p.Description, p.Visibility, Utc(p.CreatedAt), role, $"{baseUrl}/p/{p.Key}", p.WorkbenchWbs, p.WorkbenchProjectCode);
 
     public static ProjectRefDto ProjectRef(Project p, string baseUrl) => new(p.Id, p.Key, p.Name, $"{baseUrl}/p/{p.Key}");
 

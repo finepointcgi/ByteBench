@@ -17,7 +17,7 @@ public partial record IssueFilter
     /// yyyy-MM-dd date, username or true/false; text compares case-insensitively). <c>key:</c> means "has no value".
     /// </summary>
     public string? Cf { get; set; }
-    /// <summary>Extra list columns, comma-separated: custom field keys and <c>components</c>, <c>fixVersions</c>, <c>timeSpent</c>, <c>estimate</c>.</summary>
+    /// <summary>Extra list columns, comma-separated: custom field keys and <c>components</c>, <c>fixVersions</c>, <c>estimate</c>.</summary>
     public string? Columns { get; set; }
 
     /// <summary>True if any filter in this file is set (columns don't count).</summary>

@@ -45,7 +45,7 @@ else if (project != null)
     }
 
     <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
-        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Issue fields &amp; time tracking</MudText>
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Issue fields &amp; estimates</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Custom fields, components, issue templates and hours per day. Versions are on the Versions page.</MudText>
         <div class="d-flex flex-wrap gap-2">
             <MudButton Href="@($"/p/{project.Key}/settings/fields")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Tune">Issue fields</MudButton>
@@ -100,6 +100,8 @@ else if (project != null)
         </div>
         @if (labelError != null) { <MudText Typo="Typo.caption" Color="Color.Error" HtmlTag="div" Class="mt-2">@labelError</MudText> }
     </MudPaper>
+
+    <GitBench.Components.Workbench.WorkbenchSettings Project="project" />
 
     <AiReviewSettings Project="project" />
 

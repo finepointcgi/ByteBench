@@ -372,7 +372,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<ProjectVersion> ProjectVersions => Set<ProjectVersion>();
     public DbSet<IssueVersion> IssueVersions => Set<IssueVersion>();
     public DbSet<IssueTemplate> IssueTemplates => Set<IssueTemplate>();
-    public DbSet<WorkLog> WorkLogs => Set<WorkLog>();
 
     private static void ConfigureCustomFieldsTime(ModelBuilder b)
     {
@@ -396,10 +395,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<IssueVersion>().HasOne(v => v.Version).WithMany().HasForeignKey(v => v.VersionId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<IssueTemplate>().HasIndex(t => t.ProjectId);
         b.Entity<IssueTemplate>().HasOne<Project>().WithMany().HasForeignKey(t => t.ProjectId).OnDelete(DeleteBehavior.Cascade);
-        b.Entity<WorkLog>().HasIndex(w => new { w.IssueId, w.Date });
-        b.Entity<WorkLog>().HasIndex(w => new { w.UserId, w.Date });
-        b.Entity<WorkLog>().HasOne(w => w.Issue).WithMany().HasForeignKey(w => w.IssueId).OnDelete(DeleteBehavior.Cascade);
-        b.Entity<WorkLog>().HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Project>().Property(p => p.HoursPerDay).HasDefaultValue(8);
     }
 

@@ -63,6 +63,7 @@ builder.Services.AddScoped<GroupService>(); // groups: namespaces, inherited rol
 builder.Services.AddScoped<AccessTokenService>();
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
+builder.Services.Configure<GitBench.Services.Workbench.WorkbenchOptions>(builder.Configuration.GetSection("Workbench")); // optional link to Workbench timesheets
 builder.Services.AddSingleton<AiClient>();
 builder.Services.AddScoped<IssueAiService>();
 builder.Services.AddAiCodeReview();
@@ -120,7 +121,7 @@ builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search
 builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
 builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
 builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
-builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, time tracking
+builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, estimates, Workbench link
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -136,7 +137,7 @@ using (var scope = app.Services.CreateScope())
     NotificationService.Initialize(db);
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     SprintSeeder.Initialize(db);
-    FieldsSeeder.Initialize(db); // WEB: custom fields, components, versions, a template and work logs
+    FieldsSeeder.Initialize(db); // WEB: custom fields, components, versions, a template and estimates
     WorkflowService.EnsureDefaults(db); // default workflow for projects without one; maps issues to workflow statuses
     scope.ServiceProvider.GetRequiredService<WebhookSecrets>().EncryptLegacy(db); // webhook secrets stored before encryption
 }

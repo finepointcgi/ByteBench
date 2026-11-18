@@ -2,7 +2,7 @@
    and the optional columns menu (IssueFilter.Columns). Also loads the column values for the listed issues into Data. *@
 @inject CustomFieldService FieldService
 @inject ComponentVersionService ComponentsAndVersions
-@inject TimeTrackingService Time
+@inject EstimateService Estimates
 @inject IssueService IssueSvc
 
 @if (components.Count > 0)
@@ -79,7 +79,7 @@
     private string? CfValue => IssueFilter.ParseCf(Filter.Cf)?.Value;
 
     private IEnumerable<string> AvailableColumns =>
-        fields.Select(f => f.Key).Concat([IssueColumnData.ComponentsColumn, IssueColumnData.FixVersionsColumn, IssueColumnData.TimeSpentColumn, IssueColumnData.EstimateColumn]);
+        fields.Select(f => f.Key).Concat([IssueColumnData.ComponentsColumn, IssueColumnData.FixVersionsColumn, IssueColumnData.EstimateColumn]);
 
     private string ComponentName(int? id) => id switch { null => "", 0 => "No component", _ => components.FirstOrDefault(c => c.Component.Id == id)?.Component.Name ?? $"#{id}" };
 
@@ -102,7 +102,7 @@
             versions = await ComponentsAndVersions.GetVersionListAsync(Project.Id);
             users = await IssueSvc.GetUsersAsync();
             Data.Fields = fields;
-            Data.HoursPerDay = await Time.GetHoursPerDayAsync(Project.Id);
+            Data.HoursPerDay = await Estimates.GetHoursPerDayAsync(Project.Id);
         }
         if (ReferenceEquals(loadedIssues, Issues) && loadedColumns == Filter.Columns) return;
         loadedIssues = Issues;
@@ -124,7 +124,6 @@
         }
         if (cols.Contains(IssueColumnData.ComponentsColumn) || cols.Contains(IssueColumnData.FixVersionsColumn))
             (Data.Components, Data.FixVersions) = await ComponentsAndVersions.GetNamesForIssuesAsync(ids);
-        if (cols.Contains(IssueColumnData.TimeSpentColumn)) Data.Spent = await Time.GetSpentAsync(ids);
     }
 
     private async Task Set(Action change)

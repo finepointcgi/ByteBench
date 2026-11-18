@@ -78,10 +78,6 @@ else if (project != null)
                         <div class="vr-stats mud-text-secondary">
                             <span>@vs.Percent% · @vs.Done/@vs.Total done</span>
                             <span>@vs.DonePoints/@vs.Points pts</span>
-                            @if (vs.TimeSpentMinutes > 0 || vs.RemainingMinutes > 0)
-                            {
-                                <span title="Logged on fix-version issues / remaining estimate of open ones">⏱ @Duration.Format(vs.TimeSpentMinutes, project.HoursPerDay) logged · @Duration.Format(vs.RemainingMinutes, project.HoursPerDay) left</span>
-                            }
                         </div>
                     </div>
                     <div class="vr-actions">

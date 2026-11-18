@@ -1690,22 +1690,6 @@ public class IssueTemplate
     public int Order { get; set; }
 }
 
-/// <summary>Time someone spent on an issue.</summary>
-public class WorkLog
-{
-    public int Id { get; set; }
-    public int IssueId { get; set; }
-    public Issue Issue { get; set; } = null!;
-    public int UserId { get; set; }
-    public User User { get; set; } = null!;
-    public int Minutes { get; set; }
-    /// <summary>The day the work was done (date only).</summary>
-    public DateTime Date { get; set; }
-    [MaxLength(1000)] public string? Comment { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
-}
-
 public partial class Issue
 {
     public int? OriginalEstimateMinutes { get; set; }
@@ -1719,8 +1703,24 @@ public partial class Issue
 
 public partial class Project
 {
-    /// <summary>Working hours in a day for time tracking ("1d"). A week is 5 days.</summary>
+    /// <summary>Working hours in a day for estimates ("1d"). A week is 5 days.</summary>
     [Range(1, 24)] public int HoursPerDay { get; set; } = 8;
+}
+
+// ----- Workbench (time & cost) -----
+
+public partial class Project
+{
+    /// <summary>The Workbench charge code (WBS element, e.g. <c>1.2.3</c>) people charge time on this project's work to.</summary>
+    [MaxLength(50)] public string? WorkbenchWbs { get; set; }
+    /// <summary>Optional Workbench project code, shown next to the WBS code.</summary>
+    [MaxLength(50)] public string? WorkbenchProjectCode { get; set; }
+}
+
+public partial class Issue
+{
+    /// <summary>Optional per-issue Workbench charge code, overriding <see cref="Project.WorkbenchWbs"/>.</summary>
+    [MaxLength(50)] public string? WorkbenchWbs { get; set; }
 }
 
 // ----- CI extras -----

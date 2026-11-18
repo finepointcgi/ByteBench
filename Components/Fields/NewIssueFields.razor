@@ -2,7 +2,7 @@
    Issue.FieldDraft and are applied, validated and defaulted by IssueService.CreateIssueAsync. *@
 @inject CustomFieldService Fields
 @inject ComponentVersionService ComponentsAndVersions
-@inject TimeTrackingService Time
+@inject EstimateService Estimates
 @inject IssueService Issues
 
 @if (components.Count > 0)
@@ -56,7 +56,7 @@
         components = await ComponentsAndVersions.GetComponentsAsync(Project.Id);
         versions = await ComponentsAndVersions.GetVersionListAsync(Project.Id);
         users = await Issues.GetUsersAsync();
-        hoursPerDay = await Time.GetHoursPerDayAsync(Project.Id);
+        hoursPerDay = await Estimates.GetHoursPerDayAsync(Project.Id);
     }
 
     protected override void OnParametersSet()

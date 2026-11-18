@@ -64,7 +64,6 @@ else if (project != null)
                 <div class="bl-stats">
                     <span class="bl-pill" title="Issues">@section.Issues.Count @(section.Issues.Count == 1 ? "issue" : "issues")</span>
                     <span class="bl-pill" title="Story points">@section.Points pts</span>
-                    <GitBench.Components.Fields.TimeSpentPill Issues="section.Issues" />
                     @if (s?.State == SprintState.Active)
                     {
                         <span class="bl-dates">@section.DoneCount/@section.Issues.Count done · @section.DonePoints/@section.Points pts</span>

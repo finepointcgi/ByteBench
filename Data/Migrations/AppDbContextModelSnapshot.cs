@@ -1190,6 +1190,10 @@ namespace GitBench.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("WorkbenchWbs")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("WorkflowStatusId")
                         .HasColumnType("INTEGER");
 
@@ -1901,6 +1905,14 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(true);
+
+                    b.Property<string>("WorkbenchProjectCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkbenchWbs")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -3233,43 +3245,6 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("WikiPageIndex");
-                });
-
-            modelBuilder.Entity("GitBench.Data.WorkLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("IssueId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Minutes")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IssueId", "Date");
-
-                    b.HasIndex("UserId", "Date");
-
-                    b.ToTable("WorkLogs");
                 });
 
             modelBuilder.Entity("GitBench.Data.WorkflowStatus", b =>
@@ -4632,25 +4607,6 @@ namespace GitBench.Data.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("GitBench.Data.WorkLog", b =>
-                {
-                    b.HasOne("GitBench.Data.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("GitBench.Data.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Issue");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("GitBench.Data.WorkflowStatus", b =>

@@ -1,8 +1,8 @@
-@* Issue detail sidebar: components, fix/affects versions, custom fields and time tracking. Each change is saved at once
+@* Issue detail sidebar: components, fix/affects versions, custom fields and estimates. Each change is saved at once
    (and recorded in the activity); the page reloads through IssueChanged, which re-keys this panel's data. *@
 @inject CustomFieldService Fields
 @inject ComponentVersionService ComponentsAndVersions
-@inject TimeTrackingService Time
+@inject EstimateService Estimates
 @inject ProjectAccess Access
 @inject IssueService Issues
 
@@ -43,27 +43,17 @@
 
         @if (time != null)
         {
-            <div class="ifp-time" aria-label="Time tracking">
-                <MudText Typo="Typo.caption" Class="mud-text-secondary ifp-label">Time tracking</MudText>
-                <MudProgressLinear Value="time.Percent" Color="@(time.OverEstimate ? Color.Warning : Color.Info)" Rounded="true" Size="Size.Small" Class="my-1"
-                                   aria-label="@($"{time.Percent}% of the estimated work logged")" />
-                <div class="ifp-time-row">
-                    <span>@time.Format(time.SpentMinutes) logged</span>
-                    <span>@(time.RemainingMinutes is { } r ? time.Format(r) + " remaining" : "no estimate")</span>
-                </div>
-                @if (time.OverEstimate)
-                {
-                    <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block">Over the original estimate (@time.Format(time.OriginalMinutes)).</MudText>
-                }
+            <div class="ifp-time" aria-label="Estimates">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary ifp-label">Estimates</MudText>
                 <div class="ifp-estimates">
-                    <MudTextField T="string" @key="(nameof(TimeSummary.OriginalMinutes), version)" Value="@Duration.FormatOrNull(time.OriginalMinutes, time.HoursPerDay)"
+                    <MudTextField T="string" @key="(nameof(EstimateSummary.OriginalMinutes), version)" Value="@Duration.FormatOrNull(time.OriginalMinutes, time.HoursPerDay)"
                                   ValueChanged="v => SetEstimate(true, v)" Label="Original estimate" Placeholder="e.g. 2d 4h" Disabled="@(!canEdit)"
                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
-                    <MudTextField T="string" @key="(nameof(TimeSummary.RemainingMinutes), version)" Value="@Duration.FormatOrNull(time.RemainingMinutes, time.HoursPerDay)"
+                    <MudTextField T="string" @key="(nameof(EstimateSummary.RemainingMinutes), version)" Value="@Duration.FormatOrNull(time.RemainingMinutes, time.HoursPerDay)"
                                   ValueChanged="v => SetEstimate(false, v)" Label="Remaining" Placeholder="e.g. 6h" Disabled="@(!canEdit)"
                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
                 </div>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">Units: w, d (@time.HoursPerDay h), h, m. <a href="#work-log">Work log</a></MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">Units: w, d (@time.HoursPerDay h), h, m. Time spent is logged in Workbench.</MudText>
             </div>
         }
     </MudStack>
@@ -76,7 +66,7 @@
     private List<ProjectVersion> versions = [];
     private List<IssueFieldValue> values = [];
     private (List<ProjectComponent> Components, List<ProjectVersion> FixVersions, List<ProjectVersion> AffectsVersions) current = ([], [], []);
-    private TimeSummary? time;
+    private EstimateSummary? time;
     private List<User> users = [];
     private bool canEdit;
     private string? error;
@@ -106,7 +96,7 @@
         versions = await ComponentsAndVersions.GetVersionListAsync(Issue.ProjectId);
         current = await ComponentsAndVersions.GetForIssueAsync(Issue.Id);
         values = await Fields.GetIssueValuesAsync(Issue.Id);
-        time = await Time.GetSummaryAsync(Issue.Id);
+        time = await Estimates.GetSummaryAsync(Issue.Id);
         version++;
     }
 
@@ -129,6 +119,6 @@
         int? minutes;
         try { minutes = Duration.Parse(text, time?.HoursPerDay ?? Duration.DefaultHoursPerDay); }
         catch (FormatException ex) { throw new InvalidOperationException(ex.Message); }
-        await Time.SetEstimatesAsync(Issue.Id, original, minutes, !original, minutes);
+        await Estimates.SetEstimatesAsync(Issue.Id, original, minutes, !original, minutes);
     });
 }

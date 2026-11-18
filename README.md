@@ -309,7 +309,8 @@ GitLab-style namespaces that own projects (`Group`, `GroupMember`, `GroupRedirec
 - **Roadmap**: epics on a timeline per project or group, with drag-to-reschedule (see [Roadmap & dashboards](#roadmap--dashboards))
 - **Automation rules**: triggers, conditions and actions, run by a bot (see [Automation rules](#automation-rules))
 - **Explore, stars, profiles, global search and keyboard shortcuts** (see [Explore, profiles & search](#explore-profiles--search))
-- **Custom fields, components, versions, issue templates and time tracking** (see [Custom fields, components, versions, templates & time tracking](#custom-fields-components-versions-templates--time-tracking))
+- **Custom fields, components, versions, issue templates and estimates** (see [Custom fields, components, versions, templates & estimates](#custom-fields-components-versions-templates--estimates))
+- **Workbench link**: time is logged in Workbench, the company's ERP, from a button on each issue (see [Workbench (time & cost)](#workbench-time--cost))
 
 ## Sprints
 
@@ -1245,7 +1246,7 @@ sort    := field [ASC | DESC]
 | `created`, `updated`, `resolved` (`closed`), `due` (`dueDate`) | `= != < > <= >=`, `is` (resolved, due) | see dates |
 | `storyPoints` (`points`, `"story points"`) | `= != in < > <= >= is` | whole numbers |
 | `originalEstimate`, `remainingEstimate` | `= != < > <= >= is` | durations: `2h`, `30m`, `"1d 4h"`, `1w` (a bare number is hours; a day is the project's hours per day) |
-| `timeSpent` | `= != < > <= >= is` | duration; the total of the work logs (`0` / `is EMPTY` when nothing is logged) |
+| `wbs` (`chargeCode`) | `= != in, not in, is` | the Workbench charge code: the issue's override, else the project's WBS code (`wbs = "1.2.3"`; case-insensitive) |
 | `cf[key]` | by the field's type (below) | a custom field by its key, e.g. `cf[severity] = Major` |
 
 **Custom fields** are named by key in brackets, `cf[severity]` (also quoted, `"cf[severity]"`), so they never collide with built-in fields. The key is looked up in the projects being searched (keys are unique per project, so one key may cover a field in several projects); an unknown key, or one only used in projects you can't view, is the same error: *No project searched has a custom field 'key'*. Operators by type:
@@ -1263,7 +1264,7 @@ sort    := field [ASC | DESC]
 
 **Dates** are UTC: `2026-01-31` (as a whole day: `=` matches that day, `<=` includes it), `"2026-01-31 14:30"`, relative offsets from now (`-7d`, `-2w`, `+1M`, `-1w2d`; units `y M w d h m`) and functions `now()`, `startOfDay()`, `endOfDay()`, `startOfWeek()` (Monday), `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `startOfYear()`, `endOfYear()`, each with an optional offset (`startOfWeek(-1w)`). The `endOf…` functions are the start of the next period.
 
-**Sorting:** `ORDER BY` any field except `text`, `comment`, `labels`, `watcher`, `parent`, `epic`, `component`, the versions, `timeSpent` and `cf[…]`; the default is `updated DESC`, and issue id breaks ties so pages are stable.
+**Sorting:** `ORDER BY` any field except `text`, `comment`, `labels`, `watcher`, `parent`, `epic`, `component`, the versions and `cf[…]`; the default is `updated DESC`, and issue id breaks ties so pages are stable.
 
 **Saved filters** store GQL as `gql=<query>` in their query string (the list's URL is `/p/WEB/issues?gql=…`), so older query-string filters keep working and the Filters menu, stars and sidebar handle both. **Manage filters** shows the query of a GQL filter.
 
@@ -1289,7 +1290,7 @@ sort    := field [ASC | DESC]
 
 Each issue gets the activity "imported from CSV", and the import is audited as `issue.imported` (file name, count, first and last key). Imports don't send notifications or webhooks; open lists and boards refresh live.
 
-Code: `Services/Query/` (`GqlSyntax.cs` tokenizer/AST/parser, `GqlFieldModel.cs` field interfaces and helpers, `BuiltInQueryFields.cs`, `GqlService.cs`, `Csv.cs`, `CsvImportService.cs`, `QuerySetup.cs`), `Services/Fields/IssueFieldQueryFields.cs` (components, versions, time tracking and custom fields), `Api/GqlSearchEndpoints.cs`, `Components/Query/{GqlEditor,CsvExportDialog}.razor`, `Components/Pages/IssueSearchPage.razor`, `Components/Pages/Projects/ImportCsv.razor`, `wwwroot/js/gql-editor.js`. No schema changes. Tests: `GqlTests.cs`, `GqlFieldsTests.cs`, `CsvTests.cs`.
+Code: `Services/Query/` (`GqlSyntax.cs` tokenizer/AST/parser, `GqlFieldModel.cs` field interfaces and helpers, `BuiltInQueryFields.cs`, `GqlService.cs`, `Csv.cs`, `CsvImportService.cs`, `QuerySetup.cs`), `Services/Fields/IssueFieldQueryFields.cs` (components, versions, estimates, `wbs` and custom fields), `Api/GqlSearchEndpoints.cs`, `Components/Query/{GqlEditor,CsvExportDialog}.razor`, `Components/Pages/IssueSearchPage.razor`, `Components/Pages/Projects/ImportCsv.razor`, `wwwroot/js/gql-editor.js`. No schema changes. Tests: `GqlTests.cs`, `GqlFieldsTests.cs`, `CsvTests.cs`.
 
 ## Workflows & audit log
 
@@ -1314,7 +1315,7 @@ Each project has its own **workflow**: an ordered list of statuses (name, colour
 - **What's recorded:**
   - `auth.sign_in`, `auth.sign_in_failed`, `auth.lockout`, `auth.sign_out`, `auth.registered`, `user.password_changed`
   - `token.created`, `token.revoked`
-  - `project.created`, `project.settings_changed` (including the AI review toggle), `project.visibility_changed`, `project.deleted`
+  - `project.created`, `project.settings_changed` (including the AI review toggle), `project.visibility_changed`, `project.deleted`, `project.workbench_changed` (the Workbench WBS / project code), `issue.workbench_changed` (an issue's WBS override)
   - `member.added`, `member.role_changed`, `member.removed`
   - `repository.created`, `repository.settings_changed`, `repository.renamed`, `repository.archived`, `repository.unarchived`, `repository.deleted`, `repository.default_branch_changed`
   - `branch_protection.created`, `branch_protection.updated`, `branch_protection.deleted`, `pull_request.merged_bypassing_protection`
@@ -1397,22 +1398,35 @@ Pipelines can get secrets (deploy keys, API tokens, …) as environment variable
 - **Audit events:** `ci_variable.created`, `ci_variable.updated` and `ci_variable.deleted` with the name, scope and protected flag, never the value (`valueChanged` says whether the value was replaced).
 - **Limits of masking:** anyone who can change `.gitbench-ci.yml` on a branch that gets a variable (Developer+ for unprotected variables) can still leak it, e.g. by base64-encoding it or sending it over the network. Use **Protected** for anything sensitive, and protect the branches that get it so changes go through review.
 
-## Custom fields, components, versions, templates & time tracking
+## Custom fields, components, versions, templates & estimates
 
-Code: `Services/Fields/` (`CustomFieldRules` pure validation/parsing, `CustomFieldService`, `ComponentVersionService`, `IssueTemplateService`, `TimeTrackingService`, `Duration`), UI in `Components/Fields/`, API in `Api/FieldEndpoints.cs`, demo data in `Data/FieldsSeeder.cs`. Tests: `tests/GitBench.Tests/FieldsTests.cs`.
+Code: `Services/Fields/` (`CustomFieldRules` pure validation/parsing, `CustomFieldService`, `ComponentVersionService`, `IssueTemplateService`, `EstimateService`, `Duration`), UI in `Components/Fields/`, API in `Api/FieldEndpoints.cs`, demo data in `Data/FieldsSeeder.cs`. Tests: `tests/GitBench.Tests/FieldsTests.cs`.
 
-- **Settings:** `/p/{KEY}/settings/fields` (Maintainer+, linked from Settings) has tabs for custom fields, components, issue templates and time tracking (hours per day). Definitions are audited (`custom_field.*`, `component.*`, `version.*`).
+- **Settings:** `/p/{KEY}/settings/fields` (Maintainer+, linked from Settings) has tabs for custom fields, components, issue templates and estimates (hours per day). Definitions are audited (`custom_field.*`, `component.*`, `version.*`).
 - **Custom fields:** types text, long text, number, date, single select, multi select, user, checkbox and URL. Each has a key (`severity`, used by the API, webhooks and filters), a required flag, a default, optional issue types it applies to, and a display order. Values live in `CustomFieldValues` (EAV with typed columns: `TextValue`, `NumberValue`, `DateValue`, `UserId`, `BoolValue`; one row per option for multi select). `CustomFieldRules.Parse` checks every value (options, numbers, yyyy-MM-dd dates, http(s) URLs, users who can see the project); required fields must have a value on the issue types they apply to (new issues get the default). A field's type can't change once issues have values for it. Fields appear in the issue sidebar (saved on change, recorded in the activity: "changed **Severity** to **Critical**"), on the new-issue form and as optional list columns.
 - **Components** (name, description, lead, default assignee) and **versions** (name, description, start and release dates, released flag) are multi-valued on issues: components, fix versions and affects versions, with pickers on the issue page and the new-issue form. A new issue with no assignee gets its first component's default assignee. A version whose name matches a published release tag (`1.0` or `v1.0`) in one of the project's repositories links to that release.
-- **Versions page** (`/p/{KEY}/versions`, sidebar): unreleased versions first, each with the done/total progress of its fix-version issues, story points, time logged and remaining, the linked release and the issue list; Maintainers create, edit, release and delete versions there.
-- **Issue list:** filters for component, fix version, affects version (each also "none") and one custom field (`cf=key:value`; `key:` = no value), plus a **columns** menu (custom fields, components, fix versions, time spent, remaining). They are `IssueFilter` properties (`componentId`, `fixVersionId`, `affectsVersionId`, `cf`, `columns`), so URLs and saved filters keep them.
-- **GQL:** `component`, `fixVersion`, `affectsVersion`, `originalEstimate`, `remainingEstimate`, `timeSpent` and `cf[key]` (see [GQL](#gitbench-query-language-gql)).
+- **Versions page** (`/p/{KEY}/versions`, sidebar): unreleased versions first, each with the done/total progress of its fix-version issues, story points, the linked release and the issue list; Maintainers create, edit, release and delete versions there.
+- **Issue list:** filters for component, fix version, affects version (each also "none") and one custom field (`cf=key:value`; `key:` = no value), plus a **columns** menu (custom fields, components, fix versions, remaining estimate). They are `IssueFilter` properties (`componentId`, `fixVersionId`, `affectsVersionId`, `cf`, `columns`), so URLs and saved filters keep them.
+- **GQL:** `component`, `fixVersion`, `affectsVersion`, `originalEstimate`, `remainingEstimate`, `wbs` and `cf[key]` (see [GQL](#gitbench-query-language-gql)).
 - **Issue templates:** name, issue type, title prefix, Markdown body and default labels. The new-issue form has a **Template** picker (`?template=t{id}` preselects one). Markdown files in `.gitbench/issue_templates/*.md` on the default branch of the project's first repository are offered too, with optional front matter (`name`, `title`, `labels`, `type`).
-- **Time tracking:** an original and a remaining estimate per issue, entered like `2h 30m`, `1d`, `1.5h` or `1w` (a day is the project's hours per day, default 8; a week is 5 days; a bare number is hours). Work logs (time, date, comment) are added from the issue's **Work log** panel by Developers+; the remaining estimate goes down by the time logged (and back up when a log is deleted). A log can be edited by its author and deleted by its author or a Maintainer+. The issue sidebar shows a progress bar (logged vs logged + remaining) and warns when over the original estimate. Backlog sprint headers show the time logged on their issues; the Versions page shows it per version.
-- **Timesheets:** `/timesheet` (sidebar **My timesheet**) shows your work logs by week (a grid of issues × days plus the entries); `/p/{KEY}/timesheet` shows hours per person for the last eight weeks and the selected week by day.
-- **API:** issues carry `customFields` (by key: string, number, bool, list of strings, `yyyy-MM-dd`, or username; null when unset), `components`, `fixVersions`, `affectsVersions` and `timeTracking` (`originalEstimate`, `remainingEstimate`, `timeSpent` as text and in minutes). `POST …/issues` and `PATCH …/issues/{n}` accept `customFields` (PATCH changes only the keys sent; null clears), `components`, `fixVersions`, `affectsVersions` (names; replace the set) and `originalEstimate`/`remainingEstimate` (durations). `GET …/issues` filters by `component`, `fixVersion`, `affectsVersion` (name or `none`) and `cf=key:value`. Also `GET /projects/{key}/fields`, `/components`, `/versions`, `/issue-templates`, and work logs at `/projects/{key}/issues/{n}/worklogs` (GET, POST `{ "timeSpent": "1h 30m", "date": "2026-11-18", "comment": "…" }`, PATCH and DELETE `/{id}`). Webhook issue payloads include the same fields.
+- **Estimates:** an original and a remaining estimate per issue, plain planning fields next to story points, entered like `2h 30m`, `1d`, `1.5h` or `1w` (a day is the project's hours per day, default 8; a week is 5 days; a bare number is hours). Setting only the original estimate on an issue without a remaining one starts the remaining one at the same value; after that each is edited on its own. Changes are recorded in the issue's activity. GitBench doesn't record time spent: see [Workbench (time & cost)](#workbench-time--cost).
+- **API:** issues carry `customFields` (by key: string, number, bool, list of strings, `yyyy-MM-dd`, or username; null when unset), `components`, `fixVersions`, `affectsVersions`, `estimates` (`originalEstimate`, `remainingEstimate` as text and in minutes) and `workbenchWbs` (the effective charge code; `workbenchWbsOverride` is true when it's the issue's own). `POST …/issues` and `PATCH …/issues/{n}` accept `customFields` (PATCH changes only the keys sent; null clears), `components`, `fixVersions`, `affectsVersions` (names; replace the set), `originalEstimate`/`remainingEstimate` (durations) and `workbenchWbs` (the issue's override; null clears it). `GET …/issues` filters by `component`, `fixVersion`, `affectsVersion` (name or `none`) and `cf=key:value`. Also `GET /projects/{key}/fields`, `/components`, `/versions`, `/issue-templates` and `GET`/`PUT /projects/{key}/workbench`. Webhook issue payloads include the same fields.
 - **For other features:** read fields with `CustomFieldService.GetFieldsAsync(projectId)` and values with `GetValuesAsync(issueIds)` (issue id → field id → `FieldValue`), and format them with `CustomFieldRules.ToText`/`ToJson`. `IssueFilter.ApplyCustomField(query, key, value)` filters an `IQueryable<Issue>` by a field.
-- **Seed:** WEB gets six custom fields (Severity, required for bugs with default Major; Affected browsers; Customer; QA reviewer; Spec; Regression), the components Frontend, API and Infrastructure, versions 0.8 (released), 0.9 and 1.0, two templates (Bug report, User story) and estimates and work logs on several issues.
+- **Seed:** WEB gets six custom fields (Severity, required for bugs with default Major; Affected browsers; Customer; QA reviewer; Spec; Regression), the components Frontend, API and Infrastructure, versions 0.8 (released), 0.9 and 1.0, two templates (Bug report, User story) and estimates on several issues.
+
+## Workbench (time & cost)
+
+GitBench doesn't track time. Hours are recorded in **Workbench**, the company's ERP, on the employee's timesheet. That timesheet is the cost record: hours are charged to a charge code (a WBS element), certified and approved there, and flow into labour cost, billing and the audit trail that DCAA-compliant timekeeping needs (daily entry, one system of record, corrections with a reason). Keeping a second set of hours in GitBench would create a record that disagrees with the books, so GitBench only links to Workbench and tells people which charge code to use.
+
+Code: `Services/Workbench/WorkbenchService.cs`, `Components/Workbench/` (`WorkbenchSettings` on project Settings, `WorkbenchIssuePanel` on the issue page), API in `Api/FieldEndpoints.cs`, GQL in `Services/Fields/IssueFieldQueryFields.cs`. Tests: `tests/GitBench.Tests/WorkbenchTests.cs`.
+
+- **Site config:** `Workbench:BaseUrl`, e.g. `https://workbench.example.com` (or `Workbench__BaseUrl`). Optional; while it is unset (or not an absolute http(s) URL) nothing about Workbench shows.
+- **Project setting:** project **Settings → Workbench (time & cost)** (Maintainer+) sets the **Workbench charge code (WBS)**, e.g. `1.2.3`, and an optional **Workbench project code**. Codes are up to 50 letters, digits, `.`, `-`, `_` or `/`. Changes are audited as `project.workbench_changed` with the old and new values.
+- **Issue override:** Developers+ can give one issue a different charge code from the issue sidebar ("Use a different charge code"). It is recorded in the issue's activity and audited as `issue.workbench_changed`.
+- **Issue page:** with a base URL and a charge code, the sidebar shows **Log time in Workbench** and "Charge to `1.2.3` · project `…`". The button opens the user's Workbench timesheet, `{BaseUrl}/time` (Workbench's `@page "/time"`, the current week), in a new tab (`rel="noopener noreferrer"`). Workbench's timesheet route takes a `?date=yyyy-MM-dd` but no charge code, so the user picks the code shown here in the grid. Without a charge code, Maintainers see a hint linking to the setting and everyone else sees nothing.
+- **API:** projects carry `workbenchWbs` and `workbenchProjectCode`; `GET /projects/{key}/workbench` returns them with `timesheetUrl` (null when Workbench isn't configured) and `PUT` sets them (Maintainer+). Issues and webhook payloads carry the effective `workbenchWbs`.
+- **GQL:** `wbs = "1.2.3"` (alias `chargeCode`) matches the issue's override, else its project's code; `wbs is EMPTY` finds issues with neither.
+- **Upgrading:** the `RemoveTimeTracking` migration drops the `WorkLogs` table. **Existing work logs are deleted**; export them first if you need them (e.g. from a database backup). Estimates are kept.
 
 ## Explore, profiles & search
 
@@ -1598,6 +1612,7 @@ Settings come from these sources; later ones override earlier ones:
 | `Mirroring:SshKeyFile` / `KnownHostsFile` | none / `{ContentRoot}/keys/mirror_known_hosts` | Private key and known hosts file for `ssh://` mirrors |
 | `Lfs:Root` / `Lfs:MaxObjectBytes` | `{ContentRoot}/lfs` / 2 GB | Git LFS object store and size limit per object |
 | `Audit:RetentionDays` | 365 | Audit event retention (`0` keeps them forever) |
+| `Workbench:BaseUrl` | none (off) | Workbench address for the "Log time in Workbench" button (see [Workbench (time & cost)](#workbench-time--cost)) |
 | `Ai:Enabled` / `Ai:Model` / `Ai:ApiKey` | `true` / `claude-opus-5-5` / none | AI features. Prefer `ANTHROPIC_API_KEY` for the key |
 | `Logging:*` | | Standard .NET logging. `appsettings.Production.json` switches the console to JSON and keeps EF Core's SQL logging at Warning |
 

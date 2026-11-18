@@ -6,7 +6,7 @@
 @inject CustomFieldService FieldService
 @inject ComponentVersionService ComponentsAndVersions
 @inject IssueTemplateService Templates
-@inject TimeTrackingService Time
+@inject EstimateService Estimates
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
@@ -233,10 +233,10 @@ else if (project != null)
             }
         </MudTabPanel>
 
-        <MudTabPanel Text="Time tracking">
+        <MudTabPanel Text="Estimates">
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-                Estimates and logged time are entered like <code>2h 30m</code>, <code>1d</code> or <code>1w</code>. A day is this many hours and a week is 5 days.
-                Changing it changes how existing times are shown, not how much time they are.
+                Estimates are entered like <code>2h 30m</code>, <code>1d</code> or <code>1w</code>. A day is this many hours and a week is 5 days.
+                Changing it changes how existing estimates are shown, not how much time they are. Time spent is recorded in Workbench timesheets.
             </MudText>
             <div class="d-flex align-center gap-2">
                 <MudNumericField T="int" @bind-Value="hoursPerDay" Label="Hours per day" Min="1" Max="24" Variant="Variant.Outlined" Margin="Margin.Dense" Class="fs-hours" />
@@ -384,6 +384,6 @@ else if (project != null)
         await Run(() => Templates.DeleteAsync(t.Id), "Template deleted.");
     }
 
-    // ----- Time tracking -----
-    private Task SaveHours() => Run(() => Time.SetHoursPerDayAsync(project!.Id, hoursPerDay), "Hours per day saved.");
+    // ----- Estimates -----
+    private Task SaveHours() => Run(() => Estimates.SetHoursPerDayAsync(project!.Id, hoursPerDay), "Hours per day saved.");
 }

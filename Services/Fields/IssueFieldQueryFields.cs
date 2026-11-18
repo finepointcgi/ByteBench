@@ -7,8 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GitBench.Services.Fields;
 
 /// <summary>
-/// GQL fields for components, versions, time tracking and custom fields: <c>component</c>, <c>fixVersion</c>,
-/// <c>affectsVersion</c>, <c>originalEstimate</c>, <c>remainingEstimate</c>, <c>timeSpent</c> and <c>cf[key]</c>.
+/// GQL fields for components, versions, estimates, the Workbench charge code and custom fields: <c>component</c>,
+/// <c>fixVersion</c>, <c>affectsVersion</c>, <c>originalEstimate</c>, <c>remainingEstimate</c>, <c>wbs</c> and <c>cf[key]</c>.
 /// Names (components, versions, custom field keys) resolve only in the projects being searched (<see cref="GqlContext.ProjectIds"/>),
 /// so a query can't learn about projects the user can't see.
 /// </summary>
@@ -21,7 +21,7 @@ public sealed class IssueFieldQueryFields : IQueryFieldProvider
         new VersionQueryField("affectsVersion", ["affectsVersions", "affectedVersion"], "Affects version name or id", VersionLinkKind.Affects),
         new EstimateQueryField("originalEstimate", "Original estimate", i => i.OriginalEstimateMinutes),
         new EstimateQueryField("remainingEstimate", "Remaining estimate", i => i.RemainingEstimateMinutes),
-        new TimeSpentQueryField(),
+        new WbsQueryField(),
         new CustomFieldQueryField(),
     ];
 }
@@ -107,7 +107,7 @@ internal sealed class VersionQueryField(string name, string[] aliases, string de
     }
 }
 
-// ----- Time tracking -----
+// ----- Estimates -----
 
 /// <summary>Durations (<c>2h</c>, <c>"1d 4h"</c>, <c>30m</c>; a bare number is hours) compared in minutes.</summary>
 internal abstract class DurationQueryField : QueryField
@@ -165,19 +165,42 @@ internal sealed class EstimateQueryField(string name, string label, Expression<F
             : Compare(selector, c));
 }
 
-/// <summary><c>timeSpent</c>: the total of the issue's work logs (0 without any; <c>is EMPTY</c> means nothing logged).</summary>
-internal sealed class TimeSpentQueryField : DurationQueryField
+// ----- Workbench -----
+
+/// <summary>
+/// <c>wbs</c>: the issue's Workbench charge code (its override, else its project's WBS code), compared case-insensitively.
+/// <c>is EMPTY</c> matches issues without one.
+/// </summary>
+internal sealed class WbsQueryField : QueryField
 {
-    public override string Name => "timeSpent";
-    public override string Description => "Time logged: " + base.Description;
+    public override string Name => "wbs";
+    public override IReadOnlyList<string> Aliases => ["workbenchWbs", "chargeCode"];
+    public override string Description => "Workbench charge code (WBS), e.g. wbs = \"1.2.3\"";
+    public override IReadOnlyCollection<GqlOperator> Operators => [.. GqlOperators.Equality, .. GqlOperators.Empty];
+
+    private static readonly Expression<Func<Issue, string?>> Effective = i => i.WorkbenchWbs ?? i.Project.WorkbenchWbs;
+    public override IReadOnlyList<LambdaExpression> SortKeys => [Effective];
 
     public override Task<Expression<Func<Issue, bool>>> BuildAsync(GqlClause c, GqlContext ctx)
     {
-        var db = ctx.Db;
         if (c.Operator is GqlOperator.Is or GqlOperator.IsNot)
-            return Task.FromResult(Polarity(c.Operator, i => !db.WorkLogs.Any(w => w.IssueId == i.Id)));
-        Expression<Func<Issue, int?>> spent = i => db.WorkLogs.Where(w => w.IssueId == i.Id).Sum(w => w.Minutes);
-        return Task.FromResult(Compare(spent, c));
+            return Task.FromResult(Polarity(c.Operator, i => (i.WorkbenchWbs ?? i.Project.WorkbenchWbs) == null));
+        var codes = c.Values.Select(v => Literal(v).Trim().ToLowerInvariant()).ToList();
+        Expression<Func<Issue, bool>> match = i => (i.WorkbenchWbs ?? i.Project.WorkbenchWbs) != null
+            && codes.Contains((i.WorkbenchWbs ?? i.Project.WorkbenchWbs)!.ToLower());
+        return Task.FromResult(Polarity(c.Operator, match));
+    }
+
+    public override async Task<IReadOnlyList<GqlSuggestion>> SuggestValuesAsync(GqlContext ctx, string prefix)
+    {
+        var pids = ctx.ProjectIds;
+        var p = prefix.ToLowerInvariant();
+        var projectCodes = await ctx.Db.Projects.AsNoTracking().Where(x => pids.Contains(x.Id) && x.WorkbenchWbs != null && x.WorkbenchWbs.ToLower().StartsWith(p))
+            .Select(x => x.WorkbenchWbs!).Distinct().Take(15).ToListAsync();
+        var issueCodes = await ctx.Db.Issues.AsNoTracking().Where(x => pids.Contains(x.ProjectId) && x.WorkbenchWbs != null && x.WorkbenchWbs.ToLower().StartsWith(p))
+            .Select(x => x.WorkbenchWbs!).Distinct().Take(15).ToListAsync();
+        return projectCodes.Concat(issueCodes).Distinct(StringComparer.OrdinalIgnoreCase).Order().Take(15)
+            .Select(code => new GqlSuggestion(GqlLexer.Quote(code), code)).ToList();
     }
 }
 

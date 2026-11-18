@@ -26,7 +26,7 @@ public class SavedFilterTests(TestApp app) : IClassFixture<TestApp>
         FixVersionId = 0, // "no fix version"
         AffectsVersionId = 9,
         Cf = "severity:Major & co",
-        Columns = "severity,components,timeSpent",
+        Columns = "severity,components,estimate",
     };
 
     [Fact]

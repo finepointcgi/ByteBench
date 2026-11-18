@@ -3,12 +3,13 @@ using GitBench.Services;
 using GitBench.Services.Automation;
 using GitBench.Services.Fields;
 using GitBench.Services.Query;
+using GitBench.Services.Workbench;
 using GitBench.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Tests;
 
-/// <summary>GQL fields from custom fields, components, versions and time tracking (<see cref="IssueFieldQueryFields"/>).</summary>
+/// <summary>GQL fields from custom fields, components, versions, estimates and the Workbench charge code (<see cref="IssueFieldQueryFields"/>).</summary>
 public class GqlFieldsTests(TestApp app) : IClassFixture<TestApp>
 {
     private sealed record Data(Project P, Project Secret, int A, int B, int C, int X, int UiComponent);
@@ -17,8 +18,9 @@ public class GqlFieldsTests(TestApp app) : IClassFixture<TestApp>
     private static readonly SemaphoreSlim gate = new(1, 1);
 
     /// <summary>
-    /// Project P (alice Owner, bob Developer; 6-hour days) with custom fields, components, versions and time on issues A and B
-    /// (C has nothing), and a private project only alice can see with fields "severity" and "secret_code" on issue X.
+    /// Project P (alice Owner, bob Developer; 6-hour days, WBS 1.2.3) with custom fields, components, versions and estimates
+    /// on issues A and B (C has nothing; B's WBS is overridden to 7.7), and a private project only alice can see with fields
+    /// "severity" and "secret_code" on issue X.
     /// </summary>
     private async Task<Data> SetupAsync()
     {
@@ -35,7 +37,8 @@ public class GqlFieldsTests(TestApp app) : IClassFixture<TestApp>
             await using var s = app.Scope(alice);
             var fields = s.Get<CustomFieldService>();
             var cv = s.Get<ComponentVersionService>();
-            var time = s.Get<TimeTrackingService>();
+            var time = s.Get<EstimateService>();
+            var workbench = s.Get<WorkbenchService>();
             var issues = s.Get<IssueService>();
 
             async Task<int> Field(int projectId, string key, CustomFieldType type, params string[] options) =>
@@ -77,11 +80,9 @@ public class GqlFieldsTests(TestApp app) : IClassFixture<TestApp>
             await cv.SetVersionsAsync(a.Id, VersionLinkKind.Affects, [v2.Id]);
             await cv.SetVersionsAsync(b.Id, VersionLinkKind.Fix, [v2.Id]);
 
-            await time.SetEstimatesAsync(a.Id, true, 360, true, 120, alice); // 1d in a 6-hour project
-            var day = DateTime.UtcNow.Date.AddDays(-1);
-            await time.AddWorkLogAsync(a.Id, 90, day, null, alice);
-            await time.AddWorkLogAsync(b.Id, 30, day, null, alice);
-            await time.AddWorkLogAsync(b.Id, 30, day, null, alice);
+            await time.SetEstimatesAsync(a.Id, true, 360, true, 30, alice); // 1d in a 6-hour project
+            await workbench.SetProjectMappingAsync(p.Id, "1.2.3", "GB-1", alice);
+            await workbench.SetIssueWbsAsync(b.Id, "7.7", alice);
             return data = new Data(p, secret, a.Id, b.Id, c.Id, x.Id, ui.Id);
         }
         finally { gate.Release(); }
@@ -149,27 +150,38 @@ public class GqlFieldsTests(TestApp app) : IClassFixture<TestApp>
     }
 
     [Fact]
-    public async Task Estimates_and_time_spent_take_durations()
+    public async Task Estimates_take_durations()
     {
         await Expect("originalEstimate = 1d", x => x.A); // the project's day is 6 hours
         await Expect("originalEstimate = 6h", x => x.A);
         await Expect("originalEstimate > 5", x => x.A); // a bare number is hours
         await Expect("originalEstimate < \"1d 1h\"", x => x.A);
         await Expect("originalEstimate is EMPTY", x => x.B, x => x.C);
-        await Expect("remainingEstimate = 30m", x => x.A); // 2h, less the 90m logged
+        await Expect("remainingEstimate = 30m", x => x.A);
         await Expect("remainingEstimate < 30m");
-        await Expect("timeSpent > 1h", x => x.A);
-        await Expect("timeSpent >= 1h", x => x.A, x => x.B);
-        await Expect("timeSpent = 0", x => x.C);
-        await Expect("timeSpent < \"1h 30m\"", x => x.B, x => x.C);
-        await Expect("timeSpent is EMPTY", x => x.C);
-        await Expect("timeSpent is not EMPTY", x => x.A, x => x.B);
+        await Expect("remainingEstimate is not EMPTY", x => x.A);
         Assert.Contains("isn't a duration", (await Error("originalEstimate > soon")).Message);
-        Assert.Contains("doesn't support '~'", (await Error("timeSpent ~ 1h")).Message);
+        Assert.Contains("doesn't support '~'", (await Error("originalEstimate ~ 1h")).Message);
+        Assert.Contains("timeSpent", (await Error("timeSpent > 1h")).Message); // time is tracked in Workbench now
         var d = await SetupAsync();
         await using var s = app.Scope(app.UserId("alice"));
         var ordered = (await s.Get<GqlService>().SearchAsync("ORDER BY originalEstimate DESC, key", [d.P.Id])).Issues.Select(i => i.Id).ToList();
         Assert.Equal(d.A, ordered[0]);
+    }
+
+    [Fact]
+    public async Task Wbs_matches_the_issue_override_or_the_projects_code()
+    {
+        await Expect("wbs = \"1.2.3\"", x => x.A, x => x.C);
+        await Expect("wbs = 7.7", x => x.B);
+        await Expect("chargeCode in (\"1.2.3\", \"7.7\")", x => x.A, x => x.B, x => x.C);
+        await Expect("wbs != \"1.2.3\"", x => x.B);
+        await Expect("wbs is EMPTY");
+        await Expect("wbs = 4.5.6");
+        Assert.Contains("doesn't support '~'", (await Error("wbs ~ 1")).Message);
+        var suggestions = await Suggest("wbs = ");
+        Assert.Contains(suggestions, x => x.Contains("1.2.3"));
+        Assert.Contains(suggestions, x => x.Contains("7.7"));
     }
 
     [Fact]
@@ -207,7 +219,7 @@ public class GqlFieldsTests(TestApp app) : IClassFixture<TestApp>
         await Expect("cf[approved] = false", x => x.B, x => x.C);
         await Expect("cf[approved] != true", x => x.B, x => x.C);
         // combined with built-ins
-        await Expect("cf[severity] = Major AND component = UI AND timeSpent > 1h", x => x.A);
+        await Expect("cf[severity] = Major AND component = UI AND originalEstimate > 1h", x => x.A);
 
         var op = await Error("cf[severity] ~ Major");
         Assert.Contains("cf[severity] (Single select) doesn't support '~'", op.Message);
@@ -366,7 +378,7 @@ public class GqlAutomationConditionTests(TestApp app) : AutomationTestBase(app),
         var unknown = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => RuleAsync(project.Id, AutomationTrigger.CommentAdded, Raise("matches", "colour = red")));
         Assert.Contains("unknown field 'colour'", unknown.Message);
         await Assert.ThrowsAnyAsync<InvalidOperationException>(() => RuleAsync(project.Id, AutomationTrigger.CommentAdded, Raise("matches", " ")));
-        Assert.NotNull(await RuleAsync(project.Id, AutomationTrigger.CommentAdded, Raise("matches", "cf[severity] = Major OR timeSpent > 1h")));
+        Assert.NotNull(await RuleAsync(project.Id, AutomationTrigger.CommentAdded, Raise("matches", "cf[severity] = Major OR wbs = \"1.2.3\"")));
 
         var registry = App.Services.GetService(typeof(AutomationConditions)) as AutomationConditions;
         var condition = registry!.Find("gql");

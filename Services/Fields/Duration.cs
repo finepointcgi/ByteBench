@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace GitBench.Services.Fields;
 
 /// <summary>
-/// Jira-style durations for time tracking: <c>2h 30m</c>, <c>1d</c>, <c>1.5h</c>, <c>1w 2d</c>. A day is the project's
+/// Jira-style durations for estimates: <c>2h 30m</c>, <c>1d</c>, <c>1.5h</c>, <c>1w 2d</c>. A day is the project's
 /// hours per day (default 8) and a week is 5 days. A bare number means hours. Stored as whole minutes.
 /// </summary>
 public static partial class Duration

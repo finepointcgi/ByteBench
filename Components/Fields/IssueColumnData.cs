@@ -11,7 +11,6 @@ public sealed class IssueColumnData
 {
     public const string ComponentsColumn = "components";
     public const string FixVersionsColumn = "fixVersions";
-    public const string TimeSpentColumn = "timeSpent";
     public const string EstimateColumn = "estimate";
 
     public IReadOnlyList<string> Columns { get; set; } = [];
@@ -19,7 +18,6 @@ public sealed class IssueColumnData
     public Dictionary<int, Dictionary<int, FieldValue>> Values { get; set; } = [];
     public Dictionary<int, List<string>> Components { get; set; } = [];
     public Dictionary<int, List<string>> FixVersions { get; set; } = [];
-    public Dictionary<int, int> Spent { get; set; } = [];
     public Dictionary<int, string> UserNames { get; set; } = [];
     public int HoursPerDay { get; set; } = Duration.DefaultHoursPerDay;
 
@@ -28,7 +26,6 @@ public sealed class IssueColumnData
     {
         ComponentsColumn => "Components",
         FixVersionsColumn => "Fix versions",
-        TimeSpentColumn => "Time spent",
         EstimateColumn => "Remaining",
         _ => Fields.FirstOrDefault(f => f.Key == column)?.Name ?? column,
     };
@@ -40,7 +37,6 @@ public sealed class IssueColumnData
         {
             case ComponentsColumn: return Components.TryGetValue(issue.Id, out var c) && c.Count > 0 ? string.Join(", ", c) : null;
             case FixVersionsColumn: return FixVersions.TryGetValue(issue.Id, out var v) && v.Count > 0 ? string.Join(", ", v) : null;
-            case TimeSpentColumn: return Spent.TryGetValue(issue.Id, out var s) && s > 0 ? Duration.Format(s, HoursPerDay) : null;
             case EstimateColumn: return Duration.FormatOrNull(issue.RemainingEstimateMinutes, HoursPerDay);
         }
         if (Fields.FirstOrDefault(f => f.Key == column) is not { } field) return null;
