@@ -1,5 +1,11 @@
-<span class="status-badge status-@Status.Css()">@Status.Name()</span>
+@* Status chip: the workflow status name and colour when known (Issue or WorkflowStatus), else the category. *@
+<span class="status-badge status-@Category.Css()" style="@Display.StatusStyle(Workflow?.Color)">@(Workflow?.Name ?? Category.Name())</span>
 
 @code {
     [Parameter] public IssueStatus Status { get; set; }
+    [Parameter] public Issue? Issue { get; set; }
+    [Parameter] public WorkflowStatus? WorkflowStatus { get; set; }
+
+    private IssueStatus Category => Issue?.Status ?? WorkflowStatus?.Category ?? Status;
+    private WorkflowStatus? Workflow => Issue != null ? Display.WorkflowStatusOf(Issue) : WorkflowStatus;
 }

@@ -5,6 +5,7 @@
 @inject UserManager<User> Users
 @inject NavigationManager Nav
 @inject ILogger<Register> Log
+@inject GitBench.Services.Audit.AuditLog Audit
 
 <PageTitle>Create account · GitBench</PageTitle>
 
@@ -92,6 +93,7 @@
         }
 
         Log.LogInformation("Created account {User}.", user.UserName);
+        await Audit.RecordAsync("auth.registered", "user", user.Id, details: new { user.UserName }, actorId: user.Id);
         await SignIn.SignInAsync(user, isPersistent: false);
         Nav.NavigateTo(AccountUrls.SafeReturnUrl(ReturnUrl), forceLoad: true);
     }

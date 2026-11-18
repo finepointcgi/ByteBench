@@ -66,7 +66,7 @@ public class BranchProtectedException(string message) : InvalidOperationExceptio
 /// only by "Block deletion"; "Block force pushes" refuses non-fast-forward updates.
 /// </para>
 /// </summary>
-public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access)
+public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, Audit.AuditLog audit)
 {
     // ---------- Rules ----------
 
@@ -117,6 +117,9 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
         rule.DefaultReviewerIds = reviewers;
         rule.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
+        await audit.RecordAsync(input.Id == 0 ? "branch_protection.created" : "branch_protection.updated", "branch_protection_rule", rule.Id, projectId,
+            new { repositoryId, rule.Pattern, rule.RequiredApprovals, rule.BlockDirectPushes, rule.BlockForcePushes, rule.BlockDeletion,
+                  rule.RequireChecksToPass, rule.DismissStaleApprovals, rule.AllowAdminBypass, rule.DefaultReviewerIds }, actorId);
         return rule;
     }
 
@@ -124,7 +127,10 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
     {
         await access.RequireForRepositoryAsync(repositoryId, Permission.ManageRepositories, actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
+        var gone = await db.BranchProtectionRules.Where(r => r.Id == ruleId && r.RepositoryId == repositoryId)
+            .Select(r => new { r.Pattern, r.Repository.ProjectId }).FirstOrDefaultAsync();
         await db.BranchProtectionRules.Where(r => r.Id == ruleId && r.RepositoryId == repositoryId).ExecuteDeleteAsync();
+        if (gone != null) await audit.RecordAsync("branch_protection.deleted", "branch_protection_rule", ruleId, gone.ProjectId, new { repositoryId, gone.Pattern }, actorId);
     }
 
     // ---------- Evaluation ----------

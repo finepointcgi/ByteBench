@@ -6,6 +6,7 @@
 @inject UserManager<User> Users
 @inject NavigationManager Nav
 @inject AccessTokenService Tokens
+@inject GitBench.Services.Audit.AuditLog Audit
 
 <PageTitle>Your profile · GitBench</PageTitle>
 
@@ -291,6 +292,7 @@
             return;
         }
 
+        await Audit.RecordAsync("user.password_changed", "user", user.Id, actorId: user.Id);
         await SignIn.RefreshSignInAsync(user);
         passwordSuccess = "Your password was changed.";
     }

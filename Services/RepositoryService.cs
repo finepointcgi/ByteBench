@@ -15,7 +15,7 @@ public record DevelopmentInfo(List<DevBranch> Branches, List<PullRequest> PullRe
 
 /// <summary>Repository metadata (database) plus access to the bare repos on disk via <see cref="GitOps"/>.</summary>
 public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access,
-    BranchProtectionService protection)
+    BranchProtectionService protection, Audit.AuditLog audit)
 {
     public string PathOf(Repository repo) => storage.PathFor(repo.Project.Key, repo.Slug);
 
@@ -117,6 +117,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
             try { Directory.Delete(path, recursive: true); } catch (IOException) { }
             throw;
         }
+        await audit.RecordAsync("repository.created", "repository", repo.Id, projectId, new { repo.Slug, repo.Name }, author.Id);
         return repo;
     }
 
@@ -128,6 +129,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
         r.Name = name.Trim();
         r.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         await db.SaveChangesAsync();
+        await audit.RecordAsync("repository.settings_changed", "repository", r.Id, r.ProjectId, new { r.Slug, r.Name, r.Description });
     }
 
     /// <summary>Creates a branch (requires PushCode). Requires repo.Project to be loaded.</summary>

@@ -8,7 +8,8 @@ public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
 public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
-    MergeGate gate, ReviewerService reviewers, BranchProtectionService protection, Webhooks.WebhookNotifier webhooks)
+    MergeGate gate, ReviewerService reviewers, BranchProtectionService protection, Webhooks.WebhookNotifier webhooks,
+    Audit.AuditLog audit)
 {
     // ---------- Queries ----------
 
@@ -84,7 +85,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         var numbers = IssueKeys.Numbers(key, texts).ToList();
         if (numbers.Count == 0) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Issues.Include(i => i.Project).Include(i => i.Assignee)
+        return await db.Issues.Include(i => i.Project).Include(i => i.Assignee).Include(i => i.WorkflowStatus)
             .Where(i => i.ProjectId == pr.Repository.ProjectId && numbers.Contains(i.Number))
             .OrderBy(i => i.Number).ToListAsync();
     }
@@ -184,6 +185,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
             ? $"merged this pull request (fast-forward to `{outcome.MergeCommitSha![..7]}`)"
             : $"merged this pull request with commit `{outcome.MergeCommitSha![..7]}`");
         if (bypassed) Log(db, pr, actor.Id, "bypassed branch protection on `" + pr.TargetBranch + "` to merge", now.AddMilliseconds(-1));
+        if (bypassed) await audit.RecordAsync("pull_request.merged_bypassing_protection", "pull_request", pr.Id, pr.Repository.ProjectId, new { repository = pr.Repository.Slug, pr.Number, pr.TargetBranch, outcome.MergeCommitSha }, actor.Id);
 
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
         {

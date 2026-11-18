@@ -15,7 +15,7 @@ namespace GitBench.Services.Ai;
 /// </summary>
 public class AiReviewService(
     IDbContextFactory<AppDbContext> dbFactory, AiClient ai, PullRequestService prs, RepositoryService repos,
-    AiReviewQueue queue, ILogger<AiReviewService> log)
+    AiReviewQueue queue, ILogger<AiReviewService> log, Audit.AuditLog audit)
 {
     public const string ReviewFeature = "pr-review";
     public const string DescriptionFeature = "pr-description";
@@ -35,6 +35,7 @@ public class AiReviewService(
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Projects.Where(p => p.Id == projectId).ExecuteUpdateAsync(s => s.SetProperty(p => p.AiReviewEnabled, enabled));
+        await audit.RecordAsync("project.settings_changed", "project", projectId, projectId, new { aiReviewEnabled = enabled });
     }
 
     // ---------- Queue intake ----------

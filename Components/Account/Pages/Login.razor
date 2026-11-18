@@ -5,6 +5,7 @@
 @inject UserManager<User> Users
 @inject NavigationManager Nav
 @inject ILogger<Login> Log
+@inject GitBench.Services.Audit.AuditLog Audit
 
 <PageTitle>Sign in · GitBench</PageTitle>
 
@@ -69,6 +70,7 @@
         }
 
         var result = await SignIn.PasswordSignInAsync(userName, Input!.Password, Input!.RememberMe, lockoutOnFailure: true);
+        await Audit.SignInAttemptAsync(userName, result);
         if (result.Succeeded)
         {
             Log.LogInformation("User {User} signed in.", userName);

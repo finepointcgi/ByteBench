@@ -9,7 +9,8 @@ namespace GitBench.Services.Webhooks;
 /// <see cref="Permission.ManageRepositories"/> (Maintainer or Owner): webhooks are integration settings at the same
 /// level as repositories, and the payloads only carry data Maintainers can already read.
 /// </summary>
-public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, WebhookDispatcher dispatcher, WebhookSender sender)
+public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, WebhookDispatcher dispatcher, WebhookSender sender,
+    Audit.AuditLog audit)
 {
     public const Permission RequiredPermission = Permission.ManageRepositories;
     public const int MaxConsecutiveFailures = 20;
@@ -39,6 +40,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
             throw new InvalidOperationException($"A project can have at most {MaxHooksPerProject} webhooks.");
         db.Webhooks.Add(hook);
         await db.SaveChangesAsync();
+        await audit.RecordAsync("webhook.created", "webhook", hook.Id, projectId, new { host = Audit.AuditLog.SafeUrl(hook.Url), hook.Events, hook.IsActive });
         return hook;
     }
 
@@ -52,7 +54,9 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
         Apply(hook, url, newSecret, events, generateSecret: false);
         if (active && !hook.IsActive) { hook.ConsecutiveFailures = 0; hook.DisabledAt = null; }
         hook.IsActive = active;
+        var secretChanged = db.Entry(hook).Property(h => h.Secret).IsModified;
         await db.SaveChangesAsync();
+        await audit.RecordAsync("webhook.updated", "webhook", hook.Id, projectId, new { host = Audit.AuditLog.SafeUrl(hook.Url), hook.Events, hook.IsActive, secretReplaced = secretChanged });
         return hook;
     }
 
@@ -65,6 +69,7 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
         var n = await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId)
             .ExecuteUpdateAsync(s => s.SetProperty(h => h.Secret, secret));
         if (n == 0) throw new InvalidOperationException("Webhook not found.");
+        await audit.RecordAsync("webhook.secret_rotated", "webhook", hookId, projectId);
         return secret;
     }
 
@@ -72,7 +77,9 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
     {
         await access.RequireAsync(projectId, RequiredPermission);
         await using var db = await dbFactory.CreateDbContextAsync();
+        var url = await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId).Select(h => h.Url).FirstOrDefaultAsync();
         await db.Webhooks.Where(h => h.Id == hookId && h.ProjectId == projectId).ExecuteDeleteAsync();
+        if (url != null) await audit.RecordAsync("webhook.deleted", "webhook", hookId, projectId, new { host = Audit.AuditLog.SafeUrl(url) });
     }
 
     public async Task PingAsync(int projectId, int hookId)

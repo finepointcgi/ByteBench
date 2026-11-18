@@ -1,0 +1,175 @@
+@* Filterable, paginated audit log. With ProjectId: that project's events (Owners). Without: every event (site admins). *@
+@using GitBench.Services.Audit
+@using System.Text.Json
+@inject AuditLog Audit
+@inject IssueService Issues
+
+<form class="filter-bar mb-3" style="flex-wrap:wrap" @onsubmit="Search" @onsubmit:preventDefault>
+    <input class="form-control form-control-sm" style="max-width:160px" placeholder="Actor (username)" aria-label="Actor" @bind="actor" />
+    <input class="form-control form-control-sm" style="max-width:200px" placeholder="Action prefix, e.g. member." aria-label="Action prefix"
+           list="audit-actions" @bind="action" />
+    <datalist id="audit-actions">
+        @foreach (var a in Prefixes) { <option value="@a"></option> }
+    </datalist>
+    @if (ProjectId == null)
+    {
+        <input class="form-control form-control-sm mono" style="max-width:120px" placeholder="Project key" aria-label="Project key" @bind="projectKey" />
+    }
+    <label class="small muted">From</label>
+    <input type="date" class="form-control form-control-sm" style="max-width:150px" aria-label="From date (UTC)" @bind="from" />
+    <label class="small muted">to</label>
+    <input type="date" class="form-control form-control-sm" style="max-width:150px" aria-label="To date (UTC)" @bind="to" />
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Reset">Reset</button>
+    <a class="btn btn-outline-secondary btn-sm ms-auto" href="@ExportHref" download>Export CSV</a>
+</form>
+
+@if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+
+@if (result != null)
+{
+    <div class="small muted mb-2">
+        @if (result.Total == 0) { <span>No events match.</span> }
+        else { <span>Showing @(Skip + 1)–@(Skip + result.Events.Count) of @result.Total events (newest first). Times are shown in UTC.</span> }
+    </div>
+    @if (result.Events.Count > 0)
+    {
+        <table class="table table-sm audit-table">
+            <thead>
+                <tr>
+                    <th style="width:150px">Time (UTC)</th><th>Actor</th><th>Action</th><th>Target</th>
+                    @if (ProjectId == null) { <th>Project</th> }
+                    <th>IP</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in result.Events)
+                {
+                    var open = expanded.Contains(e.Id);
+                    <tr @key="e.Id">
+                        <td class="mono small" title="@Display.Ago(e.CreatedAt)">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@(e.ActorName ?? (e.ActorId is { } aid ? $"user #{aid}" : "system / anonymous"))</td>
+                        <td><code>@e.Action</code></td>
+                        <td class="small">@(e.TargetType == null ? "" : $"{e.TargetType} {e.TargetId}")</td>
+                        @if (ProjectId == null) { <td class="mono small">@(e.ProjectId is { } p ? result.ProjectKeys.GetValueOrDefault(p, $"#{p} (deleted)") : "")</td> }
+                        <td class="mono small">@e.IpAddress</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-link btn-sm p-0" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleDetails(e.Id)">
+                                @(open ? "Hide" : "Details")
+                            </button>
+                        </td>
+                    </tr>
+                    @if (open)
+                    {
+                        <tr @key="(e.Id, 'd')">
+                            <td colspan="@(ProjectId == null ? 7 : 6)">
+                                <div class="small"><b>User agent:</b> <span class="muted">@(e.UserAgent ?? "unknown")</span></div>
+                                <pre class="audit-details">@Pretty(e.Details)</pre>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        <div class="d-flex gap-2 align-items-center">
+            <button class="btn btn-outline-secondary btn-sm" disabled="@(pageNumber <= 1)" @onclick="() => Go(pageNumber - 1)">← Newer</button>
+            <span class="small muted">Page @pageNumber of @Math.Max(1, (result.Total + PageSize - 1) / PageSize)</span>
+            <button class="btn btn-outline-secondary btn-sm" disabled="@(Skip + result.Events.Count >= result.Total)" @onclick="() => Go(pageNumber + 1)">Older →</button>
+        </div>
+    }
+}
+
+@code {
+    /// <summary>Show only this project's events (null: all events, for site admins).</summary>
+    [Parameter] public int? ProjectId { get; set; }
+    [Parameter] public string? ProjectKey { get; set; }
+
+    private const int PageSize = 50;
+    private string? actor, action, projectKey, error;
+    private DateOnly? from, to;
+    private int pageNumber = 1;
+    private AuditPage? result;
+    private List<string> actions = [];
+    private readonly HashSet<long> expanded = [];
+
+    private int Skip => (pageNumber - 1) * PageSize;
+
+    /// <summary>Recorded action names plus their "area." prefixes, for the action filter's suggestions.</summary>
+    private IEnumerable<string> Prefixes => actions.Select(a => a.Split('.')[0] + ".").Distinct().Concat(actions);
+
+    private string ExportHref
+    {
+        get
+        {
+            var q = new List<string>();
+            void Add(string k, string? v) { if (!string.IsNullOrWhiteSpace(v)) q.Add($"{k}={Uri.EscapeDataString(v.Trim())}"); }
+            Add("project", ProjectId != null ? ProjectKey : projectKey);
+            Add("actor", actor);
+            Add("action", action);
+            Add("from", from?.ToString("yyyy-MM-dd"));
+            Add("to", to?.ToString("yyyy-MM-dd"));
+            return "/admin/audit/export.csv" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try { actions = await Audit.ActionNamesAsync(ProjectId); }
+        catch (InvalidOperationException ex) { error = ex.Message; return; }
+        await Load();
+    }
+
+    private async Task Search()
+    {
+        pageNumber = 1;
+        await Load();
+    }
+
+    private async Task Reset()
+    {
+        actor = action = projectKey = null;
+        from = to = null;
+        await Search();
+    }
+
+    private async Task Go(int n)
+    {
+        pageNumber = n;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        error = null;
+        expanded.Clear();
+        int? pid = ProjectId;
+        if (pid == null && !string.IsNullOrWhiteSpace(projectKey))
+        {
+            var p = await Issues.GetProjectAsync(projectKey.Trim());
+            if (p == null) { error = $"No project with key '{projectKey.Trim().ToUpperInvariant()}'."; result = null; return; }
+            pid = p.Id;
+        }
+        try
+        {
+            result = await Audit.SearchAsync(new AuditQuery
+            {
+                ProjectId = pid, Actor = actor, ActionPrefix = action, Page = pageNumber, PageSize = PageSize,
+                FromUtc = from?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+                ToUtc = to?.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc),
+            });
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; result = null; }
+    }
+
+    private void ToggleDetails(long id)
+    {
+        if (!expanded.Remove(id)) expanded.Add(id);
+    }
+
+    private static string Pretty(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return "(no details)";
+        try { return JsonSerializer.Serialize(JsonDocument.Parse(json).RootElement, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }); }
+        catch (JsonException) { return json; }
+    }
+}

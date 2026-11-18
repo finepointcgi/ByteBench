@@ -7,6 +7,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject WorkflowService Workflows
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -42,11 +43,14 @@ else if (issue != null && project != null)
                 <button class="btn btn-outline-secondary btn-sm" @onclick="StartEditTitle">Edit title</button>
                 @if (issue.Status.IsClosed())
                 {
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => SetStatus(IssueStatus.Todo)">Reopen</button>
+                    @if (ReopenTarget is { } reopen)
+                    {
+                        <button class="btn btn-outline-secondary btn-sm" title="Move to @reopen.Name" @onclick="() => SetWorkflowStatus(reopen.Id)">Reopen</button>
+                    }
                 }
-                else
+                else if (CloseTarget is { } close)
                 {
-                    <button class="btn btn-success btn-sm" @onclick="() => SetStatus(IssueStatus.Done)">Close issue</button>
+                    <button class="btn btn-success btn-sm" title="Move to @close.Name" @onclick="() => SetWorkflowStatus(close.Id)">Close issue</button>
                 }
             </div>
             }
@@ -54,7 +58,7 @@ else if (issue != null && project != null)
     </div>
     @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
     <div class="issue-subhead">
-        <StatusBadge Status="issue.Status" />
+        <StatusBadge Issue="issue" />
         <span class="muted">
             <b>@issue.Reporter.DisplayName</b> opened this @Display.Ago(issue.CreatedAt)
             @if (issue.ClosedAt is { } ca) { <span> · closed @Display.Ago(ca)</span> }
@@ -149,7 +153,7 @@ else if (issue != null && project != null)
                     <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
                     <div class="mt-2 d-flex gap-2">
                         <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
-                        @if (!issue.Status.IsClosed() && CanEdit)
+                        @if (!issue.Status.IsClosed() && CanEdit && CloseTarget != null)
                         {
                             <button class="btn btn-outline-secondary btn-sm" @onclick="CommentAndClose">
                                 @(string.IsNullOrWhiteSpace(newComment) ? "Close issue" : "Comment & close")
@@ -167,8 +171,12 @@ else if (issue != null && project != null)
             <fieldset disabled="@(!CanEdit)" style="border:0;padding:0;margin:0;min-width:0">
             <div class="field">
                 <label>Status</label>
-                <select class="form-select form-select-sm" value="@issue.Status" @onchange="e => SetStatus(Enum.Parse<IssueStatus>((string)e.Value!))">
-                    @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+                @* Workflow statuses; moves the project's workflow doesn't allow are disabled. *@
+                <select class="form-select form-select-sm" value="@(workflow.Effective(issue)?.Id)" @onchange="e => SetWorkflowStatus(int.Parse((string)e.Value!))">
+                    @foreach (var s in workflow.Statuses)
+                    {
+                        <option value="@s.Id" disabled="@(!workflow.IsAllowed(workflow.Effective(issue)?.Id, s.Id))">@s.Name</option>
+                    }
                 </select>
             </div>
             <div class="field">
@@ -254,6 +262,12 @@ else if (issue != null && project != null)
     private ProjectPermissions perms = ProjectPermissions.None;
     private string? error;
     private bool CanEdit => perms.Can(Permission.EditIssues);
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private IEnumerable<WorkflowStatus> AllowedTargets => workflow.AllowedFrom(workflow.Effective(issue!));
+    // "Close issue": the first Done status the workflow allows; "Reopen": the first allowed open status, preferring To Do.
+    private WorkflowStatus? CloseTarget => AllowedTargets.FirstOrDefault(s => s.Category == IssueStatus.Done);
+    private WorkflowStatus? ReopenTarget => AllowedTargets.Where(s => s.Category != IssueStatus.Done)
+        .OrderBy(s => s.Category == IssueStatus.Todo ? 0 : 1).FirstOrDefault();
     // Authors edit/delete their own comments; Maintainers and above can moderate anyone's.
     private bool CanModerate(Comment c) => (c.AuthorId == Me.Id && perms.Can(Permission.Comment)) || perms.Role >= ProjectRole.Maintainer;
 
@@ -272,6 +286,7 @@ else if (issue != null && project != null)
         users = await Issues.GetUsersAsync();
         project = await Issues.GetProjectAsync(Key);
         perms = project == null ? ProjectPermissions.None : await Access.GetPermissionsAsync(project.Id);
+        workflow = project == null ? ProjectWorkflow.Empty : await Workflows.GetAsync(project.Id);
         await Reload();
     }
 
@@ -362,6 +377,12 @@ else if (issue != null && project != null)
         await Reload();
     }
 
+    private async Task SetWorkflowStatus(int workflowStatusId)
+    {
+        await Guard(() => Issues.SetWorkflowStatusAsync(issue!.Id, workflowStatusId, Me.Id));
+        await Reload();
+    }
+
     private Task SetAssignee(ChangeEventArgs e) => SetAssigneeId(int.TryParse(e.Value?.ToString(), out var id) ? id : null);
 
     private Task SetAssigneeId(int? id) => Change(i =>
@@ -440,7 +461,8 @@ else if (issue != null && project != null)
         if (!string.IsNullOrWhiteSpace(newComment)
             && !await Guard(() => Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
         newComment = null;
-        await SetStatus(IssueStatus.Done);
+        if (CloseTarget is { } close) await SetWorkflowStatus(close.Id);
+        else await SetStatus(IssueStatus.Done);
     }
 
     private async Task SaveCommentEdit(Comment c)

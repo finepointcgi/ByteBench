@@ -6,6 +6,7 @@ using GitBench.Services.Ai;
 using GitBench.Services.Ci;
 using GitBench.Services.Webhooks;
 using GitBench.Api;
+using GitBench.Services.Audit;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -68,6 +69,8 @@ builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo set
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
 builder.Services.AddGitBenchApi();
+builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
+builder.Services.AddScoped<WorkflowService>();
 
 var app = builder.Build();
 
@@ -79,6 +82,7 @@ using (var scope = app.Services.CreateScope())
     RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     NotificationService.Initialize(db);
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
+    WorkflowService.EnsureDefaults(db); // default workflow for projects without one; maps issues to workflow statuses
 }
 
 if (!app.Environment.IsDevelopment())
@@ -102,12 +106,14 @@ app.UseWebhookPushCapture();
 app.MapGitHttp();
 app.MapCiEndpoints();
 app.MapGitBenchApi();
+app.MapAuditExport();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 // Sign-out is a POST (with antiforgery token, enforced because of the [FromForm] binding).
-app.MapPost("/account/logout", async (SignInManager<User> signIn, [FromForm] string? returnUrl) =>
+app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit, [FromForm] string? returnUrl) =>
 {
+    await audit.RecordAsync("auth.sign_out");
     await signIn.SignOutAsync();
     return TypedResults.LocalRedirect("/account/login");
 });

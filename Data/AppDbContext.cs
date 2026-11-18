@@ -39,6 +39,47 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
+    // ----- Workflows & audit -----
+    public DbSet<WorkflowStatus> WorkflowStatuses => Set<WorkflowStatus>();
+    public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+
+    private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
+    {
+        b.Entity<WorkflowStatus>().HasIndex(s => new { s.ProjectId, s.Order });
+        b.Entity<WorkflowStatus>().HasOne<Project>().WithMany(p => p.WorkflowStatuses).HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        // SetNull rather than Restrict so deleting a project (which cascades to issues and statuses) never trips over the order;
+        // WorkflowService refuses to delete a status that still has issues.
+        b.Entity<Issue>().HasOne(i => i.WorkflowStatus).WithMany().HasForeignKey(i => i.WorkflowStatusId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<WorkflowTransition>().HasIndex(t => new { t.FromStatusId, t.ToStatusId }).IsUnique();
+        b.Entity<WorkflowTransition>().HasIndex(t => t.ProjectId);
+        b.Entity<WorkflowTransition>().HasOne<WorkflowStatus>().WithMany().HasForeignKey(t => t.FromStatusId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<WorkflowTransition>().HasOne<WorkflowStatus>().WithMany().HasForeignKey(t => t.ToStatusId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<AuditEvent>().HasIndex(e => e.CreatedAt);
+        b.Entity<AuditEvent>().HasIndex(e => new { e.ProjectId, e.CreatedAt });
+        b.Entity<AuditEvent>().HasIndex(e => new { e.ActorId, e.CreatedAt });
+        b.Entity<AuditEvent>().HasIndex(e => e.Action);
+    }
+
+    /// <summary>Audit events are append-only: refuse tracked updates and deletes (retention cleanup uses ExecuteDelete).</summary>
+    private void GuardAuditEvents()
+    {
+        if (ChangeTracker.Entries<AuditEvent>().Any(e => e.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Audit events are append-only.");
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        GuardAuditEvents();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        GuardAuditEvents();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b); // Identity tables (AspNetUsers, AspNetRoles, …)
@@ -120,5 +161,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Webhook>().HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
         b.Entity<WebhookDelivery>().HasIndex(d => new { d.WebhookId, d.CreatedAt });
         b.Entity<WebhookDelivery>().HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
+        ConfigureWorkflowsAndAudit(b);
     }
 }

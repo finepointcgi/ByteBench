@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace GitBench.Services;
 
 /// <summary>Project membership: list, add, change role, remove. Changes require <see cref="Permission.ManageMembers"/>.</summary>
-public class MemberService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access)
+public class MemberService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, Audit.AuditLog audit)
 {
     public async Task<List<ProjectMember>> GetMembersAsync(int projectId, int? userId = null)
     {
@@ -30,6 +30,7 @@ public class MemberService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcc
         var member = new ProjectMember { ProjectId = projectId, UserId = user.Id, Role = role };
         db.ProjectMembers.Add(member);
         await db.SaveChangesAsync();
+        await audit.RecordAsync("member.added", "user", user.Id, projectId, new { user = user.UserName, role = role.ToString() }, actorId);
         member.User = user;
         return member;
     }
@@ -43,8 +44,10 @@ public class MemberService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcc
         if (m.Role == role) return;
         if (m.Role == ProjectRole.Owner && await IsLastOwnerAsync(db, projectId))
             throw new InvalidOperationException("The last Owner can't be demoted. Make someone else an Owner first.");
+        var oldRole = m.Role;
         m.Role = role;
         await db.SaveChangesAsync();
+        await audit.RecordAsync("member.role_changed", "user", memberUserId, projectId, new { from = oldRole.ToString(), to = role.ToString() }, actorId);
     }
 
     public async Task RemoveMemberAsync(int projectId, int memberUserId, int? actorId = null)
@@ -57,6 +60,7 @@ public class MemberService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcc
             throw new InvalidOperationException("The last Owner can't be removed. Make someone else an Owner first.");
         db.ProjectMembers.Remove(m);
         await db.SaveChangesAsync();
+        await audit.RecordAsync("member.removed", "user", memberUserId, projectId, new { role = m.Role.ToString() }, actorId);
     }
 
     private static async Task<bool> IsLastOwnerAsync(AppDbContext db, int projectId) =>

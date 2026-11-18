@@ -3,6 +3,7 @@
 @inject CurrentUser Me
 @inject NavigationManager Nav
 @inject ProjectAccess Access
+@inject WorkflowService Workflows
 
 <PageTitle>New issue · @project?.Name</PageTitle>
 
@@ -48,8 +49,8 @@ else if (project != null)
                 </div>
                 <div class="field">
                     <label>Status</label>
-                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.Status">
-                        @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.WorkflowStatusId">
+                        @foreach (var s in workflow.Statuses) { <option value="@s.Id">@s.Name</option> }
                     </InputSelect>
                 </div>
                 <div class="field">
@@ -106,6 +107,7 @@ else if (project != null)
     private List<User> users = [];
     private Issue issue = new();
     private HashSet<int> labelIds = [];
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -113,6 +115,8 @@ else if (project != null)
         notFound = project == null;
         canCreate = project != null && await Access.CanAsync(project.Id, Permission.EditIssues);
         users = await Issues.GetUsersAsync();
+        if (project != null) workflow = await Workflows.GetAsync(project.Id);
+        issue.WorkflowStatusId = workflow.FirstOf(issue.Status)?.Id; // defaults to the first To Do status
     }
 
     private void Toggle(int id)

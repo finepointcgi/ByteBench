@@ -23,7 +23,7 @@
         </div>
     </div>
     <div class="issue-right">
-        <StatusBadge Status="Issue.Status" />
+        <StatusBadge Issue="Issue" />
         <PriorityIcon Priority="Issue.Priority" />
         @if (Issue.StoryPoints is { } sp)
         {
