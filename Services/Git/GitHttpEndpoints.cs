@@ -235,6 +235,26 @@ public static class GitHttpEndpoints
                 scopes = token.Scopes;
                 logger.LogInformation("Git auth: {User} used access token {Prefix} ({Scopes})", user.UserName, token.Prefix, token.Scopes);
             }
+            else if (await ctx.RequestServices.GetRequiredService<GitBench.Services.Sso.Ldap.LdapAuthService>().CheckGitPasswordAsync(user, password) is
+                     var ldap and not GitBench.Services.Sso.Ldap.GitPasswordCheck.NotDirectoryUser)
+            {
+                // A directory (LDAP) account: its password lives in the directory. Only with Ldap:AllowGitPassword, and
+                // never for 2FA accounts (below). Failures count toward lockout like a GitBench password; /git is rate-limited.
+                if (ldap == GitBench.Services.Sso.Ldap.GitPasswordCheck.NotAllowed)
+                {
+                    logger.LogInformation("Git auth refused: {User} is a directory account and LDAP git passwords are off", user.UserName);
+                    return (null, null, null);
+                }
+                if (ldap != GitBench.Services.Sso.Ldap.GitPasswordCheck.Valid)
+                {
+                    await users.AccessFailedAsync(user);
+                    logger.LogInformation("Git auth failed: bad LDAP password or token for {User} from {Ip}", user.UserName, ctx.Connection.RemoteIpAddress);
+                    return (null, null, null);
+                }
+                if (await users.GetTwoFactorEnabledAsync(user))
+                    return (null, null, "Password authentication is not supported for accounts with two-factor sign-in. " +
+                        "Use a personal access token as the password (Profile → Access tokens).");
+            }
             else if (!await users.CheckPasswordAsync(user, password))
             {
                 await users.AccessFailedAsync(user);

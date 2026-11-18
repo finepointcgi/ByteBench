@@ -1,0 +1,6 @@
+.auth-admin ::deep .aa-table-wrap { overflow-x: auto; }
+.auth-admin ::deep .aa-table { font-size: 13px; }
+.auth-admin ::deep .aa-table td { vertical-align: top; }
+.auth-admin ::deep .aa-kv th { width: 160px; text-align: left; vertical-align: top; font-weight: 500; white-space: nowrap; }
+.auth-admin ::deep .aa-kv td { word-break: break-word; }
+.aa-small { font-size: 12px; }

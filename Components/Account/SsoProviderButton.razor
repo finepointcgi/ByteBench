@@ -1,0 +1,33 @@
+@* A "Sign in with X" / "Connect X" link styled as an outlined MudBlazor button, with the provider's icon. *@
+
+@if (ImagePath != null)
+{
+    <MudButton Href="@Href" Variant="Variant.Outlined" FullWidth="@FullWidth" Size="@Size" DropShadow="false" Class="sso-button">
+        <img src="@ImagePath" alt="" class="sso-icon" />
+        <span>@Text</span>
+    </MudButton>
+}
+else
+{
+    <MudButton Href="@Href" Variant="Variant.Outlined" FullWidth="@FullWidth" Size="@Size" DropShadow="false" Class="sso-button"
+               StartIcon="@IconFor(Provider.Icon)">@Text</MudButton>
+}
+
+@code {
+    [Parameter, EditorRequired] public GitBench.Services.Sso.SsoProviderOptions Provider { get; set; } = default!;
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public bool FullWidth { get; set; } = true;
+    [Parameter] public Size Size { get; set; } = Size.Medium;
+
+    /// <summary>A site-relative image (the CSP only allows images from this site).</summary>
+    private string? ImagePath => Provider.Icon is { } i && i.StartsWith('/') && !i.StartsWith("//") ? i : null;
+
+    public static string IconFor(string? icon) => icon?.ToLowerInvariant() switch
+    {
+        "google" => Icons.Custom.Brands.Google,
+        "github" => Icons.Custom.Brands.GitHub,
+        "microsoft" => Icons.Custom.Brands.Microsoft,
+        _ => Icons.Material.Outlined.Key,
+    };
+}

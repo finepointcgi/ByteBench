@@ -34,3 +34,10 @@
 .auth-shell ::deep .gb-check { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0 0 6px; }
 .auth-shell ::deep .gb-check input { accent-color: var(--mud-palette-primary); width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
 .auth-shell ::deep code { font-size: .8125rem; }
+
+/* Single sign-on: "or" divider and "Sign in with X" buttons (Login.razor, SsoProviderButton.razor). */
+.auth-shell ::deep .sso-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0 14px; color: var(--mud-palette-text-secondary); font-size: .8125rem; }
+.auth-shell ::deep .sso-divider::before, .auth-shell ::deep .sso-divider::after { content: ""; flex: 1; border-top: 1px solid var(--mud-palette-lines-default); }
+.auth-shell ::deep .sso-buttons { display: flex; flex-direction: column; gap: 8px; }
+.auth-shell ::deep .sso-button { text-transform: none; }
+.auth-shell ::deep .sso-icon { width: 18px; height: 18px; margin-right: 8px; }

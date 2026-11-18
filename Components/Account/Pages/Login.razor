@@ -6,6 +6,8 @@
 @inject NavigationManager Nav
 @inject ILogger<Login> Log
 @inject GitBench.Services.Audit.AuditLog Audit
+@inject GitBench.Services.Sso.SsoSettings Sso
+@inject GitBench.Services.Sso.Ldap.LdapAuthService Ldap
 
 <PageTitle>Sign in · GitBench</PageTitle>
 
@@ -25,6 +27,10 @@
         <label class="gb-field-label" for="login-user">Username or email</label>
         <InputText id="login-user" class="gb-input" @bind-Value="Input!.UserNameOrEmail"
                    autocomplete="username" autofocus />
+        @if (Ldap.Enabled)
+        {
+            <div class="gb-help">@Ldap.Options.DisplayName accounts: your directory username (or <code>ldap:</code><i>username</i>).</div>
+        }
         <ValidationMessage For="() => Input!.UserNameOrEmail" />
     </div>
     <div class="gb-field">
@@ -40,6 +46,18 @@
     <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Sign in</MudButton>
 </EditForm>
 
+@if (Sso.Providers.Count > 0)
+{
+    @* Plain links (GET), not form posts: the redirect to the provider then doesn't depend on the CSP's form-action. *@
+    <div class="sso-divider" role="separator"><span>or</span></div>
+    <div class="sso-buttons">
+        @foreach (var p in Sso.Providers)
+        {
+            <SsoProviderButton Provider="p" Href="@SsoHref(p)" Text="@($"Sign in with {p.Title}")" />
+        }
+    </div>
+}
+
 <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">
     New to GitBench? <a href="@RegisterHref">Create an account</a>
 </MudText>
@@ -50,10 +68,28 @@
     [SupplyParameterFromForm]
     private InputModel? Input { get; set; }
 
-    protected override void OnInitialized() => Input ??= new();
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+        if (SsoError != null && HttpMethods.IsGet(HttpContext.Request.Method))
+            error = GitBench.Services.Sso.SsoErrors.Message(SsoError, Sso.Find(SsoProvider)?.Title ?? "the identity provider");
+    }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
+
+    /// <summary>Set by /account/sso/* when a single sign-on was refused (see SsoErrors).</summary>
+    [SupplyParameterFromQuery(Name = "sso_error")]
+    private string? SsoError { get; set; }
+
+    [SupplyParameterFromQuery(Name = "provider")]
+    private string? SsoProvider { get; set; }
+
+    private string SsoHref(GitBench.Services.Sso.SsoProviderOptions p) =>
+        $"account/sso/{p.Name}" + (AccountUrls.IsLocal(ReturnUrl) ? $"?returnUrl={Uri.EscapeDataString(ReturnUrl!)}" : "");
 
     private string RegisterHref => AccountUrls.IsLocal(ReturnUrl)
         ? $"account/register?returnUrl={Uri.EscapeDataString(ReturnUrl!)}"
@@ -62,6 +98,13 @@
     private async Task LoginUser()
     {
         var login = Input!.UserNameOrEmail.Trim();
+        // LDAP for directory accounts, logins no local account has, and "ldap:" logins (Authentication:Ldap).
+        var (useLdap, ldapLogin) = await Ldap.ShouldTryAsync(login);
+        if (useLdap)
+        {
+            await LdapLogin(ldapLogin);
+            return;
+        }
         var userName = login;
         if (login.Contains('@'))
         {
@@ -71,6 +114,41 @@
 
         var result = await SignIn.PasswordSignInAsync(userName, Input!.Password, Input!.RememberMe, lockoutOnFailure: true);
         await Audit.SignInAttemptAsync(userName, result);
+        Finish(userName, result);
+    }
+
+    private async Task LdapLogin(string login)
+    {
+        var r = await Ldap.AuthenticateAsync(login, Input!.Password);
+        switch (r.Status)
+        {
+            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Success:
+                // Through Identity's external-login sign-in, so lockout and GitBench two-factor sign-in apply as usual.
+                var result = await SignIn.ExternalLoginSignInAsync(GitBench.Services.Sso.Ldap.LdapAuthService.LoginProvider, r.Key!, Input!.RememberMe, bypassTwoFactor: false);
+                if (result.Succeeded) await Audit.RecordAsync("auth.sign_in", "user", r.User!.Id, details: new { method = "ldap" }, actorId: r.User.Id);
+                else if (!result.RequiresTwoFactor) await Audit.SignInAttemptAsync(r.User!.UserName!, result);
+                Finish(r.User!.UserName!, result);
+                break;
+            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Locked:
+                error = "This account is locked or deactivated.";
+                break;
+            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Conflict:
+                error = "A GitBench account with this username or email already exists, so the directory account can't sign in to it. Ask a site admin.";
+                break;
+            case GitBench.Services.Sso.Ldap.LdapLoginStatus.NoAccount:
+                error = "Your directory account doesn't have a GitBench account. Ask a site admin.";
+                break;
+            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Unavailable:
+                error = "The directory server can't be reached right now. Try again later.";
+                break;
+            default:
+                error = "Invalid username/email or password.";
+                break;
+        }
+    }
+
+    private void Finish(string userName, SignInResult result)
+    {
         if (result.Succeeded)
         {
             Log.LogInformation("User {User} signed in.", userName);

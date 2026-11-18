@@ -1078,3 +1078,45 @@ public class SshKey
     public bool IsDeployKey => RepositoryId != null;
     public bool IsExpired(DateTime utcNow) => ExpiresAt != null && ExpiresAt <= utcNow;
 }
+
+// ----- SSO & LDAP -----
+
+public partial class User
+{
+    /// <summary>
+    /// The SSO provider (<c>oidc:{name}</c>) or <c>ldap</c> whose admin group made this user a site admin, or null. A
+    /// provider only ever revokes admin rights it granted itself, so an admin made by hand stays an admin.
+    /// </summary>
+    [MaxLength(80)] public string? AdminGrantedBy { get; set; }
+}
+
+/// <summary>
+/// Marks a <see cref="GroupMember"/> as managed by an SSO provider's or LDAP's group mapping
+/// (<see cref="GitBench.Services.Sso.ExternalGroupSync"/>): a sync may change its role, or remove it when the user leaves
+/// the external group. Memberships without this row were added by hand and are never touched by a sync.
+/// </summary>
+public class ExternalGroupMembership
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public int GroupId { get; set; }
+    /// <summary><c>oidc:{provider}</c> or <c>ldap</c>.</summary>
+    [Required, MaxLength(80)] public string Source { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>One run of the LDAP directory sync (<see cref="GitBench.Services.Sso.Ldap.LdapSyncJob"/>), shown on /admin/authentication.</summary>
+public class DirectorySyncRun
+{
+    public int Id { get; set; }
+    [Required, MaxLength(40)] public string Source { get; set; } = "ldap";
+    /// <summary><c>scheduled</c> or <c>manual</c>.</summary>
+    [Required, MaxLength(20)] public string Trigger { get; set; } = "scheduled";
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? FinishedAt { get; set; }
+    public bool Succeeded { get; set; }
+    public int UsersChecked { get; set; }
+    public int UsersUpdated { get; set; }
+    public int UsersDeactivated { get; set; }
+    [MaxLength(1000)] public string? Error { get; set; }
+}

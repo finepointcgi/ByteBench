@@ -10,6 +10,7 @@ using GitBench.Services.Audit;
 using GitBench.Services.Releases;
 using GitBench.Services.Hosting;
 using GitBench.Services.Ssh;
+using GitBench.Services.Sso;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -49,6 +50,7 @@ builder.Services.ConfigureApplicationCookie(o =>
     o.ExpireTimeSpan = TimeSpan.FromDays(14);
     o.SlidingExpiration = true;
 });
+builder.AddGitBenchSso(); // SSO (OIDC providers, GitHub OAuth) and LDAP from Authentication:*
 
 builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
@@ -145,6 +147,7 @@ app.MapAuditExport();
 GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 app.MapReleases();
 app.MapGitBenchHealth(); // /health/live, /health/ready
+app.MapGitBenchSso(); // /account/sso/*: start, complete and link SSO sign-ins
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
