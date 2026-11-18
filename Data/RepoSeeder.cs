@@ -124,6 +124,19 @@ public static class RepoSeeder
         db.SaveChanges();
     }
 
+    /// <summary>A small <c>infra</c> repo in the private OPS project (for exercising access control). Idempotent.</summary>
+    public static void InitializeOps(AppDbContext db, RepoStorage storage)
+    {
+        var ops = db.Projects.FirstOrDefault(p => p.Key == "OPS");
+        var dan = db.Users.FirstOrDefault(u => u.UserName == "dan");
+        if (ops == null || dan == null || db.Repositories.Any(r => r.ProjectId == ops.Id && r.Slug == "infra")) return;
+        var path = storage.PathFor(ops.Key, "infra");
+        if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        GitOps.CreateBare(path, "main", "# infra\n\nTerraform and deployment scripts for the Infrastructure project.\n", RepositoryService.IdentityOf(dan));
+        db.Repositories.Add(new Repository { ProjectId = ops.Id, Slug = "infra", Name = "infra", Description = "Terraform and deployment scripts." });
+        db.SaveChanges();
+    }
+
     // ----- file contents -----
 
     private const string Readme = """

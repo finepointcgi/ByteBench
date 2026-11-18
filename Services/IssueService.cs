@@ -16,32 +16,42 @@ public class IssueFilter
     public string Sort { get; set; } = "updated";
 }
 
-public class IssueService(IDbContextFactory<AppDbContext> dbFactory, NotificationService notifications)
+/// <summary>
+/// Projects, issues, comments, labels and milestones. Reads only return projects the acting user can view and
+/// writes check <see cref="ProjectAccess"/> first (throwing <see cref="ForbiddenException"/>).
+/// </summary>
+public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications)
 {
     // ---------- Projects ----------
 
     public async Task<List<ProjectSummary>> GetProjectsAsync()
     {
+        var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Projects.OrderBy(p => p.Name)
+        return await db.Projects.Where(p => visible.Contains(p.Id)).OrderBy(p => p.Name)
             .Select(p => new ProjectSummary(p.Id, p.Key, p.Name, p.Description,
                 p.Issues.Count(i => i.Status != IssueStatus.Done),
                 p.Issues.Count(i => i.Status == IssueStatus.Done)))
             .ToListAsync();
     }
 
+    /// <summary>The project with this key, or null if it doesn't exist or the acting user can't view it.</summary>
     public async Task<Project?> GetProjectAsync(string key)
     {
+        var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Projects
+        return await db.Projects.Where(p => visible.Contains(p.Id))
             .Include(p => p.Labels.OrderBy(l => l.Name))
             .Include(p => p.Milestones.OrderBy(m => m.IsClosed).ThenBy(m => m.DueDate))
             .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Key == key.ToUpper());
     }
 
-    public async Task<Project> CreateProjectAsync(Project project)
+    /// <summary>Creates a project; its creator (<paramref name="ownerId"/>, default the acting user) becomes its Owner.</summary>
+    public async Task<Project> CreateProjectAsync(Project project, int? ownerId = null)
     {
+        var owner = await access.ResolveUserIdAsync(ownerId) ?? throw new ForbiddenException("Sign in to create a project.");
+        project.Members = [new ProjectMember { UserId = owner, Role = ProjectRole.Owner }];
         await using var db = await dbFactory.CreateDbContextAsync();
         project.Key = project.Key.ToUpperInvariant();
         if (await db.Projects.AnyAsync(p => p.Key == project.Key))
@@ -59,6 +69,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task UpdateProjectAsync(int id, string name, string? description)
     {
+        await access.RequireAsync(id, Permission.ManageProjectSettings);
         await using var db = await dbFactory.CreateDbContextAsync();
         var p = await db.Projects.FindAsync(id) ?? throw new InvalidOperationException("Project not found.");
         p.Name = name;
@@ -66,8 +77,17 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
         await db.SaveChangesAsync();
     }
 
+    /// <summary>Name, description and visibility in one go (requires ManageProjectSettings).</summary>
+    public async Task UpdateProjectAsync(int id, string name, string? description, ProjectVisibility visibility)
+    {
+        await UpdateProjectAsync(id, name, description);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await db.Projects.Where(p => p.Id == id).ExecuteUpdateAsync(s => s.SetProperty(p => p.Visibility, visibility));
+    }
+
     public async Task DeleteProjectAsync(int id)
     {
+        await access.RequireAsync(id, Permission.DeleteProject);
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
     }
@@ -84,6 +104,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<List<Issue>> GetIssuesAsync(int projectId, IssueFilter f)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = BaseIssueQuery(db).Where(i => i.ProjectId == projectId);
 
@@ -117,6 +138,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<(int open, int closed)> CountAsync(int projectId)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return (0, 0);
         await using var db = await dbFactory.CreateDbContextAsync();
         var open = await db.Issues.CountAsync(i => i.ProjectId == projectId && i.Status != IssueStatus.Done);
         var closed = await db.Issues.CountAsync(i => i.ProjectId == projectId && i.Status == IssueStatus.Done);
@@ -125,6 +147,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<List<Issue>> GetBoardAsync(int projectId, int? milestoneId, int? assigneeId)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = BaseIssueQuery(db).Where(i => i.ProjectId == projectId);
         if (milestoneId is { } m) q = q.Where(i => i.MilestoneId == m);
@@ -134,17 +157,19 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<List<Issue>> GetAssignedToAsync(int userId)
     {
+        var visible = await access.VisibleProjectIdsAsync(userId);
         await using var db = await dbFactory.CreateDbContextAsync();
         return await BaseIssueQuery(db)
-            .Where(i => i.AssigneeId == userId && i.Status != IssueStatus.Done)
+            .Where(i => i.AssigneeId == userId && i.Status != IssueStatus.Done && visible.Contains(i.ProjectId))
             .OrderByDescending(i => i.Priority).ThenBy(i => i.DueDate)
             .Take(25).ToListAsync();
     }
 
     public async Task<Issue?> GetIssueAsync(string projectKey, int number)
     {
+        var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Issues
+        return await db.Issues.Where(i => visible.Contains(i.ProjectId))
             .Include(i => i.Project)
             .Include(i => i.Assignee).Include(i => i.Reporter).Include(i => i.Milestone)
             .Include(i => i.Labels)
@@ -156,6 +181,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<Issue> CreateIssueAsync(int projectId, Issue issue, IEnumerable<int> labelIds, int actorId)
     {
+        await access.RequireAsync(projectId, Permission.EditIssues, actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
 
@@ -180,6 +206,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
     /// <summary>Applies a mutation to an issue and records an activity entry describing it.</summary>
     public async Task UpdateIssueAsync(int issueId, int actorId, Func<Issue, AppDbContext, Task<string?>> change)
     {
+        await access.RequireForIssueAsync(issueId, Permission.EditIssues, actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
         var wasClosed = issue.Status.IsClosed();
@@ -207,6 +234,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
     /// <summary>Moves an issue on the board: new column and position between neighbours.</summary>
     public async Task MoveOnBoardAsync(int issueId, IssueStatus status, int? beforeIssueId, int actorId)
     {
+        await access.RequireForIssueAsync(issueId, Permission.EditIssues, actorId);
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
             var projectId = await db.Issues.Where(i => i.Id == issueId).Select(i => i.ProjectId).FirstAsync();
@@ -228,6 +256,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<Comment> AddCommentAsync(int issueId, int authorId, string body)
     {
+        await access.RequireForIssueAsync(issueId, Permission.Comment, authorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var c = new Comment { IssueId = issueId, AuthorId = authorId, Body = body };
         db.Comments.Add(c);
@@ -237,24 +266,44 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
         return c;
     }
 
-    public async Task EditCommentAsync(int commentId, string body)
+    /// <summary>Authors (with Comment) can edit their own comments; Maintainers and above can edit anyone's.</summary>
+    public async Task EditCommentAsync(int commentId, string body, int? actorId = null)
     {
+        await RequireCommentModerationAsync(commentId, "edit other people's comments", actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Comments.Where(c => c.Id == commentId).ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Body, body).SetProperty(c => c.EditedAt, DateTime.UtcNow));
         await notifications.OnIssueCommentChangedAsync(await db.Comments.Where(c => c.Id == commentId).Select(c => (int?)c.IssueId).FirstOrDefaultAsync());
     }
 
-    public async Task DeleteCommentAsync(int commentId)
+    /// <summary>Authors (with Comment) can delete their own comments; Maintainers and above can delete anyone's.</summary>
+    public async Task DeleteCommentAsync(int commentId, int? actorId = null)
     {
+        await RequireCommentModerationAsync(commentId, "delete other people's comments", actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var issueId = await db.Comments.Where(c => c.Id == commentId).Select(c => (int?)c.IssueId).FirstOrDefaultAsync();
         await db.Comments.Where(c => c.Id == commentId).ExecuteDeleteAsync();
         await notifications.OnIssueCommentChangedAsync(issueId);
     }
 
+    private async Task RequireCommentModerationAsync(int commentId, string action, int? actorId)
+    {
+        var uid = await access.ResolveUserIdAsync(actorId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var c = await (from x in db.Comments
+                       join i in db.Issues on x.IssueId equals i.Id
+                       where x.Id == commentId
+                       select new { x.AuthorId, i.ProjectId })
+            .FirstOrDefaultAsync() ?? throw new InvalidOperationException("Comment not found.");
+        if (uid != null && c.AuthorId == uid) await access.RequireAsync(c.ProjectId, Permission.Comment, actorId);
+        else await access.RequireRoleAsync(c.ProjectId, ProjectRole.Maintainer, action, actorId);
+    }
+
+    /// <summary>Deleting an issue requires Maintainer or above.</summary>
     public async Task DeleteIssueAsync(int issueId)
     {
+        await access.RequireRoleAsync(await access.ProjectOf(d => d.Issues.Where(i => i.Id == issueId).Select(i => (int?)i.ProjectId)),
+            ProjectRole.Maintainer, "delete issues");
         await using var db = await dbFactory.CreateDbContextAsync();
         var issue = await db.Issues.Include(i => i.Labels).FirstAsync(i => i.Id == issueId);
         db.Issues.Remove(issue);
@@ -264,8 +313,10 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<List<Activity>> GetRecentActivityAsync(int take = 20)
     {
+        var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         return await db.Activities.Include(a => a.Actor).Include(a => a.Issue).ThenInclude(i => i.Project)
+            .Where(a => visible.Contains(a.Issue.ProjectId))
             .OrderByDescending(a => a.CreatedAt).Take(take).ToListAsync();
     }
 
@@ -273,6 +324,9 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<Label> SaveLabelAsync(Label label)
     {
+        await access.RequireAsync(label.ProjectId, Permission.ManageLabelsAndMilestones);
+        if (label.Id != 0 && await access.ProjectOf(d => d.Labels.Where(l => l.Id == label.Id).Select(l => (int?)l.ProjectId)) != label.ProjectId)
+            throw new ForbiddenException("Label not found in this project.");
         await using var db = await dbFactory.CreateDbContextAsync();
         if (label.Id == 0) db.Labels.Add(label); else db.Labels.Update(label);
         await db.SaveChangesAsync();
@@ -281,6 +335,8 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task DeleteLabelAsync(int id)
     {
+        await access.RequireAsync(await access.ProjectOf(d => d.Labels.Where(l => l.Id == id).Select(l => (int?)l.ProjectId)),
+            Permission.ManageLabelsAndMilestones);
         await using var db = await dbFactory.CreateDbContextAsync();
         var l = await db.Labels.Include(x => x.Issues).FirstAsync(x => x.Id == id);
         db.Labels.Remove(l);
@@ -291,6 +347,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task<List<MilestoneSummary>> GetMilestonesAsync(int projectId)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
         return await db.Milestones.Where(m => m.ProjectId == projectId)
             .OrderBy(m => m.IsClosed).ThenBy(m => m.DueDate == null).ThenBy(m => m.DueDate)
@@ -304,6 +361,9 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task SaveMilestoneAsync(Milestone m)
     {
+        await access.RequireAsync(m.ProjectId, Permission.ManageLabelsAndMilestones);
+        if (m.Id != 0 && await access.ProjectOf(d => d.Milestones.Where(x => x.Id == m.Id).Select(x => (int?)x.ProjectId)) != m.ProjectId)
+            throw new ForbiddenException("Milestone not found in this project.");
         await using var db = await dbFactory.CreateDbContextAsync();
         if (m.Id == 0) db.Milestones.Add(m); else db.Milestones.Update(m);
         await db.SaveChangesAsync();
@@ -311,6 +371,8 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, Notificatio
 
     public async Task DeleteMilestoneAsync(int id)
     {
+        await access.RequireAsync(await access.ProjectOf(d => d.Milestones.Where(x => x.Id == id).Select(x => (int?)x.ProjectId)),
+            Permission.ManageLabelsAndMilestones);
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Issues.Where(i => i.MilestoneId == id).ExecuteUpdateAsync(s => s.SetProperty(i => i.MilestoneId, (int?)null));
         await db.Milestones.Where(m => m.Id == id).ExecuteDeleteAsync();

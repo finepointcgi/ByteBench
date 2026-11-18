@@ -42,6 +42,9 @@ builder.Services.ConfigureApplicationCookie(o =>
 
 builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
+builder.Services.AddScoped<ProjectAccess>();
+builder.Services.AddScoped<MemberService>();
+builder.Services.AddScoped<AccessTokenService>();
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
 builder.Services.AddSingleton<AiClient>();
@@ -62,6 +65,7 @@ using (var scope = app.Services.CreateScope())
     SeedData.Initialize(db);
     RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     NotificationService.Initialize(db);
+    RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
 }
 
 if (!app.Environment.IsDevelopment())

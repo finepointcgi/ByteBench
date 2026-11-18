@@ -6,6 +6,7 @@
 @inject NotificationService Notifications
 @inject LiveEvents Live
 @implements IDisposable
+@inject ProjectAccess Access
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -34,6 +35,8 @@ else if (issue != null && project != null)
                 <span title="@issue.Type">@issue.Type.Icon()</span>
                 @issue.Title <span class="muted mono">@issue.Key</span>
             </h1>
+            @if (CanEdit)
+            {
             <div class="d-flex gap-2">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
                 <button class="btn btn-outline-secondary btn-sm" @onclick="StartEditTitle">Edit title</button>
@@ -46,8 +49,10 @@ else if (issue != null && project != null)
                     <button class="btn btn-success btn-sm" @onclick="() => SetStatus(IssueStatus.Done)">Close issue</button>
                 }
             </div>
+            }
         }
     </div>
+    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
     <div class="issue-subhead">
         <StatusBadge Status="issue.Status" />
         <span class="muted">
@@ -64,7 +69,7 @@ else if (issue != null && project != null)
                 <div class="comment-head">
                     <Avatar User="issue.Reporter" Size="22" /> <b>@issue.Reporter.DisplayName</b>
                     <span class="muted small">@Display.Ago(issue.CreatedAt)</span>
-                    @if (!editingDesc)
+                    @if (!editingDesc && CanEdit)
                     {
                         <button class="btn btn-link btn-sm ms-auto" @onclick="StartEditDesc">Edit</button>
                     }
@@ -100,7 +105,7 @@ else if (issue != null && project != null)
                             <div class="comment-head">
                                 <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
                                 <span class="muted small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
-                                @if (c.AuthorId == Me.Id && editingCommentId != c.Id)
+                                @if (CanModerate(c) && editingCommentId != c.Id)
                                 {
                                     <span class="ms-auto">
                                         <button class="btn btn-link btn-sm" @onclick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }">Edit</button>
@@ -136,13 +141,15 @@ else if (issue != null && project != null)
             </div>
 
             <!-- New comment -->
+            @if (perms.Can(Permission.Comment))
+            {
             <div class="comment-card mt-3">
                 <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
                 <div class="comment-body">
                     <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
                     <div class="mt-2 d-flex gap-2">
                         <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
-                        @if (!issue.Status.IsClosed())
+                        @if (!issue.Status.IsClosed() && CanEdit)
                         {
                             <button class="btn btn-outline-secondary btn-sm" @onclick="CommentAndClose">
                                 @(string.IsNullOrWhiteSpace(newComment) ? "Close issue" : "Comment & close")
@@ -151,10 +158,13 @@ else if (issue != null && project != null)
                     </div>
                 </div>
             </div>
+            }
         </div>
 
         <!-- Sidebar -->
         <aside class="side-panel">
+            @* Viewers see the fields read-only; the service rejects edits anyway. *@
+            <fieldset disabled="@(!CanEdit)" style="border:0;padding:0;margin:0;min-width:0">
             <div class="field">
                 <label>Status</label>
                 <select class="form-select form-select-sm" value="@issue.Status" @onchange="e => SetStatus(Enum.Parse<IssueStatus>((string)e.Value!))">
@@ -170,7 +180,7 @@ else if (issue != null && project != null)
                         @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
                     </select>
                 </div>
-                @if (issue.AssigneeId != Me.Id)
+                @if (issue.AssigneeId != Me.Id && CanEdit)
                 {
                     <button class="btn btn-link btn-sm p-0" @onclick="() => SetAssigneeId(Me.Id)">Assign to me</button>
                 }
@@ -216,15 +226,19 @@ else if (issue != null && project != null)
                 <label>Due date</label>
                 <input type="date" class="form-control form-control-sm" value="@issue.DueDate?.ToString("yyyy-MM-dd")" @onchange="SetDue" />
             </div>
+            </fieldset>
             <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
             <div class="field muted small">
                 Reporter: <Avatar User="issue.Reporter" Size="18" ShowName /><br />
                 Created @issue.CreatedAt.ToLocalTime().ToString("g")<br />
                 Updated @Display.Ago(issue.UpdatedAt)
             </div>
-            <div class="field">
-                <button class="btn btn-outline-danger btn-sm w-100" @onclick="Delete">Delete issue</button>
-            </div>
+            @if (perms.Role >= ProjectRole.Maintainer)
+            {
+                <div class="field">
+                    <button class="btn btn-outline-danger btn-sm w-100" @onclick="Delete">Delete issue</button>
+                </div>
+            }
         </aside>
     </div>
 }
@@ -237,6 +251,11 @@ else if (issue != null && project != null)
     private Project? project;
     private List<User> users = [];
     private bool notFound;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private string? error;
+    private bool CanEdit => perms.Can(Permission.EditIssues);
+    // Authors edit/delete their own comments; Maintainers and above can moderate anyone's.
+    private bool CanModerate(Comment c) => (c.AuthorId == Me.Id && perms.Can(Permission.Comment)) || perms.Role >= ProjectRole.Maintainer;
 
     private bool editingTitle, editingDesc;
     private string titleDraft = "";
@@ -252,7 +271,16 @@ else if (issue != null && project != null)
     {
         users = await Issues.GetUsersAsync();
         project = await Issues.GetProjectAsync(Key);
+        perms = project == null ? ProjectPermissions.None : await Access.GetPermissionsAsync(project.Id);
         await Reload();
+    }
+
+    /// <summary>Shows permission (ForbiddenException) and validation errors instead of crashing the circuit.</summary>
+    private async Task<bool> Guard(Func<Task> action)
+    {
+        error = null;
+        try { await action(); return true; }
+        catch (InvalidOperationException ex) { error = ex.Message; return false; }
     }
 
     private async Task Reload()
@@ -296,7 +324,7 @@ else if (issue != null && project != null)
 
     private async Task Change(Func<Issue, AppDbContext, Task<string?>> change)
     {
-        await Issues.UpdateIssueAsync(issue!.Id, Me.Id, change);
+        await Guard(() => Issues.UpdateIssueAsync(issue!.Id, Me.Id, change));
         await Reload();
     }
 
@@ -330,7 +358,7 @@ else if (issue != null && project != null)
     // ----- Sidebar fields -----
     private async Task SetStatus(IssueStatus s)
     {
-        await Issues.SetStatusAsync(issue!.Id, s, Me.Id);
+        await Guard(() => Issues.SetStatusAsync(issue!.Id, s, Me.Id));
         await Reload();
     }
 
@@ -401,7 +429,7 @@ else if (issue != null && project != null)
     private async Task AddComment()
     {
         if (string.IsNullOrWhiteSpace(newComment)) return;
-        await Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim());
+        if (!await Guard(() => Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
         newComment = null;
         commentEditor?.ShowWrite();
         await Reload();
@@ -409,8 +437,8 @@ else if (issue != null && project != null)
 
     private async Task CommentAndClose()
     {
-        if (!string.IsNullOrWhiteSpace(newComment))
-            await Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim());
+        if (!string.IsNullOrWhiteSpace(newComment)
+            && !await Guard(() => Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
         newComment = null;
         await SetStatus(IssueStatus.Done);
     }
@@ -418,7 +446,7 @@ else if (issue != null && project != null)
     private async Task SaveCommentEdit(Comment c)
     {
         if (string.IsNullOrWhiteSpace(commentEditDraft)) return;
-        await Issues.EditCommentAsync(c.Id, commentEditDraft.Trim());
+        if (!await Guard(() => Issues.EditCommentAsync(c.Id, commentEditDraft.Trim()))) return;
         editingCommentId = null;
         await Reload();
     }
@@ -426,14 +454,14 @@ else if (issue != null && project != null)
     private async Task DeleteComment(Comment c)
     {
         if (!await JS.InvokeAsync<bool>("confirm", "Delete this comment?")) return;
-        await Issues.DeleteCommentAsync(c.Id);
+        await Guard(() => Issues.DeleteCommentAsync(c.Id));
         await Reload();
     }
 
     private async Task Delete()
     {
         if (!await JS.InvokeAsync<bool>("confirm", $"Delete {issue!.Key}? This cannot be undone.")) return;
-        await Issues.DeleteIssueAsync(issue.Id);
+        if (!await Guard(() => Issues.DeleteIssueAsync(issue.Id))) return;
         Nav.NavigateTo($"/p/{project!.Key}/issues");
     }
 }

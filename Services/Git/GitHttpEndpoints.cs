@@ -15,7 +15,10 @@ namespace GitBench.Services.Git;
 ///   POST git-upload-pack
 ///   POST git-receive-pack
 /// Everything else under /git is 404 (or 403 for dumb-protocol info/refs). Both reads and writes
-/// require HTTP Basic credentials checked against Identity (username or email), honoring lockout.
+/// require HTTP Basic credentials checked against Identity (username or email + password or personal access
+/// token), honoring lockout. Then project permissions apply (<see cref="GitBench.Services.ProjectAccess"/>):
+/// clone/fetch need ViewProject, push needs PushCode (and a token needs the WriteRepository scope). A user who
+/// can't view the project gets 404, so the repository's existence isn't revealed.
 /// </summary>
 public static partial class GitHttpEndpoints
 {
@@ -95,7 +98,7 @@ public static partial class GitHttpEndpoints
         }
 
         // Authenticate before looking the repo up so unauthenticated callers can't probe for repos.
-        var user = await AuthenticateAsync(ctx, logger, allowCookie: service == UploadPack);
+        var (user, tokenScopes) = await AuthenticateAsync(ctx, logger, allowCookie: service == UploadPack);
         if (user is null)
         {
             ctx.Response.Headers.WWWAuthenticate = $"Basic realm=\"{Realm}\", charset=\"UTF-8\"";
@@ -111,10 +114,34 @@ public static partial class GitHttpEndpoints
         {
             found = await db.Repositories.AsNoTracking()
                 .Where(r => r.Project.Key.ToUpper() == upperKey && r.Slug == slug)
-                .Select(r => new RepoInfo(r.Id, r.Project.Key, r.Slug))
+                .Select(r => new RepoInfo(r.Id, r.Project.Key, r.Slug, r.ProjectId))
                 .FirstOrDefaultAsync(ctx.RequestAborted);
         }
         if (found is null) { await NotFound(ctx); return; }
+
+        // Project permissions. Not viewable → 404 so the repo's existence isn't revealed.
+        var access = ctx.RequestServices.GetRequiredService<GitBench.Services.ProjectAccess>();
+        access.ActAs(user.Id); // push listeners run in this scope as the pushing user
+        var role = await access.GetRoleAsync(found.ProjectId, user.Id);
+        if (role is null) { await NotFound(ctx); return; }
+        var writing = service == ReceivePack;
+        if (writing && !GitBench.Services.ProjectAccess.RoleHas(role.Value, GitBench.Services.Permission.PushCode))
+        {
+            logger.LogInformation("Git push to {Key}/{Slug} denied for {User} (role {Role})", found.Key, found.Slug, user.UserName, role);
+            await WritePlain(ctx, StatusCodes.Status403Forbidden, $"You don't have permission to push to this repository (requires Developer; you are {role}).");
+            return;
+        }
+        if (tokenScopes is { } scopes)
+        {
+            var needed = writing ? TokenScopes.WriteRepository : TokenScopes.ReadRepository | TokenScopes.WriteRepository;
+            if ((scopes & needed) == 0)
+            {
+                await WritePlain(ctx, StatusCodes.Status403Forbidden, writing
+                    ? "This access token doesn't have the write_repository scope."
+                    : "This access token doesn't have the read_repository scope.");
+                return;
+            }
+        }
 
         var root = Path.TrimEndingDirectorySeparator(storage.Root) + Path.DirectorySeparatorChar;
         var diskPath = Path.GetFullPath(storage.PathFor(found.Key, found.Slug));
@@ -152,14 +179,15 @@ public static partial class GitHttpEndpoints
         }
     }
 
-    private sealed record RepoInfo(int Id, string Key, string Slug);
+    private sealed record RepoInfo(int Id, string Key, string Slug, int ProjectId);
 
     /// <summary>
-    /// HTTP Basic (username or email + password) via Identity, counting failures toward lockout.
-    /// For read-only upload-pack, an existing cookie session is also accepted (Basic for push only,
-    /// so a cross-site form POST riding the cookie can never write).
+    /// HTTP Basic via Identity: the login is a username or email, the password is either the account password or
+    /// one of that user's personal access tokens (<c>gbp_…</c>, unrevoked and unexpired). Failures count toward
+    /// lockout. For read-only upload-pack, an existing cookie session is also accepted (Basic for push only, so a
+    /// cross-site form POST riding the cookie can never write). Scopes are returned when a token was used, else null.
     /// </summary>
-    private static async Task<User?> AuthenticateAsync(HttpContext ctx, ILogger logger, bool allowCookie)
+    private static async Task<(User? User, TokenScopes? Scopes)> AuthenticateAsync(HttpContext ctx, ILogger logger, bool allowCookie)
     {
         var users = ctx.RequestServices.GetRequiredService<UserManager<User>>();
         var header = ctx.Request.Headers.Authorization.ToString();
@@ -168,9 +196,9 @@ public static partial class GitHttpEndpoints
         {
             string decoded;
             try { decoded = Encoding.UTF8.GetString(Convert.FromBase64String(header[6..].Trim())); }
-            catch (FormatException) { return null; }
+            catch (FormatException) { return (null, null); }
             var sep = decoded.IndexOf(':');
-            if (sep <= 0) return null;
+            if (sep <= 0) return (null, null);
             var login = decoded[..sep];
             var password = decoded[(sep + 1)..];
 
@@ -179,29 +207,37 @@ public static partial class GitHttpEndpoints
             if (user is null)
             {
                 logger.LogInformation("Git auth failed: unknown user {Login} from {Ip}", login, ctx.Connection.RemoteIpAddress);
-                return null;
+                return (null, null);
             }
             if (await users.IsLockedOutAsync(user))
             {
                 logger.LogWarning("Git auth rejected: user {User} is locked out", user.UserName);
-                return null;
+                return (null, null);
             }
-            if (!await users.CheckPasswordAsync(user, password))
+
+            TokenScopes? scopes = null;
+            if (password.StartsWith(GitBench.Services.AccessTokenService.TokenPrefix, StringComparison.Ordinal)
+                && await ctx.RequestServices.GetRequiredService<GitBench.Services.AccessTokenService>().ValidateAsync(user.Id, password) is { } token)
+            {
+                scopes = token.Scopes;
+                logger.LogInformation("Git auth: {User} used access token {Prefix} ({Scopes})", user.UserName, token.Prefix, token.Scopes);
+            }
+            else if (!await users.CheckPasswordAsync(user, password))
             {
                 await users.AccessFailedAsync(user);
-                logger.LogInformation("Git auth failed: bad password for {User} from {Ip}", user.UserName, ctx.Connection.RemoteIpAddress);
-                return null;
+                logger.LogInformation("Git auth failed: bad password or token for {User} from {Ip}", user.UserName, ctx.Connection.RemoteIpAddress);
+                return (null, null);
             }
             if (await users.GetAccessFailedCountAsync(user) > 0) await users.ResetAccessFailedCountAsync(user);
-            return user;
+            return (user, scopes);
         }
 
         if (allowCookie && ctx.User.Identity?.IsAuthenticated == true)
         {
             var user = await users.GetUserAsync(ctx.User);
-            if (user is not null && !await users.IsLockedOutAsync(user)) return user;
+            if (user is not null && !await users.IsLockedOutAsync(user)) return (user, null);
         }
-        return null;
+        return (null, null);
     }
 
     private static async Task NotifyPushListenersAsync(HttpContext ctx, ILogger logger, int repositoryId, int userId)

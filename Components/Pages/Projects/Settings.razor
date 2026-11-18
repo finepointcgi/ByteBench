@@ -1,5 +1,6 @@
 @page "/p/{Key}/settings"
 @inject IssueService Issues
+@inject ProjectAccess Access
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -9,28 +10,43 @@
 {
     <ProjectNotFound />
 }
+else if (project != null && !perms.Can(Permission.ManageLabelsAndMilestones))
+{
+    <Forbidden Message="Only Maintainers and Owners can change this project's settings." />
+}
 else if (project != null)
 {
     <div class="page-header"><h1>Project settings</h1></div>
+    @if (error != null) { <div class="alert alert-danger py-2 narrow">@error</div> }
 
-    <div class="card-panel narrow mb-4">
-        <h2 class="section-title">General</h2>
-        <div class="mb-3">
-            <label class="form-label">Name</label>
-            <input class="form-control" @bind="name" />
+    @if (perms.Can(Permission.ManageProjectSettings))
+    {
+        <div class="card-panel narrow mb-4">
+            <h2 class="section-title">General</h2>
+            <div class="mb-3">
+                <label class="form-label">Name</label>
+                <input class="form-control" @bind="name" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Key</label>
+                <input class="form-control mono" value="@project.Key" disabled />
+                <div class="form-text">Keys can't be changed after creation.</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" rows="3" @bind="description"></textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="visibility">Visibility</label>
+                <select id="visibility" class="form-select" @bind="visibility">
+                    <option value="@ProjectVisibility.Private">Private: only members can see it</option>
+                    <option value="@ProjectVisibility.Internal">Internal: every signed-in user can see it (as Viewer)</option>
+                </select>
+            </div>
+            <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(name)" @onclick="SaveGeneral">Save</button>
+            @if (saved) { <span class="text-success small ms-2">Saved ✓</span> }
         </div>
-        <div class="mb-3">
-            <label class="form-label">Key</label>
-            <input class="form-control mono" value="@project.Key" disabled />
-            <div class="form-text">Keys can't be changed after creation.</div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Description</label>
-            <textarea class="form-control" rows="3" @bind="description"></textarea>
-        </div>
-        <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(name)" @onclick="SaveGeneral">Save</button>
-        @if (saved) { <span class="text-success small ms-2">Saved ✓</span> }
-    </div>
+    }
 
     <div class="card-panel narrow mb-4">
         <h2 class="section-title">Labels</h2>
@@ -65,20 +81,25 @@ else if (project != null)
 
     <AiReviewSettings Project="project" />
 
-    <div class="card-panel narrow danger-zone">
-        <h2 class="section-title">Danger zone</h2>
-        <p class="small muted">Deleting a project permanently removes all of its issues, comments, labels and milestones.</p>
-        <button class="btn btn-danger btn-sm" @onclick="DeleteProject">Delete project</button>
-    </div>
+    @if (perms.Can(Permission.DeleteProject))
+    {
+        <div class="card-panel narrow danger-zone">
+            <h2 class="section-title">Danger zone</h2>
+            <p class="small muted">Deleting a project permanently removes all of its issues, comments, labels and milestones.</p>
+            <button class="btn btn-danger btn-sm" @onclick="DeleteProject">Delete project</button>
+        </div>
+    }
 }
 
 @code {
     [Parameter] public string Key { get; set; } = "";
 
     private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
     private bool notFound, saved;
     private string name = "";
-    private string? description, labelError;
+    private string? description, labelError, error;
+    private ProjectVisibility visibility;
     private Label newLabel = NewLabel();
     private Label? editLabel;
 
@@ -91,14 +112,23 @@ else if (project != null)
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
         name = project.Name;
         description = project.Description;
+        visibility = project.Visibility;
+    }
+
+    /// <summary>Runs a change, turning permission (ForbiddenException) and validation errors into a message.</summary>
+    private async Task<bool> Try(Func<Task> action)
+    {
+        error = null;
+        try { await action(); return true; }
+        catch (InvalidOperationException ex) { error = ex.Message; return false; }
     }
 
     private async Task SaveGeneral()
     {
-        await Issues.UpdateProjectAsync(project!.Id, name.Trim(), description);
-        saved = true;
+        saved = await Try(() => Issues.UpdateProjectAsync(project!.Id, name.Trim(), description, visibility));
     }
 
     private async Task AddLabel()
@@ -111,7 +141,7 @@ else if (project != null)
         }
         newLabel.ProjectId = project.Id;
         newLabel.Name = newLabel.Name.Trim();
-        await Issues.SaveLabelAsync(newLabel);
+        if (!await Try(() => Issues.SaveLabelAsync(newLabel))) return;
         newLabel = NewLabel();
         await Load();
     }
@@ -126,7 +156,7 @@ else if (project != null)
             return;
         }
         editLabel.Name = editLabel.Name.Trim();
-        await Issues.SaveLabelAsync(editLabel);
+        if (!await Try(() => Issues.SaveLabelAsync(editLabel))) return;
         editLabel = null;
         await Load();
     }
@@ -134,15 +164,13 @@ else if (project != null)
     private async Task DeleteLabel(Label l)
     {
         if (!await JS.InvokeAsync<bool>("confirm", $"Delete label \"{l.Name}\"? It will be removed from all issues.")) return;
-        await Issues.DeleteLabelAsync(l.Id);
-        await Load();
+        if (await Try(() => Issues.DeleteLabelAsync(l.Id))) await Load();
     }
 
     private async Task DeleteProject()
     {
         var typed = await JS.InvokeAsync<string?>("prompt", $"Type the project key ({project!.Key}) to confirm deletion:");
         if (typed?.Trim().ToUpper() != project.Key) return;
-        await Issues.DeleteProjectAsync(project.Id);
-        Nav.NavigateTo("/");
+        if (await Try(() => Issues.DeleteProjectAsync(project.Id))) Nav.NavigateTo("/");
     }
 }

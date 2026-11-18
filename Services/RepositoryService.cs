@@ -14,7 +14,7 @@ public record DevelopmentInfo(List<DevBranch> Branches, List<PullRequest> PullRe
 }
 
 /// <summary>Repository metadata (database) plus access to the bare repos on disk via <see cref="GitOps"/>.</summary>
-public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage)
+public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access)
 {
     public string PathOf(Repository repo) => storage.PathFor(repo.Project.Key, repo.Slug);
 
@@ -48,6 +48,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
 
     public async Task<List<RepoSummary>> GetRepositoriesAsync(int projectId)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
         var repos = await db.Repositories.Include(r => r.Project).Where(r => r.ProjectId == projectId)
             .OrderBy(r => r.Name).ToListAsync();
@@ -58,12 +59,14 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
         return repos.Select(r => new RepoSummary(r, open.GetValueOrDefault(r.Id))).ToList();
     }
 
+    /// <summary>The repository, or null if it doesn't exist or the acting user can't view its project.</summary>
     public async Task<Repository?> GetRepositoryAsync(string projectKey, string slug)
     {
+        var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var key = projectKey.ToUpperInvariant();
         var s = slug.ToLowerInvariant();
-        return await db.Repositories.Include(r => r.Project)
+        return await db.Repositories.Include(r => r.Project).Where(r => visible.Contains(r.ProjectId))
             .FirstOrDefaultAsync(r => r.Project.Key == key && r.Slug == s);
     }
 
@@ -81,6 +84,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
     /// <summary>Creates the bare repo on disk (with an initial README commit) and its metadata row.</summary>
     public async Task<Repository> CreateAsync(int projectId, string name, string? slug, string? description, User author)
     {
+        await access.RequireAsync(projectId, Permission.ManageRepositories, author.Id);
         name = name.Trim();
         if (name.Length is 0 or > 100) throw new InvalidOperationException("Name is required (max 100 characters).");
         slug = string.IsNullOrWhiteSpace(slug) ? Slugify(name) : slug.Trim().ToLowerInvariant();
@@ -117,6 +121,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
 
     public async Task UpdateAsync(int repoId, string name, string? description)
     {
+        await access.RequireForRepositoryAsync(repoId, Permission.ManageRepositories);
         await using var db = await dbFactory.CreateDbContextAsync();
         var r = await db.Repositories.FindAsync(repoId) ?? throw new InvalidOperationException("Repository not found.");
         r.Name = name.Trim();
@@ -124,11 +129,26 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
         await db.SaveChangesAsync();
     }
 
+    /// <summary>Creates a branch (requires PushCode). Requires repo.Project to be loaded.</summary>
+    public async Task CreateBranchAsync(Repository repo, string name, string fromRev, int? actorId = null)
+    {
+        await access.RequireAsync(repo.ProjectId, Permission.PushCode, actorId);
+        await Git(repo, path => GitOps.CreateBranch(path, name, fromRev));
+    }
+
+    /// <summary>Deletes a non-default branch (requires DeleteBranch). Requires repo.Project to be loaded.</summary>
+    public async Task DeleteBranchAsync(Repository repo, string name, int? actorId = null)
+    {
+        await access.RequireAsync(repo.ProjectId, Permission.DeleteBranch, actorId);
+        await Git(repo, path => GitOps.DeleteBranch(path, name, repo.DefaultBranch));
+    }
+
     // ---------- Jira-style development info ----------
 
     /// <summary>Branches, pull requests and recent commits (across all repos of the project) that mention the issue key.</summary>
     public async Task<DevelopmentInfo> GetDevelopmentAsync(int projectId, string projectKey, int issueNumber)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return new DevelopmentInfo([], [], []);
         var rx = IssueKeys.Exact(projectKey, issueNumber);
         await using var db = await dbFactory.CreateDbContextAsync();
         var repos = await db.Repositories.Include(r => r.Project).Where(r => r.ProjectId == projectId).ToListAsync();

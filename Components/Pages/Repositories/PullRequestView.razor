@@ -7,6 +7,7 @@
 @inject NotificationService Notifications
 @inject LiveEvents Live
 @implements IDisposable
+@inject ProjectAccess Access
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -38,7 +39,7 @@ else if (pr != null)
             <h1>@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></h1>
             <div class="d-flex gap-2">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
-                @if (pr.AuthorId == Me.Id && pr.State == PullRequestState.Open)
+                @if (CanEditPr && pr.State == PullRequestState.Open)
                 {
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</button>
                 }
@@ -86,7 +87,7 @@ else if (pr != null)
                 @if (changes == null) { <div class="empty">The changes for this pull request are no longer available.</div> }
                 else
                 {
-                    <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="true" OnComment="AddInlineComment"
+                    <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="@perms.Can(Permission.Comment)" OnComment="AddInlineComment"
                               Repo="repo" ViewRef="@changes.HeadSha" />
                 }
             }
@@ -97,7 +98,7 @@ else if (pr != null)
                     <div class="comment-head">
                         <Avatar User="pr.Author" Size="22" /> <b>@pr.Author.DisplayName</b>
                         <span class="muted small">opened @Display.Ago(pr.CreatedAt)</span>
-                        @if (pr.AuthorId == Me.Id && !editingDesc)
+                        @if (CanEditPr && !editingDesc)
                         {
                             <button class="btn btn-link btn-sm ms-auto" @onclick="() => { descDraft = pr.Description; editingDesc = true; }">Edit</button>
                         }
@@ -139,7 +140,7 @@ else if (pr != null)
                                         else { <span>commented&nbsp;</span> }
                                         @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")
                                     </span>
-                                    @if (c.AuthorId == Me.Id && editingCommentId != c.Id)
+                                    @if (c.AuthorId == Me.Id && perms.Can(Permission.Comment) && editingCommentId != c.Id)
                                     {
                                         <span class="ms-auto">
                                             <button class="btn btn-link btn-sm" @onclick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }">Edit</button>
@@ -174,6 +175,8 @@ else if (pr != null)
                     }
                 </div>
 
+                @if (perms.Can(Permission.Comment))
+                {
                 <div class="comment-card mt-3">
                     <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
                     <div class="comment-body">
@@ -183,6 +186,7 @@ else if (pr != null)
                         </div>
                     </div>
                 </div>
+                }
             }
         </div>
 
@@ -199,6 +203,8 @@ else if (pr != null)
                             @foreach (var p in mergeStatus.ConflictPaths) { <li>@p</li> }
                         </ul>
                     }
+                    @if (perms.Can(Permission.MergePullRequest))
+                    {
                     <select class="form-select form-select-sm mt-2" @bind="strategy" disabled="@(!CanMerge)">
                         <option value="merge">Merge commit</option>
                         <option value="ff">Fast-forward if possible</option>
@@ -208,7 +214,15 @@ else if (pr != null)
                         <span class="form-check-label">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
                     </label>
                     <button class="btn btn-success btn-sm w-100 mt-2" disabled="@(!CanMerge || busy)" @onclick="Merge">Merge</button>
-                    <button class="btn btn-outline-danger btn-sm w-100 mt-2" disabled="@busy" @onclick="Decline">Decline</button>
+                    }
+                    else
+                    {
+                        <div class="muted small mt-2">Only Maintainers and Owners can merge.</div>
+                    }
+                    @if (CanEditPr)
+                    {
+                        <button class="btn btn-outline-danger btn-sm w-100 mt-2" disabled="@busy" @onclick="Decline">Decline</button>
+                    }
                 }
                 else if (pr.State == PullRequestState.Merged)
                 {
@@ -223,7 +237,10 @@ else if (pr != null)
                 else
                 {
                     <div class="merge-status neutral">Declined @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt).</div>
-                    <button class="btn btn-outline-secondary btn-sm w-100 mt-2" disabled="@busy" @onclick="Reopen">Reopen</button>
+                    @if (CanEditPr)
+                    {
+                        <button class="btn btn-outline-secondary btn-sm w-100 mt-2" disabled="@busy" @onclick="Reopen">Reopen</button>
+                    }
                 }
             </div>
 
@@ -241,7 +258,7 @@ else if (pr != null)
                         else { <span class="review-chip changes ms-auto">✎ Changes requested</span> }
                     </div>
                 }
-                @if (pr.State == PullRequestState.Open && pr.AuthorId != Me.Id)
+                @if (pr.State == PullRequestState.Open && pr.AuthorId != Me.Id && perms.Can(Permission.ReviewPullRequest))
                 {
                     var mine = pr.Reviews.FirstOrDefault(r => r.UserId == Me.Id)?.State;
                     <div class="d-flex gap-2 mt-2">
@@ -263,7 +280,7 @@ else if (pr != null)
                         }
                     </div>
                 }
-                else if (pr.State == PullRequestState.Open)
+                else if (pr.State == PullRequestState.Open && pr.AuthorId == Me.Id)
                 {
                     <div class="muted small mt-1">You can't review your own pull request.</div>
                 }
@@ -318,6 +335,9 @@ else if (pr != null)
     private int? editingCommentId;
     private MarkdownEditor? commentEditor;
     private string? loadedFor;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    // The author (with CreatePullRequest) or a Maintainer+ (MergePullRequest) may edit, decline and reopen.
+    private bool CanEditPr => pr != null && ((pr.AuthorId == Me.Id && perms.Can(Permission.CreatePullRequest)) || perms.Can(Permission.MergePullRequest));
 
     private string CurrentTab => Tab is "commits" or "files" ? Tab : "overview";
     private string TabUrl(string? tab) => RepoUrls.PullRequest(pr!) + (tab == null ? "" : "?tab=" + tab);
@@ -359,6 +379,7 @@ else if (pr != null)
         if (pr == null) return;
         watching = await Notifications.IsWatchingPullRequestAsync(Me.Id, pr.Id);
         watcherCount = await Notifications.CountPullRequestWatchersAsync(pr.Id);
+        perms = await Access.GetPermissionsAsync(pr.Repository.ProjectId);
         if (full)
         {
             changes = await PRs.GetChangesAsync(pr);

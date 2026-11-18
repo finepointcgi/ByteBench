@@ -3,6 +3,7 @@
 @inject CurrentUser Me
 @inject LiveEvents Live
 @implements IDisposable
+@inject ProjectAccess Access
 
 <PageTitle>Board · @project?.Name</PageTitle>
 
@@ -30,6 +31,7 @@ else if (project != null)
         </div>
     </div>
 
+    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
     <div class="board">
         @foreach (var status in Enum.GetValues<IssueStatus>())
         {
@@ -47,7 +49,7 @@ else if (project != null)
                 <div class="board-cards">
                     @foreach (var i in col)
                     {
-                        <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="true" @key="i.Id"
+                        <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="@(canEdit ? "true" : "false")" @key="i.Id"
                              @ondragstart="() => dragging = i"
                              @ondragend="() => { dragging = null; dragOverStatus = null; }"
                              @ondrop="() => Drop(status, i.Id)" @ondrop:stopPropagation>
@@ -81,7 +83,8 @@ else if (project != null)
     [Parameter] public string Key { get; set; } = "";
 
     private Project? project;
-    private bool notFound;
+    private bool notFound, canEdit;
+    private string? error;
     private List<User> users = [];
     private List<Issue> issues = [];
     private int? milestoneId, assigneeId;
@@ -98,6 +101,7 @@ else if (project != null)
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (project == null) return;
+        canEdit = await Access.CanAsync(project.Id, Permission.EditIssues);
         users = await Issues.GetUsersAsync();
         // Default to the active sprint, if there is one.
         milestoneId ??= project.Milestones.FirstOrDefault(m => !m.IsClosed && m.StartDate <= DateTime.Today && m.DueDate >= DateTime.Today)?.Id;
@@ -138,7 +142,9 @@ else if (project != null)
         var idx = beforeId is { } b ? issues.FindIndex(x => x.Id == b) : -1;
         if (idx < 0) issues.Add(moved); else issues.Insert(idx, moved);
 
-        await Issues.MoveOnBoardAsync(moved.Id, status, beforeId, Me.Id);
+        error = null;
+        try { await Issues.MoveOnBoardAsync(moved.Id, status, beforeId, Me.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
         await Load();
     }
 }

@@ -3,6 +3,7 @@
 @inject NavigationManager Nav
 @inject IssueService Issues
 @inject CurrentUser Me
+@inject ProjectAccess Access
 
 <div class="app">
     <header class="topbar">
@@ -63,7 +64,11 @@
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/milestones")">🏁 Milestones</NavLink>
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/repos")">📦 Repositories</NavLink>
                     <NavLink class="side-link" href="@($"/p/{cp.Key}/pull-requests")">🔀 Pull requests</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/settings")">⚙️ Settings</NavLink>
+                    <NavLink class="side-link" href="@($"/p/{cp.Key}/members")">👥 Members</NavLink>
+                    @if (projectPerms.ProjectId == cp.Id && projectPerms.Can(Permission.ManageLabelsAndMilestones))
+                    {
+                        <NavLink class="side-link" href="@($"/p/{cp.Key}/settings")">⚙️ Settings</NavLink>
+                    }
                 </div>
             }
 
@@ -96,6 +101,7 @@
 
 @code {
     private List<ProjectSummary> projects = [];
+    private ProjectPermissions projectPerms = ProjectPermissions.None;
     private string? projectKey;
     private bool userLoaded;
 
@@ -111,7 +117,13 @@
     }
 
     // Anonymous visitors (e.g. on the not-found page) don't get to see project names.
-    private async Task RefreshProjects() => projects = Me.IsSignedIn ? await Issues.GetProjectsAsync() : [];
+    // GetProjectsAsync only returns projects the user can view; projectPerms drives the project nav.
+    private async Task RefreshProjects()
+    {
+        projects = Me.IsSignedIn ? await Issues.GetProjectsAsync() : [];
+        var key = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('/') is [ "p", var k, .. ] ? k.ToUpperInvariant() : null;
+        projectPerms = projects.FirstOrDefault(p => p.Key == key) is { } cur ? await Access.GetPermissionsAsync(cur.Id) : ProjectPermissions.None;
+    }
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {

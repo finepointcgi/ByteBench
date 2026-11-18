@@ -5,6 +5,7 @@
 @inject SignInManager<User> SignIn
 @inject UserManager<User> Users
 @inject NavigationManager Nav
+@inject AccessTokenService Tokens
 
 <PageTitle>Your profile · GitBench</PageTitle>
 
@@ -83,6 +84,87 @@
         </EditForm>
     </section>
 
+    <section class="profile-section" id="tokens">
+        <h2 class="profile-section-title">Access tokens</h2>
+        <p class="muted small">
+            Use a personal access token instead of your password for Git over HTTP: enter your username and paste the
+            token when git asks for a password. Tokens are shown once; GitBench stores only a hash.
+        </p>
+        <StatusMessage Success="@tokenSuccess" Errors="tokenErrors" />
+
+        @if (newToken != null)
+        {
+            <div class="alert alert-success">
+                <div class="mb-2"><b>Copy your new token now.</b> You won't be able to see it again.</div>
+                <div class="input-group">
+                    <input id="new-token" class="form-control mono" readonly value="@newToken" onfocus="this.select()" />
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="navigator.clipboard.writeText(document.getElementById('new-token').value); this.textContent='Copied';">Copy</button>
+                </div>
+            </div>
+        }
+
+        <EditForm Model="TokenInput" FormName="create-token" OnValidSubmit="CreateToken" method="post">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label" for="tk-name">Token name</label>
+                <InputText id="tk-name" class="form-control" @bind-Value="TokenInput!.Name" placeholder="e.g. Laptop git" />
+                <ValidationMessage For="() => TokenInput!.Name" class="text-danger small" />
+            </div>
+            <div class="mb-3">
+                <span class="form-label d-block">Scopes</span>
+                <label class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.ReadRepository" />
+                    <span class="form-check-label"><code>read_repository</code>: clone and fetch</span>
+                </label>
+                <label class="form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="TokenInput!.WriteRepository" />
+                    <span class="form-check-label"><code>write_repository</code>: push (also allows clone and fetch)</span>
+                </label>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="tk-exp">Expires</label>
+                <InputSelect id="tk-exp" class="form-select" @bind-Value="TokenInput!.ExpiresInDays">
+                    <option value="7">In 7 days</option>
+                    <option value="30">In 30 days</option>
+                    <option value="90">In 90 days</option>
+                    <option value="365">In a year</option>
+                    <option value="0">Never</option>
+                </InputSelect>
+            </div>
+            <button type="submit" class="btn btn-primary">Create token</button>
+        </EditForm>
+
+        @if (tokens.Count > 0)
+        {
+            <form method="post" @formname="revoke-token" @onsubmit="RevokeToken" class="mt-4">
+                <AntiforgeryToken />
+                <table class="table table-sm small align-middle">
+                    <thead><tr><th>Name</th><th>Token</th><th>Scopes</th><th>Created</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var t in tokens)
+                        {
+                            var now = DateTime.UtcNow;
+                            <tr class="@(t.IsActive(now) ? "" : "text-muted")">
+                                <td>@t.Name</td>
+                                <td class="mono">@t.Prefix…</td>
+                                <td>@ScopeText(t.Scopes)</td>
+                                <td>@t.CreatedAt.ToLocalTime().ToString("d")</td>
+                                <td>@(t.ExpiresAt?.ToLocalTime().ToString("d") ?? "Never")</td>
+                                <td>@(t.LastUsedAt?.ToLocalTime().ToString("g") ?? "Never")</td>
+                                <td class="text-end">
+                                    @if (t.RevokedAt != null) { <span>Revoked</span> }
+                                    else if (!t.IsActive(now)) { <span>Expired</span> }
+                                    else { <button type="submit" name="RevokeTokenId" value="@t.Id" class="btn btn-sm btn-outline-danger">Revoke</button> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </form>
+        }
+    </section>
+
     <form class="profile-signout" method="post" action="account/logout">
         <AntiforgeryToken />
         <button type="submit" class="btn btn-outline-secondary btn-sm">Sign out</button>
@@ -103,6 +185,16 @@
     [SupplyParameterFromForm(FormName = "password")]
     private PasswordModel? PasswordInput { get; set; }
 
+    [SupplyParameterFromForm(FormName = "create-token")]
+    private TokenModel? TokenInput { get; set; }
+
+    [SupplyParameterFromForm(FormName = "revoke-token")]
+    private int? RevokeTokenId { get; set; }
+
+    private List<PersonalAccessToken> tokens = [];
+    private string? newToken, tokenSuccess;
+    private readonly List<string> tokenErrors = [];
+
     protected override async Task OnInitializedAsync()
     {
         user = await Users.GetUserAsync(HttpContext.User);
@@ -116,7 +208,38 @@
 
         ProfileInput ??= new() { DisplayName = user.DisplayName, Email = user.Email ?? "", Color = user.Color };
         PasswordInput ??= new();
+        TokenInput ??= new() { ReadRepository = true };
+        tokens = await Tokens.ListAsync(user.Id);
     }
+
+    // ----- Personal access tokens -----
+
+    private async Task CreateToken()
+    {
+        if (user is null || TokenInput is null) return;
+        var scopes = (TokenInput.ReadRepository ? TokenScopes.ReadRepository : 0) | (TokenInput.WriteRepository ? TokenScopes.WriteRepository : 0);
+        DateTime? expires = TokenInput.ExpiresInDays > 0 ? DateTime.UtcNow.AddDays(TokenInput.ExpiresInDays) : null;
+        try
+        {
+            (_, newToken) = await Tokens.CreateAsync(user.Id, TokenInput.Name, scopes, expires);
+            tokenSuccess = $"Token '{TokenInput.Name.Trim()}' created.";
+            TokenInput = new() { ReadRepository = true };
+        }
+        catch (InvalidOperationException ex) { tokenErrors.Add(ex.Message); }
+        tokens = await Tokens.ListAsync(user.Id);
+    }
+
+    private async Task RevokeToken()
+    {
+        if (user is null || RevokeTokenId is not { } id) return;
+        await Tokens.RevokeAsync(user.Id, id);
+        tokenSuccess = "Token revoked. It can no longer be used.";
+        tokens = await Tokens.ListAsync(user.Id);
+    }
+
+    private static string ScopeText(TokenScopes s) => string.Join(", ",
+        new[] { (TokenScopes.ReadRepository, "read_repository"), (TokenScopes.WriteRepository, "write_repository") }
+            .Where(x => s.HasFlag(x.Item1)).Select(x => x.Item2));
 
     private async Task SaveProfile()
     {
@@ -172,6 +295,17 @@
 
         [Required, RegularExpression("^#[0-9a-fA-F]{6}$", ErrorMessage = "Pick a color.")]
         public string Color { get; set; } = "";
+    }
+
+    private sealed class TokenModel
+    {
+        [Required, StringLength(100, MinimumLength = 1)]
+        [Display(Name = "Token name")]
+        public string Name { get; set; } = "";
+        // Defaults false: an unchecked box posts nothing, so a true default could never be cleared. The GET form pre-checks it.
+        public bool ReadRepository { get; set; }
+        public bool WriteRepository { get; set; }
+        [Range(0, 365)] public int ExpiresInDays { get; set; } = 30;
     }
 
     private sealed class PasswordModel

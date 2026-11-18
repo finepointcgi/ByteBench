@@ -14,6 +14,9 @@ public class User : IdentityUser<int>
     [MaxLength(9)] public string Color { get; set; } = "#6366f1";
 
     public string Initials => string.Concat(DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    /// <summary>Site administrator: has every permission on every project, private ones included.</summary>
+    public bool IsAdmin { get; set; }
 }
 
 public class Project
@@ -31,6 +34,10 @@ public class Project
     public List<Milestone> Milestones { get; set; } = [];
     /// <summary>When true (default), GitBench AI reviews new pull requests and new pushes automatically (if AI is configured).</summary>
     public bool AiReviewEnabled { get; set; } = true;
+
+    /// <summary>Private: members only. Internal: every signed-in user can view it (as Viewer unless a member).</summary>
+    public ProjectVisibility Visibility { get; set; } = ProjectVisibility.Private;
+    public List<ProjectMember> Members { get; set; } = [];
 }
 
 public class Issue
@@ -284,4 +291,49 @@ public class AiReview
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+}
+
+// ----- Membership, roles & access tokens -----
+
+public enum ProjectVisibility { Private, Internal }
+
+/// <summary>Project roles, ordered: each role has every permission of the roles before it. See <see cref="GitBench.Services.ProjectAccess"/>.</summary>
+public enum ProjectRole { Viewer, Developer, Maintainer, Owner }
+
+/// <summary>A user's role in a project (at most one row per project and user).</summary>
+public class ProjectMember
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public Project Project { get; set; } = null!;
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public ProjectRole Role { get; set; } = ProjectRole.Developer;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[Flags]
+public enum TokenScopes { None = 0, ReadRepository = 1, WriteRepository = 2 }
+
+/// <summary>
+/// A personal access token for Git over HTTP. Only the SHA-256 hash of the token is stored;
+/// the plaintext (<c>gbp_…</c>) is shown to the user once, when it is created.
+/// </summary>
+public class PersonalAccessToken
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    /// <summary>SHA-256 of the UTF-8 token string.</summary>
+    [Required, MaxLength(32)] public byte[] TokenHash { get; set; } = [];
+    /// <summary>The first few characters of the token (e.g. <c>gbp_Ab12Cd</c>), for display only.</summary>
+    [Required, MaxLength(16)] public string Prefix { get; set; } = "";
+    public TokenScopes Scopes { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? RevokedAt { get; set; }
+
+    public bool IsActive(DateTime utcNow) => RevokedAt == null && (ExpiresAt == null || ExpiresAt > utcNow);
 }

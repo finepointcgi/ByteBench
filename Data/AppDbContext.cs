@@ -22,6 +22,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Watch> Watches => Set<Watch>();
     public DbSet<AiReview> AiReviews => Set<AiReview>();
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+    public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -67,5 +69,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         // ----- AI code review -----
         b.Entity<AiReview>().HasIndex(r => new { r.PullRequestId, r.HeadSha });
         b.Entity<AiReview>().HasOne<PullRequest>().WithMany().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- Membership & access tokens -----
+        b.Entity<ProjectMember>().HasIndex(m => new { m.ProjectId, m.UserId }).IsUnique();
+        b.Entity<ProjectMember>().HasOne(m => m.Project).WithMany(p => p.Members).HasForeignKey(m => m.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ProjectMember>().HasOne(m => m.User).WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PersonalAccessToken>().HasIndex(t => t.UserId);
+        b.Entity<PersonalAccessToken>().HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

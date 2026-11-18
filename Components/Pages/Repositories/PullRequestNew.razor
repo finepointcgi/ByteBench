@@ -6,12 +6,17 @@
 @inject NavigationManager Nav
 @inject GitBench.Services.Ai.AiClient Ai
 @inject GitBench.Services.Ai.AiReviewService AiReviews
+@inject ProjectAccess Access
 
 <PageTitle>New pull request · @project?.Name</PageTitle>
 
 @if (notFound)
 {
     <ProjectNotFound />
+}
+else if (project != null && !canCreate)
+{
+    <Forbidden Message="You need the Developer role or higher to create pull requests in this project." BackHref="@RepoUrls.PullRequests(project.Key)" />
 }
 else if (project != null)
 {
@@ -157,7 +162,7 @@ else if (project != null)
     private PullRequest? existing;
     private Dictionary<string, User> usersByEmail = [];
     private SortedSet<int> linkedNumbers = [];
-    private bool notFound, busy;
+    private bool notFound, busy, canCreate;
     private string? title, description, error;
     private string tab = "commits";
     private string? previewKey;
@@ -169,6 +174,8 @@ else if (project != null)
         project ??= await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (notFound) return;
+        canCreate = await Access.CanAsync(project!.Id, Permission.CreatePullRequest);
+        if (!canCreate) return;
         if (repos.Count == 0) repos = await Repos.GetRepositoriesAsync(project!.Id);
         if (usersByEmail.Count == 0) usersByEmail = await Repos.GetUsersByEmailAsync();
 

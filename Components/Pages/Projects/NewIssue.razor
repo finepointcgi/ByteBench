@@ -2,12 +2,17 @@
 @inject IssueService Issues
 @inject CurrentUser Me
 @inject NavigationManager Nav
+@inject ProjectAccess Access
 
 <PageTitle>New issue · @project?.Name</PageTitle>
 
 @if (notFound)
 {
     <ProjectNotFound />
+}
+else if (project != null && !canCreate)
+{
+    <Forbidden Message="Viewers can't create issues. Ask a project Owner for the Developer role." BackHref="@($"/p/{project.Key}/issues")" />
 }
 else if (project != null)
 {
@@ -29,6 +34,7 @@ else if (project != null)
                     <MarkdownEditor @bind-Value="issue.Description" Rows="10"
                                     Placeholder="Describe the problem or feature. Markdown and task lists (- [ ]) are supported." />
                 </div>
+                @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
                 <button class="btn btn-primary" type="submit">Create issue</button>
                 <a class="btn btn-link" href="/p/@project.Key/issues">Cancel</a>
             </div>
@@ -95,7 +101,8 @@ else if (project != null)
     [Parameter] public string Key { get; set; } = "";
 
     private Project? project;
-    private bool notFound;
+    private bool notFound, canCreate;
+    private string? error;
     private List<User> users = [];
     private Issue issue = new();
     private HashSet<int> labelIds = [];
@@ -104,6 +111,7 @@ else if (project != null)
     {
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
+        canCreate = project != null && await Access.CanAsync(project.Id, Permission.EditIssues);
         users = await Issues.GetUsersAsync();
     }
 
@@ -114,7 +122,12 @@ else if (project != null)
 
     private async Task Create()
     {
-        var created = await Issues.CreateIssueAsync(project!.Id, issue, labelIds, Me.Id);
-        Nav.NavigateTo($"/p/{project.Key}/issues/{created.Number}");
+        error = null;
+        try
+        {
+            var created = await Issues.CreateIssueAsync(project!.Id, issue, labelIds, Me.Id);
+            Nav.NavigateTo($"/p/{project.Key}/issues/{created.Number}");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
     }
 }
