@@ -98,7 +98,7 @@
                             }
                             else
                             {
-                                <MudButton Href="@($"account/sso/{c.Provider.Name}/link?t={Uri.EscapeDataString(linkToken!)}")" Variant="Variant.Outlined" Size="Size.Small">Connect</MudButton>
+                                <MudButton Href="@($"account/sso/{c.Provider.Name}/link?t={Uri.EscapeDataString(linkToken!)}")" Variant="Variant.Outlined" Size="Size.Small" data-enhance-nav="false">Connect</MudButton>
                             }
                         </div>
                     }

@@ -9,7 +9,7 @@ namespace GitBench.Tests;
 /// <summary>A test that needs a reachable Docker daemon; it is skipped otherwise. Exclude it with <c>--filter "Category!=Docker"</c>.</summary>
 public sealed class DockerFactAttribute : FactAttribute
 {
-    private static readonly Lazy<bool> Available = new(() =>
+    internal static readonly Lazy<bool> Available = new(() =>
     {
         try
         {

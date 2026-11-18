@@ -1,15 +1,17 @@
-@* A "Sign in with X" / "Connect X" link styled as an outlined MudBlazor button, with the provider's icon. *@
+@* A "Sign in with X" link styled as an outlined MudBlazor button, with the provider's icon. data-enhance-nav="false":
+   Blazor's enhanced navigation would fetch() the link and follow the redirect to the provider, which the CSP's
+   connect-src (rightly) blocks; a full page navigation goes to the provider instead. *@
 
 @if (ImagePath != null)
 {
-    <MudButton Href="@Href" Variant="Variant.Outlined" FullWidth="@FullWidth" Size="@Size" DropShadow="false" Class="sso-button">
+    <MudButton Href="@Href" Variant="Variant.Outlined" FullWidth="@FullWidth" Size="@Size" DropShadow="false" Class="sso-button" data-enhance-nav="false">
         <img src="@ImagePath" alt="" class="sso-icon" />
         <span>@Text</span>
     </MudButton>
 }
 else
 {
-    <MudButton Href="@Href" Variant="Variant.Outlined" FullWidth="@FullWidth" Size="@Size" DropShadow="false" Class="sso-button"
+    <MudButton Href="@Href" Variant="Variant.Outlined" FullWidth="@FullWidth" Size="@Size" DropShadow="false" Class="sso-button" data-enhance-nav="false"
                StartIcon="@IconFor(Provider.Icon)">@Text</MudButton>
 }
 

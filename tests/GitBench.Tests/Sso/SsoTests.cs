@@ -326,6 +326,8 @@ public class SsoTests(SsoTestApp app) : IClassFixture<SsoTestApp>
         var html = await res.Content.ReadAsStringAsync();
         Assert.Contains("href=\"account/sso/mock?returnUrl=%2Fexplore\"", html);
         Assert.Contains("Sign in with Mock IdP", html);
+        // A full navigation, not Blazor's enhanced fetch (which connect-src would block at the redirect to the IdP).
+        Assert.Matches("href=\"account/sso/mock\\?returnUrl=%2Fexplore\"[^>]*data-enhance-nav=\"false\"|data-enhance-nav=\"false\"[^>]*href=\"account/sso/mock", html);
         Assert.Contains("Sign in with GitHub", html);
         var csp = res.Headers.GetValues("Content-Security-Policy").Single();
         var formAction = Regex.Match(csp, "form-action ([^;]+)").Groups[1].Value.Split(' ');

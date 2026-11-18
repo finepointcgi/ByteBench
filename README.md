@@ -49,8 +49,180 @@ The seed data creates four demo accounts. All of them use the password in `SeedD
 - **Profile** at `/account/profile` (click your avatar in the top bar): change display name, email, avatar color and password.
 - **Two-factor sign-in** at `/account/two-factor` (see [Two-factor sign-in](#two-factor-sign-in-totp)). Site admins manage accounts at `/admin/users` (see [User administration](#user-administration)).
 - **Sign out** with the button in the top bar.
+- **Single sign-on and LDAP:** when configured, people sign in with Google, GitHub, Microsoft Entra ID, any OIDC provider, or LDAP / Active Directory (see [Single sign-on & LDAP](#single-sign-on-oidc-oauth--ldap)).
 
 Account pages run as static server-side rendering (`[ExcludeFromInteractiveRouting]`) because sign-in has to write cookies; the rest of the app stays Interactive Server.
+
+## Single sign-on (OIDC, OAuth) & LDAP
+
+GitBench can sign people in through OpenID Connect providers (Google, Microsoft Entra ID, Keycloak, Okta, …), GitHub (OAuth) and LDAP / Active Directory, next to local accounts. Code: `Services/Sso/` (`SsoOptions`, `SsoAuthentication`, `SsoService`, `ExternalGroupSync`) and `Services/Sso/Ldap/`; pages: the sign-in page, **Profile → Connected accounts** and `/admin/authentication`. Nothing changes until providers are configured.
+
+### How SSO sign-in works
+
+- The sign-in page shows a **Sign in with X** button per provider. It's a plain link to `GET /account/sso/{name}`. It isn't a form post, and it isn't Blazor enhanced navigation, whose `fetch` the CSP's `connect-src` would block at the redirect. The CSP's `form-action` also lists the providers' origins.
+- The provider's handler (`Microsoft.AspNetCore.Authentication.OpenIdConnect`, or ASP.NET Core's OAuth handler for GitHub) uses the **authorization code flow with PKCE (S256)**. State and the OIDC nonce live in correlation cookies, and the ID token's signature, issuer, audience and nonce are validated. The provider redirects back to `/signin-sso/{name}`: register `https://your-site/signin-sso/{name}` as the redirect URI (`/admin/authentication` shows the exact URL). The response mode is `query`, so the SameSite=Lax correlation cookies come along.
+- `/account/sso/complete` then finds or creates the GitBench account:
+  1. an account already **linked** to this provider and subject; else
+  2. with `LinkByVerifiedEmail` (default on), an account with the **same email**. This happens only if the provider says the email is verified (`email_verified`) **and** the GitBench account's email is confirmed too (or it has no password), so nobody can register someone else's address and wait for their first SSO sign-in. Otherwise the user is told to sign in with their password and connect the provider from the profile; else
+  3. with `AutoCreateUsers` (default on), a **new account** with that verified email, a username from `preferred_username` (or the email), and **no password**.
+- An unverified email never links or creates an account. With `AllowedEmailDomains`, only verified emails in those domains get in (linking included).
+- **Locked and deactivated accounts are refused**, and Identity's usual sign-in checks apply.
+- **Two-factor:** with `TwoFactor: GitBench` (the default), users who turned on GitBench 2FA enter their code after the provider (`/account/login-2fa`). With `TwoFactor: TrustIdp`, the GitBench code is skipped when the ID token's `amr` claim shows multi-factor (`mfa`, `otp`, `hwk`, `swk`, `fpt`, …; RFC 8176).
+- **Admins and groups:**
+  - Group claim values listed in `AdminGroups` make the user a site admin. Leaving the group revokes it again, but only if that provider granted it (`User.AdminGrantedBy`), and never for the last admin.
+  - `GroupMappings` turn group claim values into GitBench group memberships with a role (the highest wins).
+  - Memberships the provider created (tracked in `ExternalGroupMemberships`) follow the claim on every sign-in: their role changes, or they're removed. Memberships added by hand are never touched. Changes record `auth.external_sync`.
+- **Connected accounts** (`/account/profile#connected-accounts`):
+  - **Connect** links another provider to the signed-in account. The link carries a 15-minute token from the page, and the callback must come back to the same user.
+  - **Disconnect** is refused if the account would be left with no password and no other login.
+- **No password:** accounts created by SSO (or LDAP) have no GitBench password, and the profile says so. Git over HTTP uses [personal access tokens](#cloning--pushing); git Basic auth with a password is refused for them.
+- **Audit events:**
+  - `auth.sso_sign_in` (provider, created, idpMfa)
+  - `auth.sso_link` (`verified_email` or `profile`) and `auth.sso_unlink`
+  - `auth.sso_failed`, with the reason: `unverified`, `domain`, `exists`, `no_account`, `locked`, `failed`, …
+  - `auth.registered` with the provider, and `auth.external_sync`
+
+  The admin user list counts `auth.sso_sign_in` as a sign-in.
+
+### Configuring providers
+
+`Authentication:Oidc:Providers` is a list. Keep client secrets out of `appsettings.json`: use `dotnet user-secrets set "Authentication:Oidc:Providers:0:ClientSecret" "…"` or `Authentication__Oidc__Providers__0__ClientSecret`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Name` | required | URL id: lowercase letters, digits, `-`. It's also the external login's provider name, so don't rename it later |
+| `Type` | `Oidc` | `Oidc`, `Google`, `Microsoft` (Entra ID) or `GitHub`. Presets fill in the authority, scopes, claim names and icon |
+| `DisplayName` | the preset's name | "Sign in with *DisplayName*" |
+| `Authority` | preset | The OIDC issuer (discovery at `/.well-known/openid-configuration`). For GitHub Enterprise Server, the server URL |
+| `TenantId` | none | Entra ID: the directory (tenant) id. Required for `Microsoft` |
+| `ApiUrl` | `https://api.github.com` | GitHub only (`{Authority}/api/v3` for Enterprise) |
+| `ClientId` / `ClientSecret` | required / none | The app registration. The secret is optional for public OIDC clients (PKCE) and required for GitHub |
+| `Scopes` | `openid email profile` | GitHub: `read:user user:email`, plus `read:org` when admin or group mappings are set |
+| `ClaimMappings` | `sub`, `preferred_username`, `email`, `email_verified`, `name`, `groups` | Claim names for `Subject`, `UserName`, `Email`, `EmailVerified`, `DisplayName`, `Groups` |
+| `AutoCreateUsers` | `true` | Create accounts on first sign-in (verified email required) |
+| `LinkByVerifiedEmail` | `true` | Link to an existing account with the same verified and confirmed email |
+| `TrustEmailVerified` | `false` | Treat the email as verified without an `email_verified` claim (e.g. your own Entra tenant) |
+| `AllowedEmailDomains` | all | e.g. `["example.com"]` |
+| `AdminGroups` | none | Group claim values that make site admins |
+| `GroupMappings` | none | `[{ "ExternalGroup": "…", "Group": "acme/platform", "Role": "Developer" }]` |
+| `TwoFactor` | `GitBench` | Or `TrustIdp` (see above) |
+| `Icon` | preset | `google`, `github`, `microsoft`, `key`, or a site image like `/img/keycloak.svg` |
+| `RequireHttpsMetadata` | `true` | Turn it off only for a local test provider over plain HTTP |
+| `UseUserInfoEndpoint` | `true` | Also read claims from the userinfo endpoint |
+| `Enabled` | `true` | Keep a provider configured but hidden |
+
+Invalid providers are skipped with a warning on `/admin/authentication`; they don't stop the app.
+
+**Google:** create an OAuth client of type *Web application*, with redirect URI `https://git.example.com/signin-sso/google`.
+
+```json
+"Authentication": { "Oidc": { "Providers": [
+  { "Name": "google", "Type": "Google", "ClientId": "1234-abc.apps.googleusercontent.com",
+    "AllowedEmailDomains": [ "example.com" ] }
+] } }
+```
+
+**GitHub:** create an OAuth App with callback `https://git.example.com/signin-sso/github`. GitHub isn't OIDC, so GitBench reads `/user` and uses the primary **verified** address from `/user/emails`. When mappings need them, it also reads orgs (`acme`) and teams (`acme/platform-devs`) as groups.
+
+```json
+{ "Name": "github", "Type": "GitHub", "ClientId": "Iv1.0123456789abcdef",
+  "AdminGroups": [ "acme/gitbench-admins" ],
+  "GroupMappings": [ { "ExternalGroup": "acme/platform-devs", "Group": "acme/platform", "Role": "Developer" } ] }
+```
+
+For GitHub Enterprise Server, add `"Authority": "https://github.example.com"`.
+
+**Microsoft Entra ID:** create an app registration with redirect URI type *Web*, `https://git.example.com/signin-sso/entra`. For group mappings, add the `groups` claim in *Token configuration*; its values are group object ids.
+
+```json
+{ "Name": "entra", "Type": "Microsoft", "TenantId": "00000000-0000-0000-0000-000000000000",
+  "ClientId": "11111111-1111-1111-1111-111111111111", "TrustEmailVerified": true, "TwoFactor": "TrustIdp",
+  "AdminGroups": [ "22222222-2222-2222-2222-222222222222" ] }
+```
+
+Entra doesn't send `email_verified`, so set `TrustEmailVerified` only for your own tenant, where you control the addresses. Multi-tenant (`common`) isn't supported, because the issuer differs per tenant.
+
+**Keycloak:** any OIDC provider works the same way. For groups, add a *Group Membership* mapper with claim name `groups` and *Full group path* off.
+
+```json
+{ "Name": "keycloak", "DisplayName": "Acme SSO", "Authority": "https://sso.example.com/realms/acme",
+  "ClientId": "gitbench", "AdminGroups": [ "gitbench-admins" ],
+  "GroupMappings": [ { "ExternalGroup": "developers", "Group": "acme", "Role": "Developer" },
+                     { "ExternalGroup": "leads", "Group": "acme", "Role": "Maintainer" } ] }
+```
+
+### LDAP / Active Directory
+
+With `Authentication:Ldap:Enabled`, the normal sign-in form also checks the directory. GitBench uses [Novell.Directory.Ldap.NETStandard](https://github.com/dsbenghe/Novell.Directory.Ldap.NETStandard) rather than `System.DirectoryServices.Protocols`. It's fully managed: no native `libldap` in the container image or on macOS, and the same TLS stack everywhere.
+
+- **Who goes to LDAP:**
+  - a login with the `ldap:` prefix
+  - a login that no local account has
+  - accounts that came from the directory
+
+  Everyone else signs in with their GitBench password as before. A directory user never takes over a local account with the same username or email: that sign-in is refused.
+- **How it signs in:**
+  1. GitBench binds as the service account (`BindDn`) and searches `UserSearchBase` with `UserFilter`. `{0}` is the login, escaped per RFC 4515: `*`, `(`, `)`, `\`, NUL and non-ASCII become `\XX`, so `*)(uid=*` can't widen the filter.
+  2. It binds as the one entry it found, with the given password. Empty passwords are refused before binding, because they'd be an "unauthenticated bind".
+  3. It creates the account (with no GitBench password) or updates its name and email. The account is linked as login provider `ldap`, with the username attribute as its key.
+  4. The sign-in goes through Identity, so lockout (5 failures) and GitBench 2FA apply.
+- **Groups:** the user's groups come from `memberOf` (AD, or OpenLDAP's memberof overlay). When `Attributes:MemberOf` is empty, they come from a search of `GroupSearchBase` with `GroupFilter`, where `{0}` is the user's DN. `AdminGroupDn` and `GroupMappings` (by group DN; case and spacing don't matter) work like the SSO ones, with source `ldap`.
+- **Git over HTTP:** directory users use personal access tokens. With `AllowGitPassword: true`, their LDAP password also works for git Basic auth. It never does for accounts with GitBench 2FA, which get the usual "use a personal access token" message. Failures count toward lockout, and `/git` is rate-limited per user (`RateLimiting:Git`).
+- **Directory sync:** with `Sync:IntervalMinutes` above 0, every directory account is re-read on that schedule; **Sync now** on `/admin/authentication` runs it at once.
+  - Names, emails, admin and groups are updated.
+  - With `Sync:DeactivateMissingUsers`, accounts the directory no longer returns are deactivated: locked, signed out and their tokens revoked (`auth.directory_user_deactivated`). Site admins are never deactivated automatically.
+  - If the directory can't be reached, the run stops and deactivates no one.
+  - Each run is recorded (`DirectorySyncRuns`, `auth.ldap_sync`).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Enabled` / `DisplayName` | `false` / `LDAP` | Turns LDAP on; the name shown on the sign-in and profile pages |
+| `Server` / `Port` | none / 389 (636 for `Ssl`) | The directory server |
+| `Security` | `StartTls` | `None`, `Ssl` (LDAPS) or `StartTls`. `IgnoreCertificateErrors` is for development only |
+| `BindDn` / `BindPassword` | anonymous | The search account. Put the password in a secret: `Authentication__Ldap__BindPassword` |
+| `UserSearchBase` / `UserFilter` | none / `(&(objectClass=person)(sAMAccountName={0}))` | Where and how to find a user |
+| `Attributes` | `sAMAccountName`, `mail`, `displayName`, `memberOf` | `UserName`, `Email`, `DisplayName`, `MemberOf` |
+| `GroupSearchBase` / `GroupFilter` | none / `(&(objectClass=groupOfNames)(member={0}))` | Group lookup without memberOf |
+| `AdminGroupDn` / `GroupMappings` | none | e.g. `[{ "GroupDn": "CN=Devs,OU=Groups,DC=corp,DC=example", "Group": "acme", "Role": "Developer" }]` |
+| `AutoCreateUsers` | `true` | Create accounts on first sign-in |
+| `AllowGitPassword` | `false` | Allow LDAP passwords for git over HTTP (not with 2FA) |
+| `Sync:IntervalMinutes` / `Sync:DeactivateMissingUsers` | `0` / `false` | Periodic sync and deactivation |
+| `TimeoutSeconds` | 10 | Connect and search timeout |
+
+**Active Directory** example:
+
+```json
+"Authentication": { "Ldap": {
+  "Enabled": true, "DisplayName": "Corp AD", "Server": "dc1.corp.example", "Security": "Ssl",
+  "BindDn": "CN=svc-gitbench,OU=Service Accounts,DC=corp,DC=example",
+  "UserSearchBase": "OU=Staff,DC=corp,DC=example",
+  "UserFilter": "(&(objectClass=user)(objectCategory=person)(sAMAccountName={0})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
+  "AdminGroupDn": "CN=GitBench Admins,OU=Groups,DC=corp,DC=example",
+  "GroupMappings": [ { "GroupDn": "CN=Developers,OU=Groups,DC=corp,DC=example", "Group": "acme", "Role": "Developer" } ],
+  "Sync": { "IntervalMinutes": 60, "DeactivateMissingUsers": true }
+} }
+```
+
+The `userAccountControl` clause leaves out disabled AD accounts, so the sync deactivates them in GitBench too. For OpenLDAP, use e.g. `"UserFilter": "(&(objectClass=inetOrgPerson)(uid={0}))"` with `"Attributes": { "UserName": "uid" }`.
+
+### `/admin/authentication`
+
+Site admins open it from the sidebar (**Authentication**). For each provider it shows:
+
+- the type, authority, client id and scopes, and whether a secret is set (never the secret itself)
+- the callback URL to register at the provider
+- the account and mapping rules, and the 2FA policy
+- any configuration errors
+
+For LDAP, it shows the server, security, service account (its password only as "set"), filters, mappings and the last sync result. **Test connection** connects, binds as the service account and runs the user filter. **Sync now** runs the directory sync.
+
+### Testing SSO and LDAP
+
+`tests/GitBench.Tests/Sso/` covers it end to end:
+
+- `MockOidcProvider` is a small OIDC provider with GitHub-style endpoints, on a real port. It has discovery, JWKS, the code flow with PKCE and nonce, RS256 ID tokens and userinfo. With no `NextUser` set, its `/authorize` shows a form, which makes it handy for manual testing too.
+- `FakeLdapClient` is an in-memory directory that really evaluates RFC 4515 filters.
+- `LdapDockerTests` (`Category=Docker`) runs `NovellLdapClient` against an `osixia/openldap` container and removes it afterwards.
 
 ## Roles & permissions
 
@@ -1026,6 +1198,8 @@ Settings come from these sources; later ones override earlier ones:
 | `Ssh:PublicHost` / `Ssh:PublicPort` | the site's host / `Ssh:Port` | Host and port shown in SSH clone URLs, e.g. `22` when the host maps port 22 to the container's 2222 |
 | `Ssh:MaxConnections` / `Ssh:AuthTimeoutSeconds` | 200 / 30 | Simultaneous SSH connections; seconds a connection may take to authenticate |
 | `Ci:*` | see [CI pipelines](#ci-pipelines) | `Enabled`, `MaxConcurrentJobs`, `JobTimeoutMinutes`, `Network`, `Memory`, `Cpus`, `PidsLimit`, `DockerExecutable`, `WorkDirectory`, `MaxLogChars` |
+| `Authentication:Oidc:Providers` | none | SSO providers (see [Configuring providers](#configuring-providers)) |
+| `Authentication:Ldap:*` | off | LDAP / Active Directory (see [LDAP / Active Directory](#ldap--active-directory)) |
 | `Webhooks:AllowPrivateNetworks` | `false` | Allow webhook targets on private networks |
 | `Audit:RetentionDays` | 365 | Audit event retention (`0` keeps them forever) |
 | `Ai:Enabled` / `Ai:Model` / `Ai:ApiKey` | `true` / `claude-opus-5-5` / none | AI features. Prefer `ANTHROPIC_API_KEY` for the key |
@@ -1051,7 +1225,7 @@ Settings come from these sources; later ones override earlier ones:
 - **Scripts** come from the site. Blazor's import map is allowed by a per-request nonce, and the app's few inline handlers (`onfocus="this.select()"` and the copy buttons) by hash.
 - **Styles** allow `'unsafe-inline'`, because components set `style` attributes (label colours, charts).
 - **`connect-src`** covers the circuit's `ws:`/`wss:` connection to the same host.
-- The policy also sets `frame-ancestors 'none'`, `form-action 'self'` and `object-src 'none'`.
+- The policy also sets `frame-ancestors 'none'`, `form-action 'self'` (plus the origins of configured SSO providers) and `object-src 'none'`.
 - Responses with their own CSP (attachments, release assets) keep theirs.
 - New inline `<script>` blocks or `on…=""` attributes will be blocked. Put the code in a `.js` file in `wwwroot/js`, or add the handler string to `Security:CspInlineHandlers`.
 
