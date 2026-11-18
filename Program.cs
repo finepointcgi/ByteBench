@@ -2,6 +2,7 @@ using GitBench.Components;
 using GitBench.Data;
 using GitBench.Services;
 using GitBench.Services.Git;
+using GitBench.Services.Ai;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -42,6 +43,8 @@ builder.Services.ConfigureApplicationCookie(o =>
 builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddSingleton<RepoStorage>();
+builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
+builder.Services.AddSingleton<AiClient>();
 builder.Services.AddScoped<RepositoryService>();
 builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();

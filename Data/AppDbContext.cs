@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<Activity> Activities => Set<Activity>();
     public DbSet<Repository> Repositories => Set<Repository>();
+    public DbSet<AiUsage> AiUsages => Set<AiUsage>();
     public DbSet<PullRequest> PullRequests => Set<PullRequest>();
     public DbSet<PullRequestComment> PullRequestComments => Set<PullRequestComment>();
     public DbSet<PullRequestReview> PullRequestReviews => Set<PullRequestReview>();

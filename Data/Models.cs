@@ -203,3 +203,18 @@ public class PullRequestActivity
     public string Text { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+/// <summary>One Claude API call, for cost reporting. Written by <see cref="GitBench.Services.Ai.AiClient"/>.</summary>
+public class AiUsage
+{
+    public int Id { get; set; }
+    [MaxLength(60)] public string Feature { get; set; } = "";
+    [MaxLength(60)] public string Model { get; set; } = "";
+    public int? UserId { get; set; }
+    public int? ProjectId { get; set; }
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public long CacheReadTokens { get; set; }
+    public long CacheWriteTokens { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
