@@ -122,6 +122,7 @@ builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
 builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
 builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
 builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, estimates, Workbench link
+GitBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder.Services, builder.Configuration); // web editor + AI assistant
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

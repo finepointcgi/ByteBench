@@ -1,0 +1,348 @@
+@* The web editor's AI assistant, docked on the right (WebEditor.razor). Runs requests through EditorAiService (API or
+   Claude Code backend), streams the reply, lists tool calls, and shows proposed edits with Diff / Accept / Reject.
+   Accepted edits become working changes in the workspace; nothing is committed. *@
+@using GitBench.Services.Editor
+@using GitBench.Services.Editor.Ai
+@using System.Text
+@using System.Text.RegularExpressions
+@implements IDisposable
+@inject EditorAiService Ai
+@inject ISnackbar Snackbar
+
+<div class="we-chat">
+    <div class="we-chat-head">
+        <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small" />
+        <b>Assistant</b>
+        @if (Status is { Enabled: true })
+        {
+            <span class="we-chat-backend" title="Backend (Ai:Editor:Backend)">@Status.BackendName</span>
+        }
+        <span class="flex-grow-1"></span>
+        @if (entries.Count > 0 && !running)
+        {
+            <MudTooltip Text="New conversation">
+                <MudIconButton Icon="@Icons.Material.Outlined.DeleteSweep" Size="Size.Small" aria-label="New conversation" OnClick="Clear" />
+            </MudTooltip>
+        }
+        <MudTooltip Text="Close the assistant">
+            <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" aria-label="Close the assistant" OnClick="OnClose" />
+        </MudTooltip>
+    </div>
+
+    @if (Status is not { Enabled: true })
+    {
+        <div class="we-chat-off">
+            <MudAlert Severity="Severity.Info" Dense="true">@(Status?.DisabledReason ?? "Checking the AI setup…")</MudAlert>
+            @if (Status?.DisabledReason?.StartsWith("AI isn't set up") == true)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                    An administrator can set <code>ANTHROPIC_API_KEY</code> (or <code>Ai:ApiKey</code>), or install Claude Code on the
+                    server and set <code>Ai:Editor:Backend</code>. See README → “Web editor &amp; AI assistant”.
+                </MudText>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="we-chat-log" @ref="logRef">
+            @if (entries.Count == 0)
+            {
+                <div class="we-chat-empty">
+                    Ask about this repository, or select code and use <b>AI actions</b> (explain, refactor, add comments, write tests, fix).
+                    Type <code>@@path</code> to attach a file. Proposed edits wait for you to accept them.
+                    @if (!CanEdit) { <div class="mt-2">You can chat here, but you can't apply edits in this repository.</div> }
+                </div>
+            }
+            @foreach (var e in entries)
+            {
+                <div class="we-msg @(e.FromUser ? "we-msg-user" : "we-msg-ai")">
+                    @if (e.FromUser)
+                    {
+                        <div class="we-msg-text">@e.Text</div>
+                        @if (e.Attachments.Count > 0 || e.Context != null)
+                        {
+                            <div class="we-msg-ctx">
+                                @if (e.Context != null) { <span>@e.Context</span> }
+                                @foreach (var a in e.Attachments) { <span class="mono">@@@a</span> }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        @foreach (var t in e.Tools)
+                        {
+                            <div class="we-tool"><MudIcon Icon="@Icons.Material.Outlined.Build" Style="font-size:13px" /> @t</div>
+                        }
+                        @if (e.Text.Length > 0) { <div class="markdown we-msg-md">@Display.Markdown(e.Text.ToString())</div> }
+                        @if (e.Running && e.Text.Length == 0) { <div class="we-tool"><MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:12px;height:12px" /> Thinking…</div> }
+                        @foreach (var p in e.Proposals)
+                        {
+                            <div class="we-proposal we-proposal-@p.State.ToString().ToLowerInvariant()">
+                                <div class="we-proposal-head">
+                                    <span class="we-kind we-kind-@p.Kind.ToString().ToLowerInvariant()">@KindLabel(p.Kind)</span>
+                                    <button type="button" class="mono we-proposal-path we-linkbtn" @onclick="() => OnShowDiff.InvokeAsync(p)">@p.Path</button>
+                                </div>
+                                @if (!string.IsNullOrEmpty(p.Summary)) { <div class="we-proposal-summary">@p.Summary</div> }
+                                <div class="we-proposal-actions">
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Difference" OnClick="() => OnShowDiff.InvokeAsync(p)">Diff</MudButton>
+                                    @if (p.State == ProposalState.Pending)
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@(!CanEdit || busy)" OnClick="() => Accept(p)">Accept</MudButton>
+                                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="@busy" OnClick="() => Reject(p)">Reject</MudButton>
+                                    }
+                                    else
+                                    {
+                                        <span class="we-proposal-state">@(p.State == ProposalState.Accepted ? "Accepted" : "Rejected")</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        @if (e.Error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-1">@e.Error</MudAlert> }
+                        @if (e.Note != null) { <div class="we-note">@e.Note</div> }
+                    }
+                </div>
+            }
+            @if (entries.Any(x => x.Proposals.Count(p => p.State == ProposalState.Pending) > 1) && CanEdit && !running)
+            {
+                <div class="d-flex gap-2 justify-end">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Disabled="@busy" OnClick="AcceptAll">Accept all</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@busy" OnClick="RejectAll">Reject all</MudButton>
+                </div>
+            }
+        </div>
+
+        <div class="we-chat-input">
+            @if (attachments.Count > 0)
+            {
+                <div class="we-attachments">
+                    @foreach (var a in attachments)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" OnClose="() => attachments.Remove(a)" Class="ma-0 mono">@a</MudChip>
+                    }
+                </div>
+            }
+            <MudTextField T="string" @bind-Value="input" Immediate="true" Lines="3" Sizing="InputSizing.Auto" MaxLines="10" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Placeholder="@InputPlaceholder" OnKeyDown="KeyDown" Disabled="@running"
+                          aria-label="Message to the assistant" @ref="inputRef" />
+            <div class="d-flex align-center gap-1 mt-1">
+                <MudTooltip Text="Attach a file">
+                    <MudIconButton Icon="@Icons.Material.Outlined.AttachFile" Size="Size.Small" aria-label="Attach a file" OnClick="OnAttachRequest" Disabled="@running" />
+                </MudTooltip>
+                <MudCheckBox T="bool" @bind-Value="includeContext" Size="Size.Small" Dense="true" Label="Open file & selection" />
+                <span class="flex-grow-1"></span>
+                @if (running)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Stop" OnClick="Stop">Stop</MudButton>
+                }
+                else
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" EndIcon="@Icons.Material.Outlined.Send"
+                               Disabled="@string.IsNullOrWhiteSpace(input)" OnClick="SendInput">Send</MudButton>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int WorkspaceId { get; set; }
+    [Parameter, EditorRequired] public int UserId { get; set; }
+    [Parameter] public EditorAiStatus? Status { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>The open file and the selection, read from Monaco when a request is sent.</summary>
+    [Parameter] public Func<Task<(string? Path, string? Selection, int? Start, int? End)>>? GetContext { get; set; }
+    /// <summary>Workspace file paths, to resolve @path mentions.</summary>
+    [Parameter] public Func<Task<IReadOnlyCollection<string>>>? GetFiles { get; set; }
+    [Parameter] public EventCallback<ProposedEdit> OnShowDiff { get; set; }
+    [Parameter] public EventCallback<ProposedEdit> OnAccepted { get; set; }
+    [Parameter] public EventCallback OnAttachRequest { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private sealed class Entry
+    {
+        public bool FromUser;
+        public StringBuilder Text = new();
+        public List<string> Tools = [];
+        public List<ProposedEdit> Proposals = [];
+        public List<string> Attachments = [];
+        public string? Context, Error, Note;
+        public bool Running;
+    }
+
+    private readonly List<Entry> entries = [];
+    private readonly List<string> attachments = [];
+    private string? input;
+    private bool includeContext = true, running, busy;
+    private CancellationTokenSource? cts;
+    private ElementReference logRef;
+    private MudTextField<string>? inputRef;
+
+    public bool IsRunning => running;
+
+    private const string InputPlaceholder = "Ask Claude… (@path attaches a file, Ctrl+Enter sends)";
+
+    public void Attach(string path)
+    {
+        if (!attachments.Contains(path)) attachments.Add(path);
+        StateHasChanged();
+    }
+
+    public async Task FocusAsync()
+    {
+        if (inputRef != null) await inputRef.FocusAsync();
+    }
+
+    private async Task KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey)) await SendInput();
+    }
+
+    private async Task SendInput()
+    {
+        var text = input?.Trim();
+        if (string.IsNullOrEmpty(text) || running) return;
+        input = "";
+        // @path mentions attach files that exist in the workspace.
+        if (GetFiles != null && text.Contains('@'))
+        {
+            var files = await GetFiles();
+            foreach (Match m in Regex.Matches(text, @"(?<![\w@])@([\w./-]+[\w])"))
+                if (files.Contains(m.Groups[1].Value) && !attachments.Contains(m.Groups[1].Value)) attachments.Add(m.Groups[1].Value);
+        }
+        await SendAsync(text, "editor.chat", includeContext);
+    }
+
+    /// <summary>Sends a request (from the input box or an inline action).</summary>
+    public async Task SendAsync(string message, string feature, bool withContext, string? displayText = null)
+    {
+        if (running || Status is not { Enabled: true }) return;
+        (string? Path, string? Selection, int? Start, int? End) ctx = default;
+        if (withContext && GetContext != null) ctx = await GetContext();
+        var history = entries.Where(e => !e.Running && e.Error == null && e.Text.Length > 0)
+            .Select(e => new EditorChatMessage(e.FromUser, e.Text.ToString())).ToList();
+        var user = new Entry { FromUser = true, Attachments = attachments.ToList() };
+        user.Text.Append(displayText ?? message);
+        if (ctx.Path != null)
+            user.Context = ctx.Selection != null ? $"{ctx.Path}, lines {ctx.Start}-{ctx.End}" : ctx.Path;
+        var reply = new Entry { Running = true };
+        entries.Add(user);
+        entries.Add(reply);
+        attachments.Clear();
+        running = true;
+        cts = new CancellationTokenSource();
+        StateHasChanged();
+
+        var sink = new Sink(this, reply);
+        try
+        {
+            var result = await Ai.RunAsync(WorkspaceId, UserId, new EditorAiInput(message)
+            {
+                Feature = feature,
+                OpenFile = ctx.Path,
+                Selection = ctx.Selection,
+                SelectionStartLine = ctx.Start,
+                SelectionEndLine = ctx.End,
+                AttachedFiles = user.Attachments,
+                History = history,
+            }, sink, cts.Token);
+            reply.Error = result.Error;
+            reply.Note = result.StopNote;
+            // The final list is authoritative (a later proposal for a file replaces an earlier one).
+            reply.Proposals = result.Proposals.ToList();
+            if (reply.Text.Length == 0 && result.Text.Length > 0) reply.Text.Append(result.Text);
+        }
+        catch (OperationCanceledException)
+        {
+            reply.Note = "Stopped.";
+        }
+        catch (Exception ex)
+        {
+            reply.Error = ex.Message;
+        }
+        finally
+        {
+            reply.Running = false;
+            running = false;
+            cts?.Dispose();
+            cts = null;
+        }
+        StateHasChanged();
+    }
+
+    private void Stop() => cts?.Cancel();
+
+    private void Clear()
+    {
+        entries.Clear();
+        StateHasChanged();
+    }
+
+    private async Task Accept(ProposedEdit p)
+    {
+        busy = true;
+        try
+        {
+            await Ai.AcceptAsync(WorkspaceId, UserId, p);
+            await OnAccepted.InvokeAsync(p);
+            Snackbar.Add($"Applied the change to {p.Path} (not committed yet).", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+
+    private void Reject(ProposedEdit p) => EditorAiService.Reject(p);
+
+    private async Task AcceptAll()
+    {
+        foreach (var p in entries.SelectMany(e => e.Proposals).Where(p => p.State == ProposalState.Pending).ToList()) await Accept(p);
+    }
+
+    private void RejectAll()
+    {
+        foreach (var p in entries.SelectMany(e => e.Proposals)) EditorAiService.Reject(p);
+    }
+
+    private static string KindLabel(ProposedEditKind k) => k switch
+    {
+        ProposedEditKind.Create => "New",
+        ProposedEditKind.Delete => "Delete",
+        _ => "Edit",
+    };
+
+    public void Dispose() => cts?.Cancel();
+
+    /// <summary>Streams a run into an entry, re-rendering at most every 80 ms.</summary>
+    private sealed class Sink(EditorChatPanel panel, Entry entry) : IEditorAiSink
+    {
+        private DateTime lastRender = DateTime.MinValue;
+
+        public Task TextAsync(string delta)
+        {
+            lock (entry) entry.Text.Append(delta);
+            return RenderAsync(false);
+        }
+
+        public Task ToolAsync(string tool, string detail)
+        {
+            lock (entry) entry.Tools.Add(detail);
+            return RenderAsync(true);
+        }
+
+        public Task ProposalAsync(ProposedEdit edit)
+        {
+            lock (entry)
+            {
+                entry.Proposals.RemoveAll(p => p.Path == edit.Path && p.State == ProposalState.Pending);
+                entry.Proposals.Add(edit);
+            }
+            return RenderAsync(true);
+        }
+
+        private Task RenderAsync(bool now)
+        {
+            if (!now && DateTime.UtcNow - lastRender < TimeSpan.FromMilliseconds(80)) return Task.CompletedTask;
+            lastRender = DateTime.UtcNow;
+            return panel.InvokeAsync(panel.StateHasChanged);
+        }
+    }
+}

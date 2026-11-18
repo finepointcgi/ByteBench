@@ -986,6 +986,79 @@ namespace GitBench.Data.Migrations
                     b.ToTable("DirectorySyncRuns");
                 });
 
+            modelBuilder.Entity("GitBench.Data.EditorWorkspace", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BaseSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("UserId", "RepositoryId", "Branch")
+                        .IsUnique();
+
+                    b.ToTable("EditorWorkspaces");
+                });
+
+            modelBuilder.Entity("GitBench.Data.EditorWorkspaceChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OriginalPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("EditorWorkspaceChanges");
+                });
+
             modelBuilder.Entity("GitBench.Data.ExternalGroupMembership", b =>
                 {
                     b.Property<int>("Id")
@@ -1958,6 +2031,22 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("ProjectComponents");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ProjectEditorSettings", b =>
+                {
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AiEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ProjectId");
+
+                    b.ToTable("ProjectEditorSettings");
                 });
 
             modelBuilder.Entity("GitBench.Data.ProjectMember", b =>
@@ -3750,6 +3839,34 @@ namespace GitBench.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GitBench.Data.EditorWorkspace", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GitBench.Data.EditorWorkspaceChange", b =>
+                {
+                    b.HasOne("GitBench.Data.EditorWorkspace", null)
+                        .WithMany("Changes")
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.ExternalGroupMembership", b =>
                 {
                     b.HasOne("GitBench.Data.Group", null)
@@ -4136,6 +4253,15 @@ namespace GitBench.Data.Migrations
                     b.Navigation("DefaultAssignee");
 
                     b.Navigation("Lead");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ProjectEditorSettings", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GitBench.Data.ProjectMember", b =>
@@ -4724,6 +4850,11 @@ namespace GitBench.Data.Migrations
             modelBuilder.Entity("GitBench.Data.Dashboard", b =>
                 {
                     b.Navigation("Gadgets");
+                });
+
+            modelBuilder.Entity("GitBench.Data.EditorWorkspace", b =>
+                {
+                    b.Navigation("Changes");
                 });
 
             modelBuilder.Entity("GitBench.Data.Group", b =>

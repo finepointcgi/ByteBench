@@ -1,0 +1,103 @@
+@page "/admin/ai"
+@using GitBench.Services.Ai
+@using GitBench.Services.Editor.Ai
+@using Microsoft.Extensions.Options
+@inject CurrentUser Me
+@inject ProjectAccess Access
+@inject AiClient AiApi
+@inject ClaudeCodeDetector ClaudeCode
+@inject EditorAiService EditorAi
+@inject IOptions<EditorAiOptions> EditorOptions
+@inject IOptions<ClaudeCodeOptions> ClaudeOptions
+@inject ISnackbar Snackbar
+
+@* Read-only status of the AI backends: the Anthropic API (AiClient) and Claude Code on the server (web editor). *@
+
+<PageTitle>AI · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can see the AI configuration." />
+}
+else
+{
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">AI</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            What GitBench's AI features run on (read-only: change <code>Ai:*</code> in the configuration and restart).
+        </MudText>
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Anthropic API</MudText>
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>Status</td><td>@(AiApi.IsConfigured ? "Configured" : "Not set up (no ANTHROPIC_API_KEY / Ai:ApiKey, or Ai:Enabled is false)")</td></tr>
+                <tr><td>Model</td><td class="mono">@AiApi.Model</td></tr>
+                <tr><td>Used by</td><td>Issue AI, AI code review, the web editor's API backend and ghost-text completions</td></tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2">Claude Code on the server</MudText>
+            <span class="flex-grow-1"></span>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Refresh" Disabled="@busy" OnClick="Recheck">Check again</MudButton>
+        </div>
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>Status</td><td>@(status == null ? "Checking…" : status.Installed ? "Installed" : "Not found")</td></tr>
+                @if (status?.Version != null) { <tr><td>Version</td><td class="mono">@status.Version</td></tr> }
+                <tr><td>Executable</td><td class="mono">@(status?.ExecutablePath ?? ClaudeOptions.Value.Path)</td></tr>
+                @if (status?.Error != null) { <tr><td>Problem</td><td>@status.Error</td></tr> }
+                @if (status != null) { <tr><td>Checked</td><td>@status.CheckedAt.ToLocalTime().ToString("g")</td></tr> }
+                <tr><td>Limits</td><td>@ClaudeOptions.Value.MaxConcurrent at once · @ClaudeOptions.Value.TimeoutSeconds s timeout · @ClaudeOptions.Value.MaxTurns turns</td></tr>
+                <tr><td>Model</td><td class="mono">@(ClaudeOptions.Value.Model ?? "Claude Code's default")</td></tr>
+            </tbody>
+        </MudSimpleTable>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+            Claude Code runs as the server's account and uses that account's Claude Code login or subscription. GitBench only runs
+            <code>claude --version</code> and <code>claude --help</code> here; editor requests run <code>claude -p</code> with read/edit tools only.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Web editor</MudText>
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>Backend setting</td><td class="mono">Ai:Editor:Backend = @EditorOptions.Value.Backend</td></tr>
+                <tr><td>In use</td><td>@(backend?.DisplayName ?? "None: the editor shows “AI isn't set up”")</td></tr>
+                <tr><td>Inline completions</td><td>@(backend?.Kind == EditorAiBackendKind.Api ? "Available (off by default, per user)" : "Only with the API backend")</td></tr>
+                <tr><td>Limits</td><td>@EditorOptions.Value.MaxToolCalls tool calls and @EditorOptions.Value.MaxOutputTokensPerRequest.ToString("N0") output tokens per request (API) · @EditorOptions.Value.RequestsPerMinute requests and @EditorOptions.Value.CompletionsPerMinute completions per user per minute</td></tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    private ClaudeCodeStatus? status;
+    private IEditorAiBackend? backend;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin != true) return;
+        status = await ClaudeCode.GetAsync();
+        backend = await EditorAi.SelectBackendAsync();
+    }
+
+    private async Task Recheck()
+    {
+        if (!(await Access.ResolveUserIdAsync() is { } me && await Access.IsAdminAsync(me))) return;
+        busy = true;
+        try
+        {
+            status = await ClaudeCode.GetAsync(refresh: true);
+            backend = await EditorAi.SelectBackendAsync();
+            Snackbar.Add(status.Installed ? $"Claude Code {status.Version} found." : "Claude Code wasn't found.", status.Installed ? Severity.Success : Severity.Warning);
+        }
+        finally { busy = false; }
+    }
+}

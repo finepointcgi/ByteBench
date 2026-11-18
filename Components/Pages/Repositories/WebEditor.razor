@@ -1,0 +1,1151 @@
+@page "/p/{Key}/repos/{Slug}/edit/{Branch}"
+@page "/p/{Key}/repos/{Slug}/edit/{Branch}/{*FilePath}"
+@inherits RepoPageBase
+@using GitBench.Services.Editor
+@using GitBench.Services.Editor.Ai
+@implements IAsyncDisposable
+@inject EditorWorkspaceService Workspace
+@inject EditorAiService Ai
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+@* The web editor: a VS Code-like Monaco editor on one branch, with working changes held in the user's workspace
+   (Services/Editor), Source Control to commit them, and the AI assistant (EditorChatPanel). *@
+
+<PageTitle>@(activeTab?.Title ?? "Editor") · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (loadError != null)
+{
+    <MudAlert Severity="Severity.Error" Class="ma-4">@loadError</MudAlert>
+    @if (Repo != null) { <MudButton Href="@RepoUrls.Source(Repo)" Variant="Variant.Text" Class="ml-4">Back to the repository</MudButton> }
+}
+else if (Repo != null && ctx != null)
+{
+<div class="web-editor">
+    <div class="we-top">
+        <a class="we-repo" href="@RepoUrls.Source(Repo, ctx.Branch)" title="Back to the repository">
+            <MudIcon Icon="@Icons.Material.Outlined.ArrowBack" Style="font-size:16px" />
+            <span>@Repo.Project.Key / @Repo.Slug</span>
+        </a>
+        <span class="we-branch mono" title="Branch"><MudIcon Icon="@Icons.Material.Outlined.CallSplit" Style="font-size:14px" /> @ctx.Branch</span>
+        @if (!ctx.CanEdit) { <span class="we-flag we-flag-ro" title="@ctx.ReadOnlyReason">Read-only</span> }
+        else if (ctx.ProtectionNote != null) { <span class="we-flag we-flag-protected" title="@ctx.ProtectionNote">Protected: commit to a new branch</span> }
+        @if (status is { BranchMoved: true }) { <span class="we-flag we-flag-moved" title="The branch has new commits since you started editing">Branch moved</span> }
+        <span class="flex-grow-1"></span>
+        <MudTooltip Text="Command palette (Ctrl/Cmd+Shift+P)">
+            <MudIconButton Icon="@Icons.Material.Outlined.Terminal" Size="Size.Small" aria-label="Command palette" OnClick="() => OpenPalette(PaletteMode.Commands)" />
+        </MudTooltip>
+        <MudTooltip Text="Go to file (Ctrl/Cmd+P)">
+            <MudIconButton Icon="@Icons.Material.Outlined.FindInPage" Size="Size.Small" aria-label="Go to file" OnClick="() => OpenPalette(PaletteMode.Files)" />
+        </MudTooltip>
+        <MudButton Size="Size.Small" Variant="@(chatOpen ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.AutoAwesome"
+                   OnClick="ToggleChat" Class="ml-1">Assistant</MudButton>
+    </div>
+
+    <div class="we-main">
+        <nav class="we-activity" aria-label="Editor views">
+            <button type="button" class="@ActivityClass("explorer")" title="Explorer" aria-label="Explorer" @onclick="@(() => SetActivity("explorer"))">
+                <MudIcon Icon="@Icons.Material.Outlined.FileCopy" />
+            </button>
+            <button type="button" class="@ActivityClass("search")" title="Find in files (Ctrl/Cmd+Shift+F)" aria-label="Find in files" @onclick="@(() => SetActivity("search"))">
+                <MudIcon Icon="@Icons.Material.Outlined.Search" />
+            </button>
+            <button type="button" class="@ActivityClass("scm")" title="Source control" aria-label="Source control" @onclick="@(() => SetActivity("scm"))">
+                <MudIcon Icon="@Icons.Material.Outlined.AccountTree" />
+                @if (changes.Count > 0) { <span class="we-badge">@changes.Count</span> }
+            </button>
+        </nav>
+
+        <aside class="we-side">
+            @if (activity == "explorer")
+            {
+                <div class="we-side-head">
+                    <span>Explorer</span>
+                    <span class="flex-grow-1"></span>
+                    @if (ctx.CanEdit)
+                    {
+                        <MudTooltip Text="New file"><MudIconButton Icon="@Icons.Material.Outlined.NoteAdd" Size="Size.Small" aria-label="New file" OnClick="() => NewFile(null)" /></MudTooltip>
+                    }
+                    <MudTooltip Text="Refresh"><MudIconButton Icon="@Icons.Material.Outlined.Refresh" Size="Size.Small" aria-label="Refresh" OnClick="RefreshAll" /></MudTooltip>
+                </div>
+                <div class="we-tree" role="tree">
+                    @foreach (var (e, depth) in VisibleRows())
+                    {
+                        <div class="we-row @(e.Path == activeTab?.Path && activeTab?.Kind == TabKind.File ? "active" : "") we-st-@e.Status.ToString().ToLowerInvariant()"
+                             style="padding-left:@(8 + depth * 14)px" role="treeitem" @key="e.Path">
+                            <button type="button" class="we-row-main" @onclick="() => RowClick(e)" title="@e.Path">
+                                @if (e.IsDirectory)
+                                {
+                                    <MudIcon Icon="@(expanded.Contains(e.Path) ? Icons.Material.Outlined.ExpandMore : Icons.Material.Outlined.ChevronRight)" Style="font-size:16px" />
+                                    <MudIcon Icon="@Icons.Material.Outlined.Folder" Style="font-size:15px" Class="we-folder" />
+                                }
+                                else
+                                {
+                                    <span style="width:16px;display:inline-block"></span>
+                                    <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Style="font-size:14px" Class="we-file" />
+                                }
+                                <span class="we-row-name">@e.Name</span>
+                                @if (!e.IsDirectory && e.Status != EditorFileStatus.Unchanged) { <span class="we-st-letter">@StatusLetter(e.Status)</span> }
+                            </button>
+                            @if (ctx.CanEdit)
+                            {
+                                <MudMenu Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Small" Dense="true" Class="we-row-menu" aria-label="@($"Actions for {e.Name}")"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                                    @if (e.IsDirectory)
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.NoteAdd" OnClick="() => NewFile(e.Path)">New file here</MudMenuItem>
+                                    }
+                                    else
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.DriveFileRenameOutline" OnClick="() => RenameFile(e.Path)">Rename / move</MudMenuItem>
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.Delete" OnClick="() => DeleteFile(e.Path)">Delete</MudMenuItem>
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.AttachFile" OnClick="() => AttachToChat(e.Path)">Attach to assistant</MudMenuItem>
+                                    }
+                                </MudMenu>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else if (activity == "search")
+            {
+                <div class="we-side-head"><span>Find in files</span></div>
+                <div class="pa-2">
+                    <MudTextField T="string" @bind-Value="searchQuery" Immediate="true" Placeholder="Search" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  OnKeyDown="SearchKey" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Outlined.Search" OnAdornmentClick="RunSearch"
+                                  aria-label="Search text" @ref="searchRef" />
+                    <div class="d-flex gap-2">
+                        <MudCheckBox T="bool" @bind-Value="searchRegex" Size="Size.Small" Dense="true" Label="Regex" />
+                        <MudCheckBox T="bool" @bind-Value="searchCase" Size="Size.Small" Dense="true" Label="Match case" />
+                    </div>
+                    @if (searchError != null) { <MudAlert Severity="Severity.Warning" Dense="true">@searchError</MudAlert> }
+                    @if (searching) { <MudProgressLinear Indeterminate="true" Color="Color.Primary" /> }
+                </div>
+                <div class="we-search-results">
+                    @foreach (var g in searchHits.GroupBy(h => h.Path))
+                    {
+                        <div class="we-search-file mono">@g.Key <span class="muted">(@g.Count())</span></div>
+                        @foreach (var h in g)
+                        {
+                            <button type="button" class="we-search-hit" @onclick="() => OpenFile(h.Path, h.Line)">
+                                <span class="we-search-line">@h.Line</span><span class="mono">@h.Text.Trim()</span>
+                            </button>
+                        }
+                    }
+                    @if (searched && searchHits.Count == 0 && searchError == null && !searching) { <div class="pa-3 muted small">No results.</div> }
+                </div>
+            }
+            else
+            {
+                <div class="we-side-head">
+                    <span>Source control</span>
+                    <span class="flex-grow-1"></span>
+                    <MudTooltip Text="Refresh"><MudIconButton Icon="@Icons.Material.Outlined.Refresh" Size="Size.Small" aria-label="Refresh" OnClick="RefreshChanges" /></MudTooltip>
+                </div>
+                <div class="pa-2 we-scm">
+                    @if (!ctx.CanEdit)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">@ctx.ReadOnlyReason</MudAlert>
+                    }
+                    else
+                    {
+                        @if (status is { BranchMissing: true })
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">The branch <b>@ctx.Branch</b> was deleted. Commit your changes to a new branch.</MudAlert>
+                        }
+                        else if (status is { BranchMoved: true })
+                        {
+                            <MudAlert Severity="@(status.NeedsRebase ? Severity.Warning : Severity.Info)" Dense="true" Class="mb-2">
+                                <b>@ctx.Branch</b> has new commits since you started.
+                                @if (status.NeedsRebase)
+                                {
+                                    <span> They change files you edited (@string.Join(", ", status.Overlapping)): update your workspace before committing.</span>
+                                }
+                                else
+                                {
+                                    <span> They don't touch your files, so you can still commit.</span>
+                                }
+                            </MudAlert>
+                            @if (status.Conflicts.Count > 0)
+                            {
+                                <div class="we-conflicts mb-2">
+                                    <div class="small mb-1"><b>Conflicts</b>: both you and the branch changed the same lines. Choose per file:</div>
+                                    @foreach (var c in status.Conflicts)
+                                    {
+                                        <div class="we-conflict">
+                                            <button type="button" class="we-linkbtn mono" @onclick="() => ShowConflictDiff(c)" title="Compare with the branch">@c</button>
+                                            <MudSelect T="ConflictResolution?" Value="@Resolution(c)" ValueChanged="@(v => SetResolution(c, v))" Dense="true" Margin="Margin.Dense"
+                                                       Variant="Variant.Outlined" Placeholder="Choose…" aria-label="@($"Resolve {c}")">
+                                                <MudSelectItem T="ConflictResolution?" Value="@((ConflictResolution?)ConflictResolution.KeepMine)">Keep mine</MudSelectItem>
+                                                <MudSelectItem T="ConflictResolution?" Value="@((ConflictResolution?)ConflictResolution.TakeTheirs)">Take theirs (drop mine)</MudSelectItem>
+                                            </MudSelect>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Outlined.Sync" Class="mb-3"
+                                       Disabled="@(busy || status.Conflicts.Any(c => Resolution(c) == null))" OnClick="Rebase">Update workspace (rebase)</MudButton>
+                        }
+                        <MudTextField T="string" @bind-Value="commitMessage" Immediate="true" Lines="2" Sizing="InputSizing.Auto" MaxLines="8" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Placeholder="Commit message" aria-label="Commit message" OnKeyDown="CommitKey" />
+                        <MudStack Spacing="1" Class="mt-2">
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" StartIcon="@Icons.Material.Outlined.Check"
+                                       Disabled="@(busy || changes.Count == 0 || !ctx.CanCommitToBranch || string.IsNullOrWhiteSpace(commitMessage) || status is { NeedsRebase: true } || status is { BranchMissing: true })"
+                                       OnClick="Commit">Commit to @ctx.Branch</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true" StartIcon="@Icons.Material.Outlined.MergeType"
+                                       Disabled="@(busy || changes.Count == 0 || string.IsNullOrWhiteSpace(commitMessage))" OnClick="CommitToNewBranch">
+                                Commit to new branch@(ctx.CanCreatePullRequest ? " & open PR" : "")…
+                            </MudButton>
+                        </MudStack>
+                        @if (ctx.ProtectionNote != null) { <div class="small muted mt-2">@ctx.ProtectionNote</div> }
+                    }
+                </div>
+                <div class="we-side-sub">
+                    <span>Changes</span><span class="flex-grow-1"></span>
+                    @if (changes.Count > 0 && ctx.CanEdit)
+                    {
+                        <MudTooltip Text="Discard all changes"><MudIconButton Icon="@Icons.Material.Outlined.Undo" Size="Size.Small" aria-label="Discard all changes" OnClick="DiscardAll" /></MudTooltip>
+                    }
+                </div>
+                <div class="we-changes">
+                    @if (changes.Count == 0) { <div class="pa-3 muted small">No changes. Edits are saved here automatically and stay until you commit or discard them.</div> }
+                    @foreach (var c in changes)
+                    {
+                        <div class="we-change @(activeTab?.Kind == TabKind.ChangeDiff && activeTab.Path == c.Path ? "active" : "")" @key="c.Path">
+                            <button type="button" class="we-row-main" @onclick="() => ShowChangeDiff(c)" title="@ChangeTitle(c)">
+                                <span class="we-st-letter we-st-@KindStatus(c.Kind).ToString().ToLowerInvariant()">@StatusLetter(KindStatus(c.Kind))</span>
+                                <span class="we-row-name">@EditorPaths.Name(c.Path)</span>
+                                <span class="we-change-dir muted">@(c.OriginalPath != null ? $"← {c.OriginalPath}" : EditorPaths.Directory(c.Path))</span>
+                            </button>
+                            @if (c.Kind != EditorChangeKind.Deleted)
+                            {
+                                <MudTooltip Text="Open file"><MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" aria-label="Open file" OnClick="() => OpenFile(c.Path)" /></MudTooltip>
+                            }
+                            @if (ctx.CanEdit)
+                            {
+                                <MudTooltip Text="Discard changes"><MudIconButton Icon="@Icons.Material.Outlined.Undo" Size="Size.Small" aria-label="@($"Discard changes to {c.Path}")" OnClick="() => Discard(c)" /></MudTooltip>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </aside>
+
+        <section class="we-center">
+            <div class="we-tabs" role="tablist">
+                @foreach (var t in tabs)
+                {
+                    <div class="we-tab @(t == activeTab ? "active" : "")" role="tab" aria-selected="@(t == activeTab)" @key="t.Id">
+                        <button type="button" class="we-tab-main" @onclick="() => ActivateTab(t)" title="@t.Path">
+                            @if (t.Kind != TabKind.File) { <MudIcon Icon="@Icons.Material.Outlined.Difference" Style="font-size:13px" /> }
+                            <span>@t.Title</span>
+                        </button>
+                        @if (t.Dirty) { <span class="we-dirty" title="Saving…">●</span> }
+                        <button type="button" class="we-tab-close" aria-label="@($"Close {t.Title}")" @onclick="() => CloseTab(t)">×</button>
+                    </div>
+                }
+                <span class="flex-grow-1"></span>
+                @if (aiStatus is { Enabled: true } && activeTab?.Kind == TabKind.File && activeTab.Editable)
+                {
+                    <MudMenu Label="AI actions" StartIcon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small" Variant="Variant.Text" Dense="true" Class="we-ai-menu"
+                             AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                        <MudMenuItem OnClick="@(() => InlineAction("explain"))">Explain</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => InlineAction("refactor"))">Refactor…</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => InlineAction("comments"))">Add comments</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => InlineAction("tests"))">Write tests</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => InlineAction("fix"))">Fix</MudMenuItem>
+                    </MudMenu>
+                }
+            </div>
+            @if (activeTab?.Kind == TabKind.Proposal && activeTab.Proposal is { } proposal)
+            {
+                <div class="we-diff-head">
+                    <span>Proposed by the assistant: <b class="mono">@proposal.Path</b> (@proposal.Kind.ToString().ToLowerInvariant())</span>
+                    <span class="flex-grow-1"></span>
+                    @if (proposal.State == ProposalState.Pending && ctx.CanEdit)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@busy" OnClick="() => AcceptFromDiff(proposal)">Accept</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="@busy" OnClick="() => RejectFromDiff(proposal)">Reject</MudButton>
+                    }
+                    else { <span class="muted small">@proposal.State</span> }
+                </div>
+            }
+            else if (activeTab?.Kind is TabKind.ChangeDiff or TabKind.ConflictDiff)
+            {
+                <div class="we-diff-head"><span>@activeTab.DiffLabel</span></div>
+            }
+            @if (activeTab?.Message != null)
+            {
+                <div class="we-message"><MudIcon Icon="@Icons.Material.Outlined.Info" /> @activeTab.Message</div>
+            }
+            else if (activeTab == null)
+            {
+                <div class="we-welcome">
+                    <MudIcon Icon="@Icons.Material.Outlined.Code" Style="font-size:48px" />
+                    <div>Open a file from the explorer</div>
+                    <div class="small muted">Go to file <kbd>Ctrl/Cmd</kbd>+<kbd>P</kbd> · Commands <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> · Find in files <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></div>
+                </div>
+            }
+            <div class="we-editor-host" @ref="editorHost" style="@(ShowEditor ? "" : "display:none")"></div>
+            <div class="we-editor-host" @ref="diffHost" style="display:none"></div>
+            @if (monacoError != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="ma-2">@monacoError</MudAlert> }
+        </section>
+
+        @if (chatOpen)
+        {
+            <EditorChatPanel @ref="chat" WorkspaceId="ctx.WorkspaceId" UserId="ctx.UserId" Status="aiStatus" CanEdit="ctx.CanEdit"
+                             GetContext="GetChatContext" GetFiles="GetFilesForChat" OnShowDiff="ShowProposalDiff" OnAccepted="ProposalAccepted"
+                             OnAttachRequest="() => OpenPalette(PaletteMode.Attach)" OnClose="ToggleChat" />
+        }
+    </div>
+
+    <footer class="we-status">
+        <span><MudIcon Icon="@Icons.Material.Outlined.CallSplit" Style="font-size:13px" /> @ctx.Branch</span>
+        @if (!ctx.CanEdit) { <span>Read-only</span> }
+        <span>@changes.Count change@(changes.Count == 1 ? "" : "s")</span>
+        <span class="flex-grow-1"></span>
+        <span title="@(aiStatus?.DisabledReason ?? aiStatus?.BackendName)">
+            <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Style="font-size:13px" />
+            @(aiStatus is { Enabled: true } ? aiStatus.BackendName : aiStatus?.Backend != null ? "AI off for this project" : "AI isn't set up")
+        </span>
+        @if (aiStatus is { CompletionsAvailable: true })
+        {
+            <button type="button" class="we-status-btn" @onclick="ToggleCompletions" title="Inline completions (ghost text) use tokens on every pause while typing">
+                Ghost text: @(completions ? "on" : "off")
+            </button>
+        }
+        @if (activeLanguage != null) { <span>@activeLanguage</span> }
+        <span @ref="cursorLabel"></span>
+    </footer>
+
+    @if (palette != PaletteMode.None)
+    {
+        <div class="we-palette-backdrop" @onclick="ClosePalette"></div>
+        <div class="we-palette" role="dialog" aria-label="@(palette == PaletteMode.Commands ? "Command palette" : "Go to file")">
+            <MudTextField T="string" Value="paletteQuery" ValueChanged="PaletteFilter" Immediate="true" AutoFocus="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Placeholder="@(palette == PaletteMode.Commands ? "> Type a command" : palette == PaletteMode.Attach ? "File to attach to the assistant" : "Go to file")"
+                          OnKeyDown="PaletteKey" autocomplete="off" spellcheck="false" aria-label="Palette search" @ref="paletteRef" />
+            <div class="we-palette-list">
+                @for (var i = 0; i < paletteItems.Count; i++)
+                {
+                    var item = paletteItems[i];
+                    var index = i;
+                    <button type="button" class="we-palette-item @(index == paletteIndex ? "active" : "")" @onclick="() => PickPalette(item)">
+                        <span>@item.Label</span>
+                        @if (item.Hint != null) { <span class="muted small mono">@item.Hint</span> }
+                    </button>
+                }
+                @if (paletteItems.Count == 0) { <div class="pa-3 muted small">No matches.</div> }
+            </div>
+        </div>
+    }
+</div>
+}
+
+@code {
+    [Parameter] public string Branch { get; set; } = "";
+    [Parameter] public string? FilePath { get; set; }
+
+    private enum TabKind { File, ChangeDiff, Proposal, ConflictDiff }
+    private enum PaletteMode { None, Files, Commands, Attach }
+
+    private sealed class Tab
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+        public TabKind Kind;
+        public string Path = "";
+        public string Title = "";
+        public bool Dirty;
+        public bool Editable;
+        public string? Message;
+        public string? Language;
+        public string? DiffLabel;
+        public string? Original, Modified;
+        public ProposedEdit? Proposal;
+    }
+
+    private sealed record PaletteItem(string Label, string? Hint, Func<Task> Run);
+
+    private EditorContext? ctx;
+    private EditorStatus? status;
+    private EditorAiStatus? aiStatus;
+    private string? loadError, monacoError, activeLanguage;
+    private string? openedFor;
+    private readonly Dictionary<string, List<EditorTreeEntry>> treeCache = new(StringComparer.Ordinal);
+    private readonly HashSet<string> expanded = new(StringComparer.Ordinal);
+    private readonly List<Tab> tabs = [];
+    private Tab? activeTab;
+    private List<EditorChange> changes = [];
+    private string activity = "explorer";
+    private bool chatOpen = true, busy, completions;
+    private string? commitMessage;
+    private readonly Dictionary<string, ConflictResolution> resolutions = new(StringComparer.Ordinal);
+
+    private string? searchQuery, searchError;
+    private bool searchRegex, searchCase, searching, searched;
+    private List<EditorSearchHit> searchHits = [];
+    private MudTextField<string>? searchRef;
+
+    private PaletteMode palette;
+    private string paletteQuery = "";
+    private List<PaletteItem> paletteItems = [];
+    private int paletteIndex;
+    private List<string>? allFiles;
+    private MudTextField<string>? paletteRef;
+    private bool focusPalette;
+
+    private ElementReference editorHost, diffHost, cursorLabel;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<WebEditor>? selfRef;
+    private bool monacoReady, monacoStarting;
+    private EditorChatPanel? chat;
+    private readonly Dictionary<string, (int Seq, string?[] Parts)> saveBuffers = new(StringComparer.Ordinal);
+
+    private bool ShowEditor => activeTab is { Kind: TabKind.File, Message: null };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        await Me.EnsureLoadedAsync();
+        if (Me.User == null) { Nav.NavigateTo("/account/login", forceLoad: true); return; }
+        var branch = Uri.UnescapeDataString(Branch ?? "");
+        var key = $"{Repo!.Id}:{branch}";
+        if (openedFor != key)
+        {
+            if (module != null && openedFor != null)
+            {
+                // Another branch in the same page instance: save, then drop the old branch's editor models.
+                await module.InvokeVoidAsync("flushAll");
+                foreach (var p in modelPaths.ToList()) await module.InvokeVoidAsync("closeFile", p);
+                modelPaths.Clear();
+            }
+            try
+            {
+                ctx = await Workspace.OpenAsync(Repo, branch, Me.User.Id);
+                loadError = null;
+            }
+            catch (InvalidOperationException ex)
+            {
+                loadError = ex.Message;
+                return;
+            }
+            openedFor = key;
+            tabs.Clear();
+            activeTab = null;
+            treeCache.Clear();
+            expanded.Clear();
+            await LoadDirAsync("");
+            await RefreshChanges();
+            aiStatus = await Ai.GetStatusAsync(Repo.ProjectId);
+        }
+        if (!string.IsNullOrEmpty(FilePath) && monacoReady) await OpenFile(Uri.UnescapeDataString(FilePath));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusPalette && paletteRef != null)
+        {
+            focusPalette = false;
+            await paletteRef.FocusAsync();
+        }
+        // The editor hosts exist only once a render with the workspace loaded happened (not merely ctx being set).
+        if (ctx == null || monacoStarting || string.IsNullOrEmpty(editorHost.Id)) return;
+        monacoStarting = true; // set before the first await: renders can overlap while Monaco loads
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/web-editor.js");
+            selfRef = DotNetObjectReference.Create(this);
+            await module.InvokeAsync<bool>("init", editorHost, diffHost, cursorLabel, selfRef, new { readOnly = !ctx.CanEdit, completions });
+            monacoReady = true;
+            if (!string.IsNullOrEmpty(FilePath)) await OpenFile(Uri.UnescapeDataString(FilePath));
+            else if (treeCache.TryGetValue("", out var root) && root.FirstOrDefault(e => e.Name.Equals("README.md", StringComparison.OrdinalIgnoreCase)) is { } readme)
+                await OpenFile(readme.Path);
+            StateHasChanged();
+        }
+        catch (JSException ex)
+        {
+            monacoError = "The code editor couldn't load: " + ex.Message;
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    // ---------- explorer ----------
+
+    private async Task LoadDirAsync(string dir)
+    {
+        try { treeCache[dir] = await Workspace.ListDirectoryAsync(ctx!.WorkspaceId, ctx.UserId, dir); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private IEnumerable<(EditorTreeEntry Entry, int Depth)> VisibleRows()
+    {
+        IEnumerable<(EditorTreeEntry, int)> Walk(string dir, int depth)
+        {
+            if (!treeCache.TryGetValue(dir, out var list)) yield break;
+            foreach (var e in list)
+            {
+                yield return (e, depth);
+                if (e.IsDirectory && expanded.Contains(e.Path))
+                    foreach (var child in Walk(e.Path, depth + 1)) yield return child;
+            }
+        }
+        return Walk("", 0);
+    }
+
+    private async Task RowClick(EditorTreeEntry e)
+    {
+        if (!e.IsDirectory) { await OpenFile(e.Path); return; }
+        if (!expanded.Remove(e.Path))
+        {
+            expanded.Add(e.Path);
+            if (!treeCache.ContainsKey(e.Path)) await LoadDirAsync(e.Path);
+        }
+    }
+
+    /// <summary>Reloads the loaded folders (statuses, new and deleted files) and the change list.</summary>
+    private async Task RefreshAll()
+    {
+        foreach (var dir in treeCache.Keys.ToList()) await LoadDirAsync(dir);
+        allFiles = null;
+        await RefreshChanges();
+    }
+
+    private async Task RefreshChanges()
+    {
+        try
+        {
+            changes = await Workspace.GetChangesAsync(ctx!.WorkspaceId, ctx.UserId);
+            status = await Workspace.GetStatusAsync(ctx.WorkspaceId, ctx.UserId);
+            ctx = await Workspace.GetContextAsync(ctx.WorkspaceId, ctx.UserId);
+            foreach (var c in resolutions.Keys.Where(k => status.Conflicts.All(x => x != k)).ToList()) resolutions.Remove(c);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ---------- files & tabs ----------
+
+    private async Task OpenFile(string path, int? line = null)
+    {
+        if (ctx == null) return;
+        var existing = tabs.FirstOrDefault(t => t.Kind == TabKind.File && t.Path == path);
+        if (existing == null)
+        {
+            EditorFile file;
+            try { file = await Workspace.ReadFileAsync(ctx.WorkspaceId, ctx.UserId, path); }
+            catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); return; }
+            if (!file.Exists) { Snackbar.Add($"'{path}' doesn't exist in this workspace.", Severity.Warning); return; }
+            existing = new Tab { Kind = TabKind.File, Path = path, Title = EditorPaths.Name(path), Editable = file.Text != null };
+            if (file.IsBinary) existing.Message = "This is a binary file, so it can't be shown or edited here.";
+            else if (file.TooLarge) existing.Message = $"This file is larger than {GitOps.MaxBlobBytes / 1024 / 1024} MB, so it can't be opened in the web editor.";
+            tabs.Add(existing);
+            await ActivateTab(existing, file.Text);
+        }
+        else await ActivateTab(existing);
+        if (line != null && module != null) await module.InvokeVoidAsync("revealLine", line);
+    }
+
+    private async Task ActivateTab(Tab tab) => await ActivateTab(tab, null);
+
+    private async Task ActivateTab(Tab tab, string? text)
+    {
+        activeTab = tab;
+        if (module == null) return;
+        if (tab.Kind == TabKind.File)
+        {
+            if (tab.Message != null) { await module.InvokeVoidAsync("hideEditor"); await module.InvokeVoidAsync("hideDiff"); activeLanguage = null; return; }
+            if (text == null && !modelPaths.Contains(tab.Path))
+            {
+                var file = await Workspace.ReadFileAsync(ctx!.WorkspaceId, ctx.UserId, tab.Path);
+                text = file.Text;
+            }
+            var info = await module.InvokeAsync<LanguageInfo?>("openFile", tab.Path, text, !ctx!.CanEdit);
+            modelPaths.Add(tab.Path);
+            tab.Language = activeLanguage = info?.LanguageName;
+        }
+        else
+        {
+            var info = await module.InvokeAsync<LanguageInfo?>("showDiff", tab.Path, tab.Original, tab.Modified);
+            activeLanguage = info?.LanguageName;
+        }
+    }
+
+    private readonly HashSet<string> modelPaths = new(StringComparer.Ordinal);
+
+    private sealed record LanguageInfo(string Language, string LanguageName);
+
+    private async Task CloseTab(Tab tab)
+    {
+        var index = tabs.IndexOf(tab);
+        tabs.Remove(tab);
+        if (tab.Kind == TabKind.File && module != null)
+        {
+            await module.InvokeVoidAsync("closeFile", tab.Path);
+            modelPaths.Remove(tab.Path);
+        }
+        if (activeTab == tab)
+        {
+            activeTab = tabs.Count == 0 ? null : tabs[Math.Clamp(index - 1, 0, tabs.Count - 1)];
+            if (activeTab != null) await ActivateTab(activeTab);
+            else if (module != null) { await module.InvokeVoidAsync("hideEditor"); await module.InvokeVoidAsync("hideDiff"); activeLanguage = null; }
+        }
+    }
+
+    private async Task OpenDiffTab(TabKind kind, string path, string title, string? original, string? modified, string label, ProposedEdit? proposal = null)
+    {
+        var tab = tabs.FirstOrDefault(t => t.Kind == kind && t.Path == path && t.Proposal?.Id == proposal?.Id);
+        if (tab == null)
+        {
+            tab = new Tab { Kind = kind, Path = path, Title = title };
+            tabs.Add(tab);
+        }
+        tab.Original = original;
+        tab.Modified = modified;
+        tab.DiffLabel = label;
+        tab.Proposal = proposal;
+        await ActivateTab(tab);
+    }
+
+    /// <summary>Puts a file's server-side text back into its editor tab (after accept, discard or rebase).</summary>
+    private async Task ReloadOpenFile(string path)
+    {
+        if (module == null || !modelPaths.Contains(path)) return;
+        var file = await Workspace.ReadFileAsync(ctx!.WorkspaceId, ctx.UserId, path);
+        if (!file.Exists)
+        {
+            if (tabs.FirstOrDefault(t => t.Kind == TabKind.File && t.Path == path) is { } gone) await CloseTab(gone);
+            return;
+        }
+        if (file.Text != null) await module.InvokeVoidAsync("reloadFile", path, file.Text);
+    }
+
+    // ---------- JS callbacks ----------
+
+    [JSInvokable]
+    public async Task<bool> SaveChunk(string path, int seq, int index, int count, string text)
+    {
+        if (ctx == null || !ctx.CanEdit || count is < 1 or > 1000 || index < 0 || index >= count) return false;
+        if (!saveBuffers.TryGetValue(path, out var buffer) || buffer.Seq != seq || buffer.Parts.Length != count)
+            saveBuffers[path] = buffer = (seq, new string?[count]);
+        buffer.Parts[index] = text;
+        if (buffer.Parts.Any(p => p == null)) return false;
+        saveBuffers.Remove(path);
+        try
+        {
+            await Workspace.SaveFileAsync(ctx.WorkspaceId, ctx.UserId, path, string.Concat(buffer.Parts));
+            if (tabs.FirstOrDefault(t => t.Kind == TabKind.File && t.Path == path) is { } tab) tab.Dirty = false;
+            await RefreshTreeStatusAsync(path);
+            await RefreshChanges();
+            StateHasChanged();
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add($"Couldn't save {path}: {ex.Message}", Severity.Error);
+            return false;
+        }
+    }
+
+    private async Task RefreshTreeStatusAsync(string path)
+    {
+        var dir = EditorPaths.Directory(path) ?? "";
+        if (treeCache.ContainsKey(dir)) await LoadDirAsync(dir);
+        // Parent folders show a "changed" marker.
+        for (var d = EditorPaths.Directory(dir); d != null; d = EditorPaths.Directory(d))
+            if (treeCache.ContainsKey(d)) await LoadDirAsync(d);
+        if (dir.Length > 0) await LoadDirAsync("");
+    }
+
+    [JSInvokable]
+    public Task OnDirty(string path)
+    {
+        if (tabs.FirstOrDefault(t => t.Kind == TabKind.File && t.Path == path) is { } tab && !tab.Dirty)
+        {
+            tab.Dirty = true;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task OnCommand(string name)
+    {
+        switch (name)
+        {
+            case "quickOpen": await OpenPalette(PaletteMode.Files); break;
+            case "commandPalette": await OpenPalette(PaletteMode.Commands); break;
+            case "findInFiles": await FindInFiles(); break;
+            case "focusChat": if (!chatOpen) chatOpen = true; StateHasChanged(); if (chat != null) await chat.FocusAsync(); break;
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task<string?> Complete(string path, string language, string prefix, string suffix)
+    {
+        if (ctx == null || !completions || aiStatus is not { CompletionsAvailable: true }) return null;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        return await Ai.CompleteAsync(ctx.WorkspaceId, ctx.UserId, path, language, prefix, suffix, cts.Token);
+    }
+
+    // ---------- file operations ----------
+
+    private async Task<string?> PromptAsync(string title, string label, string? value, string button, string? message = null, bool multiline = false)
+    {
+        var parameters = new DialogParameters<EditorPromptDialog>
+        {
+            { x => x.Title, title }, { x => x.Label, label }, { x => x.Value, value }, { x => x.ButtonText, button },
+            { x => x.Message, message }, { x => x.Multiline, multiline },
+        };
+        var dialog = await Dialogs.ShowAsync<EditorPromptDialog>(title, parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        var result = await dialog.Result;
+        return result is { Canceled: false, Data: string s } ? s : null;
+    }
+
+    private async Task NewFile(string? dir)
+    {
+        var path = await PromptAsync("New file", "Path", dir == null ? "" : dir + "/", "Create", "Folders are created as needed, e.g. src/utils/strings.ts.");
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            await Workspace.CreateFileAsync(ctx!.WorkspaceId, ctx.UserId, path);
+            var p = EditorPaths.Normalize(path);
+            for (var d = EditorPaths.Directory(p); d != null; d = EditorPaths.Directory(d)) expanded.Add(d);
+            await RefreshAll();
+            foreach (var d in expanded.Where(d => !treeCache.ContainsKey(d)).ToList()) await LoadDirAsync(d);
+            await OpenFile(p);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task RenameFile(string path)
+    {
+        var to = await PromptAsync("Rename or move", "New path", path, "Rename");
+        if (string.IsNullOrWhiteSpace(to) || to == path) return;
+        try
+        {
+            if (module != null) await module.InvokeVoidAsync("flushAll");
+            await Workspace.RenameFileAsync(ctx!.WorkspaceId, ctx.UserId, path, to);
+            var dst = EditorPaths.Normalize(to);
+            if (tabs.FirstOrDefault(t => t.Kind == TabKind.File && t.Path == path) is { } tab)
+            {
+                await CloseTab(tab);
+                await OpenFile(dst);
+            }
+            await RefreshAll();
+            Snackbar.Add($"Renamed to {dst}.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteFile(string path)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete file?", $"Delete {path} from your workspace? The deletion is committed with your other changes; you can discard it until then.")) return;
+        try
+        {
+            await Workspace.DeleteFileAsync(ctx!.WorkspaceId, ctx.UserId, path);
+            if (tabs.FirstOrDefault(t => t.Kind == TabKind.File && t.Path == path) is { } tab) await CloseTab(tab);
+            await RefreshAll();
+            Snackbar.Add($"Deleted {path}.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ---------- source control ----------
+
+    private void SetActivity(string a) => activity = a;
+
+    private string ActivityClass(string a) => "we-act" + (activity == a ? " active" : "");
+
+    private static EditorFileStatus KindStatus(EditorChangeKind k) => k switch
+    {
+        EditorChangeKind.Added => EditorFileStatus.Added,
+        EditorChangeKind.Deleted => EditorFileStatus.Deleted,
+        EditorChangeKind.Renamed => EditorFileStatus.Renamed,
+        _ => EditorFileStatus.Modified,
+    };
+
+    private static string StatusLetter(EditorFileStatus s) => s switch
+    {
+        EditorFileStatus.Added => "A",
+        EditorFileStatus.Deleted => "D",
+        EditorFileStatus.Renamed => "R",
+        EditorFileStatus.Modified => "M",
+        _ => "",
+    };
+
+    private static string ChangeTitle(EditorChange c) => c.Kind switch
+    {
+        EditorChangeKind.Renamed => $"{c.OriginalPath} → {c.Path}",
+        _ => $"{c.Path} ({c.Kind.ToString().ToLowerInvariant()})",
+    };
+
+    private async Task ShowChangeDiff(EditorChange c) =>
+        await OpenDiffTab(TabKind.ChangeDiff, c.Path, EditorPaths.Name(c.Path) + " (changes)", c.BaseText, c.NewText,
+            $"{ChangeTitle(c)}: base {ctx!.BaseSha[..7]} ↔ your workspace");
+
+    private async Task ShowConflictDiff(string path)
+    {
+        var mine = await Workspace.ReadFileAsync(ctx!.WorkspaceId, ctx.UserId, path);
+        var theirs = status?.TipSha is { } tip ? await Repos.Git(Repo!, p => GitOps.GetBlob(p, tip, path)?.Text) : null;
+        await OpenDiffTab(TabKind.ConflictDiff, path, EditorPaths.Name(path) + " (conflict)", theirs, mine.Text,
+            $"{path}: {ctx.Branch} now (left) ↔ your version (right)");
+    }
+
+    private ConflictResolution? Resolution(string path) => resolutions.TryGetValue(path, out var r) ? r : null;
+
+    private void SetResolution(string path, ConflictResolution? r)
+    {
+        if (r is { } v) resolutions[path] = v;
+        else resolutions.Remove(path);
+    }
+
+    private async Task Discard(EditorChange c)
+    {
+        if (!await Dialogs.ConfirmAsync("Discard changes?", $"Discard your changes to {c.Path}? This can't be undone.", "Discard")) return;
+        try
+        {
+            await Workspace.DiscardAsync(ctx!.WorkspaceId, ctx.UserId, c.Path);
+            foreach (var t in tabs.Where(t => t.Kind == TabKind.ChangeDiff && t.Path == c.Path).ToList()) await CloseTab(t);
+            await ReloadOpenFile(c.Path);
+            if (c.OriginalPath != null) await ReloadOpenFile(c.OriginalPath);
+            await RefreshAll();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DiscardAll()
+    {
+        if (!await Dialogs.ConfirmAsync("Discard all changes?", $"Discard all {changes.Count} changed files? This can't be undone.", "Discard all")) return;
+        try
+        {
+            var paths = changes.SelectMany(c => new[] { c.Path, c.OriginalPath }).OfType<string>().ToList();
+            await Workspace.DiscardAllAsync(ctx!.WorkspaceId, ctx.UserId);
+            foreach (var t in tabs.Where(t => t.Kind == TabKind.ChangeDiff).ToList()) await CloseTab(t);
+            foreach (var p in paths) await ReloadOpenFile(p);
+            await RefreshAll();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task CommitKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && ctx?.CanCommitToBranch == true) await Commit();
+    }
+
+    private async Task Commit()
+    {
+        if (string.IsNullOrWhiteSpace(commitMessage)) { SetActivity("scm"); return; }
+        busy = true;
+        try
+        {
+            if (module != null) await module.InvokeVoidAsync("flushAll");
+            var result = await Workspace.CommitAsync(ctx!.WorkspaceId, ctx.UserId, commitMessage!);
+            commitMessage = null;
+            await AfterCommit();
+            Snackbar.Add($"Committed {result.Sha[..7]} to {result.Branch}.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); await RefreshChanges(); }
+        finally { busy = false; }
+    }
+
+    private async Task CommitToNewBranch()
+    {
+        var suggested = $"{Me.User!.UserName}/edit-{DateTime.UtcNow:yyyyMMdd-HHmm}";
+        var parameters = new DialogParameters<EditorNewBranchDialog>
+        {
+            { x => x.Branch, suggested }, { x => x.Target, ctx!.Branch }, { x => x.Title, FirstLine(commitMessage) },
+            { x => x.CanCreatePullRequest, ctx.CanCreatePullRequest },
+            { x => x.Note, ctx.ProtectionNote != null ? $"{ctx.Branch} is protected, so changes go in through a pull request." : null },
+        };
+        var dialog = await Dialogs.ShowAsync<EditorNewBranchDialog>("Commit to a new branch", parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is not { Canceled: false, Data: EditorNewBranchDialog.Result choice }) return;
+        busy = true;
+        try
+        {
+            if (module != null) await module.InvokeVoidAsync("flushAll");
+            var result = await Workspace.CommitToNewBranchAsync(ctx.WorkspaceId, ctx.UserId, choice.Branch, commitMessage!, choice.PullRequestTitle);
+            commitMessage = null;
+            await AfterCommit();
+            if (result.PullRequest is { } pr)
+            {
+                Snackbar.Add($"Committed to {result.Branch} and opened pull request #{pr.Number}.", Severity.Success);
+                Nav.NavigateTo(RepoUrls.PullRequest(Repo!, pr.Number));
+            }
+            else Snackbar.Add($"Committed {result.Sha[..7]} to the new branch {result.Branch}.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+
+    private async Task AfterCommit()
+    {
+        foreach (var t in tabs.Where(t => t.Kind == TabKind.ChangeDiff).ToList()) await CloseTab(t);
+        await RefreshAll();
+        foreach (var t in tabs.Where(t => t.Kind == TabKind.File).ToList()) await ReloadOpenFile(t.Path);
+    }
+
+    private async Task Rebase()
+    {
+        busy = true;
+        try
+        {
+            if (module != null) await module.InvokeVoidAsync("flushAll");
+            var before = changes.SelectMany(c => new[] { c.Path, c.OriginalPath }).OfType<string>().ToList();
+            var result = await Workspace.RebaseAsync(ctx!.WorkspaceId, ctx.UserId, resolutions);
+            if (result.Conflicts.Count > 0) Snackbar.Add("Choose how to resolve each conflicting file first.", Severity.Warning);
+            else Snackbar.Add($"Your workspace is up to date with {ctx.Branch}.", Severity.Success);
+            resolutions.Clear();
+            await RefreshAll();
+            foreach (var p in before.Concat(tabs.Where(t => t.Kind == TabKind.File).Select(t => t.Path)).Distinct().ToList()) await ReloadOpenFile(p);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+
+    // ---------- search ----------
+
+    private async Task FindInFiles()
+    {
+        activity = "search";
+        StateHasChanged();
+        await Task.Yield();
+        if (searchRef != null) await searchRef.FocusAsync();
+    }
+
+    private async Task SearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await RunSearch();
+    }
+
+    private async Task RunSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery)) return;
+        searching = true;
+        searchError = null;
+        StateHasChanged();
+        try
+        {
+            if (module != null) await module.InvokeVoidAsync("flushAll");
+            (searchHits, searchError) = await Workspace.SearchAsync(ctx!.WorkspaceId, ctx.UserId, searchQuery.Trim(), !searchCase, searchRegex);
+        }
+        catch (InvalidOperationException ex) { searchError = ex.Message; }
+        catch (ArgumentException ex) { searchError = "Invalid regular expression: " + ex.Message; }
+        finally { searching = false; searched = true; }
+    }
+
+    // ---------- assistant ----------
+
+    private void ToggleChat() => chatOpen = !chatOpen;
+
+    private async Task<(string?, string?, int?, int?)> GetChatContext()
+    {
+        var path = activeTab is { Kind: TabKind.File, Editable: true } ? activeTab.Path : null;
+        if (path == null || module == null) return (path, null, null, null);
+        var sel = await module.InvokeAsync<SelectionInfo?>("getSelection");
+        return (path, sel?.Text, sel?.StartLine, sel?.EndLine);
+    }
+
+    private sealed record SelectionInfo(string Text, int StartLine, int EndLine);
+
+    private async Task<IReadOnlyCollection<string>> GetFilesForChat() => (await AllFilesAsync()).ToHashSet(StringComparer.Ordinal);
+
+    private async Task<List<string>> AllFilesAsync()
+    {
+        allFiles ??= await Workspace.ListAllFilesAsync(ctx!.WorkspaceId, ctx.UserId);
+        return allFiles;
+    }
+
+    private void AttachToChat(string path)
+    {
+        chatOpen = true;
+        StateHasChanged();
+        chat?.Attach(path);
+    }
+
+    private async Task InlineAction(string action)
+    {
+        if (aiStatus is not { Enabled: true } || activeTab is not { Kind: TabKind.File } tab) return;
+        string? instructions = null;
+        if (action == "refactor")
+        {
+            instructions = await PromptAsync("Refactor", "How should it change?", "", "Refactor", "For example: extract a function, use async/await, simplify the loop.", multiline: true);
+            if (instructions == null) return;
+        }
+        var sel = module == null ? null : await module.InvokeAsync<SelectionInfo?>("getSelection");
+        if (module != null) await module.InvokeVoidAsync("flushAll");
+        chatOpen = true;
+        StateHasChanged();
+        await Task.Yield();
+        if (chat == null) return;
+        var message = EditorAiPrompts.InlineAction(action, tab.Path, sel != null, instructions);
+        await chat.SendAsync(message, "editor.action." + action, withContext: true);
+        await RefreshChanges();
+    }
+
+    private async Task ShowProposalDiff(ProposedEdit p) =>
+        await OpenDiffTab(TabKind.Proposal, p.Path, EditorPaths.Name(p.Path) + " (proposed)", p.OriginalText, p.Kind == ProposedEditKind.Delete ? "" : p.NewText,
+            "Proposed change", p);
+
+    private async Task ProposalAccepted(ProposedEdit p)
+    {
+        await ReloadOpenFile(p.Path);
+        await RefreshAll();
+    }
+
+    private async Task AcceptFromDiff(ProposedEdit p)
+    {
+        busy = true;
+        try
+        {
+            await Ai.AcceptAsync(ctx!.WorkspaceId, ctx.UserId, p);
+            await ProposalAccepted(p);
+            Snackbar.Add($"Applied the change to {p.Path} (not committed yet).", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+
+    private void RejectFromDiff(ProposedEdit p) => EditorAiService.Reject(p);
+
+    private async Task ToggleCompletions()
+    {
+        completions = !completions;
+        if (module != null) await module.InvokeVoidAsync("setCompletions", completions);
+        Snackbar.Add(completions ? "Ghost-text completions are on. Each pause while typing calls Claude." : "Ghost-text completions are off.", Severity.Info);
+    }
+
+    // ---------- palette ----------
+
+    private async Task OpenPalette(PaletteMode mode)
+    {
+        palette = mode;
+        paletteQuery = "";
+        paletteIndex = 0;
+        if (mode != PaletteMode.Commands) await AllFilesAsync();
+        Filter();
+        focusPalette = true; // focus moves from Monaco to the palette after it renders
+        StateHasChanged();
+    }
+
+    private async Task ClosePalette()
+    {
+        palette = PaletteMode.None;
+        if (module != null) await module.InvokeVoidAsync("focusEditor");
+    }
+
+    private void PaletteFilter(string? q)
+    {
+        paletteQuery = q ?? "";
+        paletteIndex = 0;
+        Filter();
+    }
+
+    private void Filter()
+    {
+        var q = paletteQuery.Trim();
+        if (palette == PaletteMode.Commands)
+        {
+            if (q.StartsWith('>')) q = q[1..].Trim();
+            paletteItems = Commands().Where(c => Fuzzy(c.Label, q) >= 0).ToList();
+            return;
+        }
+        paletteItems = (allFiles ?? [])
+            .Select(f => (File: f, Score: Fuzzy(f, q)))
+            .Where(x => x.Score >= 0)
+            .OrderBy(x => x.Score).ThenBy(x => x.File.Length).ThenBy(x => x.File, StringComparer.Ordinal)
+            .Take(50)
+            .Select(x => new PaletteItem(EditorPaths.Name(x.File), x.File, palette == PaletteMode.Attach
+                ? () => { AttachToChat(x.File); return Task.CompletedTask; }
+                : () => OpenFile(x.File)))
+            .ToList();
+    }
+
+    /// <summary>Subsequence match: -1 if <paramref name="q"/> isn't a subsequence of <paramref name="text"/>, else a score (lower is better).</summary>
+    private static int Fuzzy(string text, string q)
+    {
+        if (q.Length == 0) return 0;
+        var t = text.ToLowerInvariant();
+        var query = q.ToLowerInvariant();
+        if (t.Contains(query)) return t.EndsWith(query) || t.Contains("/" + query) ? 0 : 1;
+        int ti = 0, gaps = 0;
+        foreach (var ch in query)
+        {
+            var found = t.IndexOf(ch, ti);
+            if (found < 0) return -1;
+            gaps += found - ti;
+            ti = found + 1;
+        }
+        return 2 + gaps;
+    }
+
+    private IEnumerable<PaletteItem> Commands()
+    {
+        yield return new("Go to file…", "Ctrl/Cmd+P", () => OpenPalette(PaletteMode.Files));
+        yield return new("Find in files", "Ctrl/Cmd+Shift+F", FindInFiles);
+        if (ctx?.CanEdit == true) yield return new("New file…", null, () => NewFile(null));
+        yield return new("Save all", "Ctrl/Cmd+S", async () => { if (module != null) await module.InvokeVoidAsync("flushAll"); });
+        yield return new("Show explorer", null, () => { SetActivity("explorer"); return Task.CompletedTask; });
+        yield return new("Show source control", null, () => { SetActivity("scm"); return Task.CompletedTask; });
+        if (ctx?.CanEdit == true && changes.Count > 0)
+        {
+            yield return new("Commit…", null, () => { SetActivity("scm"); return Task.CompletedTask; });
+            yield return new("Discard all changes", null, DiscardAll);
+        }
+        if (status is { BranchMoved: true }) yield return new("Update workspace (rebase)", null, () => { SetActivity("scm"); return Task.CompletedTask; });
+        yield return new(chatOpen ? "Hide the assistant" : "Show the assistant", "Ctrl/Cmd+Shift+L", () => { ToggleChat(); return Task.CompletedTask; });
+        if (aiStatus is { Enabled: true } && activeTab is { Kind: TabKind.File, Editable: true })
+        {
+            yield return new("AI: Explain", null, () => InlineAction("explain"));
+            yield return new("AI: Refactor…", null, () => InlineAction("refactor"));
+            yield return new("AI: Add comments", null, () => InlineAction("comments"));
+            yield return new("AI: Write tests", null, () => InlineAction("tests"));
+            yield return new("AI: Fix", null, () => InlineAction("fix"));
+        }
+        if (aiStatus is { CompletionsAvailable: true }) yield return new(completions ? "AI: Turn ghost-text completions off" : "AI: Turn ghost-text completions on", null, ToggleCompletions);
+        yield return new("Back to the repository", null, () => { Nav.NavigateTo(RepoUrls.Source(Repo!, ctx!.Branch)); return Task.CompletedTask; });
+    }
+
+    private async Task PaletteKey(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown": paletteIndex = Math.Min(paletteIndex + 1, Math.Max(0, paletteItems.Count - 1)); break;
+            case "ArrowUp": paletteIndex = Math.Max(0, paletteIndex - 1); break;
+            case "Escape": await ClosePalette(); break;
+            case "Enter":
+                if (paletteIndex < paletteItems.Count) await PickPalette(paletteItems[paletteIndex]);
+                break;
+        }
+    }
+
+    private async Task PickPalette(PaletteItem item)
+    {
+        palette = PaletteMode.None;
+        await item.Run();
+    }
+
+    private static string? FirstLine(string? s) => s?.Split('\n')[0].Trim() is { Length: > 0 } l ? l : null;
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (module != null)
+            {
+                await module.InvokeVoidAsync("flushAll");
+                await module.InvokeVoidAsync("dispose");
+                await module.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+        catch (TaskCanceledException) { }
+        selfRef?.Dispose();
+    }
+}
