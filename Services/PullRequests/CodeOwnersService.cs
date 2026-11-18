@@ -56,40 +56,70 @@ public class CodeOwnersService(IDbContextFactory<AppDbContext> dbFactory, Reposi
         var owners = new Dictionary<string, IReadOnlyList<User>>();
         foreach (var (path, list) in byPath)
         {
-            var users = list.Select(n => resolved.GetValueOrDefault(n.ToLowerInvariant())).OfType<User>().DistinctBy(u => u.Id).ToList();
+            var users = list.SelectMany(n => resolved.GetValueOrDefault(n.ToLowerInvariant()) ?? []).DistinctBy(u => u.Id).ToList();
             if (users.Count > 0) owners[path] = users;
         }
         return new CodeOwnersReport(file.Path, owners, warnings);
     }
 
-    /// <summary>Maps owner names (lower-cased) to users who can see the project; adds a warning for each one that doesn't.</summary>
-    private async Task<Dictionary<string, User>> ResolveAsync(int projectId, List<string> names, List<string> warnings)
+    /// <summary>
+    /// Maps owner names (lower-cased) to the users they stand for, keeping only users who can see the project:
+    /// <c>@user</c> and emails are one user; <c>@group/path</c> is that group's direct members with Developer or higher.
+    /// Adds a warning for each name that resolves to nobody.
+    /// </summary>
+    private async Task<Dictionary<string, List<User>>> ResolveAsync(int projectId, List<string> names, List<string> warnings)
     {
-        var result = new Dictionary<string, User>();
+        var result = new Dictionary<string, List<User>>();
         if (names.Count == 0) return result;
         await using var db = await dbFactory.CreateDbContextAsync();
         var userNames = names.Where(n => n.StartsWith('@') && !n.Contains('/')).Select(n => n[1..].ToUpperInvariant()).ToList();
         var emails = names.Where(n => !n.StartsWith('@') && n.Contains('@')).Select(n => n.ToUpperInvariant()).ToList();
+        // "@a/b" is always a group; a bare "@acme" is a user first, then a top-level group of that path.
+        var groupPaths = names.Where(n => n.StartsWith('@')).Select(n => n[1..].ToLowerInvariant()).ToList();
         var users = await db.Users.AsNoTracking()
             .Where(u => userNames.Contains(u.NormalizedUserName!) || emails.Contains(u.NormalizedEmail!)).ToListAsync();
+        var groupMembers = groupPaths.Count == 0 ? [] : await db.GroupMembers.AsNoTracking().Include(m => m.User).Include(m => m.Group)
+            .Where(m => groupPaths.Contains(m.Group.FullPath.ToLower()) && m.Role >= ProjectRole.Developer).ToListAsync();
         foreach (var name in names)
         {
-            var user = name.StartsWith('@')
-                ? users.FirstOrDefault(u => string.Equals("@" + u.UserName, name, StringComparison.OrdinalIgnoreCase))
-                : users.FirstOrDefault(u => string.Equals(u.Email, name, StringComparison.OrdinalIgnoreCase));
-            if (user == null)
+            List<User> candidates;
+            if (name.StartsWith('@') && name.Contains('/'))
             {
-                warnings.Add(name.StartsWith('@') && name.Contains('/')
-                    ? $"Owner {name} was ignored: group owners aren't supported yet."
-                    : $"Owner {name} was ignored: there is no such user.");
-                continue;
+                var path = name[1..];
+                candidates = groupMembers.Where(m => string.Equals(m.Group.FullPath, path, StringComparison.OrdinalIgnoreCase)).Select(m => m.User).ToList();
+                if (candidates.Count == 0)
+                {
+                    warnings.Add($"Owner {name} was ignored: there is no such group, or it has no Developer+ members.");
+                    continue;
+                }
             }
-            if (!await access.CanAsync(projectId, Permission.ViewProject, user.Id))
+            else
+            {
+                var user = name.StartsWith('@')
+                    ? users.FirstOrDefault(u => string.Equals("@" + u.UserName, name, StringComparison.OrdinalIgnoreCase))
+                    : users.FirstOrDefault(u => string.Equals(u.Email, name, StringComparison.OrdinalIgnoreCase));
+                if (user != null) candidates = [user];
+                else
+                {
+                    candidates = name.StartsWith('@')
+                        ? groupMembers.Where(m => string.Equals(m.Group.FullPath, name[1..], StringComparison.OrdinalIgnoreCase)).Select(m => m.User).ToList()
+                        : [];
+                    if (candidates.Count == 0)
+                    {
+                        warnings.Add($"Owner {name} was ignored: there is no such user or group.");
+                        continue;
+                    }
+                }
+            }
+            var allowed = new List<User>();
+            foreach (var u in candidates)
+                if (await access.CanAsync(projectId, Permission.ViewProject, u.Id)) allowed.Add(u);
+            if (allowed.Count == 0)
             {
                 warnings.Add($"Owner {name} was ignored: they don't have access to this project.");
                 continue;
             }
-            result[name.ToLowerInvariant()] = user;
+            result[name.ToLowerInvariant()] = allowed;
         }
         return result;
     }

@@ -246,6 +246,30 @@ public class PullRequestFeatureTests(TestApp app) : IClassFixture<TestApp>
         Assert.False((await gate.EvaluateAsync(pr.Id, carol)).Blocked);
     }
 
+    [Fact]
+    public async Task Group_code_owners_resolve_to_the_groups_developers_who_can_see_the_project()
+    {
+        var (project, repo) = await SetupAsync();
+        var path = "owners" + Guid.NewGuid().ToString("N")[..8];
+        await using (var cs = app.Scope(app.UserId("carol")))
+        {
+            var g = await cs.Get<GroupService>().CreateAsync("Owners", path, null, ProjectVisibility.Private, null, null);
+            await cs.Get<GroupService>().AddMemberAsync(g.Id, "dan", ProjectRole.Developer);
+            await cs.Get<GroupService>().AddMemberAsync(g.Id, "alice", ProjectRole.Viewer); // Viewers don't own code
+        }
+        CommitAs(repo, "main", new() { ["CODEOWNERS"] = $"/src/ @{path.ToUpperInvariant()}\n" }, "owners", "Carol", "carol@example.com", from: null);
+        CommitAs(repo, "feature/g", new() { ["src/a.cs"] = "class A {}" }, "change", "Bob", "bob@example.com");
+
+        var bob = app.UserId("bob");
+        await using var bs = app.Scope(bob);
+        var pr = await bs.Get<PullRequestService>().CreateAsync(repo, "Group owned", null, "feature/g", "main", bob);
+        var report = await bs.Get<CodeOwnersService>().ForPullRequestAsync(await LoadAsync(project, repo, pr.Number));
+        Assert.Equal(["carol", "dan"], report.Owners["src/a.cs"].Select(u => u.UserName!).Order()); // carol owns the group she created
+        Assert.Empty(report.Warnings);
+        await using (var db = app.Db())
+            Assert.Contains(app.UserId("dan"), await db.PullRequestReviewers.Where(r => r.PullRequestId == pr.Id).Select(r => r.UserId).ToListAsync());
+    }
+
     // ---------- Merge strategies ----------
 
     [Fact]
