@@ -11,9 +11,9 @@ else
         <span>Showing <b>@Files.Count</b> changed file@(Files.Count == 1 ? "" : "s") with
             <span class="diff-add-count">@Files.Sum(f => f.Additions) addition@(Files.Sum(f => f.Additions) == 1 ? "" : "s")</span> and
             <span class="diff-del-count">@Files.Sum(f => f.Deletions) deletion@(Files.Sum(f => f.Deletions) == 1 ? "" : "s")</span></span>
-        <span class="ms-auto">
-            <button class="btn btn-link btn-sm" @onclick="() => collapsed.Clear()">Expand all</button>
-            <button class="btn btn-link btn-sm" @onclick="CollapseAll">Collapse all</button>
+        <span class="diff-summary-actions">
+            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.UnfoldMore" OnClick="() => collapsed.Clear()">Expand all</MudButton>
+            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.UnfoldLess" OnClick="CollapseAll">Collapse all</MudButton>
         </span>
     </div>
 
@@ -22,13 +22,13 @@ else
         var isCollapsed = collapsed.Contains(f.Path);
         var fileComments = Comments?.Where(c => c.FilePath == f.Path).ToList() ?? [];
         <div class="diff-file" @key="f.Path">
-            <div class="diff-file-head" @onclick="() => Toggle(f.Path)">
-                <span class="diff-chevron">@(isCollapsed ? "▸" : "▾")</span>
+            <div class="diff-file-head" @onclick="() => Toggle(f.Path)" role="button" aria-expanded="@(!isCollapsed)">
+                <MudIcon Icon="@(isCollapsed ? Icons.Material.Filled.ChevronRight : Icons.Material.Filled.ExpandMore)" Size="Size.Small" Class="diff-chevron" />
                 <span class="diff-status diff-status-@f.Status.Replace(' ', '-')">@f.Status</span>
                 <span class="mono diff-path">@f.DisplayPath</span>
                 @if (fileComments.Count > 0)
                 {
-                    <span class="count" title="Inline comments">💬 @fileComments.Count</span>
+                    <span class="diff-comment-count" title="Inline comments"><MudIcon Icon="@Icons.Material.Outlined.ChatBubbleOutline" Size="Size.Small" /> @fileComments.Count</span>
                 }
                 <span class="diff-stat">
                     <span class="diff-add-count">+@f.Additions</span>
@@ -37,7 +37,9 @@ else
                 </span>
                 @if (Repo != null && ViewRef != null && f.Status != "deleted")
                 {
-                    <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Source(Repo, ViewRef, f.Path)" @onclick:stopPropagation="true">View file</a>
+                    <span @onclick:stopPropagation="true">
+                        <MudButton Href="@RepoUrls.Source(Repo, ViewRef, f.Path)" Variant="Variant.Outlined" Size="Size.Small" Class="diff-view-file">View file</MudButton>
+                    </span>
                 }
             </div>
             @if (!isCollapsed)
@@ -70,7 +72,7 @@ else
                                     <td class="code mono">
                                         @if (CanComment)
                                         {
-                                            <button class="diff-comment-btn" title="Comment on this line" @onclick="() => StartComment(f.Path, line)">+</button>
+                                            <button type="button" class="diff-comment-btn" title="Comment on this line" aria-label="Comment on this line" @onclick="() => StartComment(f.Path, line)">+</button>
                                         }
                                         <span class="diff-sign">@(line.Kind switch { DiffLineKind.Added => "+", DiffLineKind.Deleted => "-", _ => " " })</span>@CodeLanguages.Line(line.Text)
                                     </td>
@@ -95,14 +97,14 @@ else
                                                     <div class="inline-compose">
                                                         <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Leave an inline comment…" />
                                                         <div class="mt-2 d-flex gap-2">
-                                                            <button class="btn btn-primary btn-sm" disabled="@(string.IsNullOrWhiteSpace(draft) || saving)" @onclick="Submit">Comment</button>
-                                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => composing = null">Cancel</button>
+                                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(draft) || saving)" OnClick="Submit">Comment</MudButton>
+                                                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => composing = null">Cancel</MudButton>
                                                         </div>
                                                     </div>
                                                 }
                                                 else if (CanComment)
                                                 {
-                                                    <button class="btn btn-link btn-sm p-0" @onclick="() => StartComment(f.Path, line)">Reply…</button>
+                                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Reply" OnClick="() => StartComment(f.Path, line)">Reply…</MudButton>
                                                 }
                                             </div>
                                         </td>

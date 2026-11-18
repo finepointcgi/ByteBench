@@ -1,0 +1,4 @@
+.diff-bar { display: inline-flex; gap: 1px; }
+.diff-bar span { width: 8px; height: 8px; border-radius: 1px; background: var(--mud-palette-lines-inputs); }
+.diff-bar span.a { background: var(--mud-palette-success); }
+.diff-bar span.d { background: var(--mud-palette-error); }

@@ -1,0 +1,10 @@
+.pr-compare-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.pr-compare-bar ::deep .compare-field { flex: 1 1 160px; min-width: 0; margin: 0; }
+.pr-compare-bar ::deep .compare-arrow { color: var(--muted); }
+.desc-head { display: flex; align-items: center; margin-bottom: 4px; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+
+@media (max-width: 600px) {
+    .pr-compare-bar ::deep .compare-field { flex: 1 1 100%; width: 100%; }
+    .pr-compare-bar ::deep .compare-arrow { transform: rotate(90deg); }
+}

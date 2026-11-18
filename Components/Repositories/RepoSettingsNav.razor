@@ -1,11 +1,19 @@
 @* Left-hand navigation for /p/{KEY}/repos/{slug}/settings/... pages. Add one link per settings page. *@
-<nav class="settings-nav" aria-label="Repository settings">
-    <a class="@(Active == "general" ? "active" : "")" href="@CodeUrls.Settings(Repo)">General</a>
-    <a class="@(Active == "branches" ? "active" : "")" href="@RepoUrls.BranchProtection(Repo)">Branch protection</a>
+<nav aria-label="Repository settings">
+    <MudPaper Outlined="true" Class="py-1">
+        <MudList T="string" Dense="true">
+            <MudListItem T="string" Href="@CodeUrls.Settings(Repo)" Icon="@Icons.Material.Outlined.Tune"
+                         Class="@ItemClass("general")" aria-current="@(Active == "general" ? "page" : null)">General</MudListItem>
+            <MudListItem T="string" Href="@RepoUrls.BranchProtection(Repo)" Icon="@Icons.Material.Outlined.Lock"
+                         Class="@ItemClass("branches")" aria-current="@(Active == "branches" ? "page" : null)">Branch protection</MudListItem>
+        </MudList>
+    </MudPaper>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
     /// <summary>The current settings page, "general" or "branches".</summary>
     [Parameter] public string Active { get; set; } = "general";
+
+    private string ItemClass(string page) => Active == page ? "settings-nav-item settings-nav-active" : "settings-nav-item";
 }

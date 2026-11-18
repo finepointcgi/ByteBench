@@ -1,0 +1,9 @@
+.dev-panel { padding: 12px 0; }
+.dev-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.dev-group { margin-bottom: 8px; }
+.dev-group:last-child { margin-bottom: 0; }
+.dev-heading { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.dev-item { display: flex; align-items: center; gap: 6px; padding: 3px 0 3px 4px; color: var(--text); font-size: 12.5px; min-width: 0; }
+.dev-item:hover { text-decoration: none; color: var(--accent); }
+.dev-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }

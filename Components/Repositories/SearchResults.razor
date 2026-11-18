@@ -11,10 +11,10 @@ else
     @if (Result.FileNames.Count > 0)
     {
         <div class="search-names">
-            <div class="muted small px-3 pb-1">Matching file names@(Result.FileNames.Count >= CodeSearchService.MaxFileNameMatches ? $" (first {CodeSearchService.MaxFileNameMatches})" : "")</div>
+            <div class="search-names-head">Matching file names@(Result.FileNames.Count >= CodeSearchService.MaxFileNameMatches ? $" (first {CodeSearchService.MaxFileNameMatches})" : "")</div>
             @foreach (var name in Result.FileNames)
             {
-                <a class="mono" href="@RepoUrls.Source(Result.Repository, Result.Ref, name)">📄 @name</a>
+                <a class="mono" href="@RepoUrls.Source(Result.Repository, Result.Ref, name)"><MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" /> @name</a>
             }
         </div>
     }
@@ -23,7 +23,7 @@ else
         <div class="search-file" @key="f.Path">
             <div class="search-file-head">
                 <a class="mono" href="@RepoUrls.Source(Result.Repository, Result.Ref, f.Path)"><b>@f.Path</b></a>
-                <span class="muted ms-auto">@f.MatchCount match@(f.MatchCount == 1 ? "" : "es")</span>
+                <span class="muted search-file-count">@f.MatchCount match@(f.MatchCount == 1 ? "" : "es")</span>
             </div>
             @if (f.Snippets.Count == 0)
             {
@@ -31,22 +31,24 @@ else
             }
             else
             {
-                <table class="code-table mono">
-                    @for (var i = 0; i < f.Snippets.Count; i++)
-                    {
-                        @if (i > 0)
+                <div class="search-code">
+                    <table class="code-table mono">
+                        @for (var i = 0; i < f.Snippets.Count; i++)
                         {
-                            <tr class="search-gap"><td class="ln"></td><td class="code"></td></tr>
+                            @if (i > 0)
+                            {
+                                <tr class="search-gap"><td class="ln"></td><td class="code"></td></tr>
+                            }
+                            @foreach (var line in f.Snippets[i])
+                            {
+                                <tr class="@(line.IsMatch ? "search-match" : "search-ctx")">
+                                    <td class="ln"><a href="@CodeUrls.Line(Result.Repository, Result.Ref, f.Path, line.Number)">@line.Number</a></td>
+                                    <td class="code">@Marked(line)</td>
+                                </tr>
+                            }
                         }
-                        @foreach (var line in f.Snippets[i])
-                        {
-                            <tr class="@(line.IsMatch ? "search-match" : "search-ctx")">
-                                <td class="ln"><a href="@CodeUrls.Line(Result.Repository, Result.Ref, f.Path, line.Number)">@line.Number</a></td>
-                                <td class="code">@Marked(line)</td>
-                            </tr>
-                        }
-                    }
-                </table>
+                    </table>
+                </div>
             }
         </div>
     }

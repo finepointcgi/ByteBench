@@ -4,24 +4,25 @@
 
 @if (entries.Count == 0 && !editing)
 {
-    <div class="muted small">No reviewers yet.</div>
+    <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">No reviewers yet.</MudText>
 }
 @foreach (var e in entries)
 {
     <div class="reviewer" @key="e.User.Id">
-        <Avatar User="e.User" Size="22" ShowName /> <AiBadge User="e.User" />
+        <span class="reviewer-name"><Avatar User="e.User" Size="22" ShowName /> <AiBadge User="e.User" /></span>
         @switch (e.Status)
         {
             case ReviewerStatus.Approved:
-                <span class="review-chip approved ms-auto">✓ Approved</span>
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Icon="@Icons.Material.Filled.Check" Class="review-chip">Approved</MudChip>
                 break;
             case ReviewerStatus.ChangesRequested:
-                <span class="review-chip changes ms-auto">✎ Changes requested</span>
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Icon="@Icons.Material.Outlined.Edit" Class="review-chip">Changes requested</MudChip>
                 break;
             default:
-                <span class="review-chip pending ms-auto" title="@(e.Stale ? "Approved an older version; new commits were pushed since" : "Review requested")">
-                    @(e.Stale ? "◷ Re-review needed" : "◷ Pending")
-                </span>
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text" Icon="@Icons.Material.Outlined.Schedule" Class="review-chip"
+                         title="@(e.Stale ? "Approved an older version; new commits were pushed since" : "Review requested")">
+                    @(e.Stale ? "Re-review needed" : "Pending")
+                </MudChip>
                 break;
         }
     </div>
@@ -31,24 +32,23 @@
     @if (editing)
     {
         <div class="reviewer-picker mt-2">
-            @if (candidates.Count == 0) { <div class="muted small">No other project members can review.</div> }
+            @if (candidates.Count == 0) { <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">No other project members can review.</MudText> }
             @foreach (var u in candidates)
             {
-                <label class="form-check small" @key="u.Id">
-                    <input class="form-check-input" type="checkbox" checked="@selected.Contains(u.Id)" @onchange="e => Toggle(u.Id, e)" />
-                    <span class="form-check-label">@u.DisplayName <span class="muted">@@@u.UserName</span></span>
-                </label>
+                <MudCheckBox T="bool" @key="u.Id" Value="@selected.Contains(u.Id)" ValueChanged="v => Toggle(u.Id, v)" Size="Size.Small" Dense="true" Color="Color.Primary">
+                    <span class="small">@u.DisplayName <span class="muted">@@@u.UserName</span></span>
+                </MudCheckBox>
             }
-            @if (error != null) { <div class="text-danger small">@error</div> }
+            @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error" HtmlTag="div">@error</MudText> }
             <div class="d-flex gap-2 mt-1">
-                <button class="btn btn-primary btn-sm" disabled="@busy" @onclick="Save">Save</button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="() => editing = false">Cancel</button>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy" OnClick="Save">Save</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editing = false">Cancel</MudButton>
             </div>
         </div>
     }
     else
     {
-        <button class="btn btn-link btn-sm px-0" @onclick="StartEdit">Edit reviewers</button>
+        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.PersonAdd" OnClick="StartEdit" Class="mt-1 px-1">Edit reviewers</MudButton>
     }
 }
 
@@ -80,9 +80,9 @@
         editing = true;
     }
 
-    private void Toggle(int id, ChangeEventArgs e)
+    private void Toggle(int id, bool on)
     {
-        if (e.Value is true) selected.Add(id); else selected.Remove(id);
+        if (on) selected.Add(id); else selected.Remove(id);
     }
 
     private async Task Save()

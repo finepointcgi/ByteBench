@@ -1,0 +1,55 @@
+.repo-path { font-size: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.repo-path .sep { color: var(--muted); }
+.toolbar-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Last commit bar, file tree and file viewer share one bordered box. */
+.source-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.last-commit-bar {
+    display: flex; align-items: center; gap: 8px; background: var(--mud-palette-action-default-hover);
+    border-bottom: 1px solid var(--border); padding: 8px 14px; font-size: 13px; min-width: 0;
+}
+.last-commit-bar .commit-msg { color: var(--text); font-weight: 400; }
+.last-commit-when { margin-left: auto; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+
+.tree-row {
+    display: grid; grid-template-columns: 22px minmax(140px, 1fr) minmax(0, 2fr) 110px; gap: 10px; align-items: center;
+    padding: 7px 14px; border-bottom: 1px solid var(--border); font-size: 13.5px; color: var(--text);
+}
+.tree-row:last-child { border-bottom: none; }
+.tree-row:hover { background: var(--mud-palette-action-default-hover); text-decoration: none; }
+::deep .tree-icon { color: var(--muted); }
+::deep .tree-icon-dir { color: var(--mud-palette-info); }
+.tree-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.tree-name:hover { color: var(--accent); }
+.tree-commit { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+a.tree-commit { color: var(--muted); }
+a.tree-commit:hover { color: var(--accent); }
+.tree-when { text-align: right; font-size: 12px; white-space: nowrap; }
+
+.readme-card { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.readme-head {
+    display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); font-weight: 600;
+    background: var(--mud-palette-action-default-hover);
+}
+.readme-body { padding: 18px 22px; overflow-wrap: anywhere; }
+.readme-body ::deep h1 { font-size: 1.5rem; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.readme-body ::deep h2 { font-size: 1.2rem; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+
+.file-view-head {
+    display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--mud-palette-action-default-hover);
+    border-bottom: 1px solid var(--border); min-height: 44px; flex-wrap: wrap;
+}
+::deep .file-mode { margin-left: auto; }
+.file-view .code-table { display: block; overflow-x: auto; }
+
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+
+@media (max-width: 1000px) {
+    .tree-row { grid-template-columns: 22px minmax(0, 1fr) 90px; }
+    .tree-row .tree-commit { display: none; }
+}
+@media (max-width: 600px) {
+    .toolbar-actions { margin-left: 0; }
+    .last-commit-bar { flex-wrap: wrap; }
+    .readme-body { padding: 14px; }
+}

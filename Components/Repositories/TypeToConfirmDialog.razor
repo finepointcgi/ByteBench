@@ -1,0 +1,44 @@
+@* Destructive-action dialog that only enables its confirm button once the user has typed ConfirmText exactly.
+   Returns DialogResult.Ok(typedText) on confirm. *@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Outlined.WarningAmber" Color="Color.Error" /> @Title
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <MudText Typo="Typo.body2" Class="mb-3">@Message</MudText>
+        }
+        <MudTextField T="string" @bind-Value="typed" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" AutoFocus="true" ShrinkLabel="true"
+                      Label="@($"Type {ConfirmText} to confirm")" autocomplete="off" OnKeyDown="KeyDown" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" Disabled="@(!Matches)" OnClick="Confirm">@ConfirmButtonText</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+    [Parameter] public string? Message { get; set; }
+    /// <summary>The text the user must type, e.g. the repository name.</summary>
+    [Parameter, EditorRequired] public string ConfirmText { get; set; } = "";
+    [Parameter] public string ConfirmButtonText { get; set; } = "Delete";
+
+    private string? typed;
+    private bool Matches => typed?.Trim() == ConfirmText;
+
+    private void Confirm()
+    {
+        if (Matches) MudDialog.Close(DialogResult.Ok(typed!.Trim()));
+    }
+
+    private void KeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Confirm();
+    }
+}

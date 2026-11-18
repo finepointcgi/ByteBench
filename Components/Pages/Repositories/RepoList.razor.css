@@ -1,0 +1,15 @@
+.repo-page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.repo-icon {
+    display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px;
+    background: var(--accent-soft); color: var(--accent); flex-shrink: 0;
+}
+.repo-stat { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.archived-tag {
+    display: inline-block; font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 7px; border-radius: 9px; margin-left: 6px;
+    background: rgba(var(--mud-palette-warning-rgb), .15); color: var(--mud-palette-warning); vertical-align: middle;
+}
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+@media (max-width: 600px) {
+    .repo-row { flex-wrap: wrap; }
+    .gb-row-right { width: 100%; justify-content: flex-start; padding-left: 42px; }
+}

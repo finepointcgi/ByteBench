@@ -1,0 +1,5 @@
+.search-form ::deep .search-input { flex: 1 1 280px; max-width: 560px; margin: 0; }
+.search-form ::deep .gb-ref-select { flex: none; margin: 0; }
+@media (max-width: 600px) {
+    .search-form ::deep .gb-ref-select { flex: 1 1 100%; max-width: none; }
+}

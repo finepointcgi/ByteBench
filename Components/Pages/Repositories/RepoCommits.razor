@@ -15,8 +15,8 @@ else if (Repo != null)
         <RefSelector Branches="branches" Tags="tags" Value="@CurrentRef" ValueChanged="r => Nav.NavigateTo(RepoUrls.Commits(Repo, r, CleanPath))" />
         @if (CleanPath != null)
         {
-            <span class="muted">History for <span class="mono"><a href="@RepoUrls.Source(Repo, Ref, CleanPath)">@CleanPath</a></span></span>
-            <a class="small" href="@RepoUrls.Commits(Repo, Ref)">Show all commits</a>
+            <span class="muted" style="overflow-wrap: anywhere">History for <span class="mono"><a href="@RepoUrls.Source(Repo, Ref, CleanPath)">@CleanPath</a></span></span>
+            <MudButton Href="@RepoUrls.Commits(Repo, Ref)" Variant="Variant.Text" Size="Size.Small" Color="Color.Primary">Show all commits</MudButton>
         }
     </div>
 
@@ -29,10 +29,16 @@ else if (Repo != null)
         <CommitList Commits="commits" Repo="Repo" Users="UsersByEmail" EmptyText="No commits found." />
         @if (CurrentPage > 1 || hasMore)
         {
-            <div class="pager">
-                @if (CurrentPage > 1) { <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath, CurrentPage - 1)">← Newer</a> }
+            <div class="gb-pager">
+                @if (CurrentPage > 1)
+                {
+                    <MudButton Href="@RepoUrls.Commits(Repo, Ref, CleanPath, CurrentPage - 1)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ChevronLeft">Newer</MudButton>
+                }
                 <span class="muted small">Page @CurrentPage</span>
-                @if (hasMore) { <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath, CurrentPage + 1)">Older →</a> }
+                @if (hasMore)
+                {
+                    <MudButton Href="@RepoUrls.Commits(Repo, Ref, CleanPath, CurrentPage + 1)" Variant="Variant.Outlined" Size="Size.Small" EndIcon="@Icons.Material.Filled.ChevronRight">Older</MudButton>
+                }
             </div>
         }
     }

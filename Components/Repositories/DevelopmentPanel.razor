@@ -1,28 +1,28 @@
 @* Jira-style "Development" sidebar block for an issue: branches, pull requests and commits mentioning its key. *@
 @inject RepositoryService Repos
 
-<div class="field dev-panel">
-    <label>Development</label>
+<div class="dev-panel">
+    <div class="dev-label">Development</div>
     @if (info == null)
     {
-        <div class="muted small">Loading…</div>
+        <MudText Class="mud-text-secondary" Typo="Typo.caption">Loading…</MudText>
     }
     else if (info.IsEmpty)
     {
-        <div class="muted small">
+        <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">
             No branches, commits or pull requests yet. Include <code>@Issue.Key</code> in a branch name or commit message to link it.
-        </div>
+        </MudText>
     }
     else
     {
         @if (info.PullRequests.Count > 0)
         {
             <div class="dev-group">
-                <div class="dev-heading">⇄ @info.PullRequests.Count pull request@(info.PullRequests.Count == 1 ? "" : "s")</div>
+                <div class="dev-heading"><MudIcon Icon="@Icons.Material.Outlined.MergeType" Size="Size.Small" /> @info.PullRequests.Count pull request@(info.PullRequests.Count == 1 ? "" : "s")</div>
                 @foreach (var pr in info.PullRequests)
                 {
                     <a class="dev-item" href="@RepoUrls.PullRequest(pr)" title="@pr.Title">
-                        <PrStateBadge State="pr.State" />
+                        <PrStateBadge State="pr.State" Compact="true" />
                         <span class="dev-text">@pr.Repository.Slug#@pr.Number @pr.Title</span>
                     </a>
                 }
@@ -31,7 +31,7 @@
         @if (info.Branches.Count > 0)
         {
             <div class="dev-group">
-                <div class="dev-heading">⑂ @info.Branches.Count branch@(info.Branches.Count == 1 ? "" : "es")</div>
+                <div class="dev-heading"><MudIcon Icon="@Icons.Material.Outlined.AccountTree" Size="Size.Small" /> @info.Branches.Count branch@(info.Branches.Count == 1 ? "" : "es")</div>
                 @foreach (var b in info.Branches)
                 {
                     <a class="dev-item mono" href="@RepoUrls.Source(b.Repo, b.Branch.Name)" title="@b.Repo.Slug: @b.Branch.Name">
@@ -43,11 +43,11 @@
         @if (info.Commits.Count > 0)
         {
             <div class="dev-group">
-                <div class="dev-heading">● @info.Commits.Count recent commit@(info.Commits.Count == 1 ? "" : "s")</div>
+                <div class="dev-heading"><MudIcon Icon="@Icons.Material.Outlined.Commit" Size="Size.Small" /> @info.Commits.Count recent commit@(info.Commits.Count == 1 ? "" : "s")</div>
                 @foreach (var c in info.Commits)
                 {
                     <a class="dev-item" href="@RepoUrls.Commit(c.Repo, c.Commit.Sha)" title="@c.Commit.Message">
-                        <span class="sha-pill mono">@c.Commit.ShortSha</span>
+                        <span class="sha-pill">@c.Commit.ShortSha</span>
                         <span class="dev-text">@c.Commit.MessageShort</span>
                     </a>
                 }

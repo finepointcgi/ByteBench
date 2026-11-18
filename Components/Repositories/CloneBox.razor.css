@@ -1,0 +1,4 @@
+.clone-box { width: 360px; max-width: 100%; }
+::deep .clone-input { margin: 0; }
+::deep .clone-input input { font-size: 12px; }
+@media (max-width: 600px) { .clone-box { width: 100%; } }

@@ -1,0 +1,5 @@
+.settings-layout ::deep .danger-zone { border-color: rgba(var(--mud-palette-error-rgb), .45); }
+.settings-layout ::deep .default-branch { max-width: 320px; }
+.rename-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rename-row ::deep .slug-input { flex: 1 1 320px; max-width: 520px; margin: 0; }
+.mono { overflow-wrap: anywhere; }

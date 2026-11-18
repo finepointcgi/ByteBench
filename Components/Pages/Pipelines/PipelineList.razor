@@ -22,16 +22,17 @@ else if (Repo != null)
         }
         else if (perms.Can(Permission.PushCode) && branches.Count > 0)
         {
-            <select class="form-select form-select-sm ref-select mono" @bind="runBranch">
-                @foreach (var b in branches) { <option value="@b">@b</option> }
-            </select>
-            <button class="btn btn-sm btn-primary" disabled="@busy" @onclick="Run">▶ Run pipeline</button>
+            <MudSelect T="string" @bind-Value="runBranch" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="gb-ref-select gb-mono-input run-branch"
+                       aria-label="Branch to run">
+                @foreach (var b in branches) { <MudSelectItem T="string" Value="@b"><span class="mono">@b</span></MudSelectItem> }
+            </MudSelect>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Disabled="@busy" OnClick="Run">Run pipeline</MudButton>
         }
-        <span class="ms-auto muted small">Pipelines run <span class="mono">@CiFile.FileName</span> from the repository root.</span>
+        <span class="toolbar-note muted small">Pipelines run <span class="mono">@CiFile.FileName</span> from the repository root.</span>
     </div>
-    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
-    <div class="issue-list ci-list">
+    <div class="gb-rows ci-list">
         @if (list == null || list.Items.Count == 0)
         {
             <div class="empty">
@@ -42,22 +43,22 @@ else if (Repo != null)
         {
             @foreach (var p in list.Items)
             {
-                <div class="issue-row ci-row" @key="p.Id">
+                <div class="gb-row gb-row-hover ci-row" @key="p.Id">
                     <div class="ci-col-status"><PipelineStatusIcon Status="p.Status" ShowLabel="true" Href="@PipelineUrls.Detail(Repo, p.Id)" /></div>
-                    <div class="issue-main">
-                        <div class="issue-title">
+                    <div class="gb-row-main">
+                        <div class="gb-row-title">
                             <a href="@PipelineUrls.Detail(Repo, p.Id)">#@p.Id</a>
                             <span class="ci-msg">@(p.CommitMessage ?? "")</span>
                         </div>
-                        <div class="issue-meta">
-                            <a class="branch-pill mono" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
-                            <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, p.CommitSha)">@p.CommitSha[..7]</a>
+                        <div class="gb-row-meta">
+                            <a class="branch-pill" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
+                            <a class="sha-pill" href="@RepoUrls.Commit(Repo, p.CommitSha)">@p.CommitSha[..7]</a>
                             · @PipelineFormat.Trigger(p)@if (p.TriggeredBy != null) {<span> by <b>@p.TriggeredBy.DisplayName</b></span>}
-                            @if (p.Error != null) { <span class="text-danger"> · @Shorten(p.Error)</span> }
+                            @if (p.Error != null) { <span class="ci-row-error"> · @Shorten(p.Error)</span> }
                         </div>
                     </div>
-                    <div class="ci-col-time muted small text-end">
-                        @if (p.StartedAt != null) { <div title="Duration">⏱ @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</div> }
+                    <div class="ci-col-time muted small">
+                        @if (p.StartedAt != null) { <div title="Duration" class="ci-duration"><MudIcon Icon="@Icons.Material.Outlined.Timer" Style="font-size: 14px" /> @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</div> }
                         <div title="@p.CreatedAt.ToLocalTime().ToString("g")">@Display.Ago(p.CreatedAt)</div>
                     </div>
                 </div>
@@ -66,10 +67,16 @@ else if (Repo != null)
     </div>
     @if (list != null && list.Pages > 1)
     {
-        <div class="pager">
-            @if (list.Page > 1) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(list.Page - 1)">← Newer</a> }
+        <div class="gb-pager">
+            @if (list.Page > 1)
+            {
+                <MudButton Href="@PageUrl(list.Page - 1)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ChevronLeft">Newer</MudButton>
+            }
             <span class="muted small">Page @list.Page of @list.Pages</span>
-            @if (list.Page < list.Pages) { <a class="btn btn-sm btn-outline-secondary" href="@PageUrl(list.Page + 1)">Older →</a> }
+            @if (list.Page < list.Pages)
+            {
+                <MudButton Href="@PageUrl(list.Page + 1)" Variant="Variant.Outlined" Size="Size.Small" EndIcon="@Icons.Material.Filled.ChevronRight">Older</MudButton>
+            }
         </div>
     }
 }

@@ -1,0 +1,36 @@
+.repo-toolbar ::deep .branch-name-input { width: 240px; flex: none; margin: 0; }
+.repo-toolbar ::deep .gb-ref-select { flex: none; margin: 0; }
+.toolbar-note { margin-left: auto; }
+
+.branch-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) 220px auto; gap: 16px; align-items: center; padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+}
+.branch-row:last-child { border-bottom: none; }
+.branch-row:hover { background: var(--mud-palette-action-default-hover); }
+.branch-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.branch-tag {
+    display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; font-weight: 500; padding: 0 7px; border-radius: 10px;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary);
+}
+.branch-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; min-width: 150px; }
+.branch-pr { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+
+.ahead-behind { display: grid; grid-template-columns: 1fr 1fr; font-size: 11.5px; color: var(--muted); }
+.ab-default { display: block; text-align: center; }
+.ab-side { display: flex; align-items: center; gap: 4px; }
+.ab-side.behind { justify-content: flex-end; border-right: 1px solid var(--mud-palette-lines-inputs); padding-right: 3px; }
+.ab-side.ahead { padding-left: 3px; }
+.ab-bar { height: 6px; min-width: 0; border-radius: 3px; }
+.ab-side.behind .ab-bar { background: var(--mud-palette-lines-inputs); }
+.ab-side.ahead .ab-bar { background: var(--mud-palette-primary-lighten); }
+
+@media (max-width: 1000px) {
+    .branch-row { grid-template-columns: 1fr; gap: 8px; }
+    .branch-actions { justify-content: flex-start; min-width: 0; }
+    .ahead-behind { max-width: 220px; }
+}
+@media (max-width: 600px) {
+    .repo-toolbar ::deep .branch-name-input, .repo-toolbar ::deep .gb-ref-select { width: 100%; max-width: none; flex: 1 1 100%; }
+    .toolbar-note { margin-left: 0; }
+}

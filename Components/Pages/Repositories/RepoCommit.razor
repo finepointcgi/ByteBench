@@ -18,35 +18,35 @@ else if (Repo != null)
     else
     {
         var c = detail.Commit;
-        <div class="card-panel commit-card">
-            <div class="d-flex gap-3 align-items-start">
-                <div class="flex-grow-1 min-w-0">
-                    <h2 class="commit-title">@c.MessageShort</h2>
+        <MudPaper Outlined="true" Class="pa-4 mb-4">
+            <div class="commit-top">
+                <div class="gb-min0 flex-grow-1">
+                    <MudText Typo="Typo.h6" HtmlTag="h2" Class="commit-title">@c.MessageShort</MudText>
                     @if (c.Body != null)
                     {
                         <pre class="commit-body">@c.Body</pre>
                     }
                     <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@c.Message" />
                 </div>
-                <a class="btn btn-sm btn-outline-secondary text-nowrap" href="@RepoUrls.Source(Repo, c.Sha)">Browse files</a>
+                <MudButton Href="@RepoUrls.Source(Repo, c.Sha)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Code" Class="gb-nowrap">Browse files</MudButton>
             </div>
             <div class="commit-meta">
                 <GitAvatar Name="@c.AuthorName" Email="@c.AuthorEmail" Users="UsersByEmail" Size="22" ShowName />
                 <span class="muted">committed @Display.Ago(c.When.UtcDateTime) · @c.When.ToLocalTime().ToString("MMM d, yyyy HH:mm")</span>
-                <span class="ms-auto muted small">
+                <span class="commit-parents muted small">
                     @(c.ParentShas.Count == 1 ? "parent" : c.ParentShas.Count > 1 ? "parents" : "root commit")
                     @foreach (var p in c.ParentShas)
                     {
-                        <text> </text><a class="sha-pill mono" href="@RepoUrls.Commit(Repo, p)">@p[..7]</a>
+                        <text> </text><a class="sha-pill" href="@RepoUrls.Commit(Repo, p)">@p[..7]</a>
                     }
-                    · commit <span class="sha-pill mono" title="@c.Sha">@c.Sha</span>
+                    · commit <span class="sha-pill commit-sha" title="@c.Sha">@c.Sha</span>
                 </span>
             </div>
-        </div>
+        </MudPaper>
 
         @if (c.ParentShas.Count > 1)
         {
-            <div class="muted small mb-2">Showing changes against the first parent.</div>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">Showing changes against the first parent.</MudText>
         }
         <DiffView Files="detail.Files" Repo="Repo" ViewRef="@c.Sha" EmptyText="This commit has no file changes." />
     }

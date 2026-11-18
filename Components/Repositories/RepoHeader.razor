@@ -1,44 +1,51 @@
 @* Breadcrumb, title and tab strip shared by every page of a repository. *@
 @inject ProjectAccess Access
 @inject NavigationManager Nav
-<div class="breadcrumbs">
-    <a href="/p/@Repo.Project.Key/issues">@Repo.Project.Name</a> /
-    <a href="@RepoUrls.List(Repo.Project.Key)">Repositories</a> /
-    <span>@Repo.Name</span>
-</div>
+<div class="repo-crumbs"><MudBreadcrumbs Items="Crumbs" Class="px-0 pt-0 pb-2" /></div>
 <div class="repo-header">
     <div class="repo-title">
-        <span class="repo-icon">⌥</span>
-        <div>
-            <h1>@Repo.Name@if (Repo.IsArchived) {<span class="archived-badge" title="Read-only: pushes and new pull requests are disabled">Archived</span>}</h1>
+        <span class="repo-icon"><MudIcon Icon="@Icons.Material.Outlined.Inventory2" /></span>
+        <div class="gb-min0">
+            <div class="d-flex align-center flex-wrap gap-2">
+                <MudText Typo="Typo.h5" HtmlTag="h1" Class="repo-name">@Repo.Name</MudText>
+                @if (Repo.IsArchived)
+                {
+                    <MudTooltip Text="Read-only: pushes and new pull requests are disabled">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.Archive" Class="ma-0">Archived</MudChip>
+                    </MudTooltip>
+                }
+            </div>
             @if (!string.IsNullOrWhiteSpace(Repo.Description))
             {
-                <div class="muted">@Repo.Description</div>
+                <MudText Class="mud-text-secondary" Typo="Typo.body2">@Repo.Description</MudText>
             }
         </div>
     </div>
     <div class="repo-header-actions">
-        <form class="d-flex" role="search" @onsubmit="Search">
-            <input class="form-control form-control-sm repo-search-box" type="search" placeholder="Search code…"
-                   aria-label="Search this repository" @bind="query" />
+        <form role="search" @onsubmit="Search" class="repo-search-form">
+            <MudTextField T="string" @bind-Value="query" Immediate="true" Placeholder="Search code…" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" InputType="InputType.Search"
+                          aria-label="Search this repository" Class="repo-search-box" />
         </form>
         @ChildContent
     </div>
 </div>
 @if (Repo.IsArchived)
 {
-    <div class="archived-banner">This repository was archived@(Repo.ArchivedAt is { } at ? $" on {at.ToLocalTime():MMM d, yyyy}" : ""). It is read-only: pushes, new branches and pull requests are disabled.</div>
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+        This repository was archived@(Repo.ArchivedAt is { } at ? $" on {at.ToLocalTime():MMM d, yyyy}" : ""). It is read-only: pushes, new branches and pull requests are disabled.
+    </MudAlert>
 }
-<nav class="tabs repo-tabs">
-    <a class="tab @(Active == "source" ? "active" : "")" href="@RepoUrls.Source(Repo, Ref)">Source</a>
-    <a class="tab @(Active == "commits" ? "active" : "")" href="@RepoUrls.Commits(Repo, Ref)">Commits</a>
-    <a class="tab @(Active == "branches" ? "active" : "")" href="@RepoUrls.Branches(Repo)">Branches</a>
-    <a class="tab @(Active == "prs" ? "active" : "")" href="@RepoUrls.RepoPullRequests(Repo)">Pull requests</a>
-    <a class="tab @(Active == "pipelines" ? "active" : "")" href="@PipelineUrls.List(Repo)">Pipelines</a>
-    <a class="tab @(Active == "search" ? "active" : "")" href="@CodeUrls.Search(Repo, null, Ref)">Search</a>
+<nav class="gb-tabs" aria-label="Repository">
+    <TabLink Active="@(Active == "source")" Href="@RepoUrls.Source(Repo, Ref)" Icon="@Icons.Material.Outlined.Code">Source</TabLink>
+    <TabLink Active="@(Active == "commits")" Href="@RepoUrls.Commits(Repo, Ref)" Icon="@Icons.Material.Outlined.Commit">Commits</TabLink>
+    <TabLink Active="@(Active == "branches")" Href="@RepoUrls.Branches(Repo)" Icon="@Icons.Material.Outlined.AccountTree">Branches</TabLink>
+    <TabLink Active="@(Active == "prs")" Href="@RepoUrls.RepoPullRequests(Repo)" Icon="@Icons.Material.Outlined.MergeType">Pull requests</TabLink>
+    <TabLink Active="@(Active == "pipelines")" Href="@PipelineUrls.List(Repo)" Icon="@Icons.Material.Outlined.PlayCircleOutline">Pipelines</TabLink>
+    <TabLink Active="@(Active == "search")" Href="@CodeUrls.Search(Repo, null, Ref)" Icon="@Icons.Material.Outlined.Search">Search</TabLink>
     @if (canManage)
     {
-        <a class="tab @(Active == "settings" ? "active" : "")" href="@CodeUrls.Settings(Repo)">Settings</a>
+        <TabLink Active="@(Active == "settings")" Href="@CodeUrls.Settings(Repo)" Icon="@Icons.Material.Outlined.Settings">Settings</TabLink>
     }
 </nav>
 
@@ -53,6 +60,13 @@
     private bool canManage;
     private int? permsFor;
     private string? query;
+
+    private List<BreadcrumbItem> Crumbs =>
+    [
+        new(Repo.Project.Name, $"/p/{Repo.Project.Key}/issues"),
+        new("Repositories", RepoUrls.List(Repo.Project.Key)),
+        new(Repo.Name, null, disabled: true),
+    ];
 
     protected override async Task OnParametersSetAsync()
     {

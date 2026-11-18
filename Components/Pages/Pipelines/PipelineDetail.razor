@@ -19,20 +19,20 @@ else if (Repo != null && pipeline != null)
 
     <div class="ci-head">
         <div class="ci-head-main">
-            <h2 class="ci-title">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="ci-title">
                 <PipelineStatusIcon Status="p.Status" ShowLabel="true" />
                 <span>Pipeline #@p.Id</span>
-            </h2>
-            <div class="issue-meta">
-                <a class="branch-pill mono" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
-                <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, p.CommitSha)" title="@p.CommitSha">@p.CommitSha[..7]</a>
+            </MudText>
+            <div class="ci-meta">
+                <a class="branch-pill" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
+                <a class="sha-pill" href="@RepoUrls.Commit(Repo, p.CommitSha)" title="@p.CommitSha">@p.CommitSha[..7]</a>
                 @if (p.CommitMessage != null) { <span>@p.CommitMessage</span> }
                 @if (prNumber != null) { <span> · <a href="@RepoUrls.PullRequest(Repo, prNumber.Value)">@Repo.Slug#@prNumber</a></span> }
             </div>
-            <div class="issue-meta">
+            <div class="ci-meta">
                 Triggered by @PipelineFormat.Trigger(p)@if (p.TriggeredBy != null) {<span> (<b>@p.TriggeredBy.DisplayName</b>)</span>}
                 <span>· @Display.Ago(p.CreatedAt)</span>
-                @if (p.StartedAt != null) { <span> · ⏱ @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</span> }
+                @if (p.StartedAt != null) { <span class="ci-duration"> · <MudIcon Icon="@Icons.Material.Outlined.Timer" Style="font-size: 14px" /> @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</span> }
             </div>
         </div>
         @if (perms.Can(Permission.PushCode))
@@ -40,18 +40,18 @@ else if (Repo != null && pipeline != null)
             <div class="d-flex gap-2">
                 @if (!p.IsFinished)
                 {
-                    <button class="btn btn-sm btn-outline-danger" disabled="@busy" @onclick="Cancel">Cancel</button>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.StopCircle" Disabled="@busy" OnClick="Cancel">Cancel</MudButton>
                 }
                 else if (Pipelines.Enabled)
                 {
-                    <button class="btn btn-sm btn-outline-secondary" disabled="@busy" @onclick="Rerun">↻ Re-run</button>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Replay" Disabled="@busy" OnClick="Rerun">Re-run</MudButton>
                 }
             </div>
         }
     </div>
 
-    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
-    @if (p.Error != null) { <div class="alert alert-warning py-2 ci-error">@p.Error</div> }
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+    @if (p.Error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3 ci-error">@p.Error</MudAlert> }
 
     @if (p.Jobs.Count > 0)
     {
@@ -63,7 +63,7 @@ else if (Repo != null && pipeline != null)
                         <div class="ci-job-head">
                             <PipelineStatusIcon Status="job.Status" />
                             <b>@job.Name</b>
-                            <span class="ms-auto muted small">@PipelineFormat.Duration(job.StartedAt, job.FinishedAt)</span>
+                            <span class="ci-push muted small">@PipelineFormat.Duration(job.StartedAt, job.FinishedAt)</span>
                         </div>
                         <div class="ci-job-meta muted small">
                             <span class="mono" title="Image">@job.Image</span>
@@ -71,10 +71,11 @@ else if (Repo != null && pipeline != null)
                         </div>
                         @foreach (var s in job.Steps)
                         {
-                            <button class="ci-step @(s.Id == SelectedStepId ? "selected" : "")" @key="s.Id" @onclick="() => Select(s.Id)">
+                            <button type="button" class="ci-step @(s.Id == SelectedStepId ? "selected" : "")" @key="s.Id" @onclick="() => Select(s.Id)"
+                                    aria-pressed="@(s.Id == SelectedStepId ? "true" : "false")">
                                 <PipelineStatusIcon Status="s.Status" />
                                 <span class="ci-step-name">@s.Name</span>
-                                <span class="ms-auto muted small">@PipelineFormat.Duration(s.StartedAt, s.FinishedAt)</span>
+                                <span class="ci-push muted small">@PipelineFormat.Duration(s.StartedAt, s.FinishedAt)</span>
                             </button>
                         }
                     </div>
@@ -87,13 +88,15 @@ else if (Repo != null && pipeline != null)
                     <div class="ci-log-head">
                         <PipelineStatusIcon Status="st.Status" ShowLabel="true" />
                         <b>@st.Name</b>
-                        @if (st.ExitCode != null) { <span class="muted small">exit code @st.ExitCode</span> }
-                        @if (st.StartedAt != null) { <span class="muted small">· @PipelineFormat.Duration(st.StartedAt, st.FinishedAt)</span> }
-                        <a class="ms-auto small" href="@PipelineUrls.RawLog(Repo, p.Id, st.Id)" target="_blank">Raw log</a>
+                        @if (st.ExitCode != null) { <span class="ci-log-muted small">exit code @st.ExitCode</span> }
+                        @if (st.StartedAt != null) { <span class="ci-log-muted small">· @PipelineFormat.Duration(st.StartedAt, st.FinishedAt)</span> }
+                        <a class="ci-push small ci-raw" href="@PipelineUrls.RawLog(Repo, p.Id, st.Id)" target="_blank">
+                            <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Style="font-size: 14px" /> Raw log
+                        </a>
                     </div>
                     @if (logTail)
                     {
-                        <div class="muted small px-2 pt-1">Showing the last @(MaxShown / 1024) KB. Open the raw log for all of it.</div>
+                        <div class="ci-log-muted small px-2 pt-1">Showing the last @(MaxShown / 1024) KB. Open the raw log for all of it.</div>
                     }
                     <pre class="ci-log" @ref="logEl">@(string.IsNullOrEmpty(logText) ? (st.Status == PipelineStatus.Queued ? "Waiting to start…" : st.Status == PipelineStatus.Skipped ? "Skipped: an earlier step or a needed job did not pass." : st.Status == PipelineStatus.Canceled ? "Canceled." : "") : logText)</pre>
                 }

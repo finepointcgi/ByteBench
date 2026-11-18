@@ -1,0 +1,8 @@
+.bp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.bp-header .gb-min0 { flex: 1 1 320px; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+.bp-row { align-items: flex-start; }
+@media (max-width: 600px) {
+    .bp-row { flex-wrap: wrap; }
+    .gb-row-right { width: 100%; justify-content: flex-end; }
+}

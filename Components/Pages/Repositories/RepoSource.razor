@@ -24,11 +24,12 @@ else if (Repo != null)
                 else { <a href="@RepoUrls.Source(Repo, Ref, full)">@name</a> }
             }
         </div>
-        <div class="ms-auto d-flex gap-2">
-            <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath)">🕘 History</a>
+        <div class="toolbar-actions">
+            <MudButton Href="@RepoUrls.Commits(Repo, Ref, CleanPath)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.History">History</MudButton>
             @if (!IsTag && !Repo.IsArchived && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
             {
-                <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, CurrentRef, Repo.DefaultBranch)">Create pull request</a>
+                <MudButton Href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, CurrentRef, Repo.DefaultBranch)" Variant="Variant.Outlined" Color="Color.Primary"
+                           Size="Size.Small" StartIcon="@Icons.Material.Outlined.MergeType">Create pull request</MudButton>
             }
         </div>
     </div>
@@ -47,96 +48,100 @@ else if (Repo != null)
     }
     else
     {
-        @if (lastCommit != null)
-        {
-            <div class="last-commit-bar">
-                <GitAvatar Name="@lastCommit.AuthorName" Email="@lastCommit.AuthorEmail" Users="UsersByEmail" Size="22" />
-                <b>@lastCommit.AuthorName</b>
-                <a class="text-truncate commit-msg" href="@RepoUrls.Commit(Repo, lastCommit.Sha)">@lastCommit.MessageShort</a>
-                <span class="ms-auto muted small text-nowrap">
-                    <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, lastCommit.Sha)">@lastCommit.ShortSha</a>
-                    @Display.Ago(lastCommit.When.UtcDateTime)
-                </span>
-            </div>
-        }
-
-        @if (tree != null)
-        {
-            <div class="file-tree">
-                @if (!string.IsNullOrEmpty(CleanPath))
-                {
-                    <a class="tree-row" href="@RepoUrls.Source(Repo, Ref, ParentPath)">
-                        <span class="tree-icon">📁</span><span class="tree-name">..</span>
-                    </a>
-                }
-                @foreach (var e in tree)
-                {
-                    <div class="tree-row" @key="e.Path">
-                        <span class="tree-icon">@(e.IsDirectory ? "📁" : e.IsSubmodule ? "🔗" : "📄")</span>
-                        @if (e.IsSubmodule) { <span class="tree-name">@e.Name</span> }
-                        else { <a class="tree-name" href="@RepoUrls.Source(Repo, Ref, e.Path)">@e.Name</a> }
-                        @if (e.LastCommit is { } lc)
-                        {
-                            <a class="tree-commit muted" href="@RepoUrls.Commit(Repo, lc.Sha)" title="@lc.Message">@lc.MessageShort</a>
-                            <span class="tree-when muted">@Display.Ago(lc.When.UtcDateTime)</span>
-                        }
-                        else
-                        {
-                            <span class="tree-commit"></span><span class="tree-when"></span>
-                        }
-                    </div>
-                }
-            </div>
-
-            @if (readme?.Text != null)
+        <div class="source-box">
+            @if (lastCommit != null)
             {
-                <div class="readme-card">
-                    <div class="readme-head">📖 @readme.Path.Split('/').Last()</div>
-                    <div class="markdown readme-body">@Display.Markdown(readme.Text)</div>
+                <div class="last-commit-bar">
+                    <GitAvatar Name="@lastCommit.AuthorName" Email="@lastCommit.AuthorEmail" Users="UsersByEmail" Size="22" />
+                    <b class="gb-nowrap">@lastCommit.AuthorName</b>
+                    <a class="gb-truncate commit-msg" href="@RepoUrls.Commit(Repo, lastCommit.Sha)">@lastCommit.MessageShort</a>
+                    <span class="last-commit-when muted small">
+                        <a class="sha-pill" href="@RepoUrls.Commit(Repo, lastCommit.Sha)">@lastCommit.ShortSha</a>
+                        @Display.Ago(lastCommit.When.UtcDateTime)
+                    </span>
                 </div>
             }
-        }
-        else if (blob != null)
-        {
-            <div class="file-view">
-                <div class="file-view-head">
-                    <span class="mono"><b>@blob.Path.Split('/').Last()</b></span>
-                    <span class="muted small">
-                        @if (blob.Text != null) { <span>@blob.Lines.Length lines · </span> }
-                        @FormatSize(blob.Size)
-                    </span>
-                    @if (IsMarkdown && blob.Text != null)
+
+            @if (tree != null)
+            {
+                <div class="file-tree">
+                    @if (!string.IsNullOrEmpty(CleanPath))
                     {
-                        <div class="md-tabs ms-auto file-mode">
-                            <button type="button" class="@(showSource ? "" : "active")" @onclick="() => showSource = false">Preview</button>
-                            <button type="button" class="@(showSource ? "active" : "")" @onclick="() => showSource = true">Code</button>
+                        <a class="tree-row" href="@RepoUrls.Source(Repo, Ref, ParentPath)">
+                            <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="tree-icon tree-icon-dir" /><span class="tree-name">..</span>
+                        </a>
+                    }
+                    @foreach (var e in tree)
+                    {
+                        <div class="tree-row" @key="e.Path">
+                            <MudIcon Icon="@(e.IsDirectory ? Icons.Material.Filled.Folder : e.IsSubmodule ? Icons.Material.Outlined.Link : Icons.Material.Outlined.InsertDriveFile)"
+                                     Size="Size.Small" Class="@(e.IsDirectory ? "tree-icon tree-icon-dir" : "tree-icon")" />
+                            @if (e.IsSubmodule) { <span class="tree-name">@e.Name</span> }
+                            else { <a class="tree-name" href="@RepoUrls.Source(Repo, Ref, e.Path)">@e.Name</a> }
+                            @if (e.LastCommit is { } lc)
+                            {
+                                <a class="tree-commit" href="@RepoUrls.Commit(Repo, lc.Sha)" title="@lc.Message">@lc.MessageShort</a>
+                                <span class="tree-when muted">@Display.Ago(lc.When.UtcDateTime)</span>
+                            }
+                            else
+                            {
+                                <span class="tree-commit"></span><span class="tree-when"></span>
+                            }
                         </div>
                     }
                 </div>
-                @if (blob.TooLarge)
-                {
-                    <div class="diff-note">This file is too large to display (@FormatSize(blob.Size); limit 1 MB).</div>
-                }
-                else if (blob.IsBinary)
-                {
-                    <div class="diff-note">Binary file not shown.</div>
-                }
-                else if (IsMarkdown && !showSource)
-                {
-                    <div class="markdown readme-body">@Display.Markdown(blob.Text)</div>
-                }
-                else
-                {
-                    var lineBase = LineLinkBase;
-                    <table class="code-table mono" data-linkable data-hl-lang="@CodeLanguages.ForFile(blob.Path, blob.Size)" @key="blob.Sha">
-                        @{ var n = 0; }
-                        @foreach (var line in blob.Lines)
+            }
+            else if (blob != null)
+            {
+                <div class="file-view">
+                    <div class="file-view-head">
+                        <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" Class="tree-icon" />
+                        <span class="mono gb-truncate"><b>@blob.Path.Split('/').Last()</b></span>
+                        <span class="muted small gb-nowrap">
+                            @if (blob.Text != null) { <span>@blob.Lines.Length lines · </span> }
+                            @FormatSize(blob.Size)
+                        </span>
+                        @if (IsMarkdown && blob.Text != null)
                         {
-                            n++;
-                            <tr id="L@(n)"><td class="ln"><a class="ln-link" href="@(lineBase)#L@(n)" data-line="@n">@n</a></td><td class="code">@CodeLanguages.Line(line)</td></tr>
+                            <MudToggleGroup T="bool" @bind-Value="showSource" Size="Size.Small" Outlined="true" CheckMark="false" Class="file-mode">
+                                <MudToggleItem T="bool" Value="false" Text="Preview" />
+                                <MudToggleItem T="bool" Value="true" Text="Code" />
+                            </MudToggleGroup>
                         }
-                    </table>
-                }
+                    </div>
+                    @if (blob.TooLarge)
+                    {
+                        <div class="diff-note">This file is too large to display (@FormatSize(blob.Size); limit 1 MB).</div>
+                    }
+                    else if (blob.IsBinary)
+                    {
+                        <div class="diff-note">Binary file not shown.</div>
+                    }
+                    else if (IsMarkdown && !showSource)
+                    {
+                        <div class="markdown readme-body">@Display.Markdown(blob.Text)</div>
+                    }
+                    else
+                    {
+                        var lineBase = LineLinkBase;
+                        <table class="code-table mono" data-linkable data-hl-lang="@CodeLanguages.ForFile(blob.Path, blob.Size)" @key="blob.Sha">
+                            @{ var n = 0; }
+                            @foreach (var line in blob.Lines)
+                            {
+                                n++;
+                                <tr id="L@(n)"><td class="ln"><a class="ln-link" href="@(lineBase)#L@(n)" data-line="@n">@n</a></td><td class="code">@CodeLanguages.Line(line)</td></tr>
+                            }
+                        </table>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (tree != null && readme?.Text != null)
+        {
+            <div class="readme-card">
+                <div class="readme-head"><MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Small" /> @readme.Path.Split('/').Last()</div>
+                <div class="markdown readme-body">@Display.Markdown(readme.Text)</div>
             </div>
         }
     }

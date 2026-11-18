@@ -6,30 +6,31 @@
 @inject AiReviewQueue Queue
 @inject CurrentUser Me
 
-<div class="field ai-review-panel">
-    <label>AI review</label>
+<div class="gb-side-field ai-review-panel">
+    <span class="gb-section-label">AI review</span>
     @if (!Ai.IsConfigured)
     {
-        <div class="muted small">AI review isn't set up (set ANTHROPIC_API_KEY).</div>
+        <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">AI review isn't set up (set ANTHROPIC_API_KEY).</MudText>
     }
     else
     {
-        <div class="ai-review-status small @StatusCss">
+        <MudAlert Severity="@StatusSeverity" Dense="true" Variant="Variant.Outlined" Icon="@StatusIcon" Class="ai-review-status">
             AI review: @StatusText
-        </div>
+        </MudAlert>
         @if (latest?.Status == AiReviewStatus.Completed && latest.Error != null)
         {
-            <div class="small muted mt-1">@latest.Error</div>
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">@latest.Error</MudText>
         }
         @if (latest == null && !PullRequest.Repository.Project.AiReviewEnabled)
         {
-            <div class="small muted mt-1">Automatic review is off for this project.</div>
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">Automatic review is off for this project.</MudText>
         }
         @if (PullRequest.State == PullRequestState.Open)
         {
-            <button class="btn btn-outline-primary btn-sm w-100 mt-2" disabled="@(Busy || requesting)" @onclick="Request">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true" Class="mt-2"
+                       StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="@(Busy || requesting)" OnClick="Request">
                 @(latest == null ? "Ask GitBench AI to review" : "Re-run AI review")
-            </button>
+            </MudButton>
         }
     }
 </div>
@@ -45,11 +46,19 @@
 
     private bool Busy => latest?.Status is AiReviewStatus.Queued or AiReviewStatus.Running;
 
-    private string StatusCss => latest?.Status switch
+    private Severity StatusSeverity => latest?.Status switch
     {
-        AiReviewStatus.Failed => "bad",
-        AiReviewStatus.Completed => "good",
-        _ => "",
+        AiReviewStatus.Failed => Severity.Error,
+        AiReviewStatus.Completed => Severity.Success,
+        _ => Severity.Normal,
+    };
+
+    private string StatusIcon => latest?.Status switch
+    {
+        AiReviewStatus.Failed => Icons.Material.Outlined.ErrorOutline,
+        AiReviewStatus.Completed => Icons.Material.Outlined.CheckCircle,
+        AiReviewStatus.Queued or AiReviewStatus.Running => Icons.Material.Outlined.HourglassEmpty,
+        _ => Icons.Material.Outlined.AutoAwesome,
     };
 
     private string StatusText => latest?.Status switch

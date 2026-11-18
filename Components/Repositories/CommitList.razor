@@ -9,15 +9,15 @@ else
     @foreach (var day in Commits.GroupBy(c => c.When.ToLocalTime().Date))
     {
         <div class="commit-day">Commits on @day.Key.ToString("MMM d, yyyy")</div>
-        <div class="issue-list commit-list">
+        <div class="gb-rows commit-list">
             @foreach (var c in day)
             {
-                <div class="commit-row" @key="c.Sha">
+                <div class="gb-row gb-row-hover commit-row" @key="c.Sha">
                     <GitAvatar Name="@c.AuthorName" Email="@c.AuthorEmail" Users="Users" Size="28" />
-                    <div class="commit-main">
+                    <div class="gb-row-main">
                         <a class="commit-msg" href="@RepoUrls.Commit(Repo, c.Sha)">@c.MessageShort</a>
                         <IssueKeyLinks ProjectKey="@Repo.Project.Key" Text="@c.Message" />
-                        <div class="issue-meta">
+                        <div class="gb-row-meta">
                             <b>@c.AuthorName</b> committed @Display.Ago(c.When.UtcDateTime)
                             @if (c.ParentShas.Count > 1) { <span class="merge-tag">merge</span> }
                         </div>
@@ -27,8 +27,9 @@ else
                         {
                             <PipelineStatusIcon Status="ci.Status" Href="@PipelineUrls.Detail(Repo, ci.Id)" Title="@($"Pipeline #{ci.Id}")" />
                         }
-                        <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, c.Sha)" title="@c.Sha">@c.ShortSha</a>
-                        <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Source(Repo, c.Sha)" title="Browse the repository at this commit">&lt;/&gt;</a>
+                        <a class="sha-pill" href="@RepoUrls.Commit(Repo, c.Sha)" title="@c.Sha">@c.ShortSha</a>
+                        <MudIconButton Href="@RepoUrls.Source(Repo, c.Sha)" Icon="@Icons.Material.Filled.Code" Size="Size.Small" Variant="Variant.Outlined"
+                                       title="Browse the repository at this commit" aria-label="Browse the repository at this commit" />
                     </div>
                 </div>
             }
