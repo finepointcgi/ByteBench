@@ -5,7 +5,7 @@
 .md-attach:hover { background: var(--accent-soft); color: var(--accent); }
 .md-attach input[type=file] { display: none; }
 .md-editor.dragging { outline: 2px dashed var(--accent); outline-offset: -2px; background: var(--accent-soft); }
-.md-attach-error { padding: 4px 10px; background: #fff5f5; border-bottom: 1px solid var(--border); }
+.md-attach-error { padding: 4px 10px; background: var(--red-soft); border-bottom: 1px solid var(--border); }
 .markdown img { max-width: 100%; height: auto; border-radius: 4px; }
 
 /* --- Attachments panel --- */
@@ -14,8 +14,8 @@
 .attachments-head .count { font-size: 12px; color: var(--muted); font-weight: 400; }
 .attachments-head label.disabled { pointer-events: none; opacity: .6; }
 .attachments-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
-.attachment-card { position: relative; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: #fbfbfd; }
-.attachment-thumb { display: flex; align-items: center; justify-content: center; width: 100%; height: 110px; padding: 0; border: 0; background: #f1f1f5; cursor: zoom-in; overflow: hidden; }
+.attachment-card { position: relative; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.attachment-thumb { display: flex; align-items: center; justify-content: center; width: 100%; height: 110px; padding: 0; border: 0; background: var(--chip-bg); cursor: zoom-in; overflow: hidden; }
 .attachment-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .attachment-thumb.file { flex-direction: column; cursor: pointer; text-decoration: none; color: var(--muted); }
 .attachment-icon { font-size: 34px; line-height: 1; }
@@ -33,7 +33,7 @@
 .lightbox figcaption { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: #eee; font-size: 13px; }
 
 /* --- Issue list: selection and bulk bar --- */
-.bulk-header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: #f8f8fb; }
+.bulk-header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
 .bulk-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
 .bulk-row:last-child { border-bottom: none; }
 .bulk-row > .form-check-input { margin: 0 0 0 16px; flex: none; }
@@ -41,7 +41,7 @@
 .bulk-row.selected { background: var(--accent-soft); }
 .bulk-row.selected > .issue-row:hover { background: transparent; }
 .bulk-bar { position: sticky; top: 60px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 10px;
-            background: #1e1b2e; color: #fff; border-radius: var(--radius); box-shadow: 0 4px 14px rgba(0, 0, 0, .15); }
+            background: var(--sidebar); color: #fff; border-radius: var(--radius); box-shadow: 0 4px 14px rgba(0, 0, 0, .15); }
 .bulk-bar .form-select { width: auto; }
 .bulk-bar .btn-link { color: #c9c6d9; }
 .bulk-bar .text-success { color: #86efac !important; }
@@ -53,14 +53,14 @@
 .filters-backdrop { position: fixed; inset: 0; z-index: 20; }
 .filters-dropdown { position: absolute; right: 0; top: calc(100% + 4px); z-index: 21; width: 320px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, .12); padding: 6px 0; }
 .filters-item { display: flex; align-items: center; gap: 6px; padding: 4px 12px; }
-.filters-item:hover { background: #faf9ff; }
+.filters-item:hover { background: var(--hover); }
 .filters-item.current { background: var(--accent-soft); }
 .filters-item a { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .filters-save { border-top: 1px solid var(--border); margin-top: 6px; padding: 8px 12px; }
 .filters-manage { display: block; border-top: 1px solid var(--border); padding: 6px 12px 2px; font-size: 13px; }
-.star { background: none; border: 0; padding: 0 2px; font-size: 16px; line-height: 1; color: #b3b0c4; cursor: pointer; }
+.star { background: none; border: 0; padding: 0 2px; font-size: 16px; line-height: 1; color: var(--faint); cursor: pointer; }
 .star.on { color: #f59e0b; }
-.filter-chip { display: inline-block; background: #f1f1f5; border-radius: 10px; padding: 1px 8px; margin: 1px 4px 1px 0; }
+.filter-chip { display: inline-block; background: var(--chip-bg); border-radius: 10px; padding: 1px 8px; margin: 1px 4px 1px 0; }
 .saved-filters-table th { font-size: 12px; color: var(--muted); font-weight: 600; }
 
 /* --- Sidebar: starred filters --- */

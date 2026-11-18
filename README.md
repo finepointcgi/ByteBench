@@ -177,6 +177,13 @@ Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls
 | `Components/Shared/` | Avatar, label chip, status badge, Markdown editor, and more |
 | `Services/SprintService.cs` / `Services/SprintHistory.cs` | Sprints, backlog ranking, reports; activity texts and burndown replay |
 | `Components/Sprints/` | Sprint picker and filters, burndown and velocity SVG charts |
+| `wwwroot/css/theme.css` / `wwwroot/js/theme.js` | Colour tokens for light and dark mode; applying the chosen theme |
+
+## Dark mode
+
+The top bar's theme menu (next to your avatar) offers **System**, **Light** and **Dark**. The choice is stored in the browser (`localStorage["gitbench-theme"]`; System clears it) and applied before first paint by `wwwroot/js/theme.js`, a small blocking script in `<head>`, so pages don't flash. It sets `<html data-theme="light|dark">` (absent means follow the OS) and Bootstrap's `data-bs-theme` to the resolved theme, follows OS changes while on System, syncs other open tabs and re-applies after enhanced navigation.
+
+**Colours are tokens.** Colours in `wwwroot/app.css`, `wwwroot/css/*.css` and the scoped `.razor.css` files are CSS custom properties from `wwwroot/css/theme.css` (the only literals left are ones that look right in both themes: the always-dark top bar, sidebar and CI log, status dots, and solid fills with white text): surfaces and text (`--bg`, `--surface`, `--text`, `--muted`, …), accent, tones for badges and alerts (`--green-bg`/`--green-fg`, `--red-…`, `--amber-…`, …), the board, diffs (`--diff-add-bg`, …), syntax highlighting (`--hl-*`), CI icons and the Reports charts (`--chart-*`, used by the SVG classes). Light values are on `:root`; dark values apply under `@media (prefers-color-scheme: dark)` (unless Light is picked) and under `[data-theme="dark"]`. The two dark blocks must be kept identical. To add a colour, add a token to all three blocks. Workflow status chips mix the status colour with `--status-mix-bg`/`--status-mix-fg`, and label chips and avatars pick black or white text by WCAG contrast (`Display.TextOn`), so user-chosen colours read well in both themes. A few Bootstrap pieces that don't adapt by themselves (outline buttons, `.text-danger`, `.text-bg-light`) are adjusted at the end of `theme.css`. The top bar, sidebar and CI log stay dark in both themes.
 
 ## Repositories & pull requests
 
@@ -369,7 +376,7 @@ Code is highlighted in the browser with **highlight.js 11.11.1**, vendored in `w
 
 The language comes from the file extension or name (`Services/Code/CodeLanguages.cs`). Unknown types, and files or diffs over 200 KB, stay plain.
 
-Why client-side: highlight.js is maintained, small and covers far more languages than the .NET options (ColorCode covers few languages; TextMateSharp needs native Oniguruma binaries). To stay safe under Blazor's DOM diffing, each code line is rendered as a `MarkupString` (`<span class="hl-line">…</span>`). Blazor tracks the span and replaces it whole when the line changes, and `wwwroot/js/code-tools.js` only rewrites the span's children. A single `MutationObserver` reruns the idempotent highlight pass after every render, so it survives re-renders, enhanced navigation and live updates with no per-component JS interop. Token colours are CSS variables in `wwwroot/css/code-tools.css`. The app has no dark mode yet; adding one only means overriding the `--hl-*` variables.
+Why client-side: highlight.js is maintained, small and covers far more languages than the .NET options (ColorCode covers few languages; TextMateSharp needs native Oniguruma binaries). To stay safe under Blazor's DOM diffing, each code line is rendered as a `MarkupString` (`<span class="hl-line">…</span>`). Blazor tracks the span and replaces it whole when the line changes, and `wwwroot/js/code-tools.js` only rewrites the span's children. A single `MutationObserver` reruns the idempotent highlight pass after every render, so it survives re-renders, enhanced navigation and live updates with no per-component JS interop. Token colours are the `--hl-*` CSS variables in `wwwroot/css/theme.css`, with light and dark values (see Dark mode).
 
 **Line links:** line numbers in the file viewer are links. `#L42` highlights and scrolls to a line, shift-click selects a range (`#L10-L20`), and the URL updates so it can be shared.
 

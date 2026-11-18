@@ -1,5 +1,5 @@
 .merge-checks { margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; overflow: hidden; }
-.mc-protected { padding: 6px 10px; background: #f6f7f9; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.mc-protected { padding: 6px 10px; background: var(--surface-sunken); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
 .mc-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .mc-row:last-child { border-bottom: none; }
 .mc-text { min-width: 0; overflow-wrap: anywhere; }
@@ -8,5 +8,5 @@
 .mc-icon.failed { background: #dc2626; }
 .mc-icon.pending { background: #d97706; }
 .mc-icon.neutral { background: #9ca3af; }
-.mc-blocked { padding: 6px 10px; background: #fef2f2; color: #991b1b; }
-.mc-blocked.bypass { background: #fffbeb; color: #92400e; }
+.mc-blocked { padding: 6px 10px; background: var(--red-soft); color: var(--red-strong); }
+.mc-blocked.bypass { background: var(--amber-soft); color: var(--amber-strong); }

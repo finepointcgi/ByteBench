@@ -35,6 +35,7 @@
                        @onclick="OpenProfile" @onclick:preventDefault>
                         <Avatar User="Me.User" Size="28" ShowName />
                     </a>
+                    <ThemeToggle />
                     <a class="user-menu-profile small" href="/developers/api" title="REST API and webhooks">API</a>
                     <form class="user-menu-signout" method="post" action="account/logout">
                         <AntiforgeryToken />

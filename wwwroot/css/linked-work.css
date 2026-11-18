@@ -5,7 +5,7 @@
 .lw-panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .lw-percent { margin-left: auto; font-weight: 600; font-size: 12px; }
 .lw-list { list-style: none; padding: 0; margin: 6px 0 8px; }
-.lw-list li { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f0f1f4; font-size: 13px; }
+.lw-list li { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
 .lw-list li:last-child { border-bottom: none; }
 .lw-item-title { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lw-done-row .lw-item-title, .lw-done-row .lw-epic-title { color: var(--muted); text-decoration: line-through; }
@@ -13,13 +13,13 @@
 .lw-add { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .lw-add .lw-picker { flex: 1; }
 .lw-type { width: auto !important; flex-shrink: 0; }
-.lw-blocked { font-size: 12px; font-weight: 600; color: #b91c1c; background: #fee2e2; border-radius: 10px; padding: 1px 8px; }
-.lw-offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; font-size: 13px; }
+.lw-blocked { font-size: 12px; font-weight: 600; color: var(--red-fg); background: var(--red-bg); border-radius: 10px; padding: 1px 8px; }
+.lw-offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--green-soft); border: 1px solid var(--green-border); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; font-size: 13px; }
 
 /* Parent breadcrumb above the title */
 .lw-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; margin: -4px 0 8px; color: var(--muted); }
 .lw-crumbs a { color: var(--text); }
-.lw-crumb-sep { color: #9aa0aa; }
+.lw-crumb-sep { color: var(--faint); }
 
 /* Parent side field */
 .lw-parent { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
@@ -35,11 +35,11 @@
 .lw-done { color: var(--muted); text-decoration: line-through; }
 
 /* Chips on list rows and board cards */
-.lw-chip { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: #eef0f3; color: #444; white-space: nowrap; }
-a.lw-chip:hover { text-decoration: none; background: #e4e0fb; }
+.lw-chip { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: var(--chip-bg); color: var(--chip-fg); white-space: nowrap; }
+a.lw-chip:hover { text-decoration: none; background: var(--accent-soft); }
 .lw-chip-parent { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--accent-soft); color: var(--accent); }
-.lw-chip-blocked { background: #fee2e2; color: #b91c1c; font-weight: 600; }
-.lw-chip-complete { background: #dcfce7; color: #166534; }
+.lw-chip-blocked { background: var(--red-bg); color: var(--red-fg); font-weight: 600; }
+.lw-chip-complete { background: var(--green-bg); color: var(--green-strong); }
 .issue-meta .lw-chip { margin-left: 4px; }
 
 /* Issue list filter */

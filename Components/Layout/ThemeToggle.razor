@@ -1,0 +1,31 @@
+@* Colour theme picker in the top bar's user menu. The choice lives in localStorage and is applied by wwwroot/js/theme.js
+   (also before first paint), so this component only reads and writes it. *@
+@inject IJSRuntime JS
+
+<select class="form-select form-select-sm theme-select" aria-label="Colour theme" title="Colour theme"
+        value="@mode" @onchange="Change">
+    <option value="system">◐ System</option>
+    <option value="light">☀ Light</option>
+    <option value="dark">☾ Dark</option>
+</select>
+
+@code {
+    private string mode = "system";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            mode = await JS.InvokeAsync<string>("gitbenchTheme.get");
+            StateHasChanged();
+        }
+        catch (JSException) { /* theme.js missing: keep "system" */ }
+    }
+
+    private async Task Change(ChangeEventArgs e)
+    {
+        mode = e.Value?.ToString() is "light" or "dark" ? e.Value.ToString()! : "system";
+        await JS.InvokeVoidAsync("gitbenchTheme.set", mode);
+    }
+}

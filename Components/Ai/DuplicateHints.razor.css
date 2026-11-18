@@ -1,4 +1,4 @@
-.dup-panel { margin-top: 8px; padding: 10px 12px; border: 1px solid #f3d9a4; background: #fffaf0; border-radius: var(--radius); }
+.dup-panel { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--amber-border); background: var(--amber-soft); border-radius: var(--radius); }
 .dup-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .dup-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .ai-badge { font-size: 11px; color: var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 0 8px; line-height: 18px; }

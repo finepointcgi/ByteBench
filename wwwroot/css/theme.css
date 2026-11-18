@@ -1,0 +1,327 @@
+/* ===== Theme: colour tokens for light and dark mode =====
+   Every colour the app's CSS uses comes from these custom properties. Light values live on :root; dark values apply
+   when the OS prefers dark (unless the user picked Light) or when the user picked Dark. The choice (System/Light/Dark,
+   the toggle in the top bar) is stored in localStorage and applied before first paint by the script in App.razor
+   (wwwroot/js/theme.js keeps it applied): it sets data-theme="light|dark" (absent = follow the system) and
+   Bootstrap's data-bs-theme to the resolved theme, so Bootstrap's own components switch too.
+   The dark block appears twice (media query and [data-theme="dark"]): plain CSS can't share it. Keep them in sync. */
+
+:root {
+    color-scheme: light;
+
+    /* Surfaces and text */
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f8f8fb;          /* panel headers, sticky bars */
+    --surface-sunken: #f6f7f9;     /* neutral boxes inside a panel */
+    --hover: #faf9ff;
+    --border: #e3e5ea;
+    --border-subtle: #f0f1f4;
+    --border-strong: #c8ccd3;
+    --text: #1f2328;
+    --text-2: #3b3f46;
+    --muted: #656d76;
+    --faint: #6e7781;
+    --chip-bg: #eef0f3;
+    --chip-fg: #444a52;
+    --chip-accent-bg: #ece9f6;
+    --chip-accent-fg: #4b4560;
+    --code-bg: #f4f4f7;
+    --code-fg: #b4237a;
+    --progress-track: #ebecf0;
+
+    /* Accent */
+    --accent: #6d28d9;             /* links and accent text */
+    --accent-solid: #6d28d9;       /* filled buttons (white text) */
+    --accent-hover: #5b21b6;
+    --accent-disabled: #b9a5e8;
+    --accent-soft: #ede9fe;
+    --accent-faint: #faf8ff;
+    --accent-border: #c4b5fd;
+    --accent-border-soft: #ddd6fe;
+    --accent-strong: #4c1d95;
+    --focus-ring: rgba(109, 40, 217, .15);
+
+    /* Shell (dark in both themes) */
+    --topbar: #151322;
+    --sidebar: #1e1b2e;
+    --sidebar-text: #c9c6d9;
+
+    /* Tones: badges, chips, alerts */
+    --blue-bg: #e0ecff;    --blue-fg: #1e4fb8;
+    --green-bg: #dcfce7;   --green-fg: #15803d;   --green-strong: #166534; --green-soft: #f0fdf4; --green-border: #bbf7d0;
+    --red-bg: #fee2e2;     --red-fg: #b91c1c;     --red-strong: #991b1b;   --red-soft: #fef2f2;   --red-border: #fecaca;
+    --red-text: #dc2626;
+    --amber-bg: #fff3d6;   --amber-fg: #9a6200;   --amber-strong: #92400e; --amber-soft: #fffbeb; --amber-border: #fde68a;
+    --amber-bg-hover: #ffe8a8;
+    --purple-bg: #f3e8ff;  --purple-fg: #7e22ce;
+    --indigo-bg: #eef2ff;  --indigo-fg: #3730a3;  --indigo-bg-hover: #e0e7ff;
+    --prio-high: #c2410c;
+    --prio-medium: #a16207;
+    --prio-low: #2563eb;
+
+    /* Workflow status chips: Display.StatusStyle mixes the status colour with these */
+    --status-mix-bg: white;
+    --status-mix-fg: black;
+
+    /* Board */
+    --board-col: #eceef2;
+    --board-col-stripe: #e2e4e9;
+
+    /* Code: line highlight, search hits, diffs */
+    --code-hover-bg: #fffbea;
+    --line-selected-bg: #fff8c5;
+    --line-selected-ln: #f0d878;
+    --search-mark-bg: #fff1a8;
+    --search-mark-border: #f5d65b;
+    --diff-hunk-bg: #f1f4fb;       --diff-hunk-fg: #57606a;
+    --diff-add-bg: #e9fbe9;        --diff-add-ln-bg: #d3f6d3; --diff-add-ln-fg: #3d7a46; --diff-add-ln-border: #b9e6bd;
+    --diff-del-bg: #fdecec;        --diff-del-ln-bg: #fad7d7; --diff-del-ln-fg: #9a3f3f; --diff-del-ln-border: #f2b9b9;
+    --diff-thread-bg: #fbfbfd;
+
+    /* Syntax highlighting (GitHub-like), used by wwwroot/css/code-tools.css */
+    --hl-keyword: #cf222e;
+    --hl-string: #0a3069;
+    --hl-number: #0550ae;
+    --hl-comment: #6e7781;
+    --hl-title: #8250df;
+    --hl-type: #953800;
+    --hl-attr: #0550ae;
+    --hl-tag: #116329;
+    --hl-meta: #6639ba;
+    --hl-variable: #953800;
+    --hl-addition: #116329;
+    --hl-deletion: #82071e;
+
+    /* CI status icons */
+    --ci-passed: #1a7f37;
+    --ci-failed: #cf222e;
+    --ci-running: #bf8700;
+    --ci-queued: #9a6700;
+
+    /* Charts (Reports) */
+    --chart-grid: #eceef2;
+    --chart-axis: #b5b9c2;
+    --chart-remaining: #6d28d9;
+    --chart-ideal: #9ca3af;
+    --chart-today: #d97706;
+    --chart-committed: #a78bfa;
+    --chart-completed: #5b21b6;
+    --chart-average: #374151;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #0f1117;
+        --surface: #171a21;
+        --surface-2: #1c2028;
+        --surface-sunken: #12151b;
+        --hover: #1e2230;
+        --border: #2d323c;
+        --border-subtle: #242830;
+        --border-strong: #464d59;
+        --text: #e6e8eb;
+        --text-2: #c9ced6;
+        --muted: #9aa3ae;
+        --faint: #848d97;
+        --chip-bg: #262b34;
+        --chip-fg: #c9ced6;
+        --chip-accent-bg: #2b2640;
+        --chip-accent-fg: #d4ccef;
+        --code-bg: #20242c;
+        --code-fg: #f49ac9;
+        --progress-track: #2a2f38;
+        --accent: #b39dfb;
+        --accent-solid: #7c3aed;
+        --accent-hover: #6d28d9;
+        --accent-disabled: #4a3d73;
+        --accent-soft: #2c2450;
+        --accent-faint: #1b1828;
+        --accent-border: #6b5bb5;
+        --accent-border-soft: #3f3570;
+        --accent-strong: #d8ccff;
+        --focus-ring: rgba(167, 139, 250, .25);
+        --topbar: #0b0a12;
+        --sidebar: #14121f;
+        --sidebar-text: #c9c6d9;
+        --blue-bg: #172a4a;    --blue-fg: #9cc3ff;
+        --green-bg: #133021;   --green-fg: #7ee2a0;   --green-strong: #8af0ae; --green-soft: #0f2418; --green-border: #22553a;
+        --red-bg: #3b1719;     --red-fg: #ffa3a3;     --red-strong: #ffb3b3;   --red-soft: #2a1214;   --red-border: #5c2326;
+        --red-text: #f87171;
+        --amber-bg: #3a2a0a;   --amber-fg: #f5c451;   --amber-strong: #f5c451; --amber-soft: #261d08; --amber-border: #5e4513;
+        --amber-bg-hover: #4a3610;
+        --purple-bg: #2d1b45;  --purple-fg: #d8b4fe;
+        --indigo-bg: #1e2148;  --indigo-fg: #b4bffd;  --indigo-bg-hover: #282c5c;
+        --prio-high: #fb923c;
+        --prio-medium: #eab308;
+        --prio-low: #60a5fa;
+        --status-mix-bg: #171a21;
+        --status-mix-fg: white;
+        --board-col: #13161c;
+        --board-col-stripe: #1b1f27;
+        --code-hover-bg: #262414;
+        --line-selected-bg: #3a3415;
+        --line-selected-ln: #574c17;
+        --search-mark-bg: #5c4d0f;
+        --search-mark-border: #8a7317;
+        --diff-hunk-bg: #1a2133;       --diff-hunk-fg: #9aa7bd;
+        --diff-add-bg: #12261a;        --diff-add-ln-bg: #173320; --diff-add-ln-fg: #7ee2a0; --diff-add-ln-border: #1f4a2c;
+        --diff-del-bg: #2b1416;        --diff-del-ln-bg: #3a191c; --diff-del-ln-fg: #f19999; --diff-del-ln-border: #5a2428;
+        --diff-thread-bg: #14171d;
+        --hl-keyword: #ff7b72;
+        --hl-string: #a5d6ff;
+        --hl-number: #79c0ff;
+        --hl-comment: #8b949e;
+        --hl-title: #d2a8ff;
+        --hl-type: #ffa657;
+        --hl-attr: #79c0ff;
+        --hl-tag: #7ee787;
+        --hl-meta: #d2a8ff;
+        --hl-variable: #ffa657;
+        --hl-addition: #aff5b4;
+        --hl-deletion: #ffdcd7;
+        --ci-passed: #3fb950;
+        --ci-failed: #f85149;
+        --ci-running: #d29922;
+        --ci-queued: #d29922;
+        --chart-grid: #262b34;
+        --chart-axis: #4b5260;
+        --chart-remaining: #b39dfb;
+        --chart-ideal: #737b87;
+        --chart-today: #f59e0b;
+        --chart-committed: #6d5bb5;
+        --chart-completed: #b39dfb;
+        --chart-average: #c9ced6;
+    }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1117;
+    --surface: #171a21;
+    --surface-2: #1c2028;
+    --surface-sunken: #12151b;
+    --hover: #1e2230;
+    --border: #2d323c;
+    --border-subtle: #242830;
+    --border-strong: #464d59;
+    --text: #e6e8eb;
+    --text-2: #c9ced6;
+    --muted: #9aa3ae;
+    --faint: #848d97;
+    --chip-bg: #262b34;
+    --chip-fg: #c9ced6;
+    --chip-accent-bg: #2b2640;
+    --chip-accent-fg: #d4ccef;
+    --code-bg: #20242c;
+    --code-fg: #f49ac9;
+    --progress-track: #2a2f38;
+    --accent: #b39dfb;
+    --accent-solid: #7c3aed;
+    --accent-hover: #6d28d9;
+    --accent-disabled: #4a3d73;
+    --accent-soft: #2c2450;
+    --accent-faint: #1b1828;
+    --accent-border: #6b5bb5;
+    --accent-border-soft: #3f3570;
+    --accent-strong: #d8ccff;
+    --focus-ring: rgba(167, 139, 250, .25);
+    --topbar: #0b0a12;
+    --sidebar: #14121f;
+    --sidebar-text: #c9c6d9;
+    --blue-bg: #172a4a;    --blue-fg: #9cc3ff;
+    --green-bg: #133021;   --green-fg: #7ee2a0;   --green-strong: #8af0ae; --green-soft: #0f2418; --green-border: #22553a;
+    --red-bg: #3b1719;     --red-fg: #ffa3a3;     --red-strong: #ffb3b3;   --red-soft: #2a1214;   --red-border: #5c2326;
+    --red-text: #f87171;
+    --amber-bg: #3a2a0a;   --amber-fg: #f5c451;   --amber-strong: #f5c451; --amber-soft: #261d08; --amber-border: #5e4513;
+    --amber-bg-hover: #4a3610;
+    --purple-bg: #2d1b45;  --purple-fg: #d8b4fe;
+    --indigo-bg: #1e2148;  --indigo-fg: #b4bffd;  --indigo-bg-hover: #282c5c;
+    --prio-high: #fb923c;
+    --prio-medium: #eab308;
+    --prio-low: #60a5fa;
+    --status-mix-bg: #171a21;
+    --status-mix-fg: white;
+    --board-col: #13161c;
+    --board-col-stripe: #1b1f27;
+    --code-hover-bg: #262414;
+    --line-selected-bg: #3a3415;
+    --line-selected-ln: #574c17;
+    --search-mark-bg: #5c4d0f;
+    --search-mark-border: #8a7317;
+    --diff-hunk-bg: #1a2133;       --diff-hunk-fg: #9aa7bd;
+    --diff-add-bg: #12261a;        --diff-add-ln-bg: #173320; --diff-add-ln-fg: #7ee2a0; --diff-add-ln-border: #1f4a2c;
+    --diff-del-bg: #2b1416;        --diff-del-ln-bg: #3a191c; --diff-del-ln-fg: #f19999; --diff-del-ln-border: #5a2428;
+    --diff-thread-bg: #14171d;
+    --hl-keyword: #ff7b72;
+    --hl-string: #a5d6ff;
+    --hl-number: #79c0ff;
+    --hl-comment: #8b949e;
+    --hl-title: #d2a8ff;
+    --hl-type: #ffa657;
+    --hl-attr: #79c0ff;
+    --hl-tag: #7ee787;
+    --hl-meta: #d2a8ff;
+    --hl-variable: #ffa657;
+    --hl-addition: #aff5b4;
+    --hl-deletion: #ffdcd7;
+    --ci-passed: #3fb950;
+    --ci-failed: #f85149;
+    --ci-running: #d29922;
+    --ci-queued: #d29922;
+    --chart-grid: #262b34;
+    --chart-axis: #4b5260;
+    --chart-remaining: #b39dfb;
+    --chart-ideal: #737b87;
+    --chart-today: #f59e0b;
+    --chart-committed: #6d5bb5;
+    --chart-completed: #b39dfb;
+    --chart-average: #c9ced6;
+}
+
+/* Bootstrap: its own dark mode comes from data-bs-theme; match its body colours to ours and soften the few
+   "always light" utilities the app uses. */
+:root {
+    --bs-body-bg: var(--bg);
+    --bs-body-color: var(--text);
+    --bs-border-color: var(--border);
+    --bs-secondary-color: var(--muted);
+    --bs-link-color-rgb: 109, 40, 217;
+    --bs-link-hover-color-rgb: 91, 33, 182;
+}
+[data-bs-theme="dark"] {
+    --bs-body-bg: var(--bg);
+    --bs-body-color: var(--text);
+    --bs-border-color: var(--border);
+    --bs-secondary-color: var(--muted);
+    --bs-link-color-rgb: 179, 157, 251;
+    --bs-link-hover-color-rgb: 216, 204, 255;
+    --bs-tertiary-bg: var(--surface-2);
+    --bs-secondary-bg: var(--chip-bg);
+}
+/* Bootstrap keeps its light-mode outline buttons and text colours in dark mode; lift them for contrast. */
+/* Outline secondary buttons sit on the page background; Bootstrap's grey is too light there in both themes. */
+.btn-outline-secondary {
+    --bs-btn-color: var(--text-2); --bs-btn-border-color: var(--border-strong);
+    --bs-btn-hover-color: var(--text); --bs-btn-hover-bg: var(--chip-bg); --bs-btn-hover-border-color: var(--border-strong);
+    --bs-btn-active-color: var(--text); --bs-btn-active-bg: var(--chip-bg); --bs-btn-active-border-color: var(--border-strong);
+    --bs-btn-disabled-color: var(--muted); --bs-btn-disabled-border-color: var(--border);
+}
+[data-bs-theme="dark"] .btn-outline-primary {
+    --bs-btn-color: #6ea8fe; --bs-btn-border-color: #3d7bd9;
+    --bs-btn-hover-color: #fff; --bs-btn-hover-bg: #0d6efd; --bs-btn-hover-border-color: #0d6efd;
+    --bs-btn-disabled-color: #6ea8fe;
+}
+[data-bs-theme="dark"] .btn-outline-danger {
+    --bs-btn-color: #ea868f; --bs-btn-border-color: #b02a37;
+    --bs-btn-hover-color: #fff; --bs-btn-hover-bg: #b02a37; --bs-btn-hover-border-color: #b02a37;
+    --bs-btn-disabled-color: #ea868f;
+}
+[data-bs-theme="dark"] .btn-outline-success { --bs-btn-color: #75b798; --bs-btn-border-color: #2f7a55; --bs-btn-hover-bg: #198754; --bs-btn-hover-color: #fff; }
+[data-bs-theme="dark"] .text-danger { color: var(--red-text) !important; }
+[data-bs-theme="dark"] .text-success { color: #75b798 !important; }
+[data-bs-theme="dark"] .text-primary { color: #6ea8fe !important; }
+[data-bs-theme="dark"] .text-bg-light { background-color: var(--chip-bg) !important; color: var(--chip-fg) !important; }
+[data-bs-theme="dark"] .bg-light { background-color: var(--surface-2) !important; }
+[data-bs-theme="dark"] .table { --bs-table-bg: transparent; --bs-table-color: var(--text); --bs-table-border-color: var(--border); }

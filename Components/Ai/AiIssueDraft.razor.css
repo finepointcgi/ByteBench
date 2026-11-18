@@ -1,7 +1,7 @@
 .ai-hint { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
-.ai-draft { border: 1px solid #d8ccf5; background: #faf8ff; border-radius: var(--radius); margin-bottom: 16px; }
+.ai-draft { border: 1px solid var(--accent-border-soft); background: var(--accent-faint); border-radius: var(--radius); margin-bottom: 16px; }
 .ai-draft-head { display: flex; align-items: baseline; gap: 10px; width: 100%; background: none; border: none; padding: 10px 14px; text-align: left; font-weight: 600; color: var(--accent); }
 .ai-draft-body { padding: 0 14px 12px; }
-.btn-ai { background: var(--accent); color: #fff; border: none; }
-.btn-ai:hover:not(:disabled) { background: #5b21b6; color: #fff; }
-.btn-ai:disabled { background: #b9a5e8; color: #fff; }
+.btn-ai { background: var(--accent-solid); color: #fff; border: none; }
+.btn-ai:hover:not(:disabled) { background: var(--accent-hover); color: #fff; }
+.btn-ai:disabled { background: var(--accent-disabled); color: #fff; }

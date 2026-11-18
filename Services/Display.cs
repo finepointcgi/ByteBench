@@ -48,15 +48,22 @@ public static class Display
 
     /// <summary>Inline style for a status chip in the workflow status's colour (empty: use the category's CSS class).</summary>
     public static string StatusStyle(string? color) => string.IsNullOrEmpty(color) ? ""
-        : $"background:color-mix(in srgb, {color} 18%, white);color:color-mix(in srgb, {color} 75%, black)";
+        : $"background:color-mix(in srgb, {color} 18%, var(--status-mix-bg, white));color:color-mix(in srgb, {color} 75%, var(--status-mix-fg, black))";
 
-    /// <summary>Picks black or white text for readable contrast on a hex background.</summary>
+    /// <summary>
+    /// Picks near-black or white text for a hex background: whichever has the higher WCAG contrast ratio. Chips and
+    /// avatars carry their own background, so this holds in light and dark mode alike.
+    /// </summary>
     public static string TextOn(string hex)
     {
         hex = hex.TrimStart('#');
-        if (hex.Length < 6) return "#fff";
-        int r = Convert.ToInt32(hex[..2], 16), g = Convert.ToInt32(hex[2..4], 16), b = Convert.ToInt32(hex[4..6], 16);
-        return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#111" : "#fff";
+        if (hex.Length < 6 || !int.TryParse(hex[..6], System.Globalization.NumberStyles.HexNumber, null, out var rgb)) return "#fff";
+        static double Channel(int v) { var c = v / 255.0; return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4); }
+        var lum = 0.2126 * Channel(rgb >> 16 & 0xff) + 0.7152 * Channel(rgb >> 8 & 0xff) + 0.0722 * Channel(rgb & 0xff);
+        const double darkLum = 0.0056; // #111
+        var onWhite = 1.05 / (lum + 0.05);
+        var onDark = (lum + 0.05) / (darkLum + 0.05);
+        return onDark > onWhite ? "#111" : "#fff";
     }
 
     public static string Ago(DateTime utc)

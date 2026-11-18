@@ -1,23 +1,6 @@
 /* ----- Code tools: syntax highlighting, line links, code search, repository settings ----- */
 
-/* Syntax colours (GitHub-like). The app has no dark mode yet; one would only need to override these variables. */
-:root {
-    --hl-keyword: #cf222e;
-    --hl-string: #0a3069;
-    --hl-number: #0550ae;
-    --hl-comment: #6e7781;
-    --hl-title: #8250df;
-    --hl-type: #953800;
-    --hl-attr: #0550ae;
-    --hl-tag: #116329;
-    --hl-meta: #6639ba;
-    --hl-variable: #953800;
-    --hl-addition: #116329;
-    --hl-deletion: #82071e;
-    --line-selected-bg: #fff8c5;
-    --line-selected-ln: #f0d878;
-    --search-mark-bg: #fff1a8;
-}
+/* Syntax colours (GitHub-like) are the --hl-* tokens in wwwroot/css/theme.css, with dark-mode values there too. */
 
 .hljs-keyword, .hljs-doctag, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-type.hljs-keyword, .hljs-selector-tag { color: var(--hl-keyword); }
 .hljs-string, .hljs-regexp, .hljs-meta .hljs-string, .hljs-char.escape_ { color: var(--hl-string); }
@@ -49,9 +32,9 @@
 .repo-search-box { width: 220px; }
 .archived-badge {
     display: inline-block; font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 7px; border-radius: 9px;
-    background: #fef3c7; color: #92400e; border: 1px solid #fde68a; vertical-align: middle; margin-left: 8px;
+    background: var(--amber-bg); color: var(--amber-strong); border: 1px solid var(--amber-border); vertical-align: middle; margin-left: 8px;
 }
-.archived-banner { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: var(--radius); padding: 8px 14px; margin-bottom: 12px; font-size: 13px; }
+.archived-banner { background: var(--amber-soft); border: 1px solid var(--amber-border); color: var(--amber-strong); border-radius: var(--radius); padding: 8px 14px; margin-bottom: 12px; font-size: 13px; }
 
 /* Code search */
 .search-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -62,11 +45,11 @@
 .search-names { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 0; margin-bottom: 12px; }
 .search-names a { display: block; padding: 3px 14px; font-size: 13px; }
 .search-file { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
-.search-file-head { display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: #f8f8fb; border-bottom: 1px solid var(--border); font-size: 13px; }
+.search-file-head { display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 13px; }
 .search-file .code-table td.ln a { color: inherit; }
-.search-file .code-table tr.search-gap td { height: 6px; background: #f8f8fb; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.search-file .code-table tr.search-gap td { height: 6px; background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .search-file .code-table tr.search-ctx td.code { color: var(--muted); }
-mark.search-hit { background: var(--search-mark-bg); color: inherit; padding: 0; border-radius: 2px; box-shadow: 0 0 0 1px #f5d65b; }
+mark.search-hit { background: var(--search-mark-bg); color: inherit; padding: 0; border-radius: 2px; box-shadow: 0 0 0 1px var(--search-mark-border); }
 
 /* Repository settings */
 .settings-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; align-items: start; }
