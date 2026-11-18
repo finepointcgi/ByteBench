@@ -29,6 +29,7 @@ public static class SeedData
         var bob = DemoUser("bob", "Bob Martinez", "#f59e0b");
         var carol = DemoUser("carol", "Carol Okafor", "#10b981");
         var dan = DemoUser("dan", "Dan Kowalski", "#ec4899");
+        alice.IsAdmin = true;
         db.Users.AddRange(alice, bob, carol, dan);
 
         var bug = new Label { Name = "bug", Color = "#dc2626" };
@@ -46,12 +47,24 @@ public static class SeedData
         var web = new Project
         {
             Key = "WEB", Name = "Web Platform", Description = "Customer-facing web application and APIs.",
-            Labels = [bug, enh, docs, ui, backend, perf], Milestones = [s1, s2, v1]
+            Labels = [bug, enh, docs, ui, backend, perf], Milestones = [s1, s2, v1],
+            Visibility = ProjectVisibility.Internal,
+            Members =
+            [
+                new() { User = alice, Role = ProjectRole.Owner }, new() { User = bob, Role = ProjectRole.Developer },
+                new() { User = carol, Role = ProjectRole.Maintainer }, new() { User = dan, Role = ProjectRole.Developer },
+            ],
         };
         var ops = new Project
         {
             Key = "OPS", Name = "Infrastructure", Description = "CI/CD, hosting and observability.",
-            Labels = [new() { Name = "ci", Color = "#0ea5e9" }, new() { Name = "security", Color = "#b91c1c" }]
+            Labels = [new() { Name = "ci", Color = "#0ea5e9" }, new() { Name = "security", Color = "#b91c1c" }],
+            Visibility = ProjectVisibility.Private,
+            Members =
+            [
+                new() { User = alice, Role = ProjectRole.Owner }, new() { User = carol, Role = ProjectRole.Developer },
+                new() { User = dan, Role = ProjectRole.Maintainer },
+            ],
         };
         db.Projects.AddRange(web, ops);
 

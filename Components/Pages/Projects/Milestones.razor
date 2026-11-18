@@ -1,6 +1,7 @@
 @page "/p/{Key}/milestones"
 @inject IssueService Issues
 @inject IJSRuntime JS
+@inject ProjectAccess Access
 
 <PageTitle>Milestones · @project?.Name</PageTitle>
 
@@ -15,9 +16,13 @@ else if (project != null)
             <h1>Milestones &amp; sprints</h1>
             <div class="muted">@project.Name</div>
         </div>
-        <button class="btn btn-primary" @onclick="() => editing = new Milestone { ProjectId = project.Id, StartDate = DateTime.Today, DueDate = DateTime.Today.AddDays(14) }">+ New milestone</button>
+        @if (canManage)
+        {
+            <button class="btn btn-primary" @onclick="() => editing = new Milestone { ProjectId = project.Id, StartDate = DateTime.Today, DueDate = DateTime.Today.AddDays(14) }">+ New milestone</button>
+        }
     </div>
 
+    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
     @if (editing != null)
     {
         <div class="card-panel mb-3">
@@ -81,9 +86,12 @@ else if (project != null)
                 </div>
                 <div class="milestone-actions">
                     <a class="btn btn-sm btn-outline-secondary" href="/p/@project.Key/board">Board</a>
+                    @if (canManage)
+                    {
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => Edit(m)">Edit</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleClosed(m)">@(m.IsClosed ? "Reopen" : "Close")</button>
                     <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(m)">Delete</button>
+                    }
                 </div>
             </div>
         }
@@ -94,7 +102,8 @@ else if (project != null)
     [Parameter] public string Key { get; set; } = "";
 
     private Project? project;
-    private bool notFound;
+    private bool notFound, canManage;
+    private string? error;
     private List<MilestoneSummary> milestones = [];
     private Milestone? editing;
 
@@ -102,6 +111,7 @@ else if (project != null)
     {
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
+        canManage = project != null && await Access.CanAsync(project.Id, Permission.ManageLabelsAndMilestones);
         await Load();
     }
 
@@ -118,7 +128,9 @@ else if (project != null)
 
     private async Task Save()
     {
-        await Issues.SaveMilestoneAsync(editing!);
+        error = null;
+        try { await Issues.SaveMilestoneAsync(editing!); }
+        catch (InvalidOperationException ex) { error = ex.Message; return; }
         editing = null;
         await Load();
     }
@@ -133,7 +145,9 @@ else if (project != null)
     private async Task Delete(Milestone m)
     {
         if (!await JS.InvokeAsync<bool>("confirm", $"Delete milestone \"{m.Title}\"? Issues will be kept.")) return;
-        await Issues.DeleteMilestoneAsync(m.Id);
+        error = null;
+        try { await Issues.DeleteMilestoneAsync(m.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
         await Load();
     }
 }

@@ -1,0 +1,11 @@
+@* Friendly "you can see this project but can't do this" message. For projects the user can't see at all, use ProjectNotFound. *@
+<div class="empty">
+    <h2>Not allowed</h2>
+    <p class="muted">@Message</p>
+    <a class="btn btn-outline-secondary" href="@(BackHref ?? "/")">@(BackHref == null ? "Back to dashboard" : "Go back")</a>
+</div>
+
+@code {
+    [Parameter] public string Message { get; set; } = "You don't have permission to do that in this project.";
+    [Parameter] public string? BackHref { get; set; }
+}

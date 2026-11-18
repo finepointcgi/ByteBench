@@ -1,0 +1,142 @@
+@page "/p/{Key}/members"
+@inject IssueService Issues
+@inject MemberService MemberSvc
+@inject ProjectAccess Access
+@inject CurrentUser Me
+
+<PageTitle>Members · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Members</h1>
+            <div class="muted">
+                @project.Name ·
+                @(project.Visibility == ProjectVisibility.Internal
+                    ? "Internal: every signed-in user can view this project."
+                    : "Private: only members can view this project.")
+                @if (perms.Role is { } r) { <span> You are <b>@r</b>.</span> }
+            </div>
+        </div>
+    </div>
+
+    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+
+    @if (canManage)
+    {
+        <div class="card-panel mb-3">
+            <h2 class="section-title">Add a member</h2>
+            <div class="d-flex gap-2 flex-wrap">
+                <input class="form-control form-control-sm" style="max-width:20rem" placeholder="Username or e-mail" @bind="newLogin" @bind:event="oninput" />
+                <select class="form-select form-select-sm" style="max-width:12rem" @bind="newRole">
+                    @foreach (var role in Roles) { <option value="@role">@role</option> }
+                </select>
+                <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newLogin)" @onclick="Add">Add member</button>
+            </div>
+        </div>
+    }
+
+    <div class="issue-list">
+        @foreach (var m in members)
+        {
+            @* Keyed by load version so a rejected role change resets the <select>. *@
+            <div class="issue-row" @key="(m.Id, version)">
+                <Avatar User="m.User" Size="28" />
+                <div class="issue-main">
+                    <div class="issue-title">@m.User.DisplayName @if (m.UserId == Me.User?.Id) { <span class="muted small">(you)</span> }</div>
+                    <div class="issue-meta">@@@m.User.UserName · @m.User.Email · member since @m.CreatedAt.ToLocalTime().ToString("d")</div>
+                </div>
+                <div class="issue-right">
+                    @if (canManage)
+                    {
+                        <select class="form-select form-select-sm" value="@m.Role" @onchange="e => ChangeRole(m, e)">
+                            @foreach (var role in Roles) { <option value="@role">@role</option> }
+                        </select>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Remove(m)">Remove</button>
+                    }
+                    else
+                    {
+                        <span class="count">@m.Role</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <h2 class="section-title mt-4">What each role can do</h2>
+    <table class="table table-sm small" style="max-width:48rem">
+        <thead><tr><th>Permission</th>@foreach (var role in Roles) { <th>@role</th> }</tr></thead>
+        <tbody>
+            @foreach (var p in Enum.GetValues<Permission>())
+            {
+                <tr><td>@p</td>@foreach (var role in Roles) { <td>@(ProjectAccess.RoleHas(role, p) ? "✓" : "")</td> }</tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private static readonly ProjectRole[] Roles = Enum.GetValues<ProjectRole>();
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<ProjectMember> members = [];
+    private bool notFound;
+    private bool canManage => perms.Can(Permission.ManageMembers);
+    private string? newLogin, error, message;
+    private ProjectRole newRole = ProjectRole.Developer;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        members = await MemberSvc.GetMembersAsync(project.Id);
+        version++;
+    }
+
+    private int version;
+
+    private async Task Run(Func<Task> action, string success)
+    {
+        error = message = null;
+        try
+        {
+            await action();
+            message = success;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private async Task Add()
+    {
+        var login = newLogin?.Trim() ?? "";
+        await Run(() => MemberSvc.AddMemberAsync(project!.Id, login, newRole), $"Added {login} as {newRole}.");
+        if (error == null) newLogin = null;
+    }
+
+    private Task ChangeRole(ProjectMember m, ChangeEventArgs e)
+    {
+        var role = Enum.Parse<ProjectRole>(e.Value!.ToString()!);
+        return Run(() => MemberSvc.ChangeRoleAsync(project!.Id, m.UserId, role), $"{m.User.DisplayName} is now {role}.");
+    }
+
+    private Task Remove(ProjectMember m) =>
+        Run(() => MemberSvc.RemoveMemberAsync(project!.Id, m.UserId), $"Removed {m.User.DisplayName}.");
+}

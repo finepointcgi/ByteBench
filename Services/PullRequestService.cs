@@ -7,12 +7,13 @@ namespace GitBench.Services;
 public record PullRequestCounts(int Open, int Merged, int Declined);
 
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
-public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos)
+public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access)
 {
     // ---------- Queries ----------
 
     public async Task<List<PullRequest>> ListAsync(int projectId, PullRequestState? state, int? repositoryId = null)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .Include(p => p.Author).Include(p => p.Reviews).ThenInclude(r => r.User)
@@ -34,6 +35,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task<PullRequestCounts> CountAsync(int projectId, int? repositoryId = null)
     {
+        if (!await access.CanAsync(projectId, Permission.ViewProject)) return new(0, 0, 0);
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.PullRequests.Where(p => p.Repository.ProjectId == projectId);
         if (repositoryId is { } rid) q = q.Where(p => p.RepositoryId == rid);
@@ -41,12 +43,14 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         return new(g.GetValueOrDefault(PullRequestState.Open), g.GetValueOrDefault(PullRequestState.Merged), g.GetValueOrDefault(PullRequestState.Declined));
     }
 
+    /// <summary>The pull request, or null if it doesn't exist or the acting user can't view its project.</summary>
     public async Task<PullRequest?> GetAsync(string projectKey, string slug, int number)
     {
+        var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
         var key = projectKey.ToUpperInvariant();
         var s = slug.ToLowerInvariant();
-        return await db.PullRequests
+        return await db.PullRequests.Where(p => visible.Contains(p.Repository.ProjectId))
             .Include(p => p.Repository).ThenInclude(r => r.Project)
             .Include(p => p.Author).Include(p => p.MergedBy)
             .Include(p => p.Comments).ThenInclude(c => c.Author)
@@ -88,6 +92,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task<PullRequest> CreateAsync(Repository repo, string title, string? description, string source, string target, int authorId)
     {
+        await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest, authorId);
         title = title.Trim();
         if (title.Length is 0 or > 200) throw new InvalidOperationException("Title is required (max 200 characters).");
         if (source == target) throw new InvalidOperationException("Source and target must be different branches.");
@@ -123,6 +128,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task UpdateAsync(int prId, int actorId, string title, string? description)
     {
+        await RequireAuthorOrMergerAsync(prId, actorId);
         title = title.Trim();
         if (title.Length is 0 or > 200) throw new InvalidOperationException("Title is required (max 200 characters).");
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -138,6 +144,8 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
     /// <summary>Merges the PR inside the bare repo; on success records state, activity and linked-issue activity.</summary>
     public async Task<MergeOutcome> MergeAsync(int prId, User actor, bool deleteSourceBranch, bool allowFastForward)
     {
+        await access.RequireForPullRequestAsync(prId, Permission.MergePullRequest, actor.Id);
+        if (deleteSourceBranch) await access.RequireForPullRequestAsync(prId, Permission.DeleteBranch, actor.Id);
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
@@ -186,6 +194,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task DeclineAsync(int prId, int actorId)
     {
+        await RequireAuthorOrMergerAsync(prId, actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
@@ -201,6 +210,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task ReopenAsync(int prId, int actorId)
     {
+        await RequireAuthorOrMergerAsync(prId, actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
@@ -222,6 +232,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task<PullRequestComment> AddCommentAsync(int prId, int authorId, string body, string? filePath = null, int? line = null, int? oldLine = null)
     {
+        await access.RequireForPullRequestAsync(prId, Permission.Comment, authorId);
         if (string.IsNullOrWhiteSpace(body)) throw new InvalidOperationException("Comment can't be empty.");
         await using var db = await dbFactory.CreateDbContextAsync();
         var c = new PullRequestComment
@@ -237,6 +248,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task EditCommentAsync(int commentId, int authorId, string body)
     {
+        await RequireCommentAsync(commentId, authorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.PullRequestComments.Where(c => c.Id == commentId && c.AuthorId == authorId).ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Body, body.Trim()).SetProperty(c => c.EditedAt, DateTime.UtcNow));
@@ -244,6 +256,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
 
     public async Task DeleteCommentAsync(int commentId, int authorId)
     {
+        await RequireCommentAsync(commentId, authorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.PullRequestComments.Where(c => c.Id == commentId && c.AuthorId == authorId).ExecuteDeleteAsync();
     }
@@ -251,6 +264,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
     /// <summary>Sets (or with null, withdraws) the user's review verdict. Authors can't review their own PR.</summary>
     public async Task SetReviewAsync(int prId, int userId, ReviewState? state)
     {
+        await access.RequireForPullRequestAsync(prId, Permission.ReviewPullRequest, userId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Reviews).FirstOrDefaultAsync(p => p.Id == prId)
                  ?? throw new InvalidOperationException("Pull request not found.");
@@ -274,6 +288,24 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         }
         Log(db, pr, userId, text);
         await db.SaveChangesAsync();
+    }
+
+    // ---------- Permission helpers ----------
+
+    /// <summary>The PR's author may edit/decline/reopen it (with CreatePullRequest); anyone else needs MergePullRequest.</summary>
+    private async Task RequireAuthorOrMergerAsync(int prId, int actorId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var authorId = await db.PullRequests.Where(p => p.Id == prId).Select(p => (int?)p.AuthorId).FirstOrDefaultAsync();
+        await access.RequireForPullRequestAsync(prId,
+            authorId == actorId ? Permission.CreatePullRequest : Permission.MergePullRequest, actorId);
+    }
+
+    private async Task RequireCommentAsync(int commentId, int actorId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var prId = await db.PullRequestComments.Where(c => c.Id == commentId).Select(c => (int?)c.PullRequestId).FirstOrDefaultAsync();
+        await access.RequireForPullRequestAsync(prId ?? 0, Permission.Comment, actorId);
     }
 
     private static void Log(AppDbContext db, PullRequest pr, int actorId, string text, DateTime? at = null)

@@ -4,6 +4,7 @@
 @inject RepositoryService Repos
 @inject PullRequestService PRs
 @inject NavigationManager Nav
+@inject ProjectAccess Access
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -44,7 +45,7 @@ else if (project != null)
                     @foreach (var r in repos) { <option value="@r.Repository.Slug">@r.Repository.Name</option> }
                 </select>
             }
-            @if (repos.Count > 0)
+            @if (repos.Count > 0 && canCreate)
             {
                 <a class="btn btn-primary btn-sm text-nowrap" href="@RepoUrls.NewPullRequest(project.Key, scopedRepo?.Slug ?? RepoFilter)">+ Create pull request</a>
             }
@@ -98,7 +99,7 @@ else if (project != null)
     private List<PullRequest> prs = [];
     private Dictionary<int, int> commentCounts = [];
     private PullRequestCounts counts = new(0, 0, 0);
-    private bool notFound;
+    private bool notFound, canCreate;
 
     private PullRequestState CurrentState => Enum.TryParse<PullRequestState>(State, true, out var s) ? s : PullRequestState.Open;
 
@@ -110,6 +111,7 @@ else if (project != null)
         if (notFound) return;
 
         repos = await Repos.GetRepositoriesAsync(project!.Id);
+        canCreate = await Access.CanAsync(project.Id, Permission.CreatePullRequest);
         var repoId = scopedRepo?.Id ?? repos.FirstOrDefault(r => r.Repository.Slug == RepoFilter)?.Repository.Id;
         prs = await PRs.ListAsync(project.Id, CurrentState, repoId);
         counts = await PRs.CountAsync(project.Id, repoId);

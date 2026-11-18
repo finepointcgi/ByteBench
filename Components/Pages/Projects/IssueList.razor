@@ -1,6 +1,7 @@
 @page "/p/{Key}"
 @page "/p/{Key}/issues"
 @inject IssueService Issues
+@inject ProjectAccess Access
 
 <PageTitle>Issues · @project?.Name</PageTitle>
 
@@ -15,7 +16,10 @@ else if (project != null)
             <h1>Issues</h1>
             <div class="muted">@project.Name</div>
         </div>
-        <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
+        @if (canCreate)
+        {
+            <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
+        }
     </div>
 
     <div class="tabs">
@@ -83,7 +87,7 @@ else if (project != null)
     [Parameter] public string Key { get; set; } = "";
 
     private Project? project;
-    private bool notFound;
+    private bool notFound, canCreate;
     private List<User> users = [];
     private List<Issue> issues = [];
     private IssueFilter filter = new();
@@ -105,6 +109,7 @@ else if (project != null)
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (project == null) return;
+        canCreate = await Access.CanAsync(project.Id, Permission.EditIssues);
         users = await Issues.GetUsersAsync();
         await Load();
     }

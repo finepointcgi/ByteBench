@@ -30,6 +30,57 @@ The seed data creates four demo accounts. All of them use the password in `SeedD
 
 Account pages run as static server-side rendering (`[ExcludeFromInteractiveRouting]`) because sign-in has to write cookies; the rest of the app stays Interactive Server.
 
+## Roles & permissions
+
+Every project has members, each with one role. `Services/ProjectAccess.cs` makes every access decision. The services (`IssueService`, `RepositoryService`, `PullRequestService`, `MemberService`) check it at the start of each write and throw `ForbiddenException`. Reads only return projects the user can view. The UI hides or disables what you can't do, but the server enforces it either way.
+
+| Permission | Viewer | Developer | Maintainer | Owner |
+|---|:-:|:-:|:-:|:-:|
+| ViewProject | ✓ | ✓ | ✓ | ✓ |
+| EditIssues (create/edit issues, board moves) | | ✓ | ✓ | ✓ |
+| Comment | | ✓ | ✓ | ✓ |
+| PushCode (git push, create branches) | | ✓ | ✓ | ✓ |
+| CreatePullRequest | | ✓ | ✓ | ✓ |
+| ReviewPullRequest | | ✓ | ✓ | ✓ |
+| ManageLabelsAndMilestones | | | ✓ | ✓ |
+| MergePullRequest | | | ✓ | ✓ |
+| DeleteBranch | | | ✓ | ✓ |
+| ManageRepositories | | | ✓ | ✓ |
+| ManageMembers | | | | ✓ |
+| ManageProjectSettings (name, description, visibility) | | | | ✓ |
+| DeleteProject | | | | ✓ |
+
+Some actions have extra rules:
+
+- Deleting an issue, or editing or deleting another person's issue comment, requires Maintainer.
+- A pull request's author can edit, decline and reopen it. Anyone else needs MergePullRequest.
+
+The project creator becomes its **Owner**. A project's last Owner can't be removed or demoted. **Site admins** (`User.IsAdmin`) are treated as Owner of every project.
+
+**Visibility** is set on the project's Settings page:
+
+- **Private** projects are visible only to their members.
+- **Internal** projects are visible to every signed-in user. Non-members get Viewer rights.
+
+If you can't view a project, its pages show "Not found", so its existence isn't revealed.
+
+Manage members at `/p/{KEY}/members`. Owners can add a member by username or email, change roles, and remove members.
+
+Seeded demo data:
+
+| User | Site | WEB (Internal) | OPS (Private) |
+|---|---|---|---|
+| alice | admin | Owner | Owner |
+| bob | | Developer | |
+| carol | | Maintainer | Developer |
+| dan | | Developer | Maintainer |
+
+**Using the API from other code:**
+
+- Inject `ProjectAccess` and call `CanAsync(projectId, Permission.X, userId?)`, `RequireAsync(...)`, `GetRoleAsync(...)` or `VisibleProjectIdsAsync(userId?)`.
+- With no `userId`, the signed-in user is used.
+- Outside a circuit (HTTP endpoints, background jobs), pass `userId` or call `access.ActAs(userId)` before calling services. For trusted system work, call `access.ActAsSystem()`.
+
 ## Features
 
 - **Projects** with a short key (`WEB`), and issues numbered per project (`WEB-12`)
@@ -51,8 +102,19 @@ cd web-app
 git push origin main
 ```
 
-- **Credentials:** clone, fetch and push all require a GitBench account (repos are private). Enter your username (or email) and password when git prompts. In development the demo users `alice`, `bob`, `carol` and `dan` share the password defined in `SeedData.DemoPassword` (`Data/SeedData.cs`). Use a credential helper (`git config credential.helper osxkeychain`/`manager`/`store`) rather than putting the password in the URL. Failed logins count toward Identity lockout.
+- **Credentials:** clone, fetch and push all require a GitBench account. Enter your username (or email) and password when git prompts. In development the demo users `alice`, `bob`, `carol` and `dan` share the password defined in `SeedData.DemoPassword` (`Data/SeedData.cs`). Use a credential helper (`git config credential.helper osxkeychain`/`manager`/`store`) rather than putting the password in the URL. Failed logins count toward Identity lockout.
+- **Permissions:**
+  - Clone and fetch need ViewProject. Push needs PushCode (Developer or higher).
+  - If you can't view the project, git gets `404 Repository not found`, the same as for a repository that doesn't exist.
+  - A Viewer who tries to push gets `403`.
 - **Requirements:** the server runs `git http-backend`, so `git` must be on the server's `PATH` (or set `Git:Executable` in `appsettings.json`). If git is missing, the endpoints answer `503` and the error is logged at startup.
+- **Personal access tokens:** you can use a token instead of your password.
+  - Create one under **Profile → Access tokens** (`/account/profile`). Give it a name, choose scopes, and pick an expiry: 7, 30, 90 or 365 days, or never.
+  - The token looks like `gbp_` followed by 43 base64url characters. It's shown **once**. GitBench stores only its SHA-256 hash and a short display prefix.
+  - When git prompts, enter your username and paste the token as the password: `git clone http://bob@localhost:5108/git/WEB/web-app.git`.
+  - `read_repository` allows clone and fetch. `write_repository` allows push, and also clone and fetch. A token with only `read_repository` gets `403` on push.
+  - Revoked or expired tokens are rejected like a wrong password. Token hashes are compared in constant time, and *Last used* is updated on each use.
+  - Project permissions still apply on top of the token's scopes.
 - Protocol v2 (`git -c protocol.version=2 ...`) is supported; the legacy "dumb" HTTP protocol is not.
 - Repositories live as bare repos under `Git:RepositoryRoot` (default `./repos`).
 - **Smart commits:** after each push, commits whose message mentions an issue key (e.g. `WEB-5: virtualize the list`) are added to that issue's activity and show in its Development panel (`Services/Git/IssueCommitPushListener.cs`). Each commit is linked once per issue.
@@ -67,6 +129,8 @@ git push origin main
 | `Data/SeedData.cs` | Creates the schema (`EnsureCreated`) and seeds demo data |
 | `Services/IssueService.cs` | All data access and business logic (numbering, board ordering, activity log) |
 | `Services/CurrentUser.cs` | The signed-in `User` for the current circuit/request |
+| `Services/ProjectAccess.cs` | Roles, permissions and project visibility: the single authorization point |
+| `Services/MemberService.cs` / `Services/AccessTokenService.cs` | Project membership; personal access tokens |
 | `Components/Account/` | Login, register and profile pages (static SSR), `RedirectToLogin` |
 | `Services/Display.cs` | Formatting helpers and safe Markdown rendering (Markdig, raw HTML disabled) |
 | `Components/Pages/Projects/` | Issue list, board, issue detail, new issue, milestones, settings |

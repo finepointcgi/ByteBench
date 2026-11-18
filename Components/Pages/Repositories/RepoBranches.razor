@@ -2,6 +2,7 @@
 @inherits RepoPageBase
 @inject PullRequestService PRs
 @inject IJSRuntime JS
+@inject ProjectAccess Access
 
 <PageTitle>Branches · @Repo?.Name</PageTitle>
 
@@ -14,12 +15,15 @@ else if (Repo != null)
     <RepoHeader Repo="Repo" Active="branches" />
 
     <div class="repo-toolbar">
+        @if (perms.Can(Permission.PushCode))
+        {
         <input class="form-control form-control-sm branch-name-input mono" placeholder="new-branch-name" @bind="newName" @bind:event="oninput" />
         <span class="muted small">from</span>
         <select class="form-select form-select-sm ref-select" @bind="fromRef">
             @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
         </select>
         <button class="btn btn-sm btn-primary" disabled="@string.IsNullOrWhiteSpace(newName)" @onclick="Create">Create branch</button>
+        }
         <span class="ms-auto muted small">Ahead/behind relative to <span class="mono">@Repo.DefaultBranch</span></span>
     </div>
     @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
@@ -61,11 +65,11 @@ else if (Repo != null)
                     {
                         <a href="@RepoUrls.PullRequest(pr)" class="text-nowrap"><PrStateBadge State="pr.State" /> #@pr.Number</a>
                     }
-                    else if (!b.IsDefault && b.Ahead > 0)
+                    else if (!b.IsDefault && b.Ahead > 0 && perms.Can(Permission.CreatePullRequest))
                     {
                         <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, b.Name, Repo.DefaultBranch)">Create PR</a>
                     }
-                    @if (!b.IsDefault)
+                    @if (!b.IsDefault && perms.Can(Permission.DeleteBranch))
                     {
                         <button class="btn btn-sm btn-outline-danger" title="Delete branch" @onclick="() => Delete(b.Name)">Delete</button>
                     }
@@ -79,10 +83,12 @@ else if (Repo != null)
     private List<BranchDivergence> branches = [];
     private List<PullRequest> openPrs = [];
     private string? newName, fromRef, message;
+    private ProjectPermissions perms = ProjectPermissions.None;
 
     protected override async Task OnParametersSetAsync()
     {
         if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
         await Load();
     }
 
@@ -100,7 +106,7 @@ else if (Repo != null)
         var from = fromRef ?? Repo!.DefaultBranch;
         try
         {
-            await Git(path => GitOps.CreateBranch(path, name, from));
+            await Repos.CreateBranchAsync(Repo!, name, from);
             message = $"Created branch '{name}' from '{from}'.";
             newName = null;
             await Load();
@@ -114,7 +120,7 @@ else if (Repo != null)
         if (!await JS.InvokeAsync<bool>("confirm", $"Delete branch '{name}'? Commits only on this branch become unreachable.")) return;
         try
         {
-            await Git(path => GitOps.DeleteBranch(path, name, Repo!.DefaultBranch));
+            await Repos.DeleteBranchAsync(Repo!, name);
             message = $"Deleted branch '{name}'.";
             await Load();
         }
