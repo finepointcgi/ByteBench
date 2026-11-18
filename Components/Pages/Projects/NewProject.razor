@@ -1,5 +1,6 @@
 @page "/projects/new"
 @inject IssueService Issues
+@inject GroupService GroupSvc
 @inject NavigationManager Nav
 
 <PageTitle>New project · GitBench</PageTitle>
@@ -11,6 +12,12 @@
     <EditForm Model="model" OnValidSubmit="Create" FormName="new-project">
         <DataAnnotationsValidator />
         <MudStack Spacing="3">
+            <MudSelect T="int?" Label="Group" @bind-Value="model.GroupId" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft"
+                       ToStringFunc="@(id => id is { } g ? groups.FirstOrDefault(x => x.Id == g)?.FullPath ?? "" : "None (top-level project)")"
+                       HelperText="Members of the group get their group role in the project. You need Maintainer or Owner in the group.">
+                <MudSelectItem T="int?" Value="null">None (top-level project)</MudSelectItem>
+                @foreach (var g in groups) { <MudSelectItem T="int?" Value="g.Id">@g.FullPath</MudSelectItem> }
+            </MudSelect>
             <MudTextField T="string" Label="Name" Value="model.Name" ValueChanged="NameChanged" Immediate="true" For="() => model.Name"
                           Placeholder="My awesome project" Variant="Variant.Outlined" Margin="Margin.Dense" />
             <MudTextField T="string" Label="Key" Value="model.Key" ValueChanged="KeyChanged" Immediate="true" For="() => model.Key"
@@ -32,7 +39,16 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "group")] public int? Group { get; set; }
+
     private Project model = new();
+    private List<GroupSummary> groups = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        groups = await GroupSvc.CreatableInAsync();
+        if (Group is { } g && groups.Any(x => x.Id == g)) model.GroupId = g;
+    }
     private bool keyTouched;
     private string? error;
 

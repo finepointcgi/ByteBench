@@ -1,5 +1,6 @@
 @page "/p/{Key}/settings"
 @inject IssueService Issues
+@inject GroupService GroupSvc
 @inject ProjectAccess Access
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
@@ -46,7 +47,7 @@ else if (project != null)
     <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Labels</MudText>
         <div class="label-list">
-            @foreach (var l in project.Labels)
+            @foreach (var l in project.Labels.Where(l => l.ProjectId == project.Id))
             {
                 <div class="label-line" @key="l.Id">
                     @if (editLabel?.Id == l.Id)
@@ -73,6 +74,14 @@ else if (project != null)
                 </div>
             }
         </div>
+        @foreach (var l in project.Labels.Where(l => l.GroupId != null))
+        {
+            <div class="label-line" @key="l.Id">
+                <LabelChip Label="l" />
+                <span class="label-spacer"></span>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Group label (read-only here)</MudText>
+            </div>
+        }
         <div class="label-line label-new">
             <input type="color" class="color-input" aria-label="New label colour" @bind="newLabel.Color" />
             <MudTextField T="string" Placeholder="New label name" @bind-Value="newLabel.Name" Immediate="true" Variant="Variant.Outlined"
@@ -122,6 +131,27 @@ else if (project != null)
         </MudPaper>
     }
 
+    @if (perms.Can(Permission.ManageProjectSettings))
+    {
+        <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Group</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                @(currentGroup == null ? "This is a top-level project." : $"This project belongs to {currentGroup}.")
+                Transfer it to a group where you are a Maintainer or Owner. Its key and URLs don't change; members of the old group lose
+                the access they inherited, and group labels and milestones it uses are copied into the project.
+            </MudText>
+            <div class="d-flex flex-wrap gap-2 align-center">
+                <MudSelect T="int?" Label="Group" @bind-Value="transferTo" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft"
+                           OuterClass="flex-grow-1" ToStringFunc="@(id => id is { } g ? transferTargets.FirstOrDefault(x => x.Id == g)?.FullPath ?? currentGroup ?? "" : "None (top-level project)")">
+                    <MudSelectItem T="int?" Value="null">None (top-level project)</MudSelectItem>
+                    @foreach (var g in transferTargets) { <MudSelectItem T="int?" Value="g.Id">@g.FullPath</MudSelectItem> }
+                </MudSelect>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DriveFileMove"
+                           Disabled="@(transferTo == project.GroupId)" OnClick="Transfer">Transfer</MudButton>
+            </div>
+        </MudPaper>
+    }
+
     @if (perms.Can(Permission.DeleteProject))
     {
         <MudPaper Outlined="true" Class="settings-card danger-card pa-5">
@@ -145,6 +175,9 @@ else if (project != null)
     private ProjectVisibility visibility;
     private Label newLabel = NewLabel();
     private Label? editLabel;
+    private List<GroupSummary> transferTargets = [];
+    private int? transferTo;
+    private string? currentGroup;
 
     private static Label NewLabel() => new() { Color = $"#{Random.Shared.Next(0x1000000):x6}" };
 
@@ -159,6 +192,26 @@ else if (project != null)
         name = project.Name;
         description = project.Description;
         visibility = project.Visibility;
+        transferTo = project.GroupId;
+        if (perms.Can(Permission.ManageProjectSettings))
+        {
+            transferTargets = await GroupSvc.CreatableInAsync();
+            currentGroup = project.GroupId is { } gid ? (await GroupSvc.CrumbsAsync(gid)).LastOrDefault()?.FullPath : null;
+        }
+    }
+
+    private async Task Transfer()
+    {
+        var target = transferTo is { } t ? transferTargets.FirstOrDefault(x => x.Id == t)?.FullPath : null;
+        var ok = await Dialogs.ShowMessageBoxAsync("Transfer project?",
+            $"Move {project!.Name} {(target == null ? "out of its group, to the top level" : $"into {target}")}?", yesText: "Transfer", cancelText: "Cancel");
+        if (ok != true) return;
+        if (await Try(() => GroupSvc.TransferProjectAsync(project.Id, transferTo)))
+        {
+            Snackbar.Add(target == null ? "Project is now top-level." : $"Project transferred to {target}.", Severity.Success);
+            Nav.NavigateTo($"/p/{project.Key}/settings", forceLoad: false);
+            await Load();
+        }
     }
 
     /// <summary>Runs a change, turning permission (ForbiddenException) and validation errors into a message.</summary>

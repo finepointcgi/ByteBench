@@ -1,0 +1,91 @@
+@page "/groups/new"
+@inject GroupService GroupSvc
+@inject NavigationManager Nav
+
+<PageTitle>New group · GitBench</PageTitle>
+
+<div class="new-group">
+    <div class="page-header"><MudText Typo="Typo.h5" HtmlTag="h1">@(parentId == null ? "New group" : "New subgroup")</MudText></div>
+
+    <MudPaper Outlined="true" Class="pa-5" Style="max-width:720px">
+        <MudStack Spacing="3">
+            <MudSelect T="int?" Label="Parent group" Value="parentId" ValueChanged="ParentChanged" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       AnchorOrigin="Origin.BottomLeft" ToStringFunc="@(id => id is { } v ? parents.FirstOrDefault(p => p.Id == v)?.FullPath ?? "" : "None (top-level group)")"
+                       HelperText="Subgroups need Maintainer or Owner in the parent. Groups nest at most 4 levels deep.">
+                <MudSelectItem T="int?" Value="null">None (top-level group)</MudSelectItem>
+                @foreach (var p in parents.Where(p => p.Depth < Group.MaxDepth)) { <MudSelectItem T="int?" Value="p.Id">@p.FullPath</MudSelectItem> }
+            </MudSelect>
+            <MudTextField T="string" Label="Name" Value="name" ValueChanged="NameChanged" Immediate="true" Placeholder="Platform team"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" Label="Path" Value="path" ValueChanged="PathChanged" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="gb-mono-input" HelperText="@($"URL: /g/{FullPath}")" />
+            <MudTextField T="string" Label="Description" @bind-Value="description" Lines="2" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudSelect T="ProjectVisibility" Label="Visibility" @bind-Value="visibility" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem Value="ProjectVisibility.Private">Private: only members see the group</MudSelectItem>
+                <MudSelectItem Value="ProjectVisibility.Internal">Internal: every signed-in user sees the group</MudSelectItem>
+            </MudSelect>
+            <div class="d-flex align-center gap-3">
+                <input type="color" class="gb-color-input" aria-label="Avatar colour" @bind="color" />
+                <GroupAvatar Name="@(string.IsNullOrEmpty(name) ? "?" : name)" Color="@color" Size="36" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Avatar colour</MudText>
+            </div>
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(path))"
+                           OnClick="Create">Create group</MudButton>
+                <MudButton Href="/groups" Variant="Variant.Text">Cancel</MudButton>
+            </div>
+        </MudStack>
+    </MudPaper>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "parent")] public int? Parent { get; set; }
+
+    private List<GroupSummary> parents = [];
+    private int? parentId;
+    private string name = "", path = "", color = AvatarColors[Random.Shared.Next(AvatarColors.Length)];
+    private string? description, error;
+    private bool pathTouched;
+    private ProjectVisibility visibility = ProjectVisibility.Private;
+
+    private static readonly string[] AvatarColors = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
+
+    private string FullPath => (parentId is { } p ? parents.FirstOrDefault(x => x.Id == p)?.FullPath + "/" : "") + (string.IsNullOrEmpty(path) ? "…" : path);
+
+    protected override async Task OnInitializedAsync()
+    {
+        parents = await GroupSvc.CreatableInAsync();
+        if (Parent is { } p && parents.Any(x => x.Id == p)) ParentChanged(p);
+    }
+
+    private void ParentChanged(int? id)
+    {
+        parentId = id;
+        // Subgroups default to their parent's visibility (and can't be more visible than it).
+        if (id is { } v && parents.FirstOrDefault(p => p.Id == v) is { } parent) visibility = parent.Visibility;
+    }
+
+    private void NameChanged(string? value)
+    {
+        name = value ?? "";
+        if (!pathTouched) path = GroupService.SuggestPath(name);
+    }
+
+    private void PathChanged(string? value)
+    {
+        pathTouched = true;
+        path = (value ?? "").Trim().ToLowerInvariant();
+    }
+
+    private async Task Create()
+    {
+        error = null;
+        try
+        {
+            var g = await GroupSvc.CreateAsync(name, path, description, visibility, color, parentId);
+            Nav.NavigateTo($"/g/{g.FullPath}");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

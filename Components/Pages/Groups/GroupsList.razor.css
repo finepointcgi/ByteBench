@@ -1,0 +1,12 @@
+.groups-page ::deep .groups-list { overflow: hidden; }
+.groups-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+.groups-row:last-child { border-bottom: none; }
+.groups-row:hover { background: var(--mud-palette-action-default-hover); text-decoration: none; }
+.groups-main { flex: 1; min-width: 0; }
+.groups-name { font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; }
+.groups-meta { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.groups-counts { display: flex; gap: 14px; color: var(--muted); font-size: 13px; flex-shrink: 0; }
+.groups-counts span { display: inline-flex; align-items: center; gap: 4px; }
+.groups-page ::deep .groups-sub-icon { color: var(--muted); margin-left: -22px; }
+.groups-empty { padding: 32px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+@media (max-width: 600px) { .groups-counts { display: none; } }

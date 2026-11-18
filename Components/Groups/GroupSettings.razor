@@ -1,0 +1,151 @@
+@* Group settings (Owners): general, path, parent, delete. *@
+@inject GroupService GroupSvc
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+@if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3 gb-group-card">@error</MudAlert> }
+
+<MudPaper Outlined="true" Class="pa-5 mb-4 gb-group-card">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title">General</MudText>
+    <MudStack Spacing="3">
+        <MudTextField T="string" Label="Name" @bind-Value="name" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudTextField T="string" Label="Description" @bind-Value="description" Lines="2" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        <MudSelect T="ProjectVisibility" Label="Visibility" @bind-Value="visibility" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft">
+            <MudSelectItem Value="ProjectVisibility.Private">Private: only members see the group</MudSelectItem>
+            <MudSelectItem Value="ProjectVisibility.Internal">Internal: every signed-in user sees the group</MudSelectItem>
+        </MudSelect>
+        <div class="d-flex align-center gap-3">
+            <input type="color" class="gb-color-input" aria-label="Avatar colour" @bind="color" />
+            <GroupAvatar Name="@name" Color="@color" Size="36" />
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Avatar colour</MudText>
+        </div>
+        <div><MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(name)" OnClick="SaveGeneral">Save</MudButton></div>
+    </MudStack>
+</MudPaper>
+
+<MudPaper Outlined="true" Class="pa-5 mb-4 gb-group-card">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title">Path</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Links to the old path (and to its subgroups) keep working: they redirect to the new one. Project URLs (<span class="mono">/p/KEY</span>) never change.</MudText>
+    <div class="d-flex flex-wrap gap-2 align-center">
+        <MudTextField T="string" Label="Path" @bind-Value="path" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input flex-grow-1"
+                      HelperText="@($"/g/{ParentPrefix}{path}")" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(path) || path == Group.Path)" OnClick="ChangePath">Change path</MudButton>
+    </div>
+</MudPaper>
+
+<MudPaper Outlined="true" Class="pa-5 mb-4 gb-group-card">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title">Move group</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Move this group (with its subgroups and projects) under another group where you are a Maintainer or Owner, or make it a top-level group.</MudText>
+    <div class="d-flex flex-wrap gap-2 align-center">
+        <MudSelect T="int?" Label="New parent" @bind-Value="newParent" Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft" OuterClass="flex-grow-1"
+                   ToStringFunc="@(id => id is { } v ? targets.FirstOrDefault(t => t.Id == v)?.FullPath ?? "" : "None (top-level group)")">
+            <MudSelectItem T="int?" Value="null">None (top-level group)</MudSelectItem>
+            @foreach (var t in targets) { <MudSelectItem T="int?" Value="t.Id">@t.FullPath</MudSelectItem> }
+        </MudSelect>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Disabled="@(newParent == Group.ParentId)" OnClick="Move">Move</MudButton>
+    </div>
+</MudPaper>
+
+@if (Perms.Can(GroupPermission.DeleteGroup))
+{
+    <MudPaper Outlined="true" Class="pa-5 gb-group-card gb-group-danger">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-group-card-title" Color="Color.Error">Danger zone</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            @if (isEmpty)
+            {
+                <span>This group is empty, so deleting it removes only the group, its members, labels and milestones.</span>
+            }
+            else
+            {
+                <span>This group has <b>@subgroups</b> subgroup(s) and <b>@projects</b> project(s). Deleting it permanently deletes all of them, with their issues and repositories.</span>
+            }
+        </MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DeleteForever" OnClick="Delete">Delete group</MudButton>
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public Group Group { get; set; } = null!;
+    [Parameter] public GroupPermissions Perms { get; set; } = GroupPermissions.None;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string name = "", path = "", color = "";
+    private string? description, error;
+    private ProjectVisibility visibility;
+    private int? newParent;
+    private List<GroupSummary> targets = [];
+    private bool isEmpty;
+    private int subgroups, projects;
+
+    private string ParentPrefix => Group.Parent is { } p ? p.FullPath + "/" : "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        name = Group.Name;
+        description = Group.Description;
+        visibility = Group.Visibility;
+        color = Group.Color;
+        path = Group.Path;
+        newParent = Group.ParentId;
+        var prefix = Group.FullPath + "/";
+        targets = (await GroupSvc.CreatableInAsync())
+            .Where(t => t.Id != Group.Id && !t.FullPath.StartsWith(prefix) && t.Depth < Group.MaxDepth).ToList();
+        var tree = await GroupSvc.GetTreeAsync(Group.Id);
+        subgroups = tree?.TotalSubgroups ?? 0;
+        projects = tree?.TotalProjects ?? 0;
+        isEmpty = subgroups == 0 && projects == 0;
+    }
+
+    private async Task<bool> Try(Func<Task> action)
+    {
+        error = null;
+        try { await action(); return true; }
+        catch (InvalidOperationException ex) { error = ex.Message; return false; }
+    }
+
+    private async Task SaveGeneral()
+    {
+        if (!await Try(() => GroupSvc.UpdateAsync(Group.Id, name, description, visibility, color))) return;
+        Snackbar.Add("Group settings saved.", Severity.Success);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task ChangePath()
+    {
+        if (!await Dialogs.ConfirmAsync("Change path?", $"Change the path to /g/{ParentPrefix}{path.Trim().ToLowerInvariant()}? Old links will redirect.", "Change path")) return;
+        if (!await Try(() => GroupSvc.ChangePathAsync(Group.Id, path))) return;
+        Snackbar.Add("Path changed.", Severity.Success);
+        Nav.NavigateTo($"/g/{ParentPrefix}{path.Trim().ToLowerInvariant()}/-/settings");
+    }
+
+    private async Task Move()
+    {
+        var target = newParent is { } t ? targets.First(x => x.Id == t).FullPath : null;
+        if (!await Dialogs.ConfirmAsync("Move group?", $"Move {Group.FullPath} {(target == null ? "to the top level" : $"into {target}")}? Members of the old parent groups lose the access they inherited.", "Move")) return;
+        if (!await Try(() => GroupSvc.MoveAsync(Group.Id, newParent))) return;
+        Snackbar.Add("Group moved.", Severity.Success);
+        Nav.NavigateTo($"/g/{(target == null ? "" : target + "/")}{Group.Path}/-/settings");
+    }
+
+    private async Task Delete()
+    {
+        if (isEmpty)
+        {
+            if (!await Dialogs.ConfirmAsync("Delete group?", $"Delete the group {Group.FullPath}? This can't be undone.")) return;
+            if (await Try(() => GroupSvc.DeleteAsync(Group.Id))) Done();
+            return;
+        }
+        var typed = await Dialogs.TypeToConfirmAsync($"Delete {Group.Name} and everything in it?",
+            $"This permanently deletes {subgroups} subgroup(s) and {projects} project(s) with all their issues, pull requests and repositories. It can't be undone.",
+            Group.FullPath, "Delete everything");
+        if (typed == null) return;
+        if (await Try(() => GroupSvc.DeleteAsync(Group.Id, cascade: true, confirmPath: typed))) Done();
+    }
+
+    private void Done()
+    {
+        Snackbar.Add($"Deleted {Group.FullPath}.", Severity.Success);
+        Nav.NavigateTo(Group.Parent is { } p ? $"/g/{p.FullPath}" : "/groups");
+    }
+}

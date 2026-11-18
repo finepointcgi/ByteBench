@@ -74,19 +74,21 @@ public partial class Issue
     public string Key => $"{Project?.Key}-{Number}";
 }
 
-public class Label
+public partial class Label
 {
     public int Id { get; set; }
-    public int ProjectId { get; set; }
+    /// <summary>The owning project; null for a group label (<see cref="GroupId"/>), which every project under the group inherits.</summary>
+    public int? ProjectId { get; set; }
     [Required, MaxLength(40)] public string Name { get; set; } = "";
     [MaxLength(9)] public string Color { get; set; } = "#6b7280";
     public List<Issue> Issues { get; set; } = [];
 }
 
-public class Milestone
+public partial class Milestone
 {
     public int Id { get; set; }
-    public int ProjectId { get; set; }
+    /// <summary>The owning project; null for a group milestone (<see cref="GroupId"/>), which every project under the group inherits.</summary>
+    public int? ProjectId { get; set; }
     [Required, MaxLength(100)] public string Title { get; set; } = "";
     public string? Description { get; set; }
     public DateTime? StartDate { get; set; }
@@ -899,4 +901,79 @@ public partial class User
 {
     /// <summary>When the account was created ("member since"). Null for accounts created before this was recorded.</summary>
     public DateTime? CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- Groups -----
+
+/// <summary>
+/// A GitLab-style namespace that owns projects and subgroups (nested up to <see cref="MaxDepth"/> levels). Its URL is
+/// <c>/g/{FullPath}</c>. Members' roles are inherited by every subgroup and project below it
+/// (see <see cref="GitBench.Services.ProjectAccess"/>).
+/// </summary>
+public class Group
+{
+    public const int MaxDepth = 4;
+    public const string PathPattern = "^[a-z0-9][a-z0-9_.-]{0,49}$";
+
+    public int Id { get; set; }
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    /// <summary>This group's own URL segment, e.g. <c>platform</c>.</summary>
+    [Required, MaxLength(50), RegularExpression(PathPattern, ErrorMessage = "Use lowercase letters, digits, '.', '_' or '-'.")]
+    public string Path { get; set; } = "";
+    /// <summary>Parent paths plus <see cref="Path"/>, e.g. <c>acme/platform</c>. Unique; kept in sync by GroupService.</summary>
+    [Required, MaxLength(260)] public string FullPath { get; set; } = "";
+    public string? Description { get; set; }
+    /// <summary>Private: only members (and members of projects/subgroups in it) see the group. Internal: every signed-in user.</summary>
+    public ProjectVisibility Visibility { get; set; } = ProjectVisibility.Private;
+    [MaxLength(9)] public string Color { get; set; } = "#6366f1";
+    public int? ParentId { get; set; }
+    public Group? Parent { get; set; }
+    public List<Group> Children { get; set; } = [];
+    public List<GroupMember> Members { get; set; } = [];
+    public List<Project> Projects { get; set; } = [];
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>1 for a top-level group.</summary>
+    public int Depth => FullPath.Count(c => c == '/') + 1;
+}
+
+/// <summary>A user's role in a group (at most one row per group and user). Inherited by subgroups and projects.</summary>
+public class GroupMember
+{
+    public int Id { get; set; }
+    public int GroupId { get; set; }
+    public Group Group { get; set; } = null!;
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public ProjectRole Role { get; set; } = ProjectRole.Developer;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>An old <see cref="Group.FullPath"/> that still leads to the group after a rename or move.</summary>
+public class GroupRedirect
+{
+    public int Id { get; set; }
+    [Required, MaxLength(260)] public string OldPath { get; set; } = "";
+    public int GroupId { get; set; }
+    public Group Group { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public partial class Project
+{
+    /// <summary>The group that owns this project; null for a top-level project.</summary>
+    public int? GroupId { get; set; }
+    public Group? Group { get; set; }
+}
+
+public partial class Label
+{
+    /// <summary>Set for a group label (then <see cref="ProjectId"/> is null).</summary>
+    public int? GroupId { get; set; }
+}
+
+public partial class Milestone
+{
+    /// <summary>Set for a group milestone (then <see cref="ProjectId"/> is null).</summary>
+    public int? GroupId { get; set; }
 }

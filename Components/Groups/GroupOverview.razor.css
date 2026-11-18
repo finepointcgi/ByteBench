@@ -1,0 +1,14 @@
+.go-stats { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.go-stats span { display: inline-flex; align-items: center; gap: 4px; }
+.go-row { display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+.go-row:last-child { border-bottom: none; }
+a.go-row:hover { background: var(--mud-palette-action-default-hover); text-decoration: none; }
+.go-main { flex: 1; min-width: 0; }
+.go-name { font-weight: 600; color: var(--text); }
+.go-key { color: var(--muted); font-size: 12px; margin-left: 4px; }
+.go-meta { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+::deep .go-lock { color: var(--muted); vertical-align: middle; margin-left: 4px; font-size: 16px !important; }
+.go-counts { display: flex; gap: 14px; color: var(--muted); font-size: 13px; flex-shrink: 0; }
+.go-counts span { display: inline-flex; align-items: center; gap: 4px; }
+.go-empty { padding: 32px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+@media (max-width: 600px) { .go-counts { display: none; } }

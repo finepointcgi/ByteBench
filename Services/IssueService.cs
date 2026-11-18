@@ -46,17 +46,21 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     {
         var visible = await access.VisibleProjectIdsAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Projects.Where(p => visible.Contains(p.Id))
+        var project = await db.Projects.Where(p => visible.Contains(p.Id))
             .Include(p => p.Labels.OrderBy(l => l.Name))
             .Include(p => p.Milestones.OrderBy(m => m.IsClosed).ThenBy(m => m.DueDate))
             .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Key == key.ToUpper());
+        // Labels and milestones of the project's groups are usable here too (read-only: their ProjectId is null).
+        if (project != null) await GroupService.AddInheritedAsync(db, project);
+        return project;
     }
 
     /// <summary>Creates a project; its creator (<paramref name="ownerId"/>, default the acting user) becomes its Owner.</summary>
     public async Task<Project> CreateProjectAsync(Project project, int? ownerId = null)
     {
         var owner = await access.ResolveUserIdAsync(ownerId) ?? throw new ForbiddenException("Sign in to create a project.");
+        if (project.GroupId is { } groupId) await access.RequireAsync(groupId, GroupPermission.CreateInGroup, owner);
         project.Members = [new ProjectMember { UserId = owner, Role = ProjectRole.Owner }];
         await using var db = await dbFactory.CreateDbContextAsync();
         project.Key = project.Key.ToUpperInvariant();
@@ -124,8 +128,21 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     public async Task<List<Issue>> GetIssuesAsync(int projectId, IssueFilter f)
     {
         if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
+        return await QueryIssuesAsync([projectId], f);
+    }
+
+    /// <summary>Issues across several projects (e.g. a group's), skipping any the acting user can't view.</summary>
+    public async Task<List<Issue>> GetIssuesAsync(IReadOnlyCollection<int> projectIds, IssueFilter f)
+    {
+        var visible = await access.VisibleProjectIdsAsync();
+        return await QueryIssuesAsync(projectIds.Where(visible.Contains).ToList(), f);
+    }
+
+    private async Task<List<Issue>> QueryIssuesAsync(List<int> projectIds, IssueFilter f)
+    {
+        if (projectIds.Count == 0) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
-        var q = BaseIssueQuery(db).Where(i => i.ProjectId == projectId);
+        var q = BaseIssueQuery(db).Where(i => projectIds.Contains(i.ProjectId));
 
         if (!string.IsNullOrWhiteSpace(f.Search))
         {
@@ -361,7 +378,8 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
 
     public async Task<Label> SaveLabelAsync(Label label)
     {
-        await access.RequireAsync(label.ProjectId, Permission.ManageLabelsAndMilestones);
+        await access.RequireAsync(label.ProjectId ?? 0, Permission.ManageLabelsAndMilestones); // group labels: GroupService
+        label.GroupId = null;
         if (label.Id != 0 && await access.ProjectOf(d => d.Labels.Where(l => l.Id == label.Id).Select(l => (int?)l.ProjectId)) != label.ProjectId)
             throw new ForbiddenException("Label not found in this project.");
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -386,19 +404,23 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     {
         if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Milestones.Where(m => m.ProjectId == projectId)
+        // Plus the milestones inherited from the project's groups (read-only here); their progress counts this project's issues.
+        var groupId = await db.Projects.Where(p => p.Id == projectId).Select(p => p.GroupId).FirstOrDefaultAsync();
+        var chain = groupId is { } gid ? await ProjectAccess.GroupChainAsync(db, gid) : [];
+        return await db.Milestones.Where(m => m.ProjectId == projectId || (m.GroupId != null && chain.Contains(m.GroupId.Value)))
             .OrderBy(m => m.IsClosed).ThenBy(m => m.DueDate == null).ThenBy(m => m.DueDate)
             .Select(m => new MilestoneSummary(m,
-                m.Issues.Count(i => i.Status != IssueStatus.Done),
-                m.Issues.Count(i => i.Status == IssueStatus.Done),
-                m.Issues.Sum(i => i.StoryPoints ?? 0),
-                m.Issues.Where(i => i.Status == IssueStatus.Done).Sum(i => i.StoryPoints ?? 0)))
+                m.Issues.Count(i => i.ProjectId == projectId && i.Status != IssueStatus.Done),
+                m.Issues.Count(i => i.ProjectId == projectId && i.Status == IssueStatus.Done),
+                m.Issues.Where(i => i.ProjectId == projectId).Sum(i => i.StoryPoints ?? 0),
+                m.Issues.Where(i => i.ProjectId == projectId && i.Status == IssueStatus.Done).Sum(i => i.StoryPoints ?? 0)))
             .ToListAsync();
     }
 
     public async Task SaveMilestoneAsync(Milestone m)
     {
-        await access.RequireAsync(m.ProjectId, Permission.ManageLabelsAndMilestones);
+        await access.RequireAsync(m.ProjectId ?? 0, Permission.ManageLabelsAndMilestones); // group milestones: GroupService
+        m.GroupId = null;
         if (m.Id != 0 && await access.ProjectOf(d => d.Milestones.Where(x => x.Id == m.Id).Select(x => (int?)x.ProjectId)) != m.ProjectId)
             throw new ForbiddenException("Milestone not found in this project.");
         await using var db = await dbFactory.CreateDbContextAsync();

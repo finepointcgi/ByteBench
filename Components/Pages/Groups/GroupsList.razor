@@ -1,0 +1,72 @@
+@page "/groups"
+@inject GroupService GroupSvc
+
+<PageTitle>Groups · GitBench</PageTitle>
+
+<div class="groups-page">
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Groups</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">Groups own projects and subgroups. Members of a group get their role in everything under it.</MudText>
+        </div>
+        <MudButton Href="/groups/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New group</MudButton>
+    </div>
+
+    <MudPaper Outlined="true" Class="groups-list">
+        @if (loaded && groups.Count == 0)
+        {
+            <div class="groups-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.Workspaces" Size="Size.Large" />
+                <div>You're not in any groups yet. <a href="/groups/new">Create one</a>.</div>
+            </div>
+        }
+        @foreach (var g in groups)
+        {
+            // Indent by depth relative to the shallowest visible ancestor, so a visible subgroup of a hidden parent isn't orphan-indented.
+            var indent = Indent(g);
+            <a class="groups-row" href="/g/@g.FullPath" style="@($"padding-left:{16 + indent * 28}px")" @key="g.Id">
+                @if (indent > 0) { <MudIcon Icon="@Icons.Material.Outlined.SubdirectoryArrowRight" Size="Size.Small" Class="groups-sub-icon" /> }
+                <GroupAvatar Name="@g.Name" Color="@g.Color" Size="32" />
+                <div class="groups-main">
+                    <div class="groups-name">
+                        @g.Name
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Icon="@(g.Visibility == ProjectVisibility.Private ? Icons.Material.Outlined.Lock : Icons.Material.Outlined.Shield)"
+                                 Class="ma-0 ml-1">@g.Visibility</MudChip>
+                    </div>
+                    <div class="groups-meta"><span class="mono">@g.FullPath</span>@if (!string.IsNullOrEmpty(g.Description)) { <span> · @g.Description</span> }</div>
+                </div>
+                <div class="groups-counts">
+                    <span title="Subgroups"><MudIcon Icon="@Icons.Material.Outlined.Workspaces" Size="Size.Small" /> @g.SubgroupCount</span>
+                    <span title="Projects"><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" /> @g.ProjectCount</span>
+                </div>
+            </a>
+        }
+    </MudPaper>
+</div>
+
+@code {
+    private List<GroupSummary> groups = [];
+    private Dictionary<int, GroupSummary> byId = [];
+    private bool loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var all = await GroupSvc.ListAsync();
+        byId = all.ToDictionary(g => g.Id);
+        // Tree order: each group followed by its subgroups, siblings by name.
+        void Add(GroupSummary g)
+        {
+            groups.Add(g);
+            foreach (var c in all.Where(c => c.ParentId == g.Id).OrderBy(c => c.Name)) Add(c);
+        }
+        foreach (var root in all.Where(g => g.ParentId is not { } p || !byId.ContainsKey(p)).OrderBy(g => g.Name)) Add(root);
+        loaded = true;
+    }
+
+    private int Indent(GroupSummary g)
+    {
+        var n = 0;
+        for (var p = g.ParentId; p is { } id && byId.TryGetValue(id, out var parent); p = parent.ParentId) n++;
+        return n;
+    }
+}

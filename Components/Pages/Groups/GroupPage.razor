@@ -1,0 +1,114 @@
+@page "/g/{*Path}"
+@inject GroupService GroupSvc
+@inject ProjectAccess Access
+@inject NavigationManager Nav
+
+@*
+  Every group page: /g/{full/path} (overview) and /g/{full/path}/-/{section}. The "/-/" separator keeps sections apart
+  from subgroup paths. Old paths (after a rename or move) redirect to the current one, keeping the section.
+*@
+
+<PageTitle>@(group == null ? "Group" : $"{SectionTitle} · {group.Name}") · GitBench</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This group does not exist." />
+}
+else if (group != null)
+{
+    <div class="group-page">
+        <GroupBreadcrumbs GroupId="group.Id" CurrentGroupPath="@group.FullPath" />
+        <div class="group-header">
+            <GroupAvatar Name="@group.Name" Color="@group.Color" Size="48" />
+            <div class="group-header-text">
+                <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">
+                    @group.Name
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0 ml-1"
+                             Icon="@(group.Visibility == ProjectVisibility.Private ? Icons.Material.Outlined.Lock : Icons.Material.Outlined.Shield)">@group.Visibility</MudChip>
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    <span class="mono">@group.FullPath</span>
+                    @if (!string.IsNullOrEmpty(group.Description)) { <span> · @group.Description</span> }
+                    @if (perms.Role is { } r) { <span> · You are <b>@r</b></span> }
+                </MudText>
+            </div>
+            @if (perms.Can(GroupPermission.CreateInGroup))
+            {
+                <div class="group-header-actions">
+                    <MudButton Href="@($"/projects/new?group={group.Id}")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add">New project</MudButton>
+                    @if (group.Depth < Group.MaxDepth)
+                    {
+                        <MudButton Href="@($"/groups/new?parent={group.Id}")" Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Outlined.CreateNewFolder">New subgroup</MudButton>
+                    }
+                </div>
+            }
+        </div>
+
+        <nav class="gb-tabs" aria-label="Group sections">
+            <TabLink Href="@Url("")" Active="@(section == "")" Icon="@Icons.Material.Outlined.AccountTree">Overview</TabLink>
+            <TabLink Href="@Url("issues")" Active="@(section == "issues")" Icon="@Icons.Material.Outlined.ListAlt">Issues</TabLink>
+            <TabLink Href="@Url("pull-requests")" Active="@(section == "pull-requests")" Icon="@Icons.Material.Outlined.MergeType">Pull requests</TabLink>
+            <TabLink Href="@Url("labels")" Active="@(section == "labels")" Icon="@Icons.Material.Outlined.Label">Labels &amp; milestones</TabLink>
+            <TabLink Href="@Url("members")" Active="@(section == "members")" Icon="@Icons.Material.Outlined.Group">Members</TabLink>
+            @if (perms.Can(GroupPermission.ManageGroupSettings))
+            {
+                <TabLink Href="@Url("settings")" Active="@(section == "settings")" Icon="@Icons.Material.Outlined.Settings">Settings</TabLink>
+            }
+        </nav>
+
+        @switch (section)
+        {
+            case "": <GroupOverview Group="group" Perms="perms" /> break;
+            case "issues": <GroupIssues Group="group" /> break;
+            case "pull-requests": <GroupPullRequests Group="group" /> break;
+            case "labels": <GroupLabels Group="group" Perms="perms" /> break;
+            case "members": <GroupMembers Group="group" Perms="perms" /> break;
+            case "settings" when perms.Can(GroupPermission.ManageGroupSettings): <GroupSettings Group="group" Perms="perms" OnChanged="Reload" /> break;
+            case "settings": <Forbidden Message="Only Owners can change this group's settings." BackHref="@Url("")" /> break;
+            default: <ProjectNotFound Message="This page does not exist." /> break;
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Path { get; set; }
+
+    private Group? group;
+    private GroupPermissions perms = GroupPermissions.None;
+    private bool notFound;
+    private string section = "";
+
+    private static readonly string[] Sections = ["", "issues", "pull-requests", "labels", "members", "settings"];
+
+    private string SectionTitle => section switch
+    {
+        "issues" => "Issues", "pull-requests" => "Pull requests", "labels" => "Labels & milestones",
+        "members" => "Members", "settings" => "Settings", _ => "Overview",
+    };
+
+    private string Url(string s) => $"/g/{group!.FullPath}" + (s == "" ? "" : "/-/" + s);
+
+    protected override Task OnParametersSetAsync() => Reload();
+
+    private async Task Reload()
+    {
+        var raw = (Path ?? "").Split('?')[0];
+        var parts = raw.Split("/-/", 2);
+        var groupPath = parts[0].TrimEnd('/');
+        if (groupPath.EndsWith("/-")) groupPath = groupPath[..^2]; // "/g/acme/-"
+        section = parts.Length > 1 ? parts[1].Trim('/').ToLowerInvariant() : "";
+
+        var found = await GroupSvc.FindAsync(groupPath);
+        if (found.RedirectTo is { } to)
+        {
+            Nav.NavigateTo($"/g/{to}" + (section == "" ? "" : "/-/" + section), replace: true);
+            return;
+        }
+        group = found.Group;
+        notFound = group == null;
+        perms = group == null ? GroupPermissions.None : await Access.GetGroupPermissionsAsync(group.Id);
+        if (!Sections.Contains(section)) section = "?";
+    }
+}

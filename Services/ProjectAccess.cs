@@ -39,9 +39,10 @@ public sealed record ProjectPermissions(int ProjectId, ProjectRole? Role)
 /// The one place that decides who may do what in a project. Scoped; safe to use inside and outside a Blazor circuit.
 /// <para>
 /// <b>Rules.</b> A user's effective role in a project is: <see cref="ProjectRole.Owner"/> for site admins
-/// (<see cref="User.IsAdmin"/>); otherwise their <see cref="ProjectMember"/> role; otherwise
-/// <see cref="ProjectRole.Viewer"/> if the project is <see cref="ProjectVisibility.Internal"/>; otherwise none (the
-/// project is invisible to them). Each role has all the permissions of the roles below it:
+/// (<see cref="User.IsAdmin"/>); otherwise the highest of their <see cref="ProjectMember"/> role, the roles inherited from
+/// <see cref="GroupMember"/>ships in the project's group and its ancestor groups, and <see cref="ProjectRole.Viewer"/> if the
+/// project is <see cref="ProjectVisibility.Internal"/>; with none of these the project is invisible to them. Group
+/// permissions (view, create in, manage, delete a group) are in <c>ProjectAccess.Groups.cs</c>. Each role has all the permissions of the roles below it:
 /// Viewer: ViewProject. Developer: + EditIssues, Comment, PushCode, CreatePullRequest, ReviewPullRequest.
 /// Maintainer: + ManageLabelsAndMilestones, MergePullRequest, DeleteBranch, ManageRepositories.
 /// Owner: + ManageMembers, ManageProjectSettings, DeleteProject.
@@ -54,7 +55,7 @@ public sealed record ProjectPermissions(int ProjectId, ProjectRole? Role)
 /// before calling services; otherwise reads come back empty and writes throw <see cref="ForbiddenException"/>.
 /// </para>
 /// </summary>
-public class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, CurrentUser me)
+public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, CurrentUser me)
 {
     private int? actAs;
     private bool system;
@@ -126,11 +127,16 @@ public class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, CurrentUse
             {
                 p.Visibility,
                 Role = p.Members.Where(m => m.UserId == uid).Select(m => (ProjectRole?)m.Role).FirstOrDefault(),
+                // Inherited: memberships in the project's group or any ancestor (groups nest at most Group.MaxDepth = 4 deep).
+                GroupRole = p.GroupId == null ? null : db.GroupMembers
+                    .Where(gm => gm.UserId == uid && (gm.GroupId == p.GroupId || gm.GroupId == p.Group!.ParentId
+                        || gm.GroupId == p.Group!.Parent!.ParentId || gm.GroupId == p.Group!.Parent!.Parent!.ParentId))
+                    .Max(gm => (ProjectRole?)gm.Role),
             })
             .FirstOrDefaultAsync();
         if (info == null) return null;
         if (system || await db.Users.AnyAsync(u => u.Id == uid && u.IsAdmin)) return ProjectRole.Owner;
-        if (info.Role != null) return info.Role;
+        if (Max(info.Role, info.GroupRole) is { } member) return member; // Viewer is the lowest role, so Internal never raises it
         if (info.Visibility == ProjectVisibility.Internal && await db.Users.AnyAsync(u => u.Id == uid)) return ProjectRole.Viewer;
         return null;
     }
@@ -169,9 +175,13 @@ public class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, CurrentUse
             return await db.Projects.Select(p => p.Id).ToListAsync();
         if (!await db.Users.AnyAsync(u => u.Id == uid)) return [];
         return await db.Projects
-            .Where(p => p.Visibility == ProjectVisibility.Internal || p.Members.Any(m => m.UserId == uid))
+            .Where(p => p.Visibility == ProjectVisibility.Internal || p.Members.Any(m => m.UserId == uid)
+                || (p.GroupId != null && db.GroupMembers.Any(gm => gm.UserId == uid && (gm.GroupId == p.GroupId || gm.GroupId == p.Group!.ParentId
+                    || gm.GroupId == p.Group!.Parent!.ParentId || gm.GroupId == p.Group!.Parent!.Parent!.ParentId))))
             .Select(p => p.Id).ToListAsync();
     }
+
+    private static ProjectRole? Max(ProjectRole? a, ProjectRole? b) => a == null ? b : b == null ? a : a > b ? a : b;
 
     // ----- Convenience: check by entity id -----
 

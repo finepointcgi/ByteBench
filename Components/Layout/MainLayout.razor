@@ -79,6 +79,7 @@
         <MudNavMenu Dense="true" Class="gb-nav">
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
             <MudNavLink Href="/explore" Icon="@Icons.Material.Outlined.TravelExplore">Explore</MudNavLink>
+            <MudNavLink Href="/groups" Icon="@Icons.Material.Outlined.Workspaces">Groups</MudNavLink>
             <MudNavLink Href="/projects/new" Icon="@Icons.Material.Outlined.AddBox">New project</MudNavLink>
             @if (Me.User?.IsAdmin == true)
             {
@@ -135,6 +136,10 @@
             @* Render once the user is loaded, even when signed out, so RedirectToLogin can run. *@
             @if (userLoaded)
             {
+                @if (CurrentProject is { } crumbProject)
+                {
+                    <GitBench.Components.Groups.GroupBreadcrumbs ProjectKey="@crumbProject.Key" ProjectName="@crumbProject.Name" />
+                }
                 @Body
             }
         </div>
