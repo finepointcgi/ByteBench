@@ -3,7 +3,8 @@
 @inherits RepoPageBase
 @inject ReleaseService Releases
 @inject ProjectAccess Access
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>Tags · @Repo?.Name</PageTitle>
 
@@ -18,46 +19,44 @@ else if (Repo != null)
     <div class="repo-toolbar">
         @if (perms.Can(Permission.PushCode) && !Repo.IsArchived && branches.Count > 0)
         {
-            <button class="btn btn-sm btn-primary" @onclick="ToggleCreate">🏷 New tag</button>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.LocalOffer" OnClick="ToggleCreate">New tag</MudButton>
         }
-        <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.List(Repo)">Releases</a>
-        <span class="ms-auto muted small">@(tags?.Count ?? 0) tag@(tags?.Count == 1 ? "" : "s")</span>
+        <MudButton Href="@ReleaseUrls.List(Repo)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.NewReleases">Releases</MudButton>
+        <span class="toolbar-note muted small">@(tags?.Count ?? 0) tag@(tags?.Count == 1 ? "" : "s")</span>
     </div>
     @if (creating)
     {
-        <div class="card-panel rel-create">
-            <div class="row g-2">
-                <div class="col-md-4">
-                    <label class="form-label small">Tag name</label>
-                    <input class="form-control form-control-sm mono" placeholder="v1.2.0" @bind="newName" @bind:event="oninput" maxlength="250" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label small">From branch or commit</label>
-                    <input class="form-control form-control-sm mono" list="tag-from-branches" @bind="fromRef" @bind:event="oninput" />
-                    <datalist id="tag-from-branches">
-                        @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
-                    </datalist>
-                </div>
-                <div class="col-md-4 d-flex align-items-end">
-                    <span class="muted small">With a message it's an annotated tag (tagger and date are recorded); without, a lightweight tag.</span>
-                </div>
-                <div class="col-12">
-                    <label class="form-label small">Message (optional)</label>
-                    <textarea class="form-control form-control-sm" rows="2" @bind="newMessage" placeholder="Release 1.2.0"></textarea>
-                </div>
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="4">
+                    <MudTextField T="string" Label="Tag name" Placeholder="v1.2.0" @bind-Value="newName" Immediate="true" MaxLength="250"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Class="gb-mono-input" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudAutocomplete T="string" Label="From branch or commit" @bind-Value="fromRef" SearchFunc="SearchBranches" CoerceValue="true"
+                                     DebounceInterval="100" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ShrinkLabel="true"
+                                     Class="gb-mono-input" MaxItems="null" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-end">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">With a message it's an annotated tag (tagger and date are recorded); without, a lightweight tag.</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField T="string" Label="Message (optional)" Placeholder="Release 1.2.0" @bind-Value="newMessage" Lines="2"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" />
+                </MudItem>
+            </MudGrid>
+            <div class="mt-3 d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Create"
+                           Disabled="@(busy || string.IsNullOrWhiteSpace(newName) || string.IsNullOrWhiteSpace(fromRef))">Create tag</MudButton>
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => creating = false">Cancel</MudButton>
             </div>
-            <div class="mt-2 d-flex gap-2">
-                <button class="btn btn-sm btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(newName) || string.IsNullOrWhiteSpace(fromRef))" @onclick="Create">Create tag</button>
-                <button class="btn btn-sm btn-outline-secondary" @onclick="() => creating = false">Cancel</button>
-            </div>
-        </div>
+        </MudPaper>
     }
-    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
-    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
     @if (tags == null)
     {
-        <div class="muted">Loading…</div>
+        <MudText Class="mud-text-secondary">Loading…</MudText>
     }
     else if (tags.Count == 0)
     {
@@ -65,24 +64,24 @@ else if (Repo != null)
     }
     else
     {
-        <div class="issue-list">
+        <div class="gb-rows">
             @foreach (var t in tags)
             {
                 var release = releases.GetValueOrDefault(t.Name);
-                <div class="rel-tag-row" @key="t.Name">
-                    <div class="issue-main">
-                        <div class="issue-title">
-                            <span aria-hidden="true">🏷</span>
+                <div class="tag-row" @key="t.Name">
+                    <div class="gb-row-main">
+                        <div class="gb-row-title tag-title">
+                            <MudIcon Icon="@Icons.Material.Outlined.LocalOffer" Size="Size.Small" Class="mud-text-secondary" aria-hidden="true" />
                             <a class="mono" href="@RepoUrls.Source(Repo, t.Name)">@t.Name</a>
-                            @if (t.IsAnnotated) { <span class="count" title="Annotated tag">annotated</span> }
+                            @if (t.IsAnnotated) { <span class="tag-kind" title="Annotated tag">annotated</span> }
                             @if (release != null)
                             {
-                                <a class="rel-pill @(release.IsDraft ? "draft" : release.IsPrerelease ? "pre" : "")" href="@ReleaseUrls.Detail(Repo, release.Id)">
+                                <a class="tag-release @(release.IsDraft ? "draft" : release.IsPrerelease ? "pre" : "")" href="@ReleaseUrls.Detail(Repo, release.Id)">
                                     @(release.IsDraft ? "Draft release" : release.IsPrerelease ? "Pre-release" : "Release")
                                 </a>
                             }
                         </div>
-                        <div class="issue-meta">
+                        <div class="gb-row-meta tag-meta">
                             @if (t.Commit is { } c)
                             {
                                 <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, c.Sha)">@c.ShortSha</a>
@@ -99,21 +98,24 @@ else if (Repo != null)
                         </div>
                         @if (!string.IsNullOrWhiteSpace(t.Message))
                         {
-                            <div class="rel-tag-message">@t.Message</div>
+                            <div class="tag-message">@t.Message</div>
                         }
                     </div>
-                    <div class="rel-tag-actions">
-                        <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.Archive(Repo, t.Name, ArchiveFormat.Zip)" download>zip</a>
-                        <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.Archive(Repo, t.Name, ArchiveFormat.TarGz)" download>tar.gz</a>
+                    <div class="tag-actions">
+                        <MudButton Href="@ReleaseUrls.Archive(Repo, t.Name, ArchiveFormat.Zip)" download="" Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Outlined.FileDownload">zip</MudButton>
+                        <MudButton Href="@ReleaseUrls.Archive(Repo, t.Name, ArchiveFormat.TarGz)" download="" Variant="Variant.Outlined" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Outlined.FileDownload">tar.gz</MudButton>
                         @if (release == null && perms.Can(Permission.PushCode) && !Repo.IsArchived)
                         {
-                            <a class="btn btn-sm btn-outline-primary" href="@ReleaseUrls.New(Repo, t.Name)">Create release</a>
+                            <MudButton Href="@ReleaseUrls.New(Repo, t.Name)" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">Create release</MudButton>
                         }
                         @if (perms.Can(Permission.DeleteBranch) && !Repo.IsArchived)
                         {
-                            <button class="btn btn-sm btn-outline-danger" disabled="@(release != null)"
-                                    title="@(release != null ? "Used by a release: delete the release first" : "Delete tag")"
-                                    @onclick="() => Delete(t.Name)">Delete</button>
+                            <MudTooltip Text="@(release != null ? "Used by a release: delete the release first" : "Delete tag")">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined"
+                                               Disabled="@(release != null)" aria-label="@($"Delete tag {t.Name}")" OnClick="() => Delete(t.Name)" />
+                            </MudTooltip>
                         }
                     </div>
                 </div>
@@ -127,7 +129,7 @@ else if (Repo != null)
     private List<BranchInfo> branches = [];
     private Dictionary<string, Release> releases = [];
     private ProjectPermissions perms = ProjectPermissions.None;
-    private string? newName, fromRef, newMessage, message;
+    private string? newName, fromRef, newMessage;
     private bool creating, busy;
 
     protected override async Task OnParametersSetAsync()
@@ -145,16 +147,21 @@ else if (Repo != null)
         fromRef ??= Repo!.DefaultBranch;
     }
 
+    /// <summary>Branch suggestions for the "from" field; any other text (a commit SHA) is kept as typed.</summary>
+    private Task<IEnumerable<string>> SearchBranches(string? text, CancellationToken _) =>
+        Task.FromResult(branches.Select(b => b.Name)
+            .Where(n => string.IsNullOrWhiteSpace(text) || branches.Any(b => b.Name == text) || n.Contains(text, StringComparison.OrdinalIgnoreCase)));
+
     private void ToggleCreate() => creating = !creating;
 
     private async Task Create()
     {
-        Error = message = null;
+        Error = null;
         busy = true;
         try
         {
             var t = await Releases.CreateTagAsync(Repo!, newName!.Trim(), fromRef!.Trim(), newMessage);
-            message = $"Created {(t.IsAnnotated ? "annotated" : "lightweight")} tag '{t.Name}' at {t.Commit?.ShortSha}.";
+            Snackbar.Add($"Created {(t.IsAnnotated ? "annotated" : "lightweight")} tag '{t.Name}' at {t.Commit?.ShortSha}.", Severity.Success);
             newName = newMessage = null;
             creating = false;
             await Load();
@@ -165,12 +172,12 @@ else if (Repo != null)
 
     private async Task Delete(string name)
     {
-        Error = message = null;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete tag '{name}'? Clones that already fetched it keep their copy.")) return;
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Delete tag", $"Delete tag '{name}'? Clones that already fetched it keep their copy.")) return;
         try
         {
             await Releases.DeleteTagAsync(Repo!, name);
-            message = $"Deleted tag '{name}'.";
+            Snackbar.Add($"Deleted tag '{name}'.", Severity.Success);
             await Load();
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }

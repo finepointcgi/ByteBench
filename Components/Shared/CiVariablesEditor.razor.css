@@ -1,0 +1,14 @@
+.civ ::deep .civ-table { background: transparent; }
+.civ ::deep .civ-table th { font-weight: 600; white-space: nowrap; }
+.civ-name { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.civ-actions { text-align: right; white-space: nowrap; }
+.civ-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.civ-form {
+    padding: 16px; margin-bottom: 8px; border-radius: var(--mud-default-borderradius);
+    background: var(--mud-palette-background); border: 1px solid var(--mud-palette-lines-default);
+}
+@media (max-width: 600px) {
+    .civ-col-value { display: none; }
+    .civ ::deep .civ-table th, .civ ::deep .civ-table td { padding: 6px 6px; }
+    .civ-name { overflow-wrap: normal; white-space: nowrap; }
+}

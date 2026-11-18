@@ -2,60 +2,65 @@
 @using GitBench.Services.Releases
 @using GitBench.Services.Attachments
 @* One release: title, badges, author/date, notes, assets and source archives. Used by the list and the detail page. *@
-<article class="rel-card @(Release.IsDraft ? "draft" : "")">
-    <header class="rel-card-head">
-        <div class="rel-card-title">
-            @if (Link)
-            {
-                <h2><a href="@ReleaseUrls.Detail(Repo, Release.Id)">@Release.Title</a></h2>
-            }
-            else
-            {
-                <h2>@Release.Title</h2>
-            }
-            @if (Release.IsDraft) { <span class="rel-pill draft">Draft</span> }
-            else if (Release.IsPrerelease) { <span class="rel-pill pre">Pre-release</span> }
-            else if (IsLatest) { <span class="rel-pill latest">Latest</span> }
-        </div>
-        <div class="rel-card-meta muted small">
-            <a class="mono" href="@RepoUrls.Source(Repo, Release.TagName)">🏷 @Release.TagName</a>
-            @if (Release.Author != null) { <span> · <b>@Release.Author.DisplayName</b></span> }
-            <span> · @(Release.IsDraft ? $"drafted {Display.Ago(Release.CreatedAt)}" : $"released {Display.Ago(Release.PublishedAt ?? Release.CreatedAt)}")</span>
-            @ChildContent
-        </div>
-    </header>
-    @if (!string.IsNullOrWhiteSpace(Release.Notes))
-    {
-        <div class="markdown rel-notes @(Collapse ? "collapsed" : "")">@Display.Markdown(Release.Notes)</div>
-    }
-    else
-    {
-        <div class="muted small rel-notes">No release notes.</div>
-    }
-    <div class="rel-assets">
-        <div class="rel-assets-head">Assets <span class="count">@(Release.Assets.Count + 2)</span></div>
-        @foreach (var a in Release.Assets.OrderBy(a => a.FileName, StringComparer.OrdinalIgnoreCase))
-        {
-            <div class="rel-asset" @key="a.Id">
-                <span aria-hidden="true">@AttachmentFormat.Icon(a.FileName, a.ContentType)</span>
-                <a href="@ReleaseUrls.Asset(a)" download="@a.FileName">@a.FileName</a>
-                <span class="muted small ms-auto">@AttachmentFormat.Size(a.Size)</span>
-                <span class="muted small" title="Downloads">⬇ @a.DownloadCount</span>
-                @if (CanDeleteAssets)
+<article class="rel-card">
+    <MudPaper Outlined="true" Class="@("rel-paper pa-4" + (Release.IsDraft ? " draft" : ""))">
+        <header class="rel-card-head">
+            <div class="rel-card-title">
+                @if (Link)
                 {
-                    <button class="btn btn-sm btn-link text-danger p-0" title="Delete asset" @onclick="() => OnDeleteAsset.InvokeAsync(a)">✕</button>
+                    <MudText Typo="Typo.h6" HtmlTag="h2" Class="rel-card-h"><a href="@ReleaseUrls.Detail(Repo, Release.Id)">@Release.Title</a></MudText>
                 }
+                else
+                {
+                    <MudText Typo="Typo.h6" HtmlTag="h2" Class="rel-card-h">@Release.Title</MudText>
+                }
+                @if (Release.IsDraft) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="rel-chip ma-0">Draft</MudChip> }
+                else if (Release.IsPrerelease) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="rel-chip ma-0">Pre-release</MudChip> }
+                else if (IsLatest) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Class="rel-chip ma-0">Latest</MudChip> }
             </div>
+            <div class="rel-card-meta">
+                <a class="mono rel-tag-link" href="@RepoUrls.Source(Repo, Release.TagName)"><MudIcon Icon="@Icons.Material.Outlined.LocalOffer" Size="Size.Small" /> @Release.TagName</a>
+                @if (Release.Author != null) { <span> · <b>@Release.Author.DisplayName</b></span> }
+                <span> · @(Release.IsDraft ? $"drafted {Display.Ago(Release.CreatedAt)}" : $"released {Display.Ago(Release.PublishedAt ?? Release.CreatedAt)}")</span>
+                @ChildContent
+            </div>
+        </header>
+        @if (!string.IsNullOrWhiteSpace(Release.Notes))
+        {
+            <div class="markdown rel-notes @(Collapse ? "collapsed" : "")">@Display.Markdown(Release.Notes)</div>
         }
-        <div class="rel-asset">
-            <span aria-hidden="true">🗜️</span>
-            <a href="@ReleaseUrls.Archive(Repo, Release.TagName, ArchiveFormat.Zip)" download>Source code (zip)</a>
+        else
+        {
+            <div class="mud-text-secondary small rel-notes">No release notes.</div>
+        }
+        <div class="rel-assets">
+            <div class="rel-assets-head">Assets <span class="count">@(Release.Assets.Count + 2)</span></div>
+            @foreach (var a in Release.Assets.OrderBy(a => a.FileName, StringComparer.OrdinalIgnoreCase))
+            {
+                <div class="rel-asset" @key="a.Id">
+                    <span aria-hidden="true">@AttachmentFormat.Icon(a.FileName, a.ContentType)</span>
+                    <a href="@ReleaseUrls.Asset(a)" download="@a.FileName">@a.FileName</a>
+                    <span class="mud-text-secondary small rel-asset-size">@AttachmentFormat.Size(a.Size)</span>
+                    <span class="mud-text-secondary small rel-asset-dl" title="Downloads"><MudIcon Icon="@Icons.Material.Outlined.FileDownload" Size="Size.Small" /> @a.DownloadCount</span>
+                    @if (CanDeleteAssets)
+                    {
+                        <MudTooltip Text="Delete asset">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Close" Color="Color.Error" Size="Size.Small" Class="pa-1"
+                                           aria-label="@($"Delete asset {a.FileName}")" OnClick="() => OnDeleteAsset.InvokeAsync(a)" />
+                        </MudTooltip>
+                    }
+                </div>
+            }
+            <div class="rel-asset">
+                <MudIcon Icon="@Icons.Material.Outlined.FolderZip" Size="Size.Small" Class="mud-text-secondary" />
+                <a href="@ReleaseUrls.Archive(Repo, Release.TagName, ArchiveFormat.Zip)" download>Source code (zip)</a>
+            </div>
+            <div class="rel-asset">
+                <MudIcon Icon="@Icons.Material.Outlined.FolderZip" Size="Size.Small" Class="mud-text-secondary" />
+                <a href="@ReleaseUrls.Archive(Repo, Release.TagName, ArchiveFormat.TarGz)" download>Source code (tar.gz)</a>
+            </div>
         </div>
-        <div class="rel-asset">
-            <span aria-hidden="true">🗜️</span>
-            <a href="@ReleaseUrls.Archive(Repo, Release.TagName, ArchiveFormat.TarGz)" download>Source code (tar.gz)</a>
-        </div>
-    </div>
+    </MudPaper>
 </article>
 
 @code {

@@ -21,81 +21,77 @@ else if (Repo != null && loaded)
     }
     else
     {
-        <div class="card-panel rel-form">
-            <h2 class="h5 mb-3">@(existing == null ? "New release" : $"Edit release {existing.TagName}")</h2>
-            @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+        <div class="rel-form">
+        <MudPaper Outlined="true" Class="pa-5">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-3">@(existing == null ? "New release" : $"Edit release {existing.TagName}")</MudText>
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
 
-            <div class="row g-3">
-                <div class="col-md-5">
-                    <label class="form-label">Tag</label>
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="5">
                     @if (existing != null)
                     {
-                        <input class="form-control mono" value="@existing.TagName" disabled />
+                        <MudTextField T="string" Label="Tag" Value="existing.TagName" Disabled="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" />
                     }
                     else
                     {
-                        <input class="form-control mono" list="release-tags" placeholder="v1.0.0" @bind="input.TagName" @bind:event="oninput" maxlength="250" />
-                        <datalist id="release-tags">
-                            @foreach (var t in freeTags) { <option value="@t">@t</option> }
-                        </datalist>
-                        <div class="form-text">
+                        <MudAutocomplete T="string" Label="Tag" Placeholder="v1.0.0" @bind-Value="input.TagName" SearchFunc="SearchTags" CoerceValue="true"
+                                         DebounceInterval="100" MaxLength="250" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ShrinkLabel="true"
+                                         Class="gb-mono-input" MaxItems="null" Error="@TagTaken" />
+                        <MudText Typo="Typo.caption" HtmlTag="div" Class="@(TagTaken ? "mud-error-text mt-1" : "mud-text-secondary mt-1")">
                             @if (string.IsNullOrWhiteSpace(input.TagName)) { <span>Pick an existing tag or type a new one.</span> }
-                            else if (TagIsNew) { <span>✨ A new tag will be created when you save.</span> }
-                            else if (usedTags.Contains(input.TagName.Trim())) { <span class="text-danger">This tag already has a release.</span> }
+                            else if (TagIsNew) { <span class="d-inline-flex align-center gap-1"><MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Style="font-size:14px" /> A new tag will be created when you save.</span> }
+                            else if (TagTaken) { <span>This tag already has a release.</span> }
                             else { <span>Existing tag.</span> }
-                        </div>
+                        </MudText>
                     }
-                </div>
+                </MudItem>
                 @if (existing == null && TagIsNew)
                 {
-                    <div class="col-md-4">
-                        <label class="form-label">Create from</label>
-                        <input class="form-control mono" list="release-branches" @bind="input.Target" @bind:event="oninput" />
-                        <datalist id="release-branches">
-                            @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
-                        </datalist>
-                        <div class="form-text">A branch or commit SHA.</div>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Tag message</label>
-                        <input class="form-control" placeholder="optional (annotated)" @bind="input.TagMessage" />
-                    </div>
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudAutocomplete T="string" Label="Create from" @bind-Value="input.Target" SearchFunc="SearchBranches" CoerceValue="true"
+                                         DebounceInterval="100" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ShrinkLabel="true"
+                                         Class="gb-mono-input" MaxItems="null" HelperText="A branch or commit SHA." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudTextField T="string" Label="Tag message" Placeholder="optional (annotated)" @bind-Value="input.TagMessage"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" />
+                    </MudItem>
                 }
-                <div class="col-12">
-                    <label class="form-label">Title</label>
-                    <input class="form-control" maxlength="200" placeholder="@(string.IsNullOrWhiteSpace(input.TagName) ? "Release title" : input.TagName)" @bind="input.Title" />
-                </div>
-                <div class="col-12">
-                    <div class="d-flex align-items-center mb-1">
-                        <label class="form-label mb-0">Release notes</label>
-                        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" disabled="@(busy || string.IsNullOrWhiteSpace(NotesSource))"
-                                title="Build notes from the commits and merged pull requests since the previous release" @onclick="Generate">
-                            ⚙ Generate notes
-                        </button>
+                <MudItem xs="12">
+                    <MudTextField T="string" Label="Title" MaxLength="200" Placeholder="@(string.IsNullOrWhiteSpace(input.TagName) ? "Release title" : input.TagName)"
+                                  @bind-Value="input.Title" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" />
+                </MudItem>
+                <MudItem xs="12">
+                    <div class="notes-head">
+                        <span class="gb-section-label mb-0">Release notes</span>
+                        <MudTooltip Text="Build notes from the commits and merged pull requests since the previous release">
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoFixHigh"
+                                       Disabled="@(busy || string.IsNullOrWhiteSpace(NotesSource))" OnClick="Generate">Generate notes</MudButton>
+                        </MudTooltip>
                     </div>
-                    @if (generatedInfo != null) { <div class="form-text mb-1">@generatedInfo</div> }
+                    @if (generatedInfo != null) { <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-1">@generatedInfo</MudText> }
                     <MarkdownEditor @bind-Value="input.Notes" Rows="14" Placeholder="Describe this release (Markdown)" />
-                </div>
-                <div class="col-12">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="rel-pre" @bind="input.IsPrerelease" />
-                        <label class="form-check-label" for="rel-pre">This is a pre-release (not production-ready; never shown as the latest release)</label>
-                    </div>
-                </div>
-            </div>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="input.IsPrerelease" Color="Color.Primary" Dense="true">
+                        This is a pre-release (not production-ready; never shown as the latest release)
+                    </MudCheckBox>
+                </MudItem>
+            </MudGrid>
 
-            <div class="mt-3 d-flex gap-2">
+            <div class="mt-4 d-flex flex-wrap gap-2">
                 @if (existing == null || existing.IsDraft)
                 {
-                    <button class="btn btn-primary" disabled="@(busy || !CanSave)" @onclick="() => Save(draft: false)">Publish release</button>
-                    <button class="btn btn-outline-secondary" disabled="@(busy || !CanSave)" @onclick="() => Save(draft: true)">Save draft</button>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !CanSave)" OnClick="() => Save(draft: false)">Publish release</MudButton>
+                    <MudButton Variant="Variant.Outlined" Disabled="@(busy || !CanSave)" OnClick="() => Save(draft: true)">Save draft</MudButton>
                 }
                 else
                 {
-                    <button class="btn btn-primary" disabled="@(busy || !CanSave)" @onclick="() => Save(draft: false)">Update release</button>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !CanSave)" OnClick="() => Save(draft: false)">Update release</MudButton>
                 }
-                <a class="btn btn-link" href="@(existing == null ? ReleaseUrls.List(Repo) : ReleaseUrls.Detail(Repo, existing.Id))">Cancel</a>
+                <MudButton Variant="Variant.Text" Href="@(existing == null ? ReleaseUrls.List(Repo) : ReleaseUrls.Detail(Repo, existing.Id))">Cancel</MudButton>
             </div>
+        </MudPaper>
         </div>
     }
 }
@@ -113,6 +109,7 @@ else if (Repo != null && loaded)
     private bool loaded, busy;
     private string? generatedInfo;
 
+    private bool TagTaken => existing == null && !string.IsNullOrWhiteSpace(input.TagName) && usedTags.Contains(input.TagName.Trim());
     private bool TagIsNew => !string.IsNullOrWhiteSpace(input.TagName) && !allTags.Contains(input.TagName.Trim());
     private bool CanSave => existing != null || (!string.IsNullOrWhiteSpace(input.TagName) && !usedTags.Contains(input.TagName.Trim())
                                                  && (!TagIsNew || !string.IsNullOrWhiteSpace(input.Target)));
@@ -146,6 +143,15 @@ else if (Repo != null && loaded)
         }
         loaded = true;
     }
+
+    /// <summary>Tags without a release; any other text becomes a new tag.</summary>
+    private Task<IEnumerable<string>> SearchTags(string? text, CancellationToken _) =>
+        Task.FromResult(freeTags.Where(t => string.IsNullOrWhiteSpace(text) || freeTags.Contains(text) || t.Contains(text, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Branch suggestions for a new tag's target; a commit SHA is kept as typed.</summary>
+    private Task<IEnumerable<string>> SearchBranches(string? text, CancellationToken _) =>
+        Task.FromResult(branches.Select(b => b.Name)
+            .Where(n => string.IsNullOrWhiteSpace(text) || branches.Any(b => b.Name == text) || n.Contains(text, StringComparison.OrdinalIgnoreCase)));
 
     private async Task Generate()
     {
