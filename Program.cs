@@ -59,6 +59,12 @@ if (!app.Environment.IsDevelopment())
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
+// Explicit (rather than the implicit ones WebApplication adds first) so they also run when
+// UseStatusCodePagesWithReExecute/UseExceptionHandler re-execute into /not-found or /Error,
+// which carry authorization metadata ([AllowAnonymous]).
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseAntiforgery();
 
 app.MapStaticAssets();

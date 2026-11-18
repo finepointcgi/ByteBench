@@ -1,0 +1,27 @@
+@if (Errors is { Count: > 0 })
+{
+    <div class="alert alert-danger auth-alert" role="alert">
+        @if (Errors.Count == 1)
+        {
+            @Errors[0]
+        }
+        else
+        {
+            <ul class="mb-0 ps-3">
+                @foreach (var e in Errors)
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        }
+    </div>
+}
+else if (!string.IsNullOrEmpty(Success))
+{
+    <div class="alert alert-success auth-alert" role="status">@Success</div>
+}
+
+@code {
+    [Parameter] public string? Success { get; set; }
+    [Parameter] public IReadOnlyList<string>? Errors { get; set; }
+}

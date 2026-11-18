@@ -1,0 +1,103 @@
+@page "/account/login"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@inject SignInManager<User> SignIn
+@inject UserManager<User> Users
+@inject NavigationManager Nav
+@inject ILogger<Login> Log
+
+<PageTitle>Sign in · GitBench</PageTitle>
+
+<h1 class="auth-title">Sign in</h1>
+<p class="muted auth-sub">Welcome back. Sign in to continue to GitBench.</p>
+
+@if (error != null)
+{
+    <div class="alert alert-danger auth-alert" role="alert">@error</div>
+}
+
+<EditForm Model="Input" FormName="login" OnValidSubmit="LoginUser" method="post">
+    <DataAnnotationsValidator />
+    @* The form posts back to the current URL, so ?returnUrl= survives the post. *@
+
+    <div class="mb-3">
+        <label class="form-label" for="login-user">Username or email</label>
+        <InputText id="login-user" class="form-control" @bind-Value="Input!.UserNameOrEmail"
+                   autocomplete="username" autofocus />
+        <ValidationMessage For="() => Input!.UserNameOrEmail" class="text-danger small" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="login-password">Password</label>
+        <InputText id="login-password" type="password" class="form-control" @bind-Value="Input!.Password"
+                   autocomplete="current-password" />
+        <ValidationMessage For="() => Input!.Password" class="text-danger small" />
+    </div>
+    <div class="form-check mb-3">
+        <InputCheckbox id="login-remember" class="form-check-input" @bind-Value="Input!.RememberMe" />
+        <label class="form-check-label" for="login-remember">Remember me</label>
+    </div>
+    <button type="submit" class="btn btn-primary w-100">Sign in</button>
+</EditForm>
+
+<p class="auth-footer muted">
+    New to GitBench? <a href="@RegisterHref">Create an account</a>
+</p>
+
+@code {
+    private string? error;
+
+    [SupplyParameterFromForm]
+    private InputModel? Input { get; set; }
+
+    protected override void OnInitialized() => Input ??= new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string RegisterHref => AccountUrls.IsLocal(ReturnUrl)
+        ? $"account/register?returnUrl={Uri.EscapeDataString(ReturnUrl!)}"
+        : "account/register";
+
+    private async Task LoginUser()
+    {
+        var login = Input!.UserNameOrEmail.Trim();
+        var userName = login;
+        if (login.Contains('@'))
+        {
+            var byEmail = await Users.FindByEmailAsync(login);
+            if (byEmail?.UserName != null) userName = byEmail.UserName;
+        }
+
+        var result = await SignIn.PasswordSignInAsync(userName, Input!.Password, Input!.RememberMe, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            Log.LogInformation("User {User} signed in.", userName);
+            Nav.NavigateTo(AccountUrls.SafeReturnUrl(ReturnUrl), forceLoad: true);
+        }
+        else if (result.IsLockedOut)
+        {
+            Log.LogWarning("User {User} is locked out.", userName);
+            error = "This account is locked after too many failed sign-in attempts. Try again in a few minutes.";
+        }
+        else if (result.IsNotAllowed)
+        {
+            error = "This account is not allowed to sign in.";
+        }
+        else
+        {
+            error = "Invalid username/email or password.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Enter your username or email.")]
+        public string UserNameOrEmail { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter your password.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        public bool RememberMe { get; set; }
+    }
+}

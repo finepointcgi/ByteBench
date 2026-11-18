@@ -1,0 +1,193 @@
+@page "/account/profile"
+@attribute [Authorize]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@inject SignInManager<User> SignIn
+@inject UserManager<User> Users
+@inject NavigationManager Nav
+
+<PageTitle>Your profile · GitBench</PageTitle>
+
+<div class="profile-page">
+    <div class="profile-head">
+        <a class="auth-back" href="/">← Back to GitBench</a>
+        @if (user != null)
+        {
+            <div class="profile-id">
+                <Avatar User="user" Size="48" />
+                <div>
+                    <h1 class="auth-title mb-0">@user.DisplayName</h1>
+                    <div class="muted small">@@@user.UserName</div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <section class="profile-section">
+        <h2 class="profile-section-title">Profile</h2>
+        <StatusMessage Success="@profileSuccess" Errors="profileErrors" />
+
+        <EditForm Model="ProfileInput" FormName="profile" OnValidSubmit="SaveProfile" method="post">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label" for="pf-name">Display name</label>
+                <InputText id="pf-name" class="form-control" @bind-Value="ProfileInput!.DisplayName" autocomplete="name" />
+                <ValidationMessage For="() => ProfileInput!.DisplayName" class="text-danger small" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="pf-email">Email</label>
+                <InputText id="pf-email" type="email" class="form-control" @bind-Value="ProfileInput!.Email" autocomplete="email" />
+                <ValidationMessage For="() => ProfileInput!.Email" class="text-danger small" />
+            </div>
+            <div class="mb-3">
+                <span class="form-label d-block">Avatar color</span>
+                <InputRadioGroup @bind-Value="ProfileInput!.Color" Name="color">
+                    <div class="color-swatches">
+                        @foreach (var c in AvatarPalette.Colors)
+                        {
+                            <label class="color-swatch" title="@c">
+                                <InputRadio Value="c" />
+                                <span style="background:@c"></span>
+                            </label>
+                        }
+                    </div>
+                </InputRadioGroup>
+                <ValidationMessage For="() => ProfileInput!.Color" class="text-danger small" />
+            </div>
+            <button type="submit" class="btn btn-primary">Save profile</button>
+        </EditForm>
+    </section>
+
+    <section class="profile-section">
+        <h2 class="profile-section-title">Change password</h2>
+        <StatusMessage Success="@passwordSuccess" Errors="passwordErrors" />
+
+        <EditForm Model="PasswordInput" FormName="password" OnValidSubmit="ChangePassword" method="post">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label" for="pw-current">Current password</label>
+                <InputText id="pw-current" type="password" class="form-control" @bind-Value="PasswordInput!.CurrentPassword" autocomplete="current-password" />
+                <ValidationMessage For="() => PasswordInput!.CurrentPassword" class="text-danger small" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="pw-new">New password</label>
+                <InputText id="pw-new" type="password" class="form-control" @bind-Value="PasswordInput!.NewPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => PasswordInput!.NewPassword" class="text-danger small" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="pw-confirm">Confirm new password</label>
+                <InputText id="pw-confirm" type="password" class="form-control" @bind-Value="PasswordInput!.ConfirmPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => PasswordInput!.ConfirmPassword" class="text-danger small" />
+            </div>
+            <button type="submit" class="btn btn-primary">Change password</button>
+        </EditForm>
+    </section>
+
+    <form class="profile-signout" method="post" action="account/logout">
+        <AntiforgeryToken />
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Sign out</button>
+    </form>
+</div>
+
+@code {
+    private User? user;
+    private string? profileSuccess, passwordSuccess;
+    private readonly List<string> profileErrors = [], passwordErrors = [];
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "profile")]
+    private ProfileModel? ProfileInput { get; set; }
+
+    [SupplyParameterFromForm(FormName = "password")]
+    private PasswordModel? PasswordInput { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await Users.GetUserAsync(HttpContext.User);
+        if (user is null)
+        {
+            // Cookie is valid but the account is gone: sign out and start over.
+            await SignIn.SignOutAsync();
+            Nav.NavigateTo("account/login", forceLoad: true);
+            return;
+        }
+
+        ProfileInput ??= new() { DisplayName = user.DisplayName, Email = user.Email ?? "", Color = user.Color };
+        PasswordInput ??= new();
+    }
+
+    private async Task SaveProfile()
+    {
+        if (user is null || ProfileInput is null) return;
+
+        var newEmail = ProfileInput.Email.Trim();
+        var emailChanged = newEmail != user.Email;
+        if (emailChanged && await Users.FindByEmailAsync(newEmail) is { } other && other.Id != user.Id)
+        {
+            profileErrors.Add($"Email '{newEmail}' is already in use by another account.");
+            return;
+        }
+
+        user.DisplayName = ProfileInput.DisplayName.Trim();
+        if (AvatarPalette.Colors.Contains(ProfileInput.Color)) user.Color = ProfileInput.Color;
+
+        // SetEmailAsync validates and persists the whole user, display name and color included.
+        var result = emailChanged ? await Users.SetEmailAsync(user, newEmail) : await Users.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            profileErrors.AddRange(result.Errors.Select(e => e.Description));
+            return;
+        }
+
+        await SignIn.RefreshSignInAsync(user);
+        profileSuccess = "Your profile was saved.";
+    }
+
+    private async Task ChangePassword()
+    {
+        if (user is null || PasswordInput is null) return;
+
+        var result = await Users.ChangePasswordAsync(user, PasswordInput.CurrentPassword, PasswordInput.NewPassword);
+        PasswordInput = new(); // never echo passwords back
+        if (!result.Succeeded)
+        {
+            passwordErrors.AddRange(result.Errors.Select(e => e.Description));
+            return;
+        }
+
+        await SignIn.RefreshSignInAsync(user);
+        passwordSuccess = "Your password was changed.";
+    }
+
+    private sealed class ProfileModel
+    {
+        [Required, StringLength(80, MinimumLength = 1)]
+        [Display(Name = "Display name")]
+        public string DisplayName { get; set; } = "";
+
+        [Required, EmailAddress, StringLength(256)]
+        public string Email { get; set; } = "";
+
+        [Required, RegularExpression("^#[0-9a-fA-F]{6}$", ErrorMessage = "Pick a color.")]
+        public string Color { get; set; } = "";
+    }
+
+    private sealed class PasswordModel
+    {
+        [Required, DataType(DataType.Password)]
+        [Display(Name = "Current password")]
+        public string CurrentPassword { get; set; } = "";
+
+        [Required, StringLength(100, MinimumLength = 8, ErrorMessage = "The new password must be at least 8 characters long.")]
+        [DataType(DataType.Password)]
+        [Display(Name = "New password")]
+        public string NewPassword { get; set; } = "";
+
+        [Required(ErrorMessage = "Confirm the new password.")]
+        [DataType(DataType.Password)]
+        [Compare(nameof(NewPassword), ErrorMessage = "The new passwords don't match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}
