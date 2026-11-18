@@ -127,3 +127,6 @@ app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit
 });
 
 app.Run();
+
+// Lets the integration tests (tests/GitBench.Tests) use WebApplicationFactory<Program>.
+public partial class Program;
