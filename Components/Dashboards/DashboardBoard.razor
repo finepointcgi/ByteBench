@@ -32,7 +32,7 @@
                          AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Disabled="@(v.Gadgets.Count >= DashboardService.MaxGadgets)">
                     @foreach (var k in GadgetKinds.All)
                     {
-                        <MudMenuItem Icon="@k.Icon" OnClick="() => AddGadget(k)">@k.Name</MudMenuItem>
+                        <MudMenuItem Icon="@k.Icon" OnClick="() => StartAddGadget(k)">@k.Name</MudMenuItem>
                     }
                 </MudMenu>
                 <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Settings" OnClick="EditSettings">Settings</MudButton>
@@ -119,6 +119,14 @@
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
         return await dialog.Result is { Canceled: false, Data: GadgetConfigDialog.GadgetSettings s } ? s : null;
     }
+
+    /// <summary>Lets the menu close first, then runs the add flow (which may show the settings dialog).</summary>
+    private void StartAddGadget(GadgetKinds.Info kind) => _ = InvokeAsync(async () =>
+    {
+        await Task.Yield();
+        await AddGadget(kind);
+        StateHasChanged();
+    });
 
     private async Task AddGadget(GadgetKinds.Info kind)
     {

@@ -133,7 +133,8 @@ GitLab-style namespaces that own projects (`Group`, `GroupMember`, `GroupRedirec
 - **Milestones** with progress and story-point burn-up
 - **Sprints**: backlog planning, start/complete, burndown and velocity reports (see [Sprints](#sprints))
 - **Project settings**: rename, manage labels, delete the project
-- **Dashboard**: your assigned work, all projects, activity from your projects
+- **Dashboard**: your assigned work, all projects, activity from your projects; or pin a personal dashboard of gadgets (see [Roadmap & dashboards](#roadmap--dashboards))
+- **Roadmap**: epics on a timeline per project or group, with drag-to-reschedule (see [Roadmap & dashboards](#roadmap--dashboards))
 - **Explore, stars, profiles, global search and keyboard shortcuts** (see [Explore, profiles & search](#explore-profiles--search))
 
 ## Sprints
@@ -774,6 +775,58 @@ Code: `Services/Releases/` (`ReleaseService`, `ReleaseDownloads`, `TagPushListen
 | GET | `/children` | Child issues (an epic's issues, or sub-tasks) as issue objects |
 
 Code: `Services/LinkedWorkService.cs`, `Services/HierarchyRules.cs`, `Services/LinkedWorkNotifications.cs`, `Api/LinkEndpoints.cs`. Schema: `Issue.ParentId` and `IssueLink` (migration `LinkedWork`). The seed makes WEB "Public release" an epic with three children, gives the Kanban story two sub-tasks, and has "Avatar images broken on Safari" block "Dark mode".
+
+## Roadmap & dashboards
+
+### Roadmap
+
+A Gantt-style timeline of epics at `/p/{KEY}/roadmap` (sidebar **Roadmap**) and across a group's projects at `/g/{path}/-/roadmap` (the group's **Roadmap** tab; only projects you can view).
+
+- **Dates.** Each issue has a **start date** (`Issue.StartDate`) and its due date, which serves as the target. A bar runs from start to target; with only one date it's drawn dashed for that day. Both dates are on the issue page too. Epics with no dates are listed with a **Set dates** button.
+- **Progress.** An epic's bar fills with the share of its child issues that are done. Expand an epic (▸, or **Expand all**) to show its children with their own bars.
+- **Editing** needs EditIssues. Drag a bar to move it, or drag either end to change one date; the preview snaps to whole days. Click a bar (or focus it and press Enter) to open a dates dialog, which is also the touch and keyboard route. Every change goes through `IssueService.UpdateIssueAsync`, so it's recorded in the issue's activity ("set the start date to **Nov 9, 2026**"), notifies watchers, publishes live events and fires the `issue.updated` webhook. A start after the target is refused.
+- **Markers.** A red today line, sprint bands in the header (the active sprint highlighted) with shading on the timeline, and milestone flags with dashed lines (project and inherited group milestones). "Blocks" links between issues on the roadmap are drawn as arrows from the blocking issue's end to the blocked issue's start.
+- **Zoom and filters.** Weeks, months or quarters; **Today** scrolls back to today. Filter by label or assignee: an epic stays when it or one of its children matches, and then only matching children are listed (progress still counts all of them).
+- Open roadmaps refresh when issues or sprints in their projects change.
+
+Code: `Services/Roadmap/RoadmapService.cs` (data, `SetDatesAsync`, drag math), `RoadmapScale.cs` (date → pixel mapping), `Components/Roadmap/` (`RoadmapView`, `RoadmapDatesDialog`) and `wwwroot/js/roadmap.js` (pointer dragging only; it calls back into `RoadmapView.OnDrag`).
+
+### Dashboards
+
+Personal dashboards at `/dashboards` (sidebar **Dashboards**): each is a grid of gadgets (`Dashboard`, `DashboardGadget`, `DashboardHome`).
+
+- **Gadgets** (**Add gadget**, then **⋮ → Configure…** for title, width and settings):
+
+| Gadget | Shows |
+|---|---|
+| Filter results | A saved filter's issues (or an issue-list query string) with the columns you choose |
+| Issue chart | A pie or bar chart of a filter's issues by status, assignee, priority, type or label (an issue with several labels counts once per label; past seven values the rest fold into "Other") |
+| Created vs resolved | Cumulative issues created and resolved per day over the last N days, in one project or all of yours |
+| Sprint burndown | The Reports burndown chart for the active sprint or a chosen one |
+| Activity stream | Recent issues, comments, pull requests and pushes (all your projects or one) |
+| Assigned to me | Your open issues |
+| Awaiting my review | Open, non-draft pull requests where you're a reviewer and haven't reviewed yet |
+| Pipeline status | A repository's latest CI pipelines |
+| Note | Markdown (rendered safely, raw HTML disabled) |
+| Projects | Your projects with open and closed counts |
+
+  Charts have hover titles, a legend and a data table. Gadgets refresh on relevant live events (issue, sprint, PR, pipeline and activity changes), at most once a second.
+- **Layout.** Widths are one third, half, two thirds or full (`MudGrid`; full width on phones). **Move earlier / Move later** reorders gadgets.
+- **Sharing.** Only the owner edits a dashboard. **Settings** shares it with one project (needs Developer+ there) or one group (Developer+ in the group); everyone who can view that project or group can then open it, read-only. **All gadget data is loaded as the viewer** through `ProjectAccess`, so a shared dashboard never shows anyone more than they could already see: a project, saved filter or repository the viewer can't access shows a short notice instead.
+- **Home.** Without a pinned dashboard, `/` shows the classic layout (projects, assigned issues, activity). **Customize** copies that layout into a new dashboard, pins it and opens it. **Use as Home** on any dashboard you can see pins it; **Unpin from Home** goes back to the classic layout.
+- **Limits:** 50 dashboards per user, 30 gadgets per dashboard, notes up to 5,000 characters.
+
+Code: `Services/Dashboards/` (`DashboardService` for CRUD, sharing and Home; `GadgetDataService` for the viewer-scoped queries; `GadgetMath` for the pure chart aggregation; `GadgetConfig`, the gadget's JSON settings), `Components/Dashboards/` and `Components/Pages/Dashboards/`. Tests: `tests/GitBench.Tests/RoadmapDashboardTests.cs`.
+
+### API
+
+| Method | Path (under `/api/v1`) | Notes |
+|---|---|---|
+| GET | `/projects/{key}/roadmap`, `/groups/{group}/roadmap` | Epics (dates, child progress, `canEdit`, children), `dependencies` (`blocker` → `blocked`), sprints and milestones with dates. `?label=` id, `?assignee=` username or `none` |
+| PUT | `/projects/{key}/issues/{number}/dates` | `{startDate, dueDate}` (both written; null clears). Needs EditIssues; start after due is `422` |
+| GET | `/dashboards`, `/dashboards/{id}` | Yours and those shared with you; a dashboard comes with its gadgets and their settings. Others are `404` |
+
+Schema: `Issue.StartDate`, `Dashboard`, `DashboardGadget`, `DashboardHome` (migration `RoadmapDashboards`).
 
 ## Attachments, saved filters & bulk edit
 

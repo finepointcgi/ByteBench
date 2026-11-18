@@ -32,7 +32,7 @@
             @if (Kind is GadgetKind.FilterResults or GadgetKind.IssueChart && projectId != null)
             {
                 <MudSelect T="int?" @bind-Value="savedFilterId" Label="Saved filter" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
-                           ToStringFunc="@(id => filters.FirstOrDefault(f => f.Id == id)?.Name ?? "Query below")"
+                           ToStringFunc="@(id => filters.FirstOrDefault(f => f.Id == id)?.Name ?? "None (use a query)")"
                            HelperText="Only your own and shared filters are listed. People who can't see the filter get a notice instead.">
                     @foreach (var f in filters) { <MudSelectItem T="int?" Value="f.Id">@f.Name@(f.IsShared ? " (shared)" : "")</MudSelectItem> }
                 </MudSelect>

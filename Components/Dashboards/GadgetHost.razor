@@ -24,10 +24,10 @@
             {
                 <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
                          aria-label="@($"Gadget actions: {Title}")">
-                    <MudMenuItem Icon="@Icons.Material.Outlined.Tune" OnClick="OnConfigure">Configure…</MudMenuItem>
-                    <MudMenuItem Icon="@Icons.Material.Outlined.ArrowBack" Disabled="@(Index == 0)" OnClick="() => OnMove.InvokeAsync(-1)">Move earlier</MudMenuItem>
-                    <MudMenuItem Icon="@Icons.Material.Outlined.ArrowForward" Disabled="@(Index >= Count - 1)" OnClick="() => OnMove.InvokeAsync(1)">Move later</MudMenuItem>
-                    <MudMenuItem Icon="@Icons.Material.Outlined.Delete" OnClick="OnRemove">Remove</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.Tune" OnClick="() => Later(() => OnConfigure.InvokeAsync())">Configure…</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.ArrowBack" Disabled="@(Index == 0)" OnClick="() => Later(() => OnMove.InvokeAsync(-1))">Move earlier</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.ArrowForward" Disabled="@(Index >= Count - 1)" OnClick="() => Later(() => OnMove.InvokeAsync(1))">Move later</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.Delete" OnClick="() => Later(() => OnRemove.InvokeAsync())">Remove</MudMenuItem>
                 </MudMenu>
             }
             else
@@ -190,6 +190,9 @@
     [Parameter] public EventCallback OnRemove { get; set; }
     [Parameter] public EventCallback<int> OnMove { get; set; }
 
+    /// <summary>Runs a menu action after the menu has closed (dialogs it opens would otherwise sit behind the open menu).</summary>
+    private void Later(Func<Task> action) => _ = InvokeAsync(async () => { await Task.Yield(); await action(); });
+
     private GadgetKinds.Info info = GadgetKinds.All[0];
     private GadgetConfig config = new();
     private string? loadedConfig;
@@ -245,7 +248,7 @@
             case GadgetKind.IssueChart:
                 (slices, issues) = await Data.ChartAsync(config);
                 problem = issues.Problem;
-                subtitle = issues.ProjectName == null ? null : $"{issues.ProjectName} · {issues.FilterName ?? "filter"} · {issues.Issues.Count} issues";
+                subtitle = issues.ProjectName == null ? null : $"{issues.ProjectName} · {issues.FilterName ?? (issues.Query.Length > 0 ? "custom query" : "open issues")} · {issues.Issues.Count} issues";
                 break;
             case GadgetKind.CreatedVsResolved:
                 days = await Data.CreatedVsResolvedAsync(config);
