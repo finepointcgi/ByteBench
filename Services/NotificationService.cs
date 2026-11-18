@@ -55,7 +55,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         var r = new Recipients();
         if (issue.AssigneeId is { } assignee) r.Add(assignee, NotificationKind.Assigned);
         r.Add(await ResolveMentionsAsync(db, issue.Description), NotificationKind.Mentioned);
-        await NotifyAsync(db, r, actorId, issue.ProjectId, IssueTitle(issue), IssueUrl(issue));
+        await NotifyAsync(db, r, actorId, issue.ProjectId, IssueTitle(issue), IssueUrl(issue), issue.Description);
 
         live.Publish(new IssueChanged(issue.ProjectId, issueId), new BoardChanged(issue.ProjectId), new ActivityChanged());
     }
@@ -100,7 +100,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         var r = new Recipients();
         r.Add(await ResolveMentionsAsync(db, body), NotificationKind.Mentioned);
         r.Add(await IssueWatchersAsync(db, issueId), NotificationKind.IssueCommented);
-        await NotifyAsync(db, r, actorId, issue.ProjectId, IssueTitle(issue), IssueUrl(issue));
+        await NotifyAsync(db, r, actorId, issue.ProjectId, IssueTitle(issue), IssueUrl(issue), body);
 
         live.Publish(new IssueChanged(issue.ProjectId, issueId));
     }
@@ -141,7 +141,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         await EnsureWatchAsync(db, pr.AuthorId, pullRequestId: prId);
         var r = new Recipients();
         r.Add(await ResolveMentionsAsync(db, pr.Description), NotificationKind.Mentioned);
-        await NotifyAsync(db, r, actorId, pr.Repository.ProjectId, PrTitle(pr), PrUrl(pr));
+        await NotifyAsync(db, r, actorId, pr.Repository.ProjectId, PrTitle(pr), PrUrl(pr), pr.Description);
 
         live.Publish(new PullRequestChanged(prId, pr.Repository.ProjectId));
     }
@@ -171,7 +171,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         var r = new Recipients();
         r.Add(await ResolveMentionsAsync(db, body), NotificationKind.Mentioned);
         r.Add(await PrWatchersAsync(db, prId), NotificationKind.PullRequestCommented);
-        await NotifyAsync(db, r, actorId, pr.Repository.ProjectId, PrTitle(pr), PrUrl(pr));
+        await NotifyAsync(db, r, actorId, pr.Repository.ProjectId, PrTitle(pr), PrUrl(pr), body);
 
         live.Publish(new PullRequestChanged(prId, pr.Repository.ProjectId));
     }
@@ -360,13 +360,11 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
     {
         if ((await FilterRecipientsAsync(projectId, [userId])).Count == 0) return;
         await using var db = await dbFactory.CreateDbContextAsync();
-        db.Notifications.Add(new Notification
+        await DeliverAsync(db, [new Notification
         {
             UserId = userId, ProjectId = projectId, ActorId = null, Kind = NotificationKind.PipelineFailed,
-            Title = title.Length > 200 ? title[..199] + "…" : title, Url = url, CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-        live.Publish(new NotificationsChanged(userId));
+            Title = title, Url = url, CreatedAt = DateTime.UtcNow,
+        }]);
     }
 
     // =====================================================================
@@ -404,14 +402,21 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
     private sealed class Recipients
     {
         public readonly Dictionary<int, NotificationKind> ByUser = [];
-        public void Add(int userId, NotificationKind kind) => ByUser.TryAdd(userId, kind);
+        /// <summary>Every kind each user qualified for, in priority order (a user who turned one off can still get the next).</summary>
+        public readonly Dictionary<int, List<NotificationKind>> AllKinds = [];
+        public void Add(int userId, NotificationKind kind)
+        {
+            ByUser.TryAdd(userId, kind);
+            if (!AllKinds.TryGetValue(userId, out var list)) AllKinds[userId] = list = [];
+            if (!list.Contains(kind)) list.Add(kind);
+        }
         public void Add(IEnumerable<int> userIds, NotificationKind kind)
         {
             foreach (var u in userIds) Add(u, kind);
         }
     }
 
-    private async Task NotifyAsync(AppDbContext db, Recipients r, int actorId, int projectId, string title, string url)
+    private async Task NotifyAsync(AppDbContext db, Recipients r, int actorId, int projectId, string title, string url, string? excerpt = null)
     {
         r.ByUser.Remove(actorId); // never notify people about their own actions
         if (r.ByUser.Count == 0) return;
@@ -419,17 +424,15 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         if (allowed.Count == 0) return;
 
         var now = DateTime.UtcNow;
-        foreach (var userId in allowed)
+        var prefs = await NotificationPreferences.LoadAsync(db, allowed);
+        var delivered = await DeliverAsync(db, allowed.Select(userId => new Notification
         {
-            db.Notifications.Add(new Notification
-            {
-                UserId = userId, ProjectId = projectId, ActorId = actorId, Kind = r.ByUser[userId],
-                Title = title.Length > 200 ? title[..199] + "…" : title, Url = url, CreatedAt = now,
-            });
-        }
-        await db.SaveChangesAsync();
-        live.Publish(allowed.Select(u => (LiveEvent)new NotificationsChanged(u)).ToArray());
-        log.LogDebug("Notified {Count} user(s) about {Url}", allowed.Count, url);
+            UserId = userId, ProjectId = projectId, ActorId = actorId,
+            // The highest-priority kind the user hasn't turned off (e.g. a watcher who muted mentions still hears about the comment).
+            Kind = r.AllKinds[userId].FirstOrDefault(k => prefs[userId].ChannelFor(k) != NotificationChannel.Off, r.ByUser[userId]),
+            Title = title, Url = url, CreatedAt = now, Excerpt = excerpt,
+        }).ToList());
+        log.LogDebug("Notified {Count} user(s) about {Url}", delivered.Count, url);
     }
 
     /// <summary>Ids of existing users mentioned in <paramref name="markdown"/>, outside code, ignoring <paramref name="except"/>.</summary>
@@ -456,11 +459,12 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         catch (DbUpdateException) { db.ChangeTracker.Clear(); /* raced with a concurrent watch: fine */ }
     }
 
+    // Muted watchers stay watchers but hear nothing as watchers.
     private static Task<List<int>> IssueWatchersAsync(AppDbContext db, int issueId) =>
-        db.Watches.Where(w => w.IssueId == issueId).Select(w => w.UserId).ToListAsync();
+        db.Watches.Where(w => w.IssueId == issueId && !w.Muted).Select(w => w.UserId).ToListAsync();
 
     private static Task<List<int>> PrWatchersAsync(AppDbContext db, int prId) =>
-        db.Watches.Where(w => w.PullRequestId == prId).Select(w => w.UserId).ToListAsync();
+        db.Watches.Where(w => w.PullRequestId == prId && !w.Muted).Select(w => w.UserId).ToListAsync();
 
     private static Task<Issue?> LoadIssueAsync(AppDbContext db, int issueId) =>
         db.Issues.AsNoTracking().Include(i => i.Project).FirstOrDefaultAsync(i => i.Id == issueId);

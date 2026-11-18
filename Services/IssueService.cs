@@ -15,6 +15,8 @@ public partial record IssueFilter
     public IssuePriority? Priority { get; set; }
     public string Sort { get; set; } = "updated";
     public int? SprintId { get; set; }     // 0 = no sprint (backlog)
+    /// <summary>One of the project's workflow statuses (Status is the category filter).</summary>
+    public int? WorkflowStatusId { get; set; }
 }
 
 /// <summary>
@@ -23,7 +25,8 @@ public partial record IssueFilter
 /// </summary>
 public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications, Webhooks.WebhookNotifier webhooks,
     Attachments.AttachmentStorage attachmentFiles,
-    Audit.AuditLog audit)
+    Audit.AuditLog audit,
+    RepoStorage repoStorage)
 {
     // ---------- Projects ----------
 
@@ -99,9 +102,12 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await access.RequireAsync(id, Permission.DeleteProject);
         await using var db = await dbFactory.CreateDbContextAsync();
         var files = await Attachments.AttachmentService.StoredNamesForProjectAsync(db, id);
+        files.AddRange(await Releases.ReleaseService.StoredNamesAsync(db, projectId: id)); // release assets cascade with the project
         var gone = await db.Projects.Where(p => p.Id == id).Select(p => new { p.Key, p.Name, Issues = p.Issues.Count }).FirstOrDefaultAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
         attachmentFiles.Delete(files); // rows first, then files
+        // The FK cascade removed the repository rows but not the bare repos: delete {RepositoryRoot}/{KEY} too.
+        if (gone != null) repoStorage.DeleteProjectDirectory(gone.Key);
         await audit.RecordAsync("project.deleted", "project", id, id, gone);
     }
 
@@ -132,6 +138,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         if (f.Status is { } st) q = q.Where(i => i.Status == st);
         else if (f.Open == true) q = q.Where(i => i.Status != IssueStatus.Done);
         else if (f.Open == false) q = q.Where(i => i.Status == IssueStatus.Done);
+        if (f.WorkflowStatusId is { } ws) q = q.Where(i => i.WorkflowStatusId == ws);
         if (f.AssigneeId is { } a) q = a == 0 ? q.Where(i => i.AssigneeId == null) : q.Where(i => i.AssigneeId == a);
         if (f.LabelId is { } l) q = q.Where(i => i.Labels.Any(x => x.Id == l));
         if (f.MilestoneId is { } m) q = m == 0 ? q.Where(i => i.MilestoneId == null) : q.Where(i => i.MilestoneId == m);

@@ -8,7 +8,14 @@
     <b class="bulk-count">@SelectedIds.Count selected</b>
     <MudMenu Label="Status" AriaLabel="Set status" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
              EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
-        @foreach (var s in Enum.GetValues<IssueStatus>()) { <MudMenuItem OnClick="() => SetStatus(s)">@s.Name()</MudMenuItem> }
+        @{ var first = true; }
+        @foreach (var g in Workflow.Statuses.GroupBy(s => s.Category).OrderBy(g => g.Key))
+        {
+            @if (!first) { <MudDivider /> }
+            first = false;
+            <div class="bulk-menu-group">@g.Key.Name()</div>
+            @foreach (var ws in g) { <MudMenuItem OnClick="() => SetStatus(ws)"><span class="d-inline-flex align-center gap-2"><span class="bulk-dot" style="background:@ws.Color"></span>@ws.Name</span></MudMenuItem> }
+        }
     </MudMenu>
     <MudMenu Label="Assignee" AriaLabel="Set assignee" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
              EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
@@ -53,6 +60,8 @@
 
 @code {
     [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    /// <summary>The project's workflow: the status menu lists its statuses, grouped by category.</summary>
+    [Parameter, EditorRequired] public ProjectWorkflow Workflow { get; set; } = ProjectWorkflow.Empty;
     [Parameter, EditorRequired] public List<User> Users { get; set; } = [];
     [Parameter, EditorRequired] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
     [Parameter, EditorRequired] public IReadOnlyCollection<int> SelectedIds { get; set; } = [];
@@ -63,7 +72,8 @@
     private bool busy;
     private string? error;
 
-    private Task SetStatus(IssueStatus s) => Run(new() { Status = s }, $"status → {s.Name()}");
+    // Bulk status goes through IssueService.ReconcileStatusAsync, so transitions apply and a refusal changes nothing.
+    private Task SetStatus(WorkflowStatus ws) => Run(new() { WorkflowStatusId = ws.Id }, $"status → {ws.Name}");
     private Task SetPriority(IssuePriority p) => Run(new() { Priority = p }, $"priority → {p}");
 
     private Task SetAssignee(int? id) => id == null

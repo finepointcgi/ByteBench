@@ -11,7 +11,7 @@ namespace GitBench.Services;
 /// </summary>
 public partial class RepositorySettingsService(
     IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access, ILogger<RepositorySettingsService> logger,
-    Audit.AuditLog audit)
+    Audit.AuditLog audit, Attachments.AttachmentStorage files)
 {
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$")]
     private static partial Regex SlugRx();
@@ -164,6 +164,7 @@ public partial class RepositorySettingsService(
             throw new InvalidOperationException($"Type the repository name ({repo.Name}) to confirm.");
 
         var urlPrefix = $"/p/{repo.Project.Key}/repos/{repo.Slug}/";
+        var assetFiles = await Releases.ReleaseService.StoredNamesAsync(db, repositoryId: repoId); // release assets cascade with the repo
         await using (var tx = await db.Database.BeginTransactionAsync())
         {
             await db.Notifications.Where(n => n.ProjectId == repo.ProjectId && n.Url.StartsWith(urlPrefix)).ExecuteDeleteAsync();
@@ -171,6 +172,7 @@ public partial class RepositorySettingsService(
             await db.SaveChangesAsync();
             await tx.CommitAsync();
         }
+        files.Delete(assetFiles); // rows first, then files
         await audit.RecordAsync("repository.deleted", "repository", repoId, repo.ProjectId, new { repo.Slug, repo.Name });
 
         var path = storage.PathFor(repo.Project.Key, repo.Slug);

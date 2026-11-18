@@ -45,9 +45,11 @@ public sealed class AttachmentStorage
     /// Streams <paramref name="content"/> to a new file (never buffering it whole), hashing as it goes, and sniffs the
     /// first bytes for a raster image type. Throws <see cref="AttachmentTooLargeException"/> past <see cref="MaxBytes"/>.
     /// The caller owns the returned file and must <see cref="Delete"/> it if it can't record it.
+    /// <paramref name="maxBytes"/> overrides the limit (release assets have their own).
     /// </summary>
-    public async Task<StoredFile> SaveAsync(Stream content, string fileName, CancellationToken ct = default)
+    public async Task<StoredFile> SaveAsync(Stream content, string fileName, CancellationToken ct = default, long? maxBytes = null)
     {
+        var limit = maxBytes ?? MaxBytes;
         Directory.CreateDirectory(Root);
         var storedName = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         var path = PathFor(storedName);
@@ -65,7 +67,7 @@ public sealed class AttachmentStorage
                 while ((n = await content.ReadAsync(buffer, ct)) > 0)
                 {
                     size += n;
-                    if (size > MaxBytes) throw new AttachmentTooLargeException(MaxBytes);
+                    if (size > limit) throw new AttachmentTooLargeException(limit);
                     if (headLen < head.Length)
                     {
                         var take = Math.Min(n, head.Length - headLen);

@@ -31,7 +31,7 @@ else if (project != null)
                                   Variant="Variant.Outlined" Typo="Typo.h6" Class="mb-1" />
                     <GitBench.Components.Ai.DuplicateHints Project="project" Title="@issue.Title" Description="@issue.Description" />
                     <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Description</MudText>
-                    <MarkdownEditor @bind-Value="issue.Description" Rows="10"
+                    <MarkdownEditor @bind-Value="issue.Description" Rows="10" ProjectId="project.Id"
                                     Placeholder="Describe the problem or feature. Markdown and task lists (- [ ]) are supported." />
                     @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@error</MudAlert> }
                     <div class="d-flex gap-2 mt-4">

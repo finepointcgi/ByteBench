@@ -61,6 +61,11 @@
     </section>
 
     <section class="profile-section">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Notifications</MudText>
+        <MudText Typo="Typo.body2">Choose what reaches you in the app and by email on the <MudLink Href="/account/notifications">notification preferences</MudLink> page.</MudText>
+    </section>
+
+    <section class="profile-section">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Change password</MudText>
         <StatusMessage Success="@passwordSuccess" Errors="passwordErrors" />
 
@@ -83,6 +88,25 @@
             </div>
             <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Change password</MudButton>
         </EditForm>
+    </section>
+
+    <section class="profile-section" id="two-factor">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Two-factor sign-in</MudText>
+        <div class="d-flex align-center gap-2 mb-2">
+            @if (user?.TwoFactorEnabled == true)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">On</MudChip>
+                <MudText Typo="Typo.body2">You sign in with a code from your authenticator app.</MudText>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0">Off</MudChip>
+                <MudText Typo="Typo.body2">Add a code from an authenticator app to your sign-in.</MudText>
+            }
+        </div>
+        <MudButton Href="account/two-factor" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Security">
+            @(user?.TwoFactorEnabled == true ? "Manage two-factor sign-in" : "Set up two-factor sign-in")
+        </MudButton>
     </section>
 
     <section class="profile-section" id="tokens">

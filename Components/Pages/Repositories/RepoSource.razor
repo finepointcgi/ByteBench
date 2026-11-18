@@ -1,5 +1,6 @@
 @page "/p/{Key}/repos/{Slug}"
 @inherits RepoPageBase
+@inject GitBench.Services.Releases.ReleaseService Releases
 
 <PageTitle>@(string.IsNullOrEmpty(Path) ? Repo?.Name : $"{Path} · {Repo?.Name}")</PageTitle>
 
@@ -25,6 +26,15 @@ else if (Repo != null)
             }
         </div>
         <div class="toolbar-actions">
+            @if (latestRelease != null)
+            {
+                <MudTooltip Text="@($"Latest release: {latestRelease.Title}")">
+                    <MudButton Href="@GitBench.Services.Releases.ReleaseUrls.Detail(Repo, latestRelease.Id)" Variant="Variant.Text" Size="Size.Small"
+                               StartIcon="@Icons.Material.Outlined.LocalOffer" Color="Color.Primary">
+                        Latest&nbsp;<span class="mono">@latestRelease.TagName</span>
+                    </MudButton>
+                </MudTooltip>
+            }
             <MudButton Href="@RepoUrls.Commits(Repo, Ref, CleanPath)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.History">History</MudButton>
             @if (!IsTag && !Repo.IsArchived && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
             {
@@ -157,6 +167,8 @@ else if (Repo != null)
     private BlobInfo? blob, readme;
     private CommitInfo? lastCommit;
     private bool empty, missing, showSource;
+    private Release? latestRelease;
+    private int? latestFor;
 
     private string CurrentRef => string.IsNullOrEmpty(Ref) ? Repo!.DefaultBranch : Ref;
     private string? CleanPath => string.IsNullOrEmpty(Path?.Trim('/')) ? null : Path.Trim('/');
@@ -187,6 +199,7 @@ else if (Repo != null)
     protected override async Task OnParametersSetAsync()
     {
         if (!await LoadRepoAsync()) return;
+        if (latestFor != Repo!.Id) { latestRelease = await Releases.GetLatestAsync(Repo); latestFor = Repo.Id; }
         var r = CurrentRef;
         var p = CleanPath;
         tree = null; blob = null; readme = null; lastCommit = null; missing = false; showSource = false;

@@ -8,8 +8,8 @@ using Microsoft.Extensions.Options;
 namespace GitBench.Services;
 
 /// <summary>
-/// Re-checks the user's security stamp every 30 minutes while a Blazor circuit is open, so a
-/// password change or deleted account signs out the other open sessions.
+/// Re-checks the user's security stamp every minute while a Blazor circuit is open, so a password
+/// change, deleted account, or an admin's lock or forced sign-out ends the other open sessions.
 /// </summary>
 public sealed class IdentityRevalidatingAuthenticationStateProvider(
     ILoggerFactory loggerFactory,
@@ -17,7 +17,7 @@ public sealed class IdentityRevalidatingAuthenticationStateProvider(
     IOptions<IdentityOptions> options)
     : RevalidatingServerAuthenticationStateProvider(loggerFactory)
 {
-    protected override TimeSpan RevalidationInterval => TimeSpan.FromMinutes(30);
+    protected override TimeSpan RevalidationInterval => TimeSpan.FromMinutes(1);
 
     protected override async Task<bool> ValidateAuthenticationStateAsync(AuthenticationState state, CancellationToken ct)
     {

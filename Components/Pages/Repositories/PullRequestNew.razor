@@ -103,7 +103,7 @@ else if (project != null)
                                         </MudButton>
                                     }
                                 </div>
-                                <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
+                                <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" ProjectId="project.Id" />
                                 @if (templatePath != null)
                                 {
                                     <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">Prefilled from <span class="mono">@templatePath</span> on <span class="mono">@TargetOrDefault</span>.</MudText>

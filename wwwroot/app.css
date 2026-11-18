@@ -123,3 +123,14 @@ input.invalid, textarea.invalid, select.invalid { outline: 1px solid var(--mud-p
 .gb-notif-popover { width: 380px; max-height: 70vh; overflow-y: auto; }
 .gb-notif-unread { background: rgba(var(--mud-palette-primary-rgb), .06); }
 .gb-notif-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mud-palette-primary); margin-top: 6px; flex-shrink: 0; }
+
+/* Menu/select popovers render in MudPopoverProvider (outside components), so their content styles live here. */
+.il-select-heading { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; opacity: 1 !important; color: var(--mud-palette-text-secondary) !important; min-height: 28px; }
+.bulk-menu-group { padding: 6px 16px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--mud-palette-text-secondary); }
+.bulk-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* ----- Two-factor sign-in (static SSR account pages) ----- */
+/* The QR code keeps its own white quiet zone so scanners read it in dark mode too. */
+.totp-qr svg { width: 180px; height: 180px; display: block; border-radius: 6px; }
+.totp-key { font-size: 15px; letter-spacing: .04em; word-break: break-all; }
+.recovery-codes { columns: 2; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 14px; }

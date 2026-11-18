@@ -95,6 +95,19 @@ else if (project != null)
         </MudPaper>
     }
 
+    @if (perms.Can(Permission.ManageRepositories))
+    {
+        <div class="card-panel narrow mb-4" id="ci-variables">
+            <h2 class="section-title">CI variables</h2>
+            <p class="small muted mb-2">
+                Secret environment variables for every repository's pipelines in this project. A repository variable with the same
+                name (repository Settings → CI variables) overrides these. Values are encrypted, masked as <code>***</code> in logs,
+                and never shown again after saving.
+            </p>
+            <CiVariablesEditor ProjectId="project.Id" />
+        </div>
+    }
+
     @if (perms.Can(Permission.ManageProjectSettings))
     {
         <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">

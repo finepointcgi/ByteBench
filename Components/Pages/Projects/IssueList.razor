@@ -4,6 +4,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject WorkflowService Workflows
 @inject NavigationManager Nav
 
 <PageTitle>Issues · @project?.Name</PageTitle>
@@ -47,9 +48,16 @@ else if (project != null)
                       Clearable="true" Class="il-search" aria-label="Search issues" />
         <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Apply" />
 
-        <MudSelect T="IssueStatus?" @bind-Value="StatusFilter" @bind-Value:after="Apply" Label="Status" Clearable="true" Dense="true"
-                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(s => s?.Name() ?? "")">
-            @foreach (var s in Enum.GetValues<IssueStatus>()) { <MudSelectItem T="IssueStatus?" Value="s">@s.Name()</MudSelectItem> }
+        @* "c:{category}" = any status in that category, "w:{id}" = one workflow status. *@
+        <MudSelect T="string" @bind-Value="StatusFilter" @bind-Value:after="Apply" Label="Status" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="StatusName" aria-label="Status">
+            <MudSelectItem T="string" Value="@("__h_cat")" Disabled="true" Class="il-select-heading">Category</MudSelectItem>
+            @foreach (var s in Enum.GetValues<IssueStatus>()) { <MudSelectItem T="string" Value="@($"c:{s}")">Any @s.Name() status</MudSelectItem> }
+            @foreach (var g in workflow.Statuses.GroupBy(s => s.Category).OrderBy(g => g.Key))
+            {
+                <MudSelectItem T="string" Value="@($"__h_{g.Key}")" Disabled="true" Class="il-select-heading">@g.Key.Name()</MudSelectItem>
+                @foreach (var ws in g) { <MudSelectItem T="string" Value="@($"w:{ws.Id}")">@ws.Name</MudSelectItem> }
+            }
         </MudSelect>
         <MudSelect T="int?" @bind-Value="filter.AssigneeId" @bind-Value:after="Apply" Label="Assignee" Clearable="true" Dense="true"
                    Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="AssigneeName">
@@ -90,7 +98,7 @@ else if (project != null)
 
     @if (CanBulkEdit && selected.Count > 0)
     {
-        <BulkActionBar Project="project" Users="users" Perms="perms" SelectedIds="SelectedOnPage" OnClear="() => selected.Clear()" OnDone="AfterBulk" />
+        <BulkActionBar Project="project" Workflow="workflow" Users="users" Perms="perms" SelectedIds="SelectedOnPage" OnClear="() => selected.Clear()" OnDone="AfterBulk" />
     }
     <MudPaper Outlined="true" Class="il-list">
         @if (CanBulkEdit && issues.Count > 0)
@@ -148,13 +156,28 @@ else if (project != null)
     /// <summary>Selected issues that are still in the current list.</summary>
     private List<int> SelectedOnPage => issues.Where(i => selected.Contains(i.Id)).Select(i => i.Id).ToList();
 
-    private bool IsTab(bool? open) => filter.Open == open && filter.Status == null;
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private bool NoStatus => filter.Status == null && filter.WorkflowStatusId == null;
 
-    private IssueStatus? StatusFilter
+    private bool IsTab(bool? open) => filter.Open == open && NoStatus;
+
+    /// <summary>The status menu's value: "c:{category}" (any status in it), "w:{id}" (one workflow status) or null.</summary>
+    private string? StatusFilter
     {
-        get => filter.Status;
-        set { filter.Status = value; if (value != null) filter.Open = null; }
+        get => filter.WorkflowStatusId is { } w ? $"w:{w}" : filter.Status is { } s ? $"c:{s}" : null;
+        set
+        {
+            filter.Status = null;
+            filter.WorkflowStatusId = null;
+            if (value?.StartsWith("w:") == true && int.TryParse(value[2..], out var id)) filter.WorkflowStatusId = id;
+            else if (value?.StartsWith("c:") == true && Enum.TryParse<IssueStatus>(value[2..], out var c)) filter.Status = c;
+            if (!NoStatus) filter.Open = null;
+        }
     }
+
+    private string StatusName(string? value) =>
+        value?.StartsWith("w:") == true && int.TryParse(value[2..], out var id) ? workflow.Find(id)?.Name ?? ""
+        : value?.StartsWith("c:") == true && Enum.TryParse<IssueStatus>(value[2..], out var c) ? $"Any {c.Name()} status" : "";
 
     private string AssigneeName(int? id) => id switch
     {
@@ -172,7 +195,7 @@ else if (project != null)
 
     private static string SortName(string? value) => SortOptions.FirstOrDefault(s => s.Value == value).Name ?? value ?? "";
 
-    private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || filter.Status != null || filter.AssigneeId != null
+    private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || !NoStatus || filter.AssigneeId != null
         || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null
         || filter.EpicId != null || filter.HideSubtasks || filter.SprintId != null;
 
@@ -193,6 +216,7 @@ else if (project != null)
     private async Task Load()
     {
         if (project == null) return;
+        workflow = await Workflows.GetAsync(project.Id);
         issues = await Issues.GetIssuesAsync(project.Id, filter);
         counts = await Issues.CountAsync(project.Id);
     }
@@ -255,6 +279,7 @@ else if (project != null)
     private async Task SetOpen(bool? open)
     {
         filter.Status = null;
+        filter.WorkflowStatusId = null;
         filter.Open = open;
         await Apply();
     }

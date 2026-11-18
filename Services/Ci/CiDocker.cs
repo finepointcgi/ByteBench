@@ -3,13 +3,19 @@ using Microsoft.Extensions.Options;
 
 namespace GitBench.Services.Ci;
 
-/// <summary>A step's container to run: image, script, workspace and the non-secret <c>GITBENCH_*</c> variables.</summary>
-public sealed record CiContainerSpec(string Name, string Image, string Script, string Workspace, IReadOnlyDictionary<string, string> Env);
+/// <summary>
+/// A step's container to run: image, script, workspace and the non-secret <c>GITBENCH_*</c> variables. CI secret
+/// variables go through <paramref name="EnvFile"/> (a mode-600 temp file, see <see cref="CiRunner"/>) so their values
+/// never appear on a command line.
+/// </summary>
+public sealed record CiContainerSpec(string Name, string Image, string Script, string Workspace, IReadOnlyDictionary<string, string> Env,
+    string? EnvFile = null);
 
 /// <summary>
 /// Thin wrapper over the docker CLI (singleton). Every argument goes through <see cref="ProcessStartInfo.ArgumentList"/>,
-/// never a concatenated command line. Containers never get the docker socket, host environment variables or secrets,
-/// and always run with <c>--security-opt no-new-privileges</c>.
+/// never a concatenated command line. Containers never get the docker socket or host environment variables; the only
+/// secrets they get are the pipeline's CI variables, via <c>--env-file</c>. They always run with
+/// <c>--security-opt no-new-privileges</c>.
 /// </summary>
 public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
 {
@@ -69,6 +75,7 @@ public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
         if (!string.IsNullOrWhiteSpace(o.Memory)) args.AddRange(["--memory", o.Memory]);
         if (!string.IsNullOrWhiteSpace(o.Cpus)) args.AddRange(["--cpus", o.Cpus]);
         if (o.PidsLimit > 0) args.AddRange(["--pids-limit", o.PidsLimit.ToString()]);
+        if (spec.EnvFile != null) args.AddRange(["--env-file", spec.EnvFile]); // CI secret variables; -e below wins on clashes
         foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
         // sh -e: a multi-line step fails at its first failing command.
         args.AddRange(["--entrypoint", "sh", spec.Image, "-e", "-c", spec.Script]);

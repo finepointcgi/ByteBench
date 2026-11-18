@@ -76,6 +76,11 @@
             Log.LogInformation("User {User} signed in.", userName);
             Nav.NavigateTo(AccountUrls.SafeReturnUrl(ReturnUrl), forceLoad: true);
         }
+        else if (result.RequiresTwoFactor)
+        {
+            // Password OK; Identity set the two-factor cookie. Ask for the authenticator (or recovery) code next.
+            Nav.NavigateTo($"account/login-2fa?rememberMe={Input!.RememberMe}&returnUrl={Uri.EscapeDataString(AccountUrls.SafeReturnUrl(ReturnUrl))}", forceLoad: true);
+        }
         else if (result.IsLockedOut)
         {
             Log.LogWarning("User {User} is locked out.", userName);

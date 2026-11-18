@@ -1,0 +1,17 @@
+# Build output and local state never go into the image
+**/bin/
+**/obj/
+.git
+.claude/
+.vs/
+.vscode/
+.idea/
+gitbench.db*
+repos/
+attachments/
+keys/
+backups/
+*.user
+.env
+Dockerfile
+docker-compose*.yml

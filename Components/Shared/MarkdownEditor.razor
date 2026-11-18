@@ -1,9 +1,11 @@
 @using GitBench.Services.Attachments
 @inject AttachmentService Attachments
 @inject IJSRuntime JS
+@inject MentionLookup Lookup
+@implements IAsyncDisposable
 
 @* wwwroot/js/attachments.js relies on: the .md-editor[data-attach] root, the .md-attach picker, its input[type=file] and the textarea. *@
-<div class="md-editor" data-attach="@(AttachToIssueId != null ? "" : null)">
+<div class="md-editor" data-attach="@(AttachToIssueId != null ? "" : null)" @ref="root">
     <div class="md-toolbar">
         <MudTabs Elevation="0" ActivePanelIndex="@(preview ? 1 : 0)" ActivePanelIndexChanged="i => preview = i == 1"
                  MinimumTabWidth="72px" Class="md-tabbar" TabPanelsClass="d-none" Color="Color.Transparent">
@@ -23,7 +25,7 @@
                 <span class="md-uploading"><MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:14px;height:14px" /> Uploading…</span>
             }
         }
-        <span class="md-hint">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")</span>
+        <span class="md-hint">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")@(ProjectId != null ? " · @ for people, # for issues" : "")</span>
     </div>
     @if (uploadError != null) { <div class="md-attach-error">@uploadError</div> }
     @if (preview)
@@ -56,6 +58,51 @@
     private ElementReference textarea;
 
     private Task OnInput(ChangeEventArgs e) => ValueChanged.InvokeAsync(Value = e.Value?.ToString());
+
+    // ----- Autocomplete (@people, #issues, KEY-12): wwwroot/js/mention-autocomplete.js -----
+
+    /// <summary>The project whose people and issues are suggested. Without it there's no autocomplete.</summary>
+    [Parameter] public int? ProjectId { get; set; }
+
+    private ElementReference root;
+    private IJSObjectReference? acModule;
+    private DotNetObjectReference<MarkdownEditor>? acRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ProjectId == null || acRef != null) return;
+        acRef = DotNetObjectReference.Create(this);
+        try
+        {
+            acModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/mention-autocomplete.js");
+            await acModule.InvokeVoidAsync("attach", root, acRef);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>Called by the JS module (debounced). <paramref name="kind"/> is "user" or "issue"; <paramref name="key"/> a typed project key.</summary>
+    [JSInvokable]
+    public async Task<IReadOnlyList<AutocompleteItem>> Suggest(string kind, string? key, string? query)
+    {
+        if (ProjectId is not { } projectId) return [];
+        return kind == "user" ? await Lookup.UsersAsync(projectId, query) : await Lookup.IssuesAsync(projectId, key, query);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (acModule != null)
+        {
+            try
+            {
+                await acModule.InvokeVoidAsync("detach", root);
+                await acModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
+        acRef?.Dispose();
+    }
 
     public void ShowWrite() => preview = false;
 

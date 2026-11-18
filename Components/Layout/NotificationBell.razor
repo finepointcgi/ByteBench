@@ -36,7 +36,10 @@
             }
         </MudList>
         <MudDivider />
-        <MudButton Href="/notifications" FullWidth="true" Variant="Variant.Text" OnClick="() => open = false">View all notifications</MudButton>
+        <div class="d-flex">
+            <MudButton Href="/notifications" Variant="Variant.Text" Class="flex-grow-1" OnClick="() => open = false">View all</MudButton>
+            <MudButton Href="/account/notifications" Variant="Variant.Text" Class="flex-grow-1" StartIcon="@Icons.Material.Outlined.Settings" OnClick="() => open = false">Preferences</MudButton>
+        </div>
     </MudPopover>
     <MudOverlay Visible="open" OnClick="() => open = false" AutoClose="true" />
 </div>

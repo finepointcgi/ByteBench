@@ -36,7 +36,7 @@ else if (pr != null)
         {
             <MudText Typo="Typo.h5" HtmlTag="h1" Class="pr-title">@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></MudText>
             <div class="d-flex gap-2 align-center">
-                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
+                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" PullRequestId="pr.Id" />
                 @if (CanEditPr && pr.State == PullRequestState.Open)
                 {
                     <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit"
@@ -109,7 +109,7 @@ else if (pr != null)
                     <div class="pr-card-body">
                         @if (editingDesc)
                         {
-                            <MarkdownEditor @bind-Value="descDraft" Rows="8" />
+                            <MarkdownEditor @bind-Value="descDraft" Rows="8" ProjectId="pr.Repository.ProjectId" />
                             <div class="mt-2 d-flex gap-2">
                                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveDesc">Save</MudButton>
                                 <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editingDesc = false">Cancel</MudButton>
@@ -160,7 +160,7 @@ else if (pr != null)
                                 <div class="pr-card-body">
                                     @if (editingCommentId == c.Id)
                                     {
-                                        <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" />
+                                        <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" ProjectId="pr.Repository.ProjectId" />
                                         <div class="mt-2 d-flex gap-2">
                                             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="() => SaveCommentEdit(c)">Save</MudButton>
                                             <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editingCommentId = null">Cancel</MudButton>
@@ -189,7 +189,7 @@ else if (pr != null)
                 <div class="pr-card mt-3">
                     <div class="pr-card-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
                     <div class="pr-card-body">
-                        <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
+                        <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" ProjectId="pr.Repository.ProjectId" />
                         <div class="mt-2">
                             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(newComment)" OnClick="AddComment">Comment</MudButton>
                         </div>

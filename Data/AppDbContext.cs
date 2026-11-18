@@ -51,6 +51,44 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<WorkflowStatus> WorkflowStatuses => Set<WorkflowStatus>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    // ----- Email & preferences -----
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<UserNotificationSettings> UserNotificationSettings => Set<UserNotificationSettings>();
+
+    private static void ConfigureEmailAndPreferences(ModelBuilder b)
+    {
+        b.Entity<NotificationPreference>().HasIndex(p => new { p.UserId, p.Group }).IsUnique();
+        b.Entity<NotificationPreference>().HasOne<User>().WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<UserNotificationSettings>().HasOne<User>().WithOne().HasForeignKey<UserNotificationSettings>(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+        // The email worker polls for pending rows.
+        b.Entity<Notification>().HasIndex(n => n.EmailPending).HasFilter("\"EmailPending\" = 1");
+    }
+
+    // ----- Admin, 2FA & CI secrets -----
+    public DbSet<CiVariable> CiVariables => Set<CiVariable>();
+
+    private static void ConfigureAdminSecurity(ModelBuilder b)
+    {
+        b.Entity<CiVariable>().HasIndex(v => new { v.ProjectId, v.RepositoryId, v.Name });
+        b.Entity<CiVariable>().HasOne<Project>().WithMany().HasForeignKey(v => v.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CiVariable>().HasOne<Repository>().WithMany().HasForeignKey(v => v.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CiVariable>().HasOne(v => v.UpdatedBy).WithMany().HasForeignKey(v => v.UpdatedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
+    // ----- Releases -----
+    public DbSet<Release> Releases => Set<Release>();
+    public DbSet<ReleaseAsset> ReleaseAssets => Set<ReleaseAsset>();
+
+    private static void ConfigureReleases(ModelBuilder b)
+    {
+        b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.TagName }).IsUnique();
+        b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.CreatedAt });
+        b.Entity<Release>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Release>().HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ReleaseAsset>().HasIndex(a => a.StoredName).IsUnique();
+        b.Entity<ReleaseAsset>().HasOne(a => a.Release).WithMany(r => r.Assets).HasForeignKey(a => a.ReleaseId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ReleaseAsset>().HasOne(a => a.Uploader).WithMany().HasForeignKey(a => a.UploaderId).OnDelete(DeleteBehavior.Restrict);
+    }
 
     private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
     {
@@ -196,5 +234,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Sprint>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Issue>().HasOne(i => i.Sprint).WithMany().HasForeignKey(i => i.SprintId).OnDelete(DeleteBehavior.SetNull);
         ConfigureWorkflowsAndAudit(b);
+        ConfigureEmailAndPreferences(b);
+        ConfigureAdminSecurity(b);
+        ConfigureReleases(b);
     }
 }

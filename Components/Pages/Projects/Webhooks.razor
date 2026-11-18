@@ -60,7 +60,7 @@ else if (project != null)
                         }
                         else { <MudChip T="string" Size="Size.Small" Variant="Variant.Text">Inactive</MudChip> }
                         @if (h.ConsecutiveFailures > 0) { <span class="hook-error">@h.ConsecutiveFailures failed in a row</span> }
-                        <span class="hook-muted">Secret <span class="mono">@WebhookService.Mask(h.Secret)</span></span>
+                        <span class="hook-muted">Secret <span class="mono">@h.Secret</span></span>
                     </div>
                     <div class="hook-muted hook-events">@string.Join(", ", WebhookEventNames.Parse(h.Events))</div>
                 </div>

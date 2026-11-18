@@ -3,6 +3,7 @@
 @inject IssueService Issues
 @inject SavedFilterService Filters
 @inject ProjectAccess Access
+@inject WorkflowService Workflows
 @inject LiveEvents Live
 @inject IDialogService Dialogs
 
@@ -109,6 +110,7 @@ else if (project != null)
     private Project? project;
     private ProjectPermissions perms = ProjectPermissions.None;
     private List<User> users = [];
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
     private List<SavedFilterView> filters = [];
     private List<BreadcrumbItem> crumbs = [];
     private bool notFound;
@@ -124,6 +126,7 @@ else if (project != null)
         crumbs = [new(project.Name, $"/p/{project.Key}/issues"), new("Issues", $"/p/{project.Key}/issues"), new("Saved filters", null, disabled: true)];
         perms = await Access.GetPermissionsAsync(project.Id);
         users = await Issues.GetUsersAsync();
+        workflow = await Workflows.GetAsync(project.Id);
         await Load();
     }
 
@@ -173,8 +176,9 @@ else if (project != null)
     private IEnumerable<string> Describe(string query)
     {
         var f = IssueFilterQuery.Parse(query);
-        if (f.Status is { } s) yield return $"status: {s.Name()}";
-        else yield return f.Open switch { true => "open", false => "closed", null => "open & closed" };
+        if (f.WorkflowStatusId is { } ws) yield return "status: " + (workflow.Find(ws)?.Name ?? $"#{ws}");
+        if (f.Status is { } s) yield return $"status: any {s.Name()}";
+        else if (f.WorkflowStatusId == null) yield return f.Open switch { true => "open", false => "closed", null => "open & closed" };
         if (f.AssigneeId is { } a) yield return "assignee: " + (a == 0 ? "unassigned" : users.FirstOrDefault(u => u.Id == a)?.DisplayName ?? $"#{a}");
         if (f.LabelId is { } l) yield return "label: " + (project!.Labels.FirstOrDefault(x => x.Id == l)?.Name ?? $"#{l}");
         if (f.MilestoneId is { } m) yield return "milestone: " + (m == 0 ? "none" : project!.Milestones.FirstOrDefault(x => x.Id == m)?.Title ?? $"#{m}");

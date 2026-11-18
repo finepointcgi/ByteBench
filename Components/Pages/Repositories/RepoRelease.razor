@@ -1,0 +1,141 @@
+@page "/p/{Key}/repos/{Slug}/releases/{Id:int}"
+@using GitBench.Services.Releases
+@using GitBench.Services.Attachments
+@using GitBench.Components.Releases
+@inherits RepoPageBase
+@inject ReleaseService Releases
+@inject ProjectAccess Access
+@inject IJSRuntime JS
+
+<PageTitle>@(release?.Title ?? "Release") · @Repo?.Name</PageTitle>
+
+@if (NotFound || (Repo != null && loaded && release == null))
+{
+    <ProjectNotFound Message="This release does not exist." />
+}
+else if (Repo != null && release != null)
+{
+    <RepoHeader Repo="Repo" Active="releases" />
+
+    <div class="breadcrumbs mb-2"><a href="@ReleaseUrls.List(Repo)">Releases</a> / <span class="mono">@release.TagName</span></div>
+    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+
+    <ReleaseCard Repo="Repo" Release="release" IsLatest="isLatest" CanDeleteAssets="CanEdit" OnDeleteAsset="DeleteAsset">
+        @if (CanEdit)
+        {
+            <span class="rel-actions">
+                @if (release.IsDraft) { <button class="btn btn-sm btn-primary" disabled="@busy" @onclick="Publish">Publish</button> }
+                <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.Edit(Repo, release.Id)">Edit</a>
+                @if (perms.Can(Permission.DeleteBranch))
+                {
+                    <button class="btn btn-sm btn-outline-danger" disabled="@busy" @onclick="Delete">Delete</button>
+                }
+            </span>
+        }
+    </ReleaseCard>
+
+    @if (CanEdit)
+    {
+        <div class="card-panel rel-upload">
+            <label class="btn btn-outline-secondary btn-sm mb-0 @(busy ? "disabled" : "")">
+                @(busy ? "Uploading…" : "📎 Upload assets")
+                <InputFile OnChange="Upload" multiple class="d-none" disabled="@busy" />
+            </label>
+            <span class="muted small ms-2">Binaries, packages or checksums: up to @AttachmentFormat.Size(Releases.MaxAssetBytes) per file, @ReleaseService.MaxAssetsPerRelease per release.</span>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Release? release;
+    private bool loaded, isLatest, busy;
+    private string? message;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool CanEdit => perms.Can(Permission.PushCode) && Repo?.IsArchived == false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        release = await Releases.GetAsync(Repo!, Id);
+        isLatest = release != null && (await Releases.GetLatestAsync(Repo!))?.Id == release.Id;
+        loaded = true;
+    }
+
+    private async Task Publish()
+    {
+        Error = message = null;
+        busy = true;
+        try
+        {
+            await Releases.PublishAsync(Repo!, Id);
+            message = "Release published.";
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Delete()
+    {
+        Error = message = null;
+        var deleteTag = false;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the release '{release!.Title}' and its {release.Assets.Count} asset(s)? This can't be undone.")) return;
+        if (perms.Can(Permission.DeleteBranch))
+            deleteTag = await JS.InvokeAsync<bool>("confirm", $"Also delete the tag '{release.TagName}'? Press Cancel to keep the tag.");
+        busy = true;
+        try
+        {
+            await Releases.DeleteAsync(Repo!, Id, deleteTag);
+            Nav.NavigateTo(ReleaseUrls.List(Repo!));
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Upload(InputFileChangeEventArgs e)
+    {
+        Error = message = null;
+        busy = true;
+        var done = new List<string>();
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                if (file.Size > Releases.MaxAssetBytes) { Error = $"{file.Name} is larger than {AttachmentFormat.Size(Releases.MaxAssetBytes)}."; continue; }
+                await using var stream = file.OpenReadStream(Releases.MaxAssetBytes);
+                await Releases.UploadAssetAsync(Repo!, Id, file.Name, stream);
+                done.Add(file.Name);
+            }
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        catch (IOException ex) { Error = "Upload failed: " + ex.Message; }
+        finally
+        {
+            busy = false;
+            if (done.Count > 0) message = $"Uploaded {string.Join(", ", done)}.";
+            await Load();
+        }
+    }
+
+    private async Task DeleteAsset(ReleaseAsset a)
+    {
+        Error = message = null;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the asset '{a.FileName}'?")) return;
+        try
+        {
+            await Releases.DeleteAssetAsync(Repo!, a.Id);
+            message = $"Deleted {a.FileName}.";
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+}

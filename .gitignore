@@ -492,3 +492,12 @@ gitbench.db*
 
 # Issue attachments (Attachments:Root)
 /attachments/
+
+# Email pickup folder (Email:PickupDirectory)
+/mail-drop/
+# Source folders named "Releases" (the build-output rule above would hide them)
+!/Services/Releases/
+!/Components/Releases/
+
+# Data Protection key ring (DataProtection:KeysPath)
+/keys/

@@ -24,9 +24,10 @@ public partial class NotificationService
             await using var db = await dbFactory.CreateDbContextAsync();
             var ids = updated.Select(u => u.IssueId).ToList();
             var issues = await db.Issues.AsNoTracking().Include(i => i.Project).Where(i => ids.Contains(i.Id)).ToDictionaryAsync(i => i.Id);
-            var watchers = (await db.Watches.Where(w => w.IssueId != null && ids.Contains(w.IssueId.Value))
-                    .Select(w => new { w.UserId, IssueId = w.IssueId!.Value }).ToListAsync())
-                .ToLookup(w => w.IssueId, w => w.UserId);
+            var watchRows = await db.Watches.Where(w => w.IssueId != null && ids.Contains(w.IssueId.Value))
+                    .Select(w => new { w.UserId, IssueId = w.IssueId!.Value, w.Muted }).ToListAsync();
+            var watchers = watchRows.ToLookup(w => w.IssueId, w => w.UserId); // everyone, so no duplicate watch rows are added
+            var notMuted = watchRows.Where(w => !w.Muted).ToLookup(w => w.IssueId, w => w.UserId);
 
             // (user, project) -> issues they hear about, and the kind (assignment beats status changes).
             var byRecipient = new Dictionary<(int User, int Project), (NotificationKind Kind, List<Issue> Issues)>();
@@ -55,7 +56,7 @@ public partial class NotificationService
                     var kind = issue.Status.IsClosed() ? NotificationKind.IssueClosed
                         : before.Status.IsClosed() ? NotificationKind.IssueReopened
                         : NotificationKind.IssueStatusChanged;
-                    foreach (var w in watchers[issueId]) Add(w, issue, kind);
+                    foreach (var w in notMuted[issueId]) Add(w, issue, kind);
                 }
             }
 
@@ -67,7 +68,7 @@ public partial class NotificationService
             }
 
             var now = DateTime.UtcNow;
-            var notified = new HashSet<int>();
+            var candidates = new List<Notification>();
             foreach (var group in byRecipient.GroupBy(r => r.Key.Project))
             {
                 var allowed = (await FilterRecipientsAsync(group.Key, group.Select(g => g.Key.User))).ToHashSet();
@@ -77,16 +78,14 @@ public partial class NotificationService
                     var first = list[0];
                     var title = list.Count == 1 ? IssueTitle(first) : $"{list.Count} issues in {first.Project.Key}: {string.Join(", ", list.Take(5).Select(i => i.Key))}{(list.Count > 5 ? ", …" : "")}";
                     var url = list.Count == 1 ? IssueUrl(first) : $"/p/{first.Project.Key}/issues?open=";
-                    db.Notifications.Add(new Notification
+                    candidates.Add(new Notification
                     {
                         UserId = user, ProjectId = project, ActorId = actorId, Kind = kind,
-                        Title = title.Length > 200 ? title[..199] + "…" : title, Url = url, CreatedAt = now,
+                        Title = title, Url = url, CreatedAt = now,
                     });
-                    notified.Add(user);
                 }
             }
-            if (notified.Count > 0) await db.SaveChangesAsync();
-            events.AddRange(notified.Select(u => (LiveEvent)new NotificationsChanged(u)));
+            var notified = await DeliverAsync(db, candidates); // publishes NotificationsChanged itself
             log.LogDebug("Bulk change of {Count} issue(s) notified {Users} user(s)", updated.Count, notified.Count);
         }
 

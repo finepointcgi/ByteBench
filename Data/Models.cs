@@ -8,7 +8,7 @@ public enum IssuePriority { Lowest, Low, Medium, High, Highest }
 public enum IssueType { Task, Bug, Feature, Story, Epic, Subtask }
 
 /// <summary>An account. Id, UserName, Email and PasswordHash come from ASP.NET Core Identity.</summary>
-public class User : IdentityUser<int>
+public partial class User : IdentityUser<int>
 {
     [Required, MaxLength(80)] public string DisplayName { get; set; } = "";
     [MaxLength(9)] public string Color { get; set; } = "#6366f1";
@@ -243,7 +243,7 @@ public enum NotificationKind
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
-public class Notification
+public partial class Notification
 {
     public int Id { get; set; }
     public int UserId { get; set; }
@@ -261,7 +261,7 @@ public class Notification
 }
 
 /// <summary>A user watching exactly one issue or one pull request.</summary>
-public class Watch
+public partial class Watch
 {
     public int Id { get; set; }
     public int UserId { get; set; }
@@ -493,8 +493,12 @@ public class Webhook
     public int Id { get; set; }
     public int ProjectId { get; set; }
     [Required, MaxLength(2000)] public string Url { get; set; } = "";
-    /// <summary>HMAC-SHA256 signing key. Stored as-is because every delivery needs it; shown to users only once.</summary>
-    [Required, MaxLength(200)] public string Secret { get; set; } = "";
+    /// <summary>
+    /// HMAC-SHA256 signing key (16 to 200 characters), encrypted at rest with ASP.NET Core Data Protection by
+    /// <see cref="GitBench.Services.Webhooks.WebhookSecrets"/>: stored as <c>dp:</c> + ciphertext. A value without that
+    /// prefix is a legacy plaintext secret, encrypted at startup. Shown to users only once (at creation and rotation).
+    /// </summary>
+    [Required, MaxLength(1000)] public string Secret { get; set; } = "";
     /// <summary>Comma-separated event names (see <see cref="GitBench.Services.Webhooks.WebhookEventNames"/>).</summary>
     [Required, MaxLength(1000)] public string Events { get; set; } = "";
     public bool IsActive { get; set; } = true;
@@ -727,4 +731,133 @@ public class AuditEvent
     public int? ProjectId { get; set; }
     /// <summary>JSON object with event-specific details.</summary>
     public string? Details { get; set; }
+}
+
+// ----- Email & preferences -----
+
+/// <summary>How a user hears about one <see cref="NotificationGroup"/>. A missing row means the group's default.</summary>
+public enum NotificationChannel { Off = 0, InApp = 1, InAppAndEmail = 2 }
+
+/// <summary>The groups on the preferences page. Each <see cref="NotificationKind"/> belongs to exactly one (see <c>NotificationPreferences.GroupOf</c>).</summary>
+public enum NotificationGroup
+{
+    Assigned, Mentioned, WatchedComments, WatchedChanges, ReviewRequested, Reviews, Pipelines, IssueLinks,
+}
+
+/// <summary>A user's choice for one <see cref="NotificationGroup"/>.</summary>
+public class NotificationPreference
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public NotificationGroup Group { get; set; }
+    public NotificationChannel Channel { get; set; }
+}
+
+/// <summary>Per-user email settings: one row per user, created on first save or first email.</summary>
+public class UserNotificationSettings
+{
+    [Key, System.ComponentModel.DataAnnotations.Schema.DatabaseGenerated(System.ComponentModel.DataAnnotations.Schema.DatabaseGeneratedOption.None)]
+    public int UserId { get; set; }
+    /// <summary>Master switch: false means no notification emails at all, whatever the groups say.</summary>
+    public bool EmailEnabled { get; set; } = true;
+    /// <summary>When the last notification email (single or digest) went to this user; drives <c>Email:DigestMinutes</c>.</summary>
+    public DateTime? LastEmailAt { get; set; }
+}
+
+public partial class Notification
+{
+    /// <summary>True while this notification still has to be emailed (immediately, or in the user's next digest).</summary>
+    public bool EmailPending { get; set; }
+    /// <summary>Markdown source of the comment or description behind it (shortened), shown in the email. Never rendered as raw HTML.</summary>
+    [MaxLength(1200)] public string? Excerpt { get; set; }
+}
+
+public partial class Watch
+{
+    /// <summary>
+    /// Muted: the user stays a watcher, so auto-watching on comment, assignment or review doesn't bring the notifications
+    /// back, but gets no watcher notifications. Direct ones (assigned, mentioned, review requested) still arrive.
+    /// </summary>
+    public bool Muted { get; set; }
+}
+
+// ----- Admin, 2FA & CI secrets -----
+
+public partial class User
+{
+    /// <summary>
+    /// Set when a site admin deactivates the account (it is then locked indefinitely and its access tokens are revoked).
+    /// Cleared when an admin unlocks it.
+    /// </summary>
+    public DateTime? DeactivatedAt { get; set; }
+}
+
+/// <summary>
+/// A CI secret variable, injected into pipeline step containers as an environment variable. Belongs to a project
+/// (<see cref="RepositoryId"/> null: every repository in it) or to one repository, which overrides a project variable
+/// with the same name. The value is encrypted with ASP.NET Core Data Protection and never shown again after saving.
+/// </summary>
+public class CiVariable
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public int? RepositoryId { get; set; }
+    /// <summary>Environment variable name: letters, digits and underscores, not starting with a digit.</summary>
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    /// <summary>The value, protected by <see cref="GitBench.Services.Ci.CiVariableService"/> (Data Protection).</summary>
+    [Required] public string EncryptedValue { get; set; } = "";
+    /// <summary>Only exposed to pipelines whose branch is protected (see <see cref="GitBench.Services.BranchProtectionService"/>).</summary>
+    public bool IsProtected { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public int? UpdatedById { get; set; }
+    public User? UpdatedBy { get; set; }
+}
+
+// ----- Releases -----
+
+/// <summary>
+/// A release of a repository: a git tag plus a title, Markdown notes and downloadable assets. Drafts are visible only to
+/// people who can push (Developer+); publishing sets <see cref="PublishedAt"/> once. The tag must exist in the repository
+/// (it can be created from a branch when the release is created) and can't be deleted while a release uses it.
+/// </summary>
+public class Release
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    /// <summary>Short tag name (without <c>refs/tags/</c>). Unique per repository.</summary>
+    [Required, MaxLength(250)] public string TagName { get; set; } = "";
+    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    /// <summary>Markdown.</summary>
+    public string? Notes { get; set; }
+    public bool IsPrerelease { get; set; }
+    public bool IsDraft { get; set; }
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>When the release was first published (stays set if it is turned back into a draft).</summary>
+    public DateTime? PublishedAt { get; set; }
+    public List<ReleaseAsset> Assets { get; set; } = [];
+}
+
+/// <summary>
+/// A file attached to a release. Stored like issue attachments (<see cref="GitBench.Services.Attachments.AttachmentStorage"/>,
+/// random 32-hex name, never the user's filename) but in its own table.
+/// </summary>
+public class ReleaseAsset
+{
+    public int Id { get; set; }
+    public int ReleaseId { get; set; }
+    public Release Release { get; set; } = null!;
+    [Required, MaxLength(32)] public string StoredName { get; set; } = "";
+    [Required, MaxLength(255)] public string FileName { get; set; } = "";
+    [Required, MaxLength(100)] public string ContentType { get; set; } = "application/octet-stream";
+    public long Size { get; set; }
+    [Required, MaxLength(64)] public string Sha256 { get; set; } = "";
+    public int UploaderId { get; set; }
+    public User Uploader { get; set; } = null!;
+    public int DownloadCount { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

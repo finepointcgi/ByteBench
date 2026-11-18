@@ -1,0 +1,27 @@
+/* Email notifications, preferences, mute and the Markdown editor's @mention / issue autocomplete. Colours come from the theme variables. */
+
+/* ----- Autocomplete dropdown (wwwroot/js/mention-autocomplete.js; appended to <body>, position: fixed) ----- */
+.gb-ac {
+    position: fixed; z-index: 1080; min-width: 240px; max-width: min(420px, calc(100vw - 16px)); max-height: 280px; overflow-y: auto;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18); padding: 4px; font-size: 13px;
+}
+.gb-ac-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.gb-ac-item.active { background: var(--accent-soft); color: var(--accent); }
+.gb-ac-avatar, .gb-ac-icon {
+    flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #fff; background: var(--muted);
+}
+.gb-ac-icon { border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+.gb-ac-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.gb-ac-detail { flex: none; color: var(--muted); font-size: 12px; }
+.gb-ac-item.active .gb-ac-detail { color: inherit; }
+
+/* ----- Watch / Mute ----- */
+.watch-group { display: inline-flex; gap: 4px; }
+.mute-btn.muted { border-color: var(--muted); background: var(--bg); color: var(--muted); }
+
+/* ----- Preferences ----- */
+.notif-prefs-table th, .notif-prefs-table td { background: transparent; color: var(--text); border-color: var(--border); }
+.notif-prefs-table td { width: 110px; }
+.notif-prefs-link { border-top: 1px solid var(--border); font-weight: 400; font-size: 12px; }

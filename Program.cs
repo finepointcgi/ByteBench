@@ -7,6 +7,8 @@ using GitBench.Services.Ci;
 using GitBench.Services.Webhooks;
 using GitBench.Api;
 using GitBench.Services.Audit;
+using GitBench.Services.Releases;
+using GitBench.Services.Hosting;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +16,7 @@ using MudBlazor.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddGitBenchHosting(); // data protection keys, forwarded headers, cookies, rate limits, health checks
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -79,34 +82,46 @@ builder.Services.AddScoped<SavedFilterService>();
 builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndown & velocity
 builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
 builder.Services.AddScoped<WorkflowService>();
+GitBench.Services.Email.EmailServiceCollectionExtensions.AddEmail(builder.Services, builder.Configuration, builder.Environment); // email, preferences, autocomplete
+// ----- Admin, 2FA & CI secrets -----
+builder.Services.AddScoped<AdminUserService>(); // /admin/users
+builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Protection)
+// Re-check cookies against the security stamp every minute, so an admin's "sign out" or lock takes effect quickly.
+builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
+builder.Services.AddReleases(); // tags, releases, assets, source archives
 
 var app = builder.Build();
+app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
 
 using (var scope = app.Services.CreateScope())
 {
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
     using var db = factory.CreateDbContext();
-    SeedData.Initialize(db);
+    if (ProductionSetup.SeedDemoData(app)) SeedData.Initialize(db); // demo users, projects and issues (Development by default)
+    else db.Database.Migrate();
+    ProductionSetup.PromoteBootstrapAdmins(db, app.Configuration, app.Logger);
     RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     NotificationService.Initialize(db);
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     SprintSeeder.Initialize(db);
     WorkflowService.EnsureDefaults(db); // default workflow for projects without one; maps issues to workflow statuses
+    scope.ServiceProvider.GetRequiredService<WebhookSecrets>().EncryptLegacy(db); // webhook secrets stored before encryption
 }
 
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
 }
+app.UseGitBenchHttps(); // HSTS + HTTPS redirection outside Development
+app.UseGitBenchSecurityHeaders(); // CSP, X-Frame-Options, Referrer-Policy, …
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
 
 // Explicit (rather than the implicit ones WebApplication adds first) so they also run when
 // UseStatusCodePagesWithReExecute/UseExceptionHandler re-execute into /not-found or /Error,
 // which carry authorization metadata ([AllowAnonymous]).
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter(); // after authentication, so API limits can key on the signed-in user
 
 app.UseAntiforgery();
 
@@ -117,6 +132,9 @@ app.MapCiEndpoints();
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 app.MapAuditExport();
+GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
+app.MapReleases();
+app.MapGitBenchHealth(); // /health/live, /health/ready
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
@@ -129,3 +147,6 @@ app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit
 });
 
 app.Run();
+
+// Lets the integration tests (tests/GitBench.Tests) use WebApplicationFactory<Program>.
+public partial class Program;

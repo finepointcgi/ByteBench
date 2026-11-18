@@ -1,0 +1,73 @@
+@using GitBench.Services.Git
+@using GitBench.Services.Releases
+@using GitBench.Services.Attachments
+@* One release: title, badges, author/date, notes, assets and source archives. Used by the list and the detail page. *@
+<article class="rel-card @(Release.IsDraft ? "draft" : "")">
+    <header class="rel-card-head">
+        <div class="rel-card-title">
+            @if (Link)
+            {
+                <h2><a href="@ReleaseUrls.Detail(Repo, Release.Id)">@Release.Title</a></h2>
+            }
+            else
+            {
+                <h2>@Release.Title</h2>
+            }
+            @if (Release.IsDraft) { <span class="rel-pill draft">Draft</span> }
+            else if (Release.IsPrerelease) { <span class="rel-pill pre">Pre-release</span> }
+            else if (IsLatest) { <span class="rel-pill latest">Latest</span> }
+        </div>
+        <div class="rel-card-meta muted small">
+            <a class="mono" href="@RepoUrls.Source(Repo, Release.TagName)">🏷 @Release.TagName</a>
+            @if (Release.Author != null) { <span> · <b>@Release.Author.DisplayName</b></span> }
+            <span> · @(Release.IsDraft ? $"drafted {Display.Ago(Release.CreatedAt)}" : $"released {Display.Ago(Release.PublishedAt ?? Release.CreatedAt)}")</span>
+            @ChildContent
+        </div>
+    </header>
+    @if (!string.IsNullOrWhiteSpace(Release.Notes))
+    {
+        <div class="markdown rel-notes @(Collapse ? "collapsed" : "")">@Display.Markdown(Release.Notes)</div>
+    }
+    else
+    {
+        <div class="muted small rel-notes">No release notes.</div>
+    }
+    <div class="rel-assets">
+        <div class="rel-assets-head">Assets <span class="count">@(Release.Assets.Count + 2)</span></div>
+        @foreach (var a in Release.Assets.OrderBy(a => a.FileName, StringComparer.OrdinalIgnoreCase))
+        {
+            <div class="rel-asset" @key="a.Id">
+                <span aria-hidden="true">@AttachmentFormat.Icon(a.FileName, a.ContentType)</span>
+                <a href="@ReleaseUrls.Asset(a)" download="@a.FileName">@a.FileName</a>
+                <span class="muted small ms-auto">@AttachmentFormat.Size(a.Size)</span>
+                <span class="muted small" title="Downloads">⬇ @a.DownloadCount</span>
+                @if (CanDeleteAssets)
+                {
+                    <button class="btn btn-sm btn-link text-danger p-0" title="Delete asset" @onclick="() => OnDeleteAsset.InvokeAsync(a)">✕</button>
+                }
+            </div>
+        }
+        <div class="rel-asset">
+            <span aria-hidden="true">🗜️</span>
+            <a href="@ReleaseUrls.Archive(Repo, Release.TagName, ArchiveFormat.Zip)" download>Source code (zip)</a>
+        </div>
+        <div class="rel-asset">
+            <span aria-hidden="true">🗜️</span>
+            <a href="@ReleaseUrls.Archive(Repo, Release.TagName, ArchiveFormat.TarGz)" download>Source code (tar.gz)</a>
+        </div>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter, EditorRequired] public Release Release { get; set; } = null!;
+    [Parameter] public bool IsLatest { get; set; }
+    /// <summary>Title links to the detail page.</summary>
+    [Parameter] public bool Link { get; set; }
+    /// <summary>Clip long notes (list page).</summary>
+    [Parameter] public bool Collapse { get; set; }
+    [Parameter] public bool CanDeleteAssets { get; set; }
+    [Parameter] public EventCallback<ReleaseAsset> OnDeleteAsset { get; set; }
+    /// <summary>Extra items for the meta line (e.g. action buttons).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

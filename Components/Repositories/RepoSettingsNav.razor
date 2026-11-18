@@ -6,13 +6,15 @@
                          Class="@ItemClass("general")" aria-current="@(Active == "general" ? "page" : null)">General</MudListItem>
             <MudListItem T="string" Href="@RepoUrls.BranchProtection(Repo)" Icon="@Icons.Material.Outlined.Lock"
                          Class="@ItemClass("branches")" aria-current="@(Active == "branches" ? "page" : null)">Branch protection</MudListItem>
+            <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/ci-variables")" Icon="@Icons.Material.Outlined.Key"
+                         Class="@ItemClass("ci-variables")" aria-current="@(Active == "ci-variables" ? "page" : null)">CI variables</MudListItem>
         </MudList>
     </MudPaper>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>The current settings page, "general" or "branches".</summary>
+    /// <summary>The current settings page, "general", "branches" or "ci-variables".</summary>
     [Parameter] public string Active { get; set; } = "general";
 
     private string ItemClass(string page) => Active == page ? "settings-nav-item settings-nav-active" : "settings-nav-item";

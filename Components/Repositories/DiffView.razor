@@ -95,7 +95,7 @@ else
                                                 @if (composingHere)
                                                 {
                                                     <div class="inline-compose">
-                                                        <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Leave an inline comment…" />
+                                                        <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Leave an inline comment…" ProjectId="Repo?.ProjectId" />
                                                         <div class="mt-2 d-flex gap-2">
                                                             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(draft) || saving)" OnClick="Submit">Comment</MudButton>
                                                             <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => composing = null">Cancel</MudButton>
