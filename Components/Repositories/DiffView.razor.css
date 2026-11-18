@@ -10,6 +10,7 @@
 }
 ::deep .diff-chevron { color: var(--muted); }
 .diff-path { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.diff-owners { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-comment-count { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); }
 .diff-stat { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; flex-shrink: 0; }
 .diff-status {
@@ -40,8 +41,6 @@
 /* Inline comment threads */
 .diff-thread-row > td { padding: 0; background: var(--mud-palette-background-gray); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .diff-thread { padding: 10px 14px 10px 110px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13.5px; line-height: 1.5; white-space: normal; }
-.inline-comment { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; max-width: 760px; }
-.inline-comment-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .inline-compose { max-width: 760px; }
 
 @media (max-width: 1000px) {

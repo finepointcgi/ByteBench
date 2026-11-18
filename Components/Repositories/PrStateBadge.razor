@@ -1,20 +1,25 @@
-@* Pull request state chip: Open (blue), Merged (green), Declined (red). *@
+@* Pull request state chip: Open (blue), Draft (grey), Merged (green), Declined (red). *@
 <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@ChipColor" Icon="@ChipIcon"
-         Class="@("pr-state ma-0" + (Compact ? " pr-state-compact" : ""))">@State</MudChip>
+         Class="@("pr-state ma-0" + (Compact ? " pr-state-compact" : ""))">@Label</MudChip>
 
 @code {
     [Parameter] public PullRequestState State { get; set; }
+    /// <summary>An open draft shows as "Draft".</summary>
+    [Parameter] public bool Draft { get; set; }
     /// <summary>Smaller chip without an icon, for dense lists.</summary>
     [Parameter] public bool Compact { get; set; }
 
-    private Color ChipColor => State switch
+    private bool IsDraft => Draft && State == PullRequestState.Open;
+    private string Label => IsDraft ? "Draft" : State.ToString();
+
+    private Color ChipColor => IsDraft ? Color.Default : State switch
     {
         PullRequestState.Open => Color.Info,
         PullRequestState.Merged => Color.Success,
         _ => Color.Error,
     };
 
-    private string? ChipIcon => Compact ? null : State switch
+    private string? ChipIcon => Compact ? null : IsDraft ? Icons.Material.Outlined.EditNote : State switch
     {
         PullRequestState.Open => Icons.Material.Outlined.MergeType,
         PullRequestState.Merged => Icons.Material.Filled.Merge,

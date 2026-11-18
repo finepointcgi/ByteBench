@@ -294,6 +294,12 @@ namespace GitBench.Data.Migrations
                     b.Property<bool>("RequireChecksToPass")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("RequireCodeOwnerApproval")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("RequireThreadResolution")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("RequiredApprovals")
                         .HasColumnType("INTEGER");
 
@@ -1078,9 +1084,15 @@ namespace GitBench.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsDraft")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("MergeCommitSha")
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("MergeStrategy")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("MergedById")
                         .HasColumnType("INTEGER");
@@ -1166,11 +1178,19 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AppliedCommitSha")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("AuthorId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Body")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(40)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1183,20 +1203,42 @@ namespace GitBench.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsResolved")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("Line")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("LineText")
+                        .HasColumnType("TEXT");
 
                     b.Property<int?>("OldLine")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("ParentId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ResolvedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("StartLine")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
                     b.HasIndex("AuthorId");
 
+                    b.HasIndex("ParentId");
+
                     b.HasIndex("PullRequestId");
+
+                    b.HasIndex("ResolvedById");
 
                     b.ToTable("PullRequestComments");
                 });
@@ -1419,6 +1461,9 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("AllowedMergeStrategies")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("ArchivedAt")
                         .HasColumnType("TEXT");
 
@@ -1429,6 +1474,9 @@ namespace GitBench.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("DefaultMergeStrategy")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
@@ -2496,13 +2544,25 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.PullRequestComment", null)
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("GitBench.Data.PullRequest", null)
                         .WithMany("Comments")
                         .HasForeignKey("PullRequestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.User", "ResolvedBy")
+                        .WithMany()
+                        .HasForeignKey("ResolvedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Author");
+
+                    b.Navigation("ResolvedBy");
                 });
 
             modelBuilder.Entity("GitBench.Data.PullRequestReview", b =>

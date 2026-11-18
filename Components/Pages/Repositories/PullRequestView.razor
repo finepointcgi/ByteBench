@@ -3,6 +3,7 @@
 @inject RepositoryService Repos
 @inject CurrentUser Me
 @inject NavigationManager Nav
+@inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 @inject NotificationService Notifications
 @inject LiveEvents Live
@@ -10,6 +11,7 @@
 @inject ProjectAccess Access
 @inject MergeGate MergeGateSvc
 @inject RepositorySettingsService RepoSettings
+@inject CodeOwnersService CodeOwners
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -46,7 +48,7 @@ else if (pr != null)
         }
     </div>
     <div class="pr-subhead">
-        <PrStateBadge State="pr.State" />
+        <PrStateBadge State="pr.State" Draft="pr.IsDraft" />
         <span class="muted">
             <UserLink User="pr.Author" />@(pr.State == PullRequestState.Merged ? "" : " ")
             @if (pr.State == PullRequestState.Merged)
@@ -64,6 +66,18 @@ else if (pr != null)
             <a class="branch-pill" href="@RepoUrls.Source(repo, pr.TargetBranch)">@pr.TargetBranch</a>
         </span>
         <PipelineBadge Repo="repo" Branch="@pr.SourceBranch" Sha="@(pr.State == PullRequestState.Open ? null : pr.SourceCommitSha)" />
+        @if (threads.Unresolved > 0)
+        {
+            <a href="@TabUrl("files")" class="pr-threads-link" title="Inline comment threads that aren't resolved yet">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Icon="@Icons.Material.Outlined.Forum" Class="ma-0">
+                    @threads.Unresolved unresolved thread@(threads.Unresolved == 1 ? "" : "s")
+                </MudChip>
+            </a>
+        }
+        else if (pr.Comments.Any(c => c.IsThreadRoot))
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Icon="@Icons.Material.Outlined.Forum" Class="ma-0">All threads resolved</MudChip>
+        }
     </div>
 
     <nav class="gb-tabs" aria-label="Pull request">
@@ -89,8 +103,17 @@ else if (pr != null)
                 @if (changes == null) { <div class="empty">The changes for this pull request are no longer available.</div> }
                 else
                 {
+                    @if (owners.Warnings.Count > 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                            <b>CODEOWNERS</b> (<span class="mono">@owners.FilePath</span>):
+                            @foreach (var w in owners.Warnings) { <div class="small">@w</div> }
+                        </MudAlert>
+                    }
                     <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="@perms.Can(Permission.Comment)" OnComment="AddInlineComment"
-                              Repo="repo" ViewRef="@changes.HeadSha" />
+                              Repo="repo" ViewRef="@changes.HeadSha" Outdated="threads.Outdated"
+                              CanResolve="@(root => PullRequestService.CanResolve(pr, root, Me.Id, perms))" OnResolve="ResolveThread"
+                              CanApplySuggestions="canApply" OnApplySuggestions="ApplySuggestions" FileOwners="owners.Owners" />
                 }
             }
             else
@@ -138,11 +161,13 @@ else if (pr != null)
                                     <span class="muted small">
                                         @if (c.IsInline)
                                         {
-                                            <span>commented on <a href="@TabUrl("files")" class="mono">@c.FilePath:@(c.Line ?? c.OldLine)</a>&nbsp;</span>
+                                            <span>@(c.ParentId != null ? "replied on" : "commented on") <a href="@TabUrl("files")" class="mono">@c.FilePath:@(c.Line ?? c.OldLine)</a>&nbsp;</span>
                                         }
                                         else { <span>commented&nbsp;</span> }
                                         @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")
                                     </span>
+                                    @if (c.IsThreadRoot && c.IsResolved) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Class="ma-0">Resolved</MudChip> }
+                                    @if (c.IsThreadRoot && threads.Outdated.Contains(c.Id)) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="ma-0">Outdated</MudChip> }
                                     @if (c.AuthorId == Me.Id && perms.Can(Permission.Comment) && editingCommentId != c.Id)
                                     {
                                         <span class="ml-auto d-flex">
@@ -205,6 +230,17 @@ else if (pr != null)
                 <span class="gb-section-label">Merge</span>
                 @if (pr.State == PullRequestState.Open)
                 {
+                    @if (pr.IsDraft)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="merge-status mb-2" Icon="@Icons.Material.Outlined.EditNote">
+                            This is a draft. It can't be merged, and reviewers aren't notified until it's ready for review.
+                        </MudAlert>
+                        @if (CanEditPr)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Small" Class="mb-3" Disabled="@busy"
+                                       StartIcon="@Icons.Material.Outlined.RateReview" OnClick="() => SetDraft(false)">Ready for review</MudButton>
+                        }
+                    }
                     <MudAlert Severity="@MergeSeverity" Dense="true" Variant="Variant.Outlined" Class="merge-status">@MergeText</MudAlert>
                     @if (mergeStatus?.Check == MergeCheck.Conflicts && mergeStatus.ConflictPaths.Count > 0)
                     {
@@ -217,9 +253,21 @@ else if (pr != null)
                     {
                     <MudSelect T="string" @bind-Value="strategy" Disabled="@(!CanMerge)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
                                OuterClass="mt-3" aria-label="Merge strategy">
-                        <MudSelectItem T="string" Value="@("merge")">Merge commit</MudSelectItem>
-                        <MudSelectItem T="string" Value="@("ff")">Fast-forward if possible</MudSelectItem>
+                        @foreach (var s in MergeStrategySettings.AllowedList(repo))
+                        {
+                            <MudSelectItem T="string" Value="@s.ToString().ToLowerInvariant()">@MergeStrategySettings.Label(s)</MudSelectItem>
+                            @if (s == MergeStrategy.Merge)
+                            {
+                                <MudSelectItem T="string" Value="@("ff")">Fast-forward if possible</MudSelectItem>
+                            }
+                        }
                     </MudSelect>
+                    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">@MergeStrategySettings.Describe(SelectedStrategy)</MudText>
+                    @if (SelectedStrategy == MergeStrategy.Squash && CanMerge)
+                    {
+                        <MudTextField T="string" @bind-Value="squashMessage" Label="Commit message" Lines="5" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="mt-2" HelperText="Co-authored-by trailers for the other commit authors are added automatically." />
+                    }
                     <MudCheckBox T="bool" @bind-Value="deleteSource" Disabled="@(!CanMerge || pr.SourceBranch == repo.DefaultBranch)" Size="Size.Small" Dense="true"
                                  Color="Color.Primary" Class="mt-1">
                         <span class="small">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
@@ -235,12 +283,18 @@ else if (pr != null)
                     {
                         <MudButton Variant="Variant.Outlined" Color="Color.Error" FullWidth="true" Size="Size.Small" Class="mt-2"
                                    Disabled="@busy" OnClick="Decline">Decline</MudButton>
+                        @if (!pr.IsDraft)
+                        {
+                            <MudButton Variant="Variant.Text" FullWidth="true" Size="Size.Small" Class="mt-1" StartIcon="@Icons.Material.Outlined.EditNote"
+                                       Disabled="@busy" OnClick="() => SetDraft(true)">Convert to draft</MudButton>
+                        }
                     }
                 }
                 else if (pr.State == PullRequestState.Merged)
                 {
                     <MudAlert Severity="Severity.Success" Dense="true" Variant="Variant.Outlined" Class="merge-status" Icon="@Icons.Material.Filled.Merge">
-                        Merged into <span class="mono">@pr.TargetBranch</span> by <UserLink User="pr.MergedBy" />
+                        @(pr.MergeStrategy switch { MergeStrategy.Squash => "Squashed and merged", MergeStrategy.Rebase => "Rebased and merged", _ => "Merged" })
+                        into <span class="mono">@pr.TargetBranch</span> by <UserLink User="pr.MergedBy" />
                         @if (pr.MergeCommitSha != null)
                         {
                             <div class="mt-1"><a class="sha-pill" href="@RepoUrls.Commit(repo, pr.MergeCommitSha)">@pr.MergeCommitSha[..7]</a></div>
@@ -289,6 +343,29 @@ else if (pr != null)
                 }
             </div>
 
+            @if (owners.FilePath != null)
+            {
+                <div class="gb-side-field">
+                    <span class="gb-section-label">Code owners</span>
+                    @if (!owners.Owners.Any())
+                    {
+                        <div class="mud-text-secondary small">No changed file has owners in <span class="mono">@owners.FilePath</span>.</div>
+                    }
+                    else
+                    {
+                        <div class="small">@string.Join(", ", owners.Owners.Values.SelectMany(o => o).DistinctBy(u => u.Id).Select(u => u.DisplayName))</div>
+                        <div class="mud-text-secondary small">Own @owners.Owners.Count of the changed files (<a href="@TabUrl("files")">see files</a>).</div>
+                    }
+                    @if (owners.Warnings.Count > 0)
+                    {
+                        <div class="small mt-1 pr-owner-warning">
+                            <MudIcon Icon="@Icons.Material.Outlined.WarningAmber" Size="Size.Small" Color="Color.Warning" />
+                            @owners.Warnings.Count CODEOWNERS warning@(owners.Warnings.Count == 1 ? "" : "s"): @owners.Warnings[0]
+                        </div>
+                    }
+                </div>
+            }
+
             <AiReviewPanel PullRequest="pr" OnReviewFinished="() => Reload(full: false)" />
 
             <div class="gb-side-field">
@@ -333,6 +410,11 @@ else if (pr != null)
     private Dictionary<string, User> usersByEmail = [];
     private bool notFound, busy, editingTitle, editingDesc, deleteSource;
     private string strategy = "merge";
+    private string? squashMessage;
+    private ThreadSummary threads = new(new HashSet<int>(), 0);
+    private CodeOwnersReport owners = CodeOwnersReport.None;
+    private bool canApply;
+    private MergeStrategy SelectedStrategy => strategy == "ff" ? MergeStrategy.Merge : MergeStrategySettings.Parse(strategy) ?? MergeStrategy.Merge;
     private string titleDraft = "";
     private string? descDraft, newComment, commentEditDraft, actionError;
     private int? editingCommentId;
@@ -404,7 +486,13 @@ else if (pr != null)
             changes = await PRs.GetChangesAsync(pr);
             mergeStatus = pr.State == PullRequestState.Open ? await PRs.CheckMergeAsync(pr) : null;
             linked = await PRs.GetLinkedIssuesAsync(pr, changes?.Commits);
+            owners = changes == null ? CodeOwnersReport.None
+                : await CodeOwners.ForPullRequestAsync(pr, changes.Files.SelectMany(f => f.OldPath != null ? new[] { f.Path, f.OldPath } : [f.Path]));
+            canApply = await PRs.CanApplySuggestionsAsync(pr, Me.Id);
+            strategy = MergeStrategySettings.Default(pr.Repository).ToString().ToLowerInvariant();
+            squashMessage = PullRequestService.DefaultSquashMessage(pr, changes?.Commits);
         }
+        threads = await PRs.ThreadsAsync(pr, changes?.HeadSha);
     }
 
     // ----- Watching -----
@@ -463,7 +551,8 @@ else if (pr != null)
 
     private Task Merge() => Run(async () =>
     {
-        var outcome = await PRs.MergeAsync(pr!.Id, Me.User!, deleteSource, strategy == "ff");
+        var outcome = await PRs.MergeAsync(pr!.Id, Me.User!, new MergeRequest(SelectedStrategy, deleteSource, strategy == "ff",
+            SelectedStrategy == MergeStrategy.Squash ? squashMessage : null));
         if (!outcome.Success)
         {
             actionError = outcome.Error;
@@ -496,7 +585,18 @@ else if (pr != null)
     }
 
     private Task AddInlineComment(DiffView.InlineCommentRequest req) =>
-        Run(() => PRs.AddCommentAsync(pr!.Id, Me.Id, req.Body, req.Path, req.Line, req.OldLine), full: false);
+        Run(() => PRs.AddCommentAsync(pr!.Id, Me.Id, req.Body, req.Path, req.Line, req.OldLine, req.ParentId), full: false);
+
+    private Task ResolveThread((int CommentId, bool Resolved) req) =>
+        Run(() => PRs.SetThreadResolvedAsync(req.CommentId, Me.Id, req.Resolved), full: false);
+
+    private Task SetDraft(bool draft) => Run(() => PRs.SetDraftAsync(pr!.Id, Me.Id, draft), full: false);
+
+    private Task ApplySuggestions(IReadOnlyList<int> ids) => Run(async () =>
+    {
+        var sha = await PRs.ApplySuggestionsAsync(pr!.Id, Me.User!, ids.ToList());
+        Snackbar.Add($"Committed {(ids.Count == 1 ? "the suggestion" : ids.Count + " suggestions")} to {pr.SourceBranch} as {sha[..7]}.", Severity.Success);
+    }, full: true);
 
     private async Task SaveCommentEdit(PullRequestComment c)
     {

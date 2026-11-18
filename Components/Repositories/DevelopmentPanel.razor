@@ -22,7 +22,7 @@
                 @foreach (var pr in info.PullRequests)
                 {
                     <a class="dev-item" href="@RepoUrls.PullRequest(pr)" title="@pr.Title">
-                        <PrStateBadge State="pr.State" Compact="true" />
+                        <PrStateBadge State="pr.State" Draft="pr.IsDraft" Compact="true" />
                         <span class="dev-text">@pr.Repository.Slug#@pr.Number @pr.Title</span>
                     </a>
                 }

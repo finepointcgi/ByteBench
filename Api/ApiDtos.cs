@@ -57,10 +57,12 @@ public record ReviewDto(UserDto User, ReviewState State, DateTimeOffset CreatedA
 public record PullRequestDto(int Id, int Number, string Repository, string Title, string? Description,
     string SourceBranch, string TargetBranch, PullRequestState State, UserDto Author, UserDto? MergedBy,
     string? MergeCommitSha, IReadOnlyList<ReviewDto> Reviews,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl,
+    bool IsDraft = false, MergeStrategy? MergeStrategy = null);
 
 public record PullRequestCommentDto(int Id, string Body, UserDto Author, string? Path, int? Line, int? OldLine,
-    DateTimeOffset CreatedAt, DateTimeOffset? EditedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset? EditedAt,
+    int? ParentId = null, int? StartLine = null, bool Resolved = false, string? CommitSha = null, bool HasSuggestion = false, string? AppliedCommitSha = null);
 
 public record MergeResultDto(bool Merged, string? MergeCommitSha, bool FastForwarded, IReadOnlyList<string> ConflictPaths, PullRequestDto PullRequest);
 
@@ -80,11 +82,27 @@ public partial record UpdateIssueRequest(string? Title = null, string? Descripti
 
 public record AddCommentRequest(string Body);
 
-public record CreatePullRequestRequest(string Title, string SourceBranch, string TargetBranch, string? Description = null);
+public record CreatePullRequestRequest(string Title, string SourceBranch, string TargetBranch, string? Description = null, bool Draft = false);
 
-public record MergePullRequestRequest(bool DeleteSourceBranch = false, bool FastForward = false);
+/// <param name="Strategy">"merge", "squash" or "rebase" (default: the repository's default strategy).</param>
+/// <param name="CommitMessage">Squash only: the commit message (default: title, number and commit list).</param>
+public record MergePullRequestRequest(bool DeleteSourceBranch = false, bool FastForward = false, string? Strategy = null, string? CommitMessage = null);
 
-public record AddPullRequestCommentRequest(string Body, string? Path = null, int? Line = null, int? OldLine = null);
+/// <param name="ParentId">Reply to this comment's thread (path and lines are taken from the thread).</param>
+/// <param name="StartLine">First line of a multi-line inline comment (line is the last).</param>
+public record AddPullRequestCommentRequest(string Body, string? Path = null, int? Line = null, int? OldLine = null, int? ParentId = null, int? StartLine = null);
+
+/// <summary>PATCH semantics: only fields present in the JSON change.</summary>
+public record UpdatePullRequestRequest(string? Title = null, string? Description = null, bool? Draft = null);
+
+public record ApplySuggestionsRequest(IReadOnlyList<int> CommentIds);
+
+public record AppliedSuggestionsDto(string CommitSha, IReadOnlyList<int> CommentIds);
+
+public record CompareFileDto(string Path, string? OldPath, string Status, int Additions, int Deletions);
+
+public record CompareDto(string Base, string Head, string BaseSha, string HeadSha, string? MergeBaseSha, int Ahead, int Behind,
+    IReadOnlyList<CommitDto> Commits, IReadOnlyList<CompareFileDto> Files);
 
 /// <summary>Mapping from entities and git snapshots to DTOs, plus the JSON settings shared by the API and webhooks.</summary>
 public static class Dto
@@ -141,8 +159,9 @@ public static class Dto
         p.Id, p.Number, p.Repository.Slug, p.Title, p.Description, p.SourceBranch, p.TargetBranch, p.State,
         User(p.Author), UserOrNull(p.MergedBy), p.MergeCommitSha,
         p.Reviews.OrderBy(r => r.CreatedAt).Select(r => new ReviewDto(User(r.User), r.State, Utc(r.CreatedAt))).ToList(),
-        Utc(p.CreatedAt), Utc(p.UpdatedAt), Utc(p.ClosedAt), baseUrl + RepoUrls.PullRequest(p));
+        Utc(p.CreatedAt), Utc(p.UpdatedAt), Utc(p.ClosedAt), baseUrl + RepoUrls.PullRequest(p), p.IsDraft, p.MergeStrategy);
 
     public static PullRequestCommentDto PullRequestComment(PullRequestComment c) =>
-        new(c.Id, c.Body, User(c.Author), c.FilePath, c.Line, c.OldLine, Utc(c.CreatedAt), Utc(c.EditedAt));
+        new(c.Id, c.Body, User(c.Author), c.FilePath, c.Line, c.OldLine, Utc(c.CreatedAt), Utc(c.EditedAt),
+            c.ParentId, c.StartLine, c.IsResolved, c.CommitSha, GitBench.Services.Suggestions.Has(c.Body), c.AppliedCommitSha);
 }

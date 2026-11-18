@@ -29,3 +29,5 @@
 .linked-issue:hover { text-decoration: none; color: var(--accent); }
 .linked-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+.pr-threads-link { text-decoration: none; display: inline-flex; }
+.pr-owner-warning { display: flex; gap: 4px; align-items: flex-start; color: var(--mud-palette-text-secondary); }

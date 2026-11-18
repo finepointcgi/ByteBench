@@ -80,6 +80,7 @@ public static class ApiEndpoints
         api.MapIssueEndpoints();
         api.MapLinkEndpoints();
         api.MapRepoEndpoints();
+        api.MapPullRequestFeatureEndpoints(); // drafts, threads, suggestions, compare
         api.MapAttachmentEndpoints();
         api.MapSprintEndpoints();
         api.MapReleaseEndpoints();

@@ -1,0 +1,145 @@
+@* One inline comment thread in a diff: the first comment, its replies, resolve/unresolve, reply box and suggested changes. *@
+
+<div class="@("diff-thread-box" + (Root.IsResolved ? " resolved" : ""))">
+    <div class="thread-bar">
+        @if (Root.IsResolved)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Icon="@Icons.Material.Filled.CheckCircle" Class="ma-0">Resolved</MudChip>
+            @if (Root.ResolvedBy != null) { <span class="mud-text-secondary small">by @Root.ResolvedBy.DisplayName</span> }
+        }
+        @if (Outdated)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Icon="@Icons.Material.Outlined.History" Class="ma-0"
+                     title="The commented line changed in a later push">Outdated</MudChip>
+        }
+        @if (Root.IsResolved && !expanded)
+        {
+            <span class="mud-text-secondary small">@(Replies.Count + 1) comment@(Replies.Count == 0 ? "" : "s") from @Root.Author.DisplayName@(Replies.Count > 0 ? " and others" : "")</span>
+        }
+        <span class="thread-actions">
+            @if (Root.IsResolved)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => expanded = !expanded"
+                           StartIcon="@(expanded ? Icons.Material.Filled.UnfoldLess : Icons.Material.Filled.UnfoldMore)">@(expanded ? "Hide" : "Show")</MudButton>
+            }
+            @if (CanResolve)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="busy" OnClick="ToggleResolved"
+                           StartIcon="@(Root.IsResolved ? Icons.Material.Outlined.Replay : Icons.Material.Filled.Check)">@(Root.IsResolved ? "Unresolve" : "Resolve")</MudButton>
+            }
+        </span>
+    </div>
+
+    @if (!Root.IsResolved || expanded)
+    {
+        @foreach (var c in Comments)
+        {
+            var suggestion = Suggestions.Parse(c.Body);
+            <div class="inline-comment" @key="c.Id">
+                <div class="inline-comment-head">
+                    <Avatar User="c.Author" Size="20" /> <b>@c.Author.DisplayName</b> <AiBadge User="c.Author" />
+                    <span class="mud-text-secondary small">@Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
+                </div>
+                @if (suggestion == null)
+                {
+                    <div class="markdown">@Display.Markdown(c.Body)</div>
+                }
+                else
+                {
+                    @if (suggestion.Before.Length > 0) { <div class="markdown">@Display.Markdown(suggestion.Before)</div> }
+                    <div class="suggestion">
+                        <div class="suggestion-head">
+                            <MudIcon Icon="@Icons.Material.Outlined.Difference" Size="Size.Small" /> Suggested change
+                            @if (c.AppliedCommitSha != null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0 ml-2">Applied in <span class="mono">&nbsp;@c.AppliedCommitSha[..7]</span></MudChip>
+                            }
+                            else if (CanApply && c.LineText != null && c.Line != null && !Outdated)
+                            {
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="ml-2" Disabled="busy"
+                                           StartIcon="@Icons.Material.Filled.Check" OnClick="() => Apply(c)">Apply suggestion</MudButton>
+                            }
+                            else if (Outdated && c.AppliedCommitSha == null)
+                            {
+                                <span class="mud-text-secondary small ml-2">Outdated: can't be applied</span>
+                            }
+                        </div>
+                        <table class="suggestion-diff mono">
+                            @foreach (var old in (c.LineText ?? "").Split('\n'))
+                            {
+                                <tr class="sg-del"><td class="sg-sign">-</td><td>@old</td></tr>
+                            }
+                            @foreach (var line in suggestion.Lines)
+                            {
+                                <tr class="sg-add"><td class="sg-sign">+</td><td>@line</td></tr>
+                            }
+                        </table>
+                    </div>
+                    @if (suggestion.After.Length > 0) { <div class="markdown">@Display.Markdown(suggestion.After)</div> }
+                }
+            </div>
+        }
+
+        @if (replying)
+        {
+            <div class="thread-compose">
+                <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Reply…" ProjectId="ProjectId" />
+                <div class="mt-2 d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(draft) || busy)" OnClick="SubmitReply">Reply</MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => replying = false">Cancel</MudButton>
+                </div>
+            </div>
+        }
+        else if (CanComment)
+        {
+            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Reply" OnClick="StartReply">Reply…</MudButton>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PullRequestComment Root { get; set; } = null!;
+    [Parameter] public IReadOnlyList<PullRequestComment> Replies { get; set; } = [];
+    [Parameter] public bool Outdated { get; set; }
+    [Parameter] public bool CanComment { get; set; }
+    [Parameter] public bool CanResolve { get; set; }
+    [Parameter] public bool CanApply { get; set; }
+    [Parameter] public int? ProjectId { get; set; }
+    [Parameter] public EventCallback<DiffView.InlineCommentRequest> OnReply { get; set; }
+    [Parameter] public EventCallback<(int CommentId, bool Resolved)> OnResolve { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<int>> OnApply { get; set; }
+
+    private bool expanded, replying, busy;
+    private string? draft;
+
+    private IEnumerable<PullRequestComment> Comments => Replies.OrderBy(r => r.CreatedAt).Prepend(Root);
+
+    private void StartReply()
+    {
+        replying = true;
+        draft = null;
+    }
+
+    private async Task Busy(Func<Task> work)
+    {
+        busy = true;
+        try { await work(); }
+        finally { busy = false; }
+    }
+
+    private Task SubmitReply() => Busy(async () =>
+    {
+        if (string.IsNullOrWhiteSpace(draft)) return;
+        await OnReply.InvokeAsync(new DiffView.InlineCommentRequest(Root.FilePath!, Root.Line, Root.OldLine, draft.Trim(), Root.Id));
+        replying = false;
+        draft = null;
+    });
+
+    private Task ToggleResolved() => Busy(async () =>
+    {
+        expanded = false;
+        await OnResolve.InvokeAsync((Root.Id, !Root.IsResolved));
+    });
+
+    private Task Apply(PullRequestComment c) => Busy(() => OnApply.InvokeAsync([c.Id]));
+}

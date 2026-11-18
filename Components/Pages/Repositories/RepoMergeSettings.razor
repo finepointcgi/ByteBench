@@ -1,0 +1,91 @@
+@page "/p/{Key}/repos/{Slug}/settings/merge"
+@inherits RepoPageBase
+@inject ProjectAccess Access
+@inject ISnackbar Snackbar
+
+<PageTitle>Pull request settings · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !canManage)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can change repository settings." BackHref="@RepoUrls.Source(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="merge" />
+        <div class="gb-min0">
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            <MudPaper Outlined="true" Class="pa-5">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">Merge strategies</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    Choose how pull requests may be merged into this repository. The default is preselected in each pull request's merge box.
+                </MudText>
+                <MudStack Spacing="1">
+                    @foreach (var s in Enum.GetValues<MergeStrategy>())
+                    {
+                        <div class="strategy-row" @key="s">
+                            <MudCheckBox T="bool" Value="@allowed.HasFlag(MergeStrategySettings.Flag(s))" ValueChanged="v => Toggle(s, v)" Color="Color.Primary" Dense="true">
+                                <b>@MergeStrategySettings.Label(s)</b>
+                            </MudCheckBox>
+                            <span class="mud-text-secondary small">@MergeStrategySettings.Describe(s)</span>
+                        </div>
+                    }
+                </MudStack>
+                <MudSelect T="MergeStrategy" Label="Default strategy" @bind-Value="defaultStrategy" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="default-strategy mt-4">
+                    @foreach (var s in Enum.GetValues<MergeStrategy>().Where(s => allowed.HasFlag(MergeStrategySettings.Flag(s))))
+                    {
+                        <MudSelectItem T="MergeStrategy" Value="@s">@MergeStrategySettings.Label(s)</MudSelectItem>
+                    }
+                </MudSelect>
+                <div class="mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(busy || allowed == MergeStrategies.None)" OnClick="Save">Save changes</MudButton>
+                </div>
+            </MudPaper>
+        </div>
+    </div>
+}
+
+@code {
+    private bool canManage, busy;
+    private MergeStrategies allowed = MergeStrategies.All;
+    private MergeStrategy defaultStrategy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        canManage = await Access.CanAsync(Repo!.ProjectId, Permission.ManageRepositories);
+        allowed = MergeStrategySettings.Allowed(Repo);
+        defaultStrategy = MergeStrategySettings.Default(Repo);
+    }
+
+    private void Toggle(MergeStrategy s, bool on)
+    {
+        allowed = on ? allowed | MergeStrategySettings.Flag(s) : allowed & ~MergeStrategySettings.Flag(s);
+        if (!allowed.HasFlag(MergeStrategySettings.Flag(defaultStrategy)) && allowed != MergeStrategies.None)
+            defaultStrategy = Enum.GetValues<MergeStrategy>().First(x => allowed.HasFlag(MergeStrategySettings.Flag(x)));
+    }
+
+    private async Task Save()
+    {
+        busy = true;
+        Error = null;
+        try
+        {
+            await RepoSettings.SetMergeStrategiesAsync(Repo!.Id, allowed, defaultStrategy, Me.Id);
+            InvalidateRepo();
+            await LoadRepoAsync();
+            Snackbar.Add("Merge settings saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+}

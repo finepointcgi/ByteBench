@@ -48,6 +48,8 @@ public sealed record EffectiveProtection(IReadOnlyList<BranchProtectionRule> Rul
     public bool BlockDeletion => Rules.Any(r => r.BlockDeletion);
     public bool RequireChecksToPass => Rules.Any(r => r.RequireChecksToPass);
     public bool DismissStaleApprovals => Rules.Any(r => r.DismissStaleApprovals);
+    public bool RequireThreadResolution => Rules.Any(r => r.RequireThreadResolution);
+    public bool RequireCodeOwnerApproval => Rules.Any(r => r.RequireCodeOwnerApproval);
     public string Describe => string.Join(", ", Rules.Select(r => r.Pattern));
 }
 
@@ -114,12 +116,15 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
         rule.RequireChecksToPass = input.RequireChecksToPass;
         rule.DismissStaleApprovals = input.DismissStaleApprovals;
         rule.AllowAdminBypass = input.AllowAdminBypass;
+        rule.RequireThreadResolution = input.RequireThreadResolution;
+        rule.RequireCodeOwnerApproval = input.RequireCodeOwnerApproval;
         rule.DefaultReviewerIds = reviewers;
         rule.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         await audit.RecordAsync(input.Id == 0 ? "branch_protection.created" : "branch_protection.updated", "branch_protection_rule", rule.Id, projectId,
             new { repositoryId, rule.Pattern, rule.RequiredApprovals, rule.BlockDirectPushes, rule.BlockForcePushes, rule.BlockDeletion,
-                  rule.RequireChecksToPass, rule.DismissStaleApprovals, rule.AllowAdminBypass, rule.DefaultReviewerIds }, actorId);
+                  rule.RequireChecksToPass, rule.DismissStaleApprovals, rule.AllowAdminBypass, rule.DefaultReviewerIds,
+                  rule.RequireThreadResolution, rule.RequireCodeOwnerApproval }, actorId);
         return rule;
     }
 
