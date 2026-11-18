@@ -1,0 +1,87 @@
+﻿@page "/"
+@inject IssueService Issues
+@inject CurrentUser Me
+
+<PageTitle>Dashboard · GitBench</PageTitle>
+
+<div class="page-header">
+    <h1>Welcome back, @Me.User?.DisplayName.Split(' ')[0]</h1>
+    <a class="btn btn-primary" href="/projects/new">+ New project</a>
+</div>
+
+<div class="dash-grid">
+    <section>
+        <h2 class="section-title">Projects</h2>
+        @if (projects.Count == 0)
+        {
+            <div class="empty">No projects yet. <a href="/projects/new">Create one</a>.</div>
+        }
+        <div class="project-cards">
+            @foreach (var p in projects)
+            {
+                var total = p.OpenCount + p.ClosedCount;
+                <a class="project-card" href="/p/@p.Key/issues">
+                    <div class="project-card-head">
+                        <span class="proj-avatar">@p.Key[..1]</span>
+                        <div>
+                            <div class="project-card-name">@p.Name</div>
+                            <div class="muted small mono">@p.Key</div>
+                        </div>
+                    </div>
+                    <p class="muted small">@p.Description</p>
+                    <div class="progress-thin"><div style="width:@(total == 0 ? 0 : p.ClosedCount * 100 / total)%"></div></div>
+                    <div class="small muted">@p.OpenCount open · @p.ClosedCount closed</div>
+                </a>
+            }
+        </div>
+
+        <h2 class="section-title mt-4">Assigned to me</h2>
+        <div class="issue-list">
+            @if (mine.Count == 0)
+            {
+                <div class="empty">Nothing assigned to you. 🎉</div>
+            }
+            @foreach (var i in mine)
+            {
+                <IssueRow Issue="i" />
+            }
+        </div>
+    </section>
+
+    <aside>
+        <h2 class="section-title">Recent activity</h2>
+        <ul class="activity-feed">
+            @foreach (var a in activity)
+            {
+                <li>
+                    <Avatar User="a.Actor" Size="22" />
+                    <div>
+                        <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                        on <a href="/p/@a.Issue.Project.Key/issues/@a.Issue.Number">@a.Issue.Key</a>
+                        <div class="muted small">@Display.Ago(a.CreatedAt)</div>
+                    </div>
+                </li>
+            }
+        </ul>
+    </aside>
+</div>
+
+@code {
+    private List<ProjectSummary> projects = [];
+    private List<Issue> mine = [];
+    private List<Activity> activity = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        projects = await Issues.GetProjectsAsync();
+        mine = await Issues.GetAssignedToAsync(Me.Id);
+        activity = await Issues.GetRecentActivityAsync(15);
+    }
+
+
+}

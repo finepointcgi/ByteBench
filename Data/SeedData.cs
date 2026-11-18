@@ -1,0 +1,105 @@
+using Microsoft.AspNetCore.Identity;
+
+namespace GitBench.Data;
+
+public static class SeedData
+{
+    /// <summary>Password for every seeded demo account. Development data only.</summary>
+    public const string DemoPassword = "GitBench123";
+
+    private static User DemoUser(string userName, string displayName, string color)
+    {
+        var email = $"{userName}@example.com";
+        var user = new User
+        {
+            UserName = userName, NormalizedUserName = userName.ToUpperInvariant(),
+            Email = email, NormalizedEmail = email.ToUpperInvariant(), EmailConfirmed = true,
+            SecurityStamp = Guid.NewGuid().ToString(), DisplayName = displayName, Color = color,
+        };
+        user.PasswordHash = new PasswordHasher<User>().HashPassword(user, DemoPassword);
+        return user;
+    }
+
+    public static void Initialize(AppDbContext db)
+    {
+        db.Database.EnsureCreated();
+        if (db.Users.Any()) return;
+
+        var alice = DemoUser("alice", "Alice Chen", "#6366f1");
+        var bob = DemoUser("bob", "Bob Martinez", "#f59e0b");
+        var carol = DemoUser("carol", "Carol Okafor", "#10b981");
+        var dan = DemoUser("dan", "Dan Kowalski", "#ec4899");
+        db.Users.AddRange(alice, bob, carol, dan);
+
+        var bug = new Label { Name = "bug", Color = "#dc2626" };
+        var enh = new Label { Name = "enhancement", Color = "#2563eb" };
+        var docs = new Label { Name = "documentation", Color = "#0d9488" };
+        var ui = new Label { Name = "ui", Color = "#a855f7" };
+        var backend = new Label { Name = "backend", Color = "#f97316" };
+        var perf = new Label { Name = "performance", Color = "#facc15" };
+
+        var now = DateTime.UtcNow;
+        var s1 = new Milestone { Title = "Sprint 1", StartDate = now.AddDays(-21).Date, DueDate = now.AddDays(-7).Date, IsClosed = true };
+        var s2 = new Milestone { Title = "Sprint 2", StartDate = now.AddDays(-7).Date, DueDate = now.AddDays(7).Date, Description = "Board polish and notifications." };
+        var v1 = new Milestone { Title = "v1.0 Release", DueDate = now.AddDays(30).Date, Description = "First public release." };
+
+        var web = new Project
+        {
+            Key = "WEB", Name = "Web Platform", Description = "Customer-facing web application and APIs.",
+            Labels = [bug, enh, docs, ui, backend, perf], Milestones = [s1, s2, v1]
+        };
+        var ops = new Project
+        {
+            Key = "OPS", Name = "Infrastructure", Description = "CI/CD, hosting and observability.",
+            Labels = [new() { Name = "ci", Color = "#0ea5e9" }, new() { Name = "security", Color = "#b91c1c" }]
+        };
+        db.Projects.AddRange(web, ops);
+
+        int n = 1; double order = 1;
+        Issue Make(Project p, string title, IssueType type, IssueStatus status, IssuePriority prio, User reporter, User? assignee,
+                   Milestone? ms, int? points, string? desc, params Label[] labels)
+        {
+            var created = now.AddDays(-Random.Shared.Next(2, 25)).AddHours(-Random.Shared.Next(0, 23));
+            var i = new Issue
+            {
+                Project = p, Number = p == web ? n++ : p.NextIssueNumber++, Title = title, Type = type, Status = status, Priority = prio,
+                Reporter = reporter, Assignee = assignee, Milestone = ms, StoryPoints = points, Description = desc,
+                Labels = [.. labels], SortOrder = order++, CreatedAt = created,
+                UpdatedAt = created.AddHours(Random.Shared.Next(1, 40)),
+                ClosedAt = status == IssueStatus.Done ? created.AddDays(2) : null,
+            };
+            if (i.UpdatedAt > now) i.UpdatedAt = now;
+            i.Activities.Add(new Activity { Actor = reporter, Text = "created this issue", CreatedAt = created });
+            db.Issues.Add(i);
+            return i;
+        }
+
+        Make(web, "Set up project skeleton and CI pipeline", IssueType.Task, IssueStatus.Done, IssuePriority.High, alice, alice, s1, 3,
+            "Create the solution layout, add GitHub Actions build, and wire up linting.");
+        Make(web, "Login page rejects valid emails with a plus sign", IssueType.Bug, IssueStatus.Done, IssuePriority.Highest, carol, bob, s1, 2,
+            "### Steps to reproduce\n1. Go to `/login`\n2. Enter `user+tag@example.com`\n3. Submit\n\n**Expected:** login succeeds\n\n**Actual:** *Invalid email* error.", bug, backend);
+        var kanban = Make(web, "Drag-and-drop Kanban board", IssueType.Feature, IssueStatus.InProgress, IssuePriority.High, alice, alice, s2, 8,
+            "As a team member I want to drag issues between columns so that updating status is quick.\n\n- [x] Columns per status\n- [x] Drag between columns\n- [ ] Reorder within a column\n- [ ] Swimlanes by assignee", enh, ui);
+        Make(web, "Email notifications when assigned", IssueType.Story, IssueStatus.Todo, IssuePriority.Medium, bob, carol, s2, 5,
+            "Send an email to the assignee whenever an issue is assigned to them.", enh, backend);
+        Make(web, "Issue list is slow with 10k+ issues", IssueType.Bug, IssueStatus.InReview, IssuePriority.High, dan, bob, s2, 3,
+            "Rendering the list takes ~4s. Add pagination or virtualization and an index on `UpdatedAt`.", bug, perf);
+        Make(web, "Write API documentation", IssueType.Task, IssueStatus.Backlog, IssuePriority.Low, alice, null, v1, 3,
+            "Document all REST endpoints with examples.", docs);
+        Make(web, "Dark mode", IssueType.Feature, IssueStatus.Todo, IssuePriority.Low, carol, dan, v1, 5, null, enh, ui);
+        Make(web, "Markdown preview in comment editor", IssueType.Feature, IssueStatus.Backlog, IssuePriority.Medium, bob, null, v1, 2, null, enh, ui);
+        Make(web, "Public release", IssueType.Epic, IssueStatus.Backlog, IssuePriority.Highest, alice, alice, v1, null,
+            "Umbrella epic for everything required to ship v1.0.");
+        Make(web, "Avatar images broken on Safari", IssueType.Bug, IssueStatus.Todo, IssuePriority.Medium, dan, dan, s2, 1, null, bug, ui);
+        web.NextIssueNumber = n;
+
+        Make(ops, "Migrate builds to self-hosted runners", IssueType.Task, IssueStatus.InProgress, IssuePriority.Medium, dan, dan, null, 5, null, ops.Labels[0]);
+        Make(ops, "Rotate database credentials", IssueType.Task, IssueStatus.Todo, IssuePriority.Highest, carol, carol, null, 2, null, ops.Labels[1]);
+
+        kanban.Comments.Add(new Comment { Author = bob, Body = "Should we support WIP limits per column?", CreatedAt = now.AddDays(-2) });
+        kanban.Comments.Add(new Comment { Author = alice, Body = "Good idea — let's do it as a follow-up. Opening a separate issue.", CreatedAt = now.AddDays(-1) });
+        kanban.Activities.Add(new Activity { Actor = alice, Text = "changed status from **To Do** to **In Progress**", CreatedAt = now.AddDays(-3) });
+
+        db.SaveChanges();
+    }
+}

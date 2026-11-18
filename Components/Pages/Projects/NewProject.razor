@@ -1,0 +1,61 @@
+@page "/projects/new"
+@inject IssueService Issues
+@inject NavigationManager Nav
+
+<PageTitle>New project · GitBench</PageTitle>
+
+<div class="page-header"><h1>New project</h1></div>
+
+<div class="card-panel narrow">
+    <EditForm Model="model" OnValidSubmit="Create" FormName="new-project">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">Name</label>
+            <InputText class="form-control" @bind-Value="model.Name" @bind-Value:after="SuggestKey" placeholder="My awesome project" />
+            <ValidationMessage For="() => model.Name" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Key</label>
+            <InputText class="form-control mono" @bind-Value="model.Key" @bind-Value:after="() => model.Key = model.Key.ToUpperInvariant()" @oninput="_ => keyTouched = true" placeholder="MAP" />
+            <div class="form-text">Prefix for issue keys, e.g. <span class="mono">@(string.IsNullOrEmpty(model.Key) ? "KEY" : model.Key.ToUpper())-1</span></div>
+            <ValidationMessage For="() => model.Key" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <InputTextArea class="form-control" rows="3" @bind-Value="model.Description" />
+        </div>
+        @if (error != null)
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        <button class="btn btn-primary" type="submit">Create project</button>
+        <a class="btn btn-link" href="/">Cancel</a>
+    </EditForm>
+</div>
+
+@code {
+    private Project model = new();
+    private bool keyTouched;
+    private string? error;
+
+    private void SuggestKey()
+    {
+        if (keyTouched || string.IsNullOrWhiteSpace(model.Name)) return;
+        var words = model.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => new string(w.Where(char.IsLetterOrDigit).ToArray())).Where(w => w.Length > 0).ToList();
+        var key = words.Count > 1 ? string.Concat(words.Select(w => w[0])) : (words.FirstOrDefault() ?? "");
+        key = new string(key.ToUpperInvariant().Take(6).ToArray());
+        if (key.Length > 0 && char.IsLetter(key[0])) model.Key = key.Length == 1 ? key + "P" : key;
+    }
+
+    private async Task Create()
+    {
+        model.Key = model.Key.ToUpperInvariant();
+        try
+        {
+            var p = await Issues.CreateProjectAsync(model);
+            Nav.NavigateTo($"/p/{p.Key}/issues");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

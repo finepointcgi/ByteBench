@@ -1,0 +1,146 @@
+@page "/p/{Key}/settings"
+@inject IssueService Issues
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Settings · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header"><h1>Project settings</h1></div>
+
+    <div class="card-panel narrow mb-4">
+        <h2 class="section-title">General</h2>
+        <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input class="form-control" @bind="name" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Key</label>
+            <input class="form-control mono" value="@project.Key" disabled />
+            <div class="form-text">Keys can't be changed after creation.</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" rows="3" @bind="description"></textarea>
+        </div>
+        <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(name)" @onclick="SaveGeneral">Save</button>
+        @if (saved) { <span class="text-success small ms-2">Saved ✓</span> }
+    </div>
+
+    <div class="card-panel narrow mb-4">
+        <h2 class="section-title">Labels</h2>
+        <div class="label-table">
+            @foreach (var l in project.Labels)
+            {
+                <div class="label-row" @key="l.Id">
+                    @if (editLabel?.Id == l.Id)
+                    {
+                        <input type="color" class="form-control form-control-color" @bind="editLabel.Color" />
+                        <input class="form-control form-control-sm" @bind="editLabel.Name" />
+                        <button class="btn btn-primary btn-sm" @onclick="SaveLabel">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => editLabel = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <LabelChip Label="l" />
+                        <span class="ms-auto"></span>
+                        <button class="btn btn-link btn-sm" @onclick="() => editLabel = new Label { Id = l.Id, ProjectId = l.ProjectId, Name = l.Name, Color = l.Color }">Edit</button>
+                        <button class="btn btn-link btn-sm text-danger" @onclick="() => DeleteLabel(l)">Delete</button>
+                    }
+                </div>
+            }
+        </div>
+        <div class="label-row mt-2">
+            <input type="color" class="form-control form-control-color" @bind="newLabel.Color" />
+            <input class="form-control form-control-sm" placeholder="New label name" @bind="newLabel.Name" @bind:event="oninput" />
+            <button class="btn btn-outline-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newLabel.Name)" @onclick="AddLabel">Add label</button>
+        </div>
+        @if (labelError != null) { <div class="text-danger small mt-2">@labelError</div> }
+    </div>
+
+    <div class="card-panel narrow danger-zone">
+        <h2 class="section-title">Danger zone</h2>
+        <p class="small muted">Deleting a project permanently removes all of its issues, comments, labels and milestones.</p>
+        <button class="btn btn-danger btn-sm" @onclick="DeleteProject">Delete project</button>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound, saved;
+    private string name = "";
+    private string? description, labelError;
+    private Label newLabel = NewLabel();
+    private Label? editLabel;
+
+    private static Label NewLabel() => new() { Color = $"#{Random.Shared.Next(0x1000000):x6}" };
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private async Task Load()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        name = project.Name;
+        description = project.Description;
+    }
+
+    private async Task SaveGeneral()
+    {
+        await Issues.UpdateProjectAsync(project!.Id, name.Trim(), description);
+        saved = true;
+    }
+
+    private async Task AddLabel()
+    {
+        labelError = null;
+        if (project!.Labels.Any(l => l.Name.Equals(newLabel.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            labelError = "A label with that name already exists.";
+            return;
+        }
+        newLabel.ProjectId = project.Id;
+        newLabel.Name = newLabel.Name.Trim();
+        await Issues.SaveLabelAsync(newLabel);
+        newLabel = NewLabel();
+        await Load();
+    }
+
+    private async Task SaveLabel()
+    {
+        labelError = null;
+        if (string.IsNullOrWhiteSpace(editLabel!.Name)) return;
+        if (project!.Labels.Any(l => l.Id != editLabel.Id && l.Name.Equals(editLabel.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            labelError = "A label with that name already exists.";
+            return;
+        }
+        editLabel.Name = editLabel.Name.Trim();
+        await Issues.SaveLabelAsync(editLabel);
+        editLabel = null;
+        await Load();
+    }
+
+    private async Task DeleteLabel(Label l)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete label \"{l.Name}\"? It will be removed from all issues.")) return;
+        await Issues.DeleteLabelAsync(l.Id);
+        await Load();
+    }
+
+    private async Task DeleteProject()
+    {
+        var typed = await JS.InvokeAsync<string?>("prompt", $"Type the project key ({project!.Key}) to confirm deletion:");
+        if (typed?.Trim().ToUpper() != project.Key) return;
+        await Issues.DeleteProjectAsync(project.Id);
+        Nav.NavigateTo("/");
+    }
+}

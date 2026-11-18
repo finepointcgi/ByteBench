@@ -1,0 +1,121 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Nav
+@inject IssueService Issues
+@inject CurrentUser Me
+
+<div class="app">
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-mark">◆</span> GitBench
+        </a>
+
+        <div class="topbar-search">
+            <select class="form-select form-select-sm" value="@projectKey" @onchange="GoToProject">
+                <option value="">Jump to project…</option>
+                @foreach (var p in projects)
+                {
+                    <option value="@p.Key">@p.Key — @p.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="topbar-right">
+            @if (projectKey != null)
+            {
+                <a class="btn btn-primary btn-sm" href="/p/@projectKey/issues/new">+ New issue</a>
+            }
+            @if (Me.User != null)
+            {
+                <div class="user-switch">
+                    <Avatar User="Me.User" Size="28" ShowName />
+                </div>
+            }
+        </div>
+    </header>
+
+    <div class="shell">
+        <nav class="sidebar">
+            <NavLink class="side-link" href="/" Match="NavLinkMatch.All">🏠 Dashboard</NavLink>
+            <NavLink class="side-link" href="/projects/new">➕ New project</NavLink>
+
+            @if (projectKey != null && CurrentProject is { } cp)
+            {
+                <div class="side-section">
+                    <div class="side-project">
+                        <span class="proj-avatar">@cp.Key[..1]</span>
+                        <div>
+                            <div class="side-project-name">@cp.Name</div>
+                            <div class="muted small">@cp.Key</div>
+                        </div>
+                    </div>
+                    <NavLink class="side-link" href="@($"/p/{cp.Key}/issues")" Match="NavLinkMatch.All">📋 Issues</NavLink>
+                    <NavLink class="side-link" href="@($"/p/{cp.Key}/board")">🗂️ Board</NavLink>
+                    <NavLink class="side-link" href="@($"/p/{cp.Key}/milestones")">🏁 Milestones</NavLink>
+                    <NavLink class="side-link" href="@($"/p/{cp.Key}/settings")">⚙️ Settings</NavLink>
+                </div>
+            }
+
+            <div class="side-section">
+                <div class="side-heading">Projects</div>
+                @foreach (var p in projects)
+                {
+                    <NavLink class="side-link" href="@($"/p/{p.Key}/issues")" Match="NavLinkMatch.Prefix">
+                        <span class="proj-avatar sm">@p.Key[..1]</span> @p.Name
+                    </NavLink>
+                }
+            </div>
+        </nav>
+
+        <main class="content">
+            @if (Me.User != null)
+            {
+                @Body
+            }
+        </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private List<ProjectSummary> projects = [];
+    private string? projectKey;
+
+    private ProjectSummary? CurrentProject => projects.FirstOrDefault(p => p.Key == projectKey);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await RefreshProjects();
+        Nav.LocationChanged += OnLocationChanged;
+        ParseProjectKey();
+    }
+
+    private async Task RefreshProjects() => projects = await Issues.GetProjectsAsync();
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        ParseProjectKey();
+        // Pick up newly created/deleted projects.
+        await RefreshProjects();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ParseProjectKey()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('/');
+        projectKey = path.Length >= 2 && path[0] == "p" ? path[1].ToUpperInvariant() : null;
+    }
+
+    private void GoToProject(ChangeEventArgs e)
+    {
+        if (e.Value is string k && k.Length > 0) Nav.NavigateTo($"/p/{k}/issues");
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

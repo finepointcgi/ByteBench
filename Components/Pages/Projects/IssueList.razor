@@ -1,0 +1,131 @@
+@page "/p/{Key}"
+@page "/p/{Key}/issues"
+@inject IssueService Issues
+
+<PageTitle>Issues · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Issues</h1>
+            <div class="muted">@project.Name</div>
+        </div>
+        <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
+    </div>
+
+    <div class="tabs">
+        <button class="tab @(filter.Open == true && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(true)">Open <span class="count">@counts.open</span></button>
+        <button class="tab @(filter.Open == false && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(false)">Closed <span class="count">@counts.closed</span></button>
+        <button class="tab @(filter.Open == null && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(null)">All <span class="count">@(counts.open + counts.closed)</span></button>
+    </div>
+
+    <div class="filter-bar">
+        <input class="form-control form-control-sm search" placeholder="Search title, description or @project.Key-123…"
+               @bind="filter.Search" @bind:event="oninput" @bind:after="Load" />
+
+        <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Load">
+            <option value="">Any status</option>
+            @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+        </select>
+        <select class="form-select form-select-sm" @bind="filter.AssigneeId" @bind:after="Load">
+            <option value="">Any assignee</option>
+            <option value="0">Unassigned</option>
+            @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
+        </select>
+        <select class="form-select form-select-sm" @bind="filter.LabelId" @bind:after="Load">
+            <option value="">Any label</option>
+            @foreach (var l in project.Labels) { <option value="@l.Id">@l.Name</option> }
+        </select>
+        <select class="form-select form-select-sm" @bind="filter.MilestoneId" @bind:after="Load">
+            <option value="">Any milestone</option>
+            <option value="0">No milestone</option>
+            @foreach (var m in project.Milestones) { <option value="@m.Id">@m.Title</option> }
+        </select>
+        <select class="form-select form-select-sm" @bind="filter.Type" @bind:after="Load">
+            <option value="">Any type</option>
+            @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
+        </select>
+        <select class="form-select form-select-sm" @bind="filter.Priority" @bind:after="Load">
+            <option value="">Any priority</option>
+            @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p</option> }
+        </select>
+        <select class="form-select form-select-sm" @bind="filter.Sort" @bind:after="Load">
+            <option value="updated">Recently updated</option>
+            <option value="created">Newest</option>
+            <option value="priority">Priority</option>
+            <option value="due">Due date</option>
+            <option value="number">Issue number</option>
+        </select>
+        @if (IsFiltered)
+        {
+            <button class="btn btn-sm btn-link" @onclick="Reset">Clear filters</button>
+        }
+    </div>
+
+    <div class="issue-list">
+        @if (issues.Count == 0)
+        {
+            <div class="empty">No issues match these filters.</div>
+        }
+        @foreach (var i in issues)
+        {
+            <IssueRow Issue="i" @key="i.Id" />
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private List<User> users = [];
+    private List<Issue> issues = [];
+    private IssueFilter filter = new();
+    private (int open, int closed) counts;
+
+    private IssueStatus? StatusFilter
+    {
+        get => filter.Status;
+        set { filter.Status = value; if (value != null) filter.Open = null; }
+    }
+
+    private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || filter.Status != null || filter.AssigneeId != null
+        || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (project?.Key == Key.ToUpper()) return;
+        filter = new();
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        users = await Issues.GetUsersAsync();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (project == null) return;
+        issues = await Issues.GetIssuesAsync(project.Id, filter);
+        counts = await Issues.CountAsync(project.Id);
+    }
+
+    private async Task SetOpen(bool? open)
+    {
+        filter.Status = null;
+        filter.Open = open;
+        await Load();
+    }
+
+    private async Task Reset()
+    {
+        filter = new() { Sort = filter.Sort };
+        await Load();
+    }
+}

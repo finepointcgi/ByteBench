@@ -1,0 +1,126 @@
+@page "/p/{Key}/board"
+@inject IssueService Issues
+@inject CurrentUser Me
+
+<PageTitle>Board · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Board</h1>
+            <div class="muted">@project.Name</div>
+        </div>
+        <div class="filter-bar compact">
+            <select class="form-select form-select-sm" @bind="milestoneId" @bind:after="Load">
+                <option value="">All milestones</option>
+                @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <option value="@m.Id">@m.Title</option> }
+            </select>
+            <select class="form-select form-select-sm" @bind="assigneeId" @bind:after="Load">
+                <option value="">Everyone</option>
+                @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
+            </select>
+            <input class="form-control form-control-sm" placeholder="Filter cards…" @bind="search" @bind:event="oninput" />
+        </div>
+    </div>
+
+    <div class="board">
+        @foreach (var status in Enum.GetValues<IssueStatus>())
+        {
+            var col = Visible.Where(i => i.Status == status).ToList();
+            <div class="board-col @(dragOverStatus == status ? "drag-over" : "")"
+                 @ondragover:preventDefault
+                 @ondragenter="() => dragOverStatus = status"
+                 @ondrop="() => Drop(status, null)">
+                <div class="board-col-head">
+                    <span class="status-dot status-@status.Css()"></span>
+                    @status.Name()
+                    <span class="count">@col.Count</span>
+                    <span class="muted small ms-auto">@col.Sum(i => i.StoryPoints ?? 0) pts</span>
+                </div>
+                <div class="board-cards">
+                    @foreach (var i in col)
+                    {
+                        <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="true" @key="i.Id"
+                             @ondragstart="() => dragging = i"
+                             @ondragend="() => { dragging = null; dragOverStatus = null; }"
+                             @ondrop="() => Drop(status, i.Id)" @ondrop:stopPropagation>
+                            <a class="board-card-title" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Title</a>
+                            @if (i.Labels.Count > 0)
+                            {
+                                <div class="board-card-labels">
+                                    @foreach (var l in i.Labels) { <LabelChip Label="l" /> }
+                                </div>
+                            }
+                            <div class="board-card-foot">
+                                <span title="@i.Type">@i.Type.Icon()</span>
+                                <span class="mono small muted">@i.Key</span>
+                                <PriorityIcon Priority="i.Priority" />
+                                @if (i.StoryPoints is { } sp) { <span class="points">@sp</span> }
+                                <span class="ms-auto"><Avatar User="i.Assignee" Size="22" /></span>
+                            </div>
+                        </div>
+                    }
+                    @if (col.Count == 0)
+                    {
+                        <div class="board-empty">Drop issues here</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private List<User> users = [];
+    private List<Issue> issues = [];
+    private int? milestoneId, assigneeId;
+    private string? search;
+    private Issue? dragging;
+    private IssueStatus? dragOverStatus;
+
+    private IEnumerable<Issue> Visible => string.IsNullOrWhiteSpace(search)
+        ? issues
+        : issues.Where(i => i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) || i.Key.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        users = await Issues.GetUsersAsync();
+        // Default to the active sprint, if there is one.
+        milestoneId ??= project.Milestones.FirstOrDefault(m => !m.IsClosed && m.StartDate <= DateTime.Today && m.DueDate >= DateTime.Today)?.Id;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (project != null) issues = await Issues.GetBoardAsync(project.Id, milestoneId, assigneeId);
+    }
+
+    private async Task Drop(IssueStatus status, int? beforeId)
+    {
+        var moved = dragging;
+        dragging = null;
+        dragOverStatus = null;
+        if (moved == null || moved.Id == beforeId) return;
+
+        // Optimistic local reorder so the UI responds instantly.
+        issues.Remove(moved);
+        moved.Status = status;
+        var idx = beforeId is { } b ? issues.FindIndex(x => x.Id == b) : -1;
+        if (idx < 0) issues.Add(moved); else issues.Insert(idx, moved);
+
+        await Issues.MoveOnBoardAsync(moved.Id, status, beforeId, Me.Id);
+        await Load();
+    }
+}

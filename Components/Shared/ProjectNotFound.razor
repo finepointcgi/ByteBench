@@ -1,0 +1,9 @@
+<div class="empty">
+    <h2>Not found</h2>
+    <p class="muted">@Message</p>
+    <a class="btn btn-outline-secondary" href="/">Back to dashboard</a>
+</div>
+
+@code {
+    [Parameter] public string Message { get; set; } = "This project does not exist.";
+}

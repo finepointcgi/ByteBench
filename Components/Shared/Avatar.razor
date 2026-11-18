@@ -1,0 +1,19 @@
+@if (User is null)
+{
+    <span class="avatar avatar-empty" style="width:@(Size)px;height:@(Size)px;font-size:@(Size * 0.4)px" title="Unassigned">?</span>
+}
+else
+{
+    <span class="avatar" title="@User.DisplayName"
+          style="background:@User.Color;color:@Display.TextOn(User.Color);width:@(Size)px;height:@(Size)px;font-size:@(Size * 0.4)px">@User.Initials</span>
+    @if (ShowName)
+    {
+        <span class="avatar-name">@User.DisplayName</span>
+    }
+}
+
+@code {
+    [Parameter] public User? User { get; set; }
+    [Parameter] public int Size { get; set; } = 24;
+    [Parameter] public bool ShowName { get; set; }
+}

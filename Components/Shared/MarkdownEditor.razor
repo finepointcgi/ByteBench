@@ -1,0 +1,32 @@
+<div class="md-editor">
+    <div class="md-tabs">
+        <button type="button" class="@(preview ? "" : "active")" @onclick="() => preview = false">Write</button>
+        <button type="button" class="@(preview ? "active" : "")" @onclick="() => preview = true">Preview</button>
+        <span class="muted small ms-auto">Markdown supported</span>
+    </div>
+    @if (preview)
+    {
+        <div class="markdown md-preview">
+            @if (string.IsNullOrWhiteSpace(Value)) { <span class="muted">Nothing to preview.</span> }
+            else { @Display.Markdown(Value) }
+        </div>
+    }
+    else
+    {
+        <textarea class="form-control" rows="@Rows" placeholder="@Placeholder"
+                  value="@Value" @oninput="OnInput"></textarea>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public int Rows { get; set; } = 6;
+    [Parameter] public string? Placeholder { get; set; }
+
+    private bool preview;
+
+    private Task OnInput(ChangeEventArgs e) => ValueChanged.InvokeAsync(Value = e.Value?.ToString());
+
+    public void ShowWrite() => preview = false;
+}

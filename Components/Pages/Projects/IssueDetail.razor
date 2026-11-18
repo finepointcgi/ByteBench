@@ -1,0 +1,400 @@
+@page "/p/{Key}/issues/{Number:int}"
+@inject IssueService Issues
+@inject CurrentUser Me
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>@issue?.Key @issue?.Title</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This issue does not exist." />
+}
+else if (issue != null && project != null)
+{
+    <div class="breadcrumbs">
+        <a href="/p/@project.Key/issues">@project.Name</a> / <a href="/p/@project.Key/issues">Issues</a> / <span class="mono">@issue.Key</span>
+    </div>
+
+    <div class="issue-header">
+        @if (editingTitle)
+        {
+            <div class="d-flex gap-2 flex-grow-1">
+                <input class="form-control form-control-lg" @bind="titleDraft" @onkeydown="TitleKey" />
+                <button class="btn btn-primary" @onclick="SaveTitle">Save</button>
+                <button class="btn btn-outline-secondary" @onclick="() => editingTitle = false">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <h1>
+                <span title="@issue.Type">@issue.Type.Icon()</span>
+                @issue.Title <span class="muted mono">@issue.Key</span>
+            </h1>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm" @onclick="StartEditTitle">Edit title</button>
+                @if (issue.Status.IsClosed())
+                {
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => SetStatus(IssueStatus.Todo)">Reopen</button>
+                }
+                else
+                {
+                    <button class="btn btn-success btn-sm" @onclick="() => SetStatus(IssueStatus.Done)">Close issue</button>
+                }
+            </div>
+        }
+    </div>
+    <div class="issue-subhead">
+        <StatusBadge Status="issue.Status" />
+        <span class="muted">
+            <b>@issue.Reporter.DisplayName</b> opened this @Display.Ago(issue.CreatedAt)
+            @if (issue.ClosedAt is { } ca) { <span> · closed @Display.Ago(ca)</span> }
+        </span>
+    </div>
+
+    <div class="detail-grid">
+        <div>
+            <!-- Description -->
+            <div class="comment-card">
+                <div class="comment-head">
+                    <Avatar User="issue.Reporter" Size="22" /> <b>@issue.Reporter.DisplayName</b>
+                    <span class="muted small">@Display.Ago(issue.CreatedAt)</span>
+                    @if (!editingDesc)
+                    {
+                        <button class="btn btn-link btn-sm ms-auto" @onclick="StartEditDesc">Edit</button>
+                    }
+                </div>
+                <div class="comment-body">
+                    @if (editingDesc)
+                    {
+                        <MarkdownEditor @bind-Value="descDraft" Rows="10" />
+                        <div class="mt-2 d-flex gap-2">
+                            <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
+                        </div>
+                    }
+                    else if (string.IsNullOrWhiteSpace(issue.Description))
+                    {
+                        <span class="muted fst-italic">No description provided.</span>
+                    }
+                    else
+                    {
+                        <div class="markdown">@Display.Markdown(issue.Description)</div>
+                    }
+                </div>
+            </div>
+
+            <!-- Timeline: comments + activity -->
+            <h2 class="section-title mt-4">Activity</h2>
+            <div class="timeline">
+                @foreach (var entry in Timeline)
+                {
+                    if (entry is Comment c)
+                    {
+                        <div class="comment-card" @key="c">
+                            <div class="comment-head">
+                                <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
+                                <span class="muted small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
+                                @if (c.AuthorId == Me.Id && editingCommentId != c.Id)
+                                {
+                                    <span class="ms-auto">
+                                        <button class="btn btn-link btn-sm" @onclick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }">Edit</button>
+                                        <button class="btn btn-link btn-sm text-danger" @onclick="() => DeleteComment(c)">Delete</button>
+                                    </span>
+                                }
+                            </div>
+                            <div class="comment-body">
+                                @if (editingCommentId == c.Id)
+                                {
+                                    <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" />
+                                    <div class="mt-2 d-flex gap-2">
+                                        <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="markdown">@Display.Markdown(c.Body)</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else if (entry is Activity a)
+                    {
+                        <div class="activity-line" @key="a">
+                            <Avatar User="a.Actor" Size="18" />
+                            <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                            <span class="muted">@Display.Ago(a.CreatedAt)</span>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- New comment -->
+            <div class="comment-card mt-3">
+                <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
+                <div class="comment-body">
+                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
+                    <div class="mt-2 d-flex gap-2">
+                        <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
+                        @if (!issue.Status.IsClosed())
+                        {
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="CommentAndClose">
+                                @(string.IsNullOrWhiteSpace(newComment) ? "Close issue" : "Comment & close")
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <aside class="side-panel">
+            <div class="field">
+                <label>Status</label>
+                <select class="form-select form-select-sm" value="@issue.Status" @onchange="e => SetStatus(Enum.Parse<IssueStatus>((string)e.Value!))">
+                    @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+                </select>
+            </div>
+            <div class="field">
+                <label>Assignee</label>
+                <div class="d-flex align-items-center gap-2">
+                    <Avatar User="issue.Assignee" Size="24" />
+                    <select class="form-select form-select-sm" value="@(issue.AssigneeId?.ToString() ?? "")" @onchange="SetAssignee">
+                        <option value="">Unassigned</option>
+                        @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
+                    </select>
+                </div>
+                @if (issue.AssigneeId != Me.Id)
+                {
+                    <button class="btn btn-link btn-sm p-0" @onclick="() => SetAssigneeId(Me.Id)">Assign to me</button>
+                }
+            </div>
+            <div class="field">
+                <label>Priority</label>
+                <select class="form-select form-select-sm" value="@issue.Priority" @onchange="SetPriority">
+                    @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p.Icon() @p</option> }
+                </select>
+            </div>
+            <div class="field">
+                <label>Type</label>
+                <select class="form-select form-select-sm" value="@issue.Type" @onchange="SetType">
+                    @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
+                </select>
+            </div>
+            <div class="field">
+                <label>Milestone</label>
+                <select class="form-select form-select-sm" value="@(issue.MilestoneId?.ToString() ?? "")" @onchange="SetMilestone">
+                    <option value="">None</option>
+                    @foreach (var m in project.Milestones.Where(m => !m.IsClosed || m.Id == issue.MilestoneId)) { <option value="@m.Id">@m.Title</option> }
+                </select>
+            </div>
+            <div class="field">
+                <label>Labels</label>
+                <div class="label-picker">
+                    @foreach (var l in project.Labels)
+                    {
+                        var on = issue.Labels.Any(x => x.Id == l.Id);
+                        <button type="button" class="label-toggle @(on ? "on" : "")" style="--c:@l.Color;--t:@Display.TextOn(l.Color)" @onclick="() => ToggleLabel(l)">@l.Name</button>
+                    }
+                    @if (project.Labels.Count == 0)
+                    {
+                        <a class="small" href="/p/@project.Key/settings">Create labels</a>
+                    }
+                </div>
+            </div>
+            <div class="field">
+                <label>Story points</label>
+                <input type="number" min="0" max="100" class="form-control form-control-sm" value="@issue.StoryPoints" @onchange="SetPoints" />
+            </div>
+            <div class="field">
+                <label>Due date</label>
+                <input type="date" class="form-control form-control-sm" value="@issue.DueDate?.ToString("yyyy-MM-dd")" @onchange="SetDue" />
+            </div>
+            <div class="field muted small">
+                Reporter: <Avatar User="issue.Reporter" Size="18" ShowName /><br />
+                Created @issue.CreatedAt.ToLocalTime().ToString("g")<br />
+                Updated @Display.Ago(issue.UpdatedAt)
+            </div>
+            <div class="field">
+                <button class="btn btn-outline-danger btn-sm w-100" @onclick="Delete">Delete issue</button>
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int Number { get; set; }
+
+    private Issue? issue;
+    private Project? project;
+    private List<User> users = [];
+    private bool notFound;
+
+    private bool editingTitle, editingDesc;
+    private string titleDraft = "";
+    private string? descDraft, newComment, commentEditDraft;
+    private int? editingCommentId;
+    private MarkdownEditor? commentEditor;
+
+    private IEnumerable<object> Timeline => issue!.Comments.Select(c => (when: c.CreatedAt, item: (object)c))
+        .Concat(issue.Activities.Where(a => a.Text != "created this issue").Select(a => (when: a.CreatedAt, item: (object)a)))
+        .OrderBy(x => x.when).Select(x => x.item);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        users = await Issues.GetUsersAsync();
+        project = await Issues.GetProjectAsync(Key);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        issue = await Issues.GetIssueAsync(Key, Number);
+        notFound = issue == null;
+    }
+
+    private async Task Change(Func<Issue, AppDbContext, Task<string?>> change)
+    {
+        await Issues.UpdateIssueAsync(issue!.Id, Me.Id, change);
+        await Reload();
+    }
+
+    private Task Change(Func<Issue, string?> change) => Change((i, _) => Task.FromResult(change(i)));
+
+    // ----- Title / description -----
+    private void StartEditTitle() { titleDraft = issue!.Title; editingTitle = true; }
+
+    private async Task TitleKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SaveTitle();
+        if (e.Key == "Escape") editingTitle = false;
+    }
+
+    private async Task SaveTitle()
+    {
+        var t = titleDraft.Trim();
+        if (t.Length is 0 or > 200) return;
+        await Change(i => { if (i.Title == t) return null; var old = i.Title; i.Title = t; return $"changed the title from ~~{old}~~ to **{t}**"; });
+        editingTitle = false;
+    }
+
+    private void StartEditDesc() { descDraft = issue!.Description; editingDesc = true; }
+
+    private async Task SaveDesc()
+    {
+        await Change(i => { if (i.Description == descDraft) return null; i.Description = descDraft; return "updated the description"; });
+        editingDesc = false;
+    }
+
+    // ----- Sidebar fields -----
+    private async Task SetStatus(IssueStatus s)
+    {
+        await Issues.SetStatusAsync(issue!.Id, s, Me.Id);
+        await Reload();
+    }
+
+    private Task SetAssignee(ChangeEventArgs e) => SetAssigneeId(int.TryParse(e.Value?.ToString(), out var id) ? id : null);
+
+    private Task SetAssigneeId(int? id) => Change(i =>
+    {
+        if (i.AssigneeId == id) return null;
+        i.AssigneeId = id;
+        var u = users.FirstOrDefault(x => x.Id == id);
+        return u == null ? "removed the assignee" : u.Id == Me.Id ? "self-assigned this issue" : $"assigned to **{u.DisplayName}**";
+    });
+
+    private Task SetPriority(ChangeEventArgs e) => Change(i =>
+    {
+        var p = Enum.Parse<IssuePriority>(e.Value!.ToString()!);
+        if (i.Priority == p) return null;
+        i.Priority = p;
+        return $"set priority to **{p}**";
+    });
+
+    private Task SetType(ChangeEventArgs e) => Change(i =>
+    {
+        var t = Enum.Parse<IssueType>(e.Value!.ToString()!);
+        if (i.Type == t) return null;
+        i.Type = t;
+        return $"changed type to **{t}**";
+    });
+
+    private Task SetMilestone(ChangeEventArgs e) => Change(i =>
+    {
+        int? id = int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+        if (i.MilestoneId == id) return null;
+        i.MilestoneId = id;
+        var m = project!.Milestones.FirstOrDefault(x => x.Id == id);
+        return m == null ? "removed the milestone" : $"added to milestone **{m.Title}**";
+    });
+
+    private Task ToggleLabel(Label label) => Change(async (i, db) =>
+    {
+        var existing = i.Labels.FirstOrDefault(l => l.Id == label.Id);
+        if (existing != null)
+        {
+            i.Labels.Remove(existing);
+            return $"removed label **{label.Name}**";
+        }
+        i.Labels.Add((await db.Labels.FindAsync(label.Id))!);
+        return $"added label **{label.Name}**";
+    });
+
+    private Task SetPoints(ChangeEventArgs e) => Change(i =>
+    {
+        int? p = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v, 0, 100) : null;
+        if (i.StoryPoints == p) return null;
+        i.StoryPoints = p;
+        return p == null ? "removed the estimate" : $"estimated **{p}** story points";
+    });
+
+    private Task SetDue(ChangeEventArgs e) => Change(i =>
+    {
+        DateTime? d = DateTime.TryParse(e.Value?.ToString(), out var v) ? v.Date : null;
+        if (i.DueDate == d) return null;
+        i.DueDate = d;
+        return d == null ? "removed the due date" : $"set the due date to **{d:MMM d, yyyy}**";
+    });
+
+    // ----- Comments -----
+    private async Task AddComment()
+    {
+        if (string.IsNullOrWhiteSpace(newComment)) return;
+        await Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim());
+        newComment = null;
+        commentEditor?.ShowWrite();
+        await Reload();
+    }
+
+    private async Task CommentAndClose()
+    {
+        if (!string.IsNullOrWhiteSpace(newComment))
+            await Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim());
+        newComment = null;
+        await SetStatus(IssueStatus.Done);
+    }
+
+    private async Task SaveCommentEdit(Comment c)
+    {
+        if (string.IsNullOrWhiteSpace(commentEditDraft)) return;
+        await Issues.EditCommentAsync(c.Id, commentEditDraft.Trim());
+        editingCommentId = null;
+        await Reload();
+    }
+
+    private async Task DeleteComment(Comment c)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Delete this comment?")) return;
+        await Issues.DeleteCommentAsync(c.Id);
+        await Reload();
+    }
+
+    private async Task Delete()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {issue!.Key}? This cannot be undone.")) return;
+        await Issues.DeleteIssueAsync(issue.Id);
+        Nav.NavigateTo($"/p/{project!.Key}/issues");
+    }
+}

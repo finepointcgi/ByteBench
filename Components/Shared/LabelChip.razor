@@ -1,0 +1,5 @@
+<span class="label-chip" style="background:@Label.Color;color:@Display.TextOn(Label.Color)">@Label.Name</span>
+
+@code {
+    [Parameter, EditorRequired] public Label Label { get; set; } = null!;
+}

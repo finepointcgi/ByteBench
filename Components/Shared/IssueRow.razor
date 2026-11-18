@@ -1,0 +1,38 @@
+<a class="issue-row @(Issue.Status.IsClosed() ? "closed" : "")" href="/p/@Issue.Project.Key/issues/@Issue.Number">
+    <span class="issue-type" title="@Issue.Type">@Issue.Type.Icon()</span>
+    <div class="issue-main">
+        <div class="issue-title">
+            @Issue.Title
+            @foreach (var l in Issue.Labels.OrderBy(l => l.Name))
+            {
+                <LabelChip Label="l" />
+            }
+        </div>
+        <div class="issue-meta">
+            <span class="mono">@Issue.Key</span>
+            · opened @Display.Ago(Issue.CreatedAt)
+            @if (Issue.Milestone is { } m)
+            {
+                <span> · 🏁 @m.Title</span>
+            }
+            @if (Issue.DueDate is { } d)
+            {
+                <span class="@(d.Date < DateTime.Today && !Issue.Status.IsClosed() ? "overdue" : "")"> · 📅 @d.ToString("MMM d")</span>
+            }
+            · updated @Display.Ago(Issue.UpdatedAt)
+        </div>
+    </div>
+    <div class="issue-right">
+        <StatusBadge Status="Issue.Status" />
+        <PriorityIcon Priority="Issue.Priority" />
+        @if (Issue.StoryPoints is { } sp)
+        {
+            <span class="points" title="Story points">@sp</span>
+        }
+        <Avatar User="Issue.Assignee" />
+    </div>
+</a>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+}

@@ -1,0 +1,118 @@
+@page "/p/{Key}/issues/new"
+@inject IssueService Issues
+@inject CurrentUser Me
+@inject NavigationManager Nav
+
+<PageTitle>New issue · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header"><h1>New issue <span class="muted">in @project.Name</span></h1></div>
+
+    <EditForm Model="issue" OnValidSubmit="Create" FormName="new-issue">
+        <DataAnnotationsValidator />
+        <div class="detail-grid">
+            <div class="card-panel">
+                <div class="mb-3">
+                    <label class="form-label">Title</label>
+                    <InputText class="form-control form-control-lg" @bind-Value="issue.Title" placeholder="Short summary" autofocus />
+                    <ValidationMessage For="() => issue.Title" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <MarkdownEditor @bind-Value="issue.Description" Rows="10"
+                                    Placeholder="Describe the problem or feature. Markdown and task lists (- [ ]) are supported." />
+                </div>
+                <button class="btn btn-primary" type="submit">Create issue</button>
+                <a class="btn btn-link" href="/p/@project.Key/issues">Cancel</a>
+            </div>
+
+            <div class="side-panel">
+                <div class="field">
+                    <label>Type</label>
+                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.Type">
+                        @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Status</label>
+                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.Status">
+                        @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Priority</label>
+                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.Priority">
+                        @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p.Icon() @p</option> }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Assignee</label>
+                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.AssigneeId">
+                        <option value="">Unassigned</option>
+                        @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
+                    </InputSelect>
+                    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => issue.AssigneeId = Me.Id">Assign to me</button>
+                </div>
+                <div class="field">
+                    <label>Milestone</label>
+                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.MilestoneId">
+                        <option value="">None</option>
+                        @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <option value="@m.Id">@m.Title</option> }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Labels</label>
+                    <div class="label-picker">
+                        @foreach (var l in project.Labels)
+                        {
+                            var on = labelIds.Contains(l.Id);
+                            <button type="button" class="label-toggle @(on ? "on" : "")" @onclick="() => Toggle(l.Id)"
+                                    style="--c:@l.Color;--t:@Display.TextOn(l.Color)">@l.Name</button>
+                        }
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Story points</label>
+                    <InputNumber class="form-control form-control-sm" @bind-Value="issue.StoryPoints" />
+                </div>
+                <div class="field">
+                    <label>Due date</label>
+                    <InputDate class="form-control form-control-sm" @bind-Value="issue.DueDate" />
+                </div>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private List<User> users = [];
+    private Issue issue = new();
+    private HashSet<int> labelIds = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        users = await Issues.GetUsersAsync();
+    }
+
+    private void Toggle(int id)
+    {
+        if (!labelIds.Add(id)) labelIds.Remove(id);
+    }
+
+    private async Task Create()
+    {
+        var created = await Issues.CreateIssueAsync(project!.Id, issue, labelIds, Me.Id);
+        Nav.NavigateTo($"/p/{project.Key}/issues/{created.Number}");
+    }
+}

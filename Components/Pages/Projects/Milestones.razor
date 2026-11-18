@@ -1,0 +1,139 @@
+@page "/p/{Key}/milestones"
+@inject IssueService Issues
+@inject IJSRuntime JS
+
+<PageTitle>Milestones · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Milestones &amp; sprints</h1>
+            <div class="muted">@project.Name</div>
+        </div>
+        <button class="btn btn-primary" @onclick="() => editing = new Milestone { ProjectId = project.Id, StartDate = DateTime.Today, DueDate = DateTime.Today.AddDays(14) }">+ New milestone</button>
+    </div>
+
+    @if (editing != null)
+    {
+        <div class="card-panel mb-3">
+            <EditForm Model="editing" OnValidSubmit="Save" FormName="milestone">
+                <DataAnnotationsValidator />
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label">Title</label>
+                        <InputText class="form-control" @bind-Value="editing.Title" placeholder="Sprint 3" />
+                        <ValidationMessage For="() => editing.Title" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Start</label>
+                        <InputDate class="form-control" @bind-Value="editing.StartDate" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Due</label>
+                        <InputDate class="form-control" @bind-Value="editing.DueDate" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Description</label>
+                        <InputText class="form-control" @bind-Value="editing.Description" />
+                    </div>
+                </div>
+                <div class="mt-2 d-flex gap-2">
+                    <button class="btn btn-primary btn-sm" type="submit">@(editing.Id == 0 ? "Create" : "Save")</button>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="() => editing = null">Cancel</button>
+                </div>
+            </EditForm>
+        </div>
+    }
+
+    <div class="milestone-list">
+        @if (milestones.Count == 0)
+        {
+            <div class="empty">No milestones yet.</div>
+        }
+        @foreach (var ms in milestones)
+        {
+            var m = ms.Milestone;
+            var overdue = !m.IsClosed && m.DueDate < DateTime.Today && ms.Open > 0;
+            <div class="milestone @(m.IsClosed ? "closed" : "")">
+                <div class="milestone-info">
+                    <div class="milestone-title">
+                        🏁 @m.Title
+                        @if (m.IsClosed) { <span class="status-badge status-done">Closed</span> }
+                        @if (overdue) { <span class="status-badge overdue-badge">Overdue</span> }
+                    </div>
+                    <div class="muted small">
+                        @if (m.StartDate is { } s) { <span>@s.ToString("MMM d") – </span> }
+                        @(m.DueDate?.ToString("MMM d, yyyy") ?? "No due date")
+                        @if (!string.IsNullOrEmpty(m.Description)) { <span> · @m.Description</span> }
+                    </div>
+                </div>
+                <div class="milestone-progress">
+                    <div class="progress-thin"><div style="width:@(ms.Percent)%"></div></div>
+                    <div class="small muted">
+                        <b>@ms.Percent%</b> complete · @ms.Open open · @ms.Closed closed
+                        @if (ms.Points > 0) { <span> · @ms.DonePoints/@ms.Points pts</span> }
+                    </div>
+                </div>
+                <div class="milestone-actions">
+                    <a class="btn btn-sm btn-outline-secondary" href="/p/@project.Key/board">Board</a>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => Edit(m)">Edit</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleClosed(m)">@(m.IsClosed ? "Reopen" : "Close")</button>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(m)">Delete</button>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private List<MilestoneSummary> milestones = [];
+    private Milestone? editing;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (project != null) milestones = await Issues.GetMilestonesAsync(project.Id);
+    }
+
+    private void Edit(Milestone m) => editing = new Milestone
+    {
+        Id = m.Id, ProjectId = m.ProjectId, Title = m.Title, Description = m.Description,
+        StartDate = m.StartDate, DueDate = m.DueDate, IsClosed = m.IsClosed
+    };
+
+    private async Task Save()
+    {
+        await Issues.SaveMilestoneAsync(editing!);
+        editing = null;
+        await Load();
+    }
+
+    private async Task ToggleClosed(Milestone m)
+    {
+        Edit(m);
+        editing!.IsClosed = !m.IsClosed;
+        await Save();
+    }
+
+    private async Task Delete(Milestone m)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete milestone \"{m.Title}\"? Issues will be kept.")) return;
+        await Issues.DeleteMilestoneAsync(m.Id);
+        await Load();
+    }
+}
