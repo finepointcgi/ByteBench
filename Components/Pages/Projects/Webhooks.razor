@@ -52,7 +52,7 @@ else if (project != null)
                         else if (h.DisabledAt != null) { <span class="badge text-bg-danger" title="Turned off @h.DisabledAt.Value.ToLocalTime().ToString("g")">Disabled after @WebhookService.MaxConsecutiveFailures failures</span> }
                         else { <span class="badge text-bg-secondary">Inactive</span> }
                         @if (h.ConsecutiveFailures > 0) { <span class="text-danger ms-2">@h.ConsecutiveFailures failed in a row</span> }
-                        <span class="muted ms-2">Secret <span class="mono">@WebhookService.Mask(h.Secret)</span></span>
+                        <span class="muted ms-2">Secret <span class="mono">@h.Secret</span></span>
                     </div>
                     <div class="small muted mt-1">@string.Join(", ", WebhookEventNames.Parse(h.Events))</div>
                 </div>

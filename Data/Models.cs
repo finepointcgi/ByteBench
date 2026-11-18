@@ -493,8 +493,12 @@ public class Webhook
     public int Id { get; set; }
     public int ProjectId { get; set; }
     [Required, MaxLength(2000)] public string Url { get; set; } = "";
-    /// <summary>HMAC-SHA256 signing key. Stored as-is because every delivery needs it; shown to users only once.</summary>
-    [Required, MaxLength(200)] public string Secret { get; set; } = "";
+    /// <summary>
+    /// HMAC-SHA256 signing key (16 to 200 characters), encrypted at rest with ASP.NET Core Data Protection by
+    /// <see cref="GitBench.Services.Webhooks.WebhookSecrets"/>: stored as <c>dp:</c> + ciphertext. A value without that
+    /// prefix is a legacy plaintext secret, encrypted at startup. Shown to users only once (at creation and rotation).
+    /// </summary>
+    [Required, MaxLength(1000)] public string Secret { get; set; } = "";
     /// <summary>Comma-separated event names (see <see cref="GitBench.Services.Webhooks.WebhookEventNames"/>).</summary>
     [Required, MaxLength(1000)] public string Events { get; set; } = "";
     public bool IsActive { get; set; } = true;

@@ -128,26 +128,58 @@ public sealed class WebhookPushCaptureMiddleware(RequestDelegate next, PublicBas
     }
 }
 
-/// <summary>Raises a <c>push</c> webhook event for each ref a push actually moved.</summary>
-public sealed class WebhookPushListener(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, PushCapture capture,
-    WebhookDispatcher dispatcher, PublicBaseUrl baseUrl, ILogger<WebhookPushListener> log) : IGitPushListener
+/// <summary>Raises a <c>push</c> webhook event for each ref a git push over HTTP actually moved.</summary>
+public sealed class WebhookPushListener(IDbContextFactory<AppDbContext> dbFactory, PushCapture capture,
+    WebhookPushEvents events, ILogger<WebhookPushListener> log) : IGitPushListener
+{
+    public async Task OnPushAsync(int repositoryId, int userId, CancellationToken ct)
+    {
+        if (!capture.IsAvailable)
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            var repo = await db.Repositories.AsNoTracking().Include(r => r.Project).FirstOrDefaultAsync(r => r.Id == repositoryId, ct);
+            if (repo != null && await WebhookNotifier.AnyListenerAsync(db, repo.ProjectId, WebhookEventNames.Push))
+                log.LogWarning("Push to {Key}/{Slug}: ref updates were not captured; no push webhook sent", repo.Project.Key, repo.Slug);
+            return;
+        }
+        await events.SendAsync(repositoryId, capture.Refs, userId, ct);
+    }
+}
+
+/// <summary>
+/// Builds and enqueues <c>push</c> events for ref updates, whether they came from a git push (<see cref="WebhookPushListener"/>)
+/// or from GitBench itself (merging a pull request moves its target branch and may delete its source branch). Every
+/// ref is checked against the repository first, so only refs that really are at <c>after</c> are reported.
+/// </summary>
+public sealed class WebhookPushEvents(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage,
+    WebhookDispatcher dispatcher, PublicBaseUrl baseUrl, ILogger<WebhookPushEvents> log)
 {
     public const int MaxCommits = 20;
 
-    public async Task OnPushAsync(int repositoryId, int userId, CancellationToken ct)
+    /// <summary>A branch ref update made inside GitBench (<paramref name="before"/>/<paramref name="after"/> null for a create/delete).</summary>
+    public static PushedRef Branch(string branch, string? before, string? after) =>
+        new(before ?? PushedRef.ZeroSha, after ?? PushedRef.ZeroSha, "refs/heads/" + branch);
+
+    /// <summary>Enqueues one <c>push</c> event per ref that moved. Never throws (failures are logged): call it after the change is saved.</summary>
+    public async Task SendAsync(int repositoryId, IReadOnlyList<PushedRef> refs, int userId, CancellationToken ct = default)
     {
+        try { await SendCoreAsync(repositoryId, refs, userId, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogError(ex, "Couldn't raise push webhooks for repository {RepositoryId}", repositoryId);
+        }
+    }
+
+    private async Task SendCoreAsync(int repositoryId, IReadOnlyList<PushedRef> refs, int userId, CancellationToken ct)
+    {
+        if (refs.Count == 0) return;
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var repo = await db.Repositories.AsNoTracking().Include(r => r.Project).FirstOrDefaultAsync(r => r.Id == repositoryId, ct);
         if (repo == null || !await WebhookNotifier.AnyListenerAsync(db, repo.ProjectId, WebhookEventNames.Push)) return;
-        if (!capture.IsAvailable)
-        {
-            log.LogWarning("Push to {Key}/{Slug}: ref updates were not captured; no push webhook sent", repo.Project.Key, repo.Slug);
-            return;
-        }
 
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var repoDto = Dto.Repository(repo, baseUrl.Value);
-        foreach (var pushed in capture.Refs)
+        foreach (var pushed in refs)
         {
             var info = await Task.Run(() => Describe(path, pushed), ct);
             if (info == null) continue; // rejected by git (e.g. non-fast-forward): the ref didn't move

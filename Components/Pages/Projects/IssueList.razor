@@ -4,6 +4,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject WorkflowService Workflows
 @inject NavigationManager Nav
 
 <PageTitle>Issues · @project?.Name</PageTitle>
@@ -29,9 +30,9 @@ else if (project != null)
     </div>
 
     <div class="tabs">
-        <button class="tab @(filter.Open == true && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(true)">Open <span class="count">@counts.open</span></button>
-        <button class="tab @(filter.Open == false && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(false)">Closed <span class="count">@counts.closed</span></button>
-        <button class="tab @(filter.Open == null && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(null)">All <span class="count">@(counts.open + counts.closed)</span></button>
+        <button class="tab @(filter.Open == true && NoStatus ? "active" : "")" @onclick="() => SetOpen(true)">Open <span class="count">@counts.open</span></button>
+        <button class="tab @(filter.Open == false && NoStatus ? "active" : "")" @onclick="() => SetOpen(false)">Closed <span class="count">@counts.closed</span></button>
+        <button class="tab @(filter.Open == null && NoStatus ? "active" : "")" @onclick="() => SetOpen(null)">All <span class="count">@(counts.open + counts.closed)</span></button>
     </div>
 
     <div class="filter-bar">
@@ -39,9 +40,17 @@ else if (project != null)
                @bind="filter.Search" @bind:event="oninput" @bind:after="Apply" />
         <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Apply" />
 
-        <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Apply">
+        <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Apply" aria-label="Status">
             <option value="">Any status</option>
-            @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+            <optgroup label="Category">
+                @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="c:@s">Any @s.Name() status</option> }
+            </optgroup>
+            @foreach (var g in workflow.Statuses.GroupBy(s => s.Category).OrderBy(g => g.Key))
+            {
+                <optgroup label="@g.Key.Name()">
+                    @foreach (var ws in g) { <option value="w:@ws.Id">@ws.Name</option> }
+                </optgroup>
+            }
         </select>
         <select class="form-select form-select-sm" @bind="filter.AssigneeId" @bind:after="Apply">
             <option value="">Any assignee</option>
@@ -82,7 +91,7 @@ else if (project != null)
 
     @if (CanBulkEdit && selected.Count > 0)
     {
-        <BulkActionBar Project="project" Users="users" Perms="perms" SelectedIds="SelectedOnPage" OnClear="() => selected.Clear()" OnDone="AfterBulk" />
+        <BulkActionBar Project="project" Workflow="workflow" Users="users" Perms="perms" SelectedIds="SelectedOnPage" OnClear="() => selected.Clear()" OnDone="AfterBulk" />
     }
     <div class="issue-list">
         @if (CanBulkEdit && issues.Count > 0)
@@ -132,13 +141,24 @@ else if (project != null)
     /// <summary>Selected issues that are still in the current list.</summary>
     private List<int> SelectedOnPage => issues.Where(i => selected.Contains(i.Id)).Select(i => i.Id).ToList();
 
-    private IssueStatus? StatusFilter
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private bool NoStatus => filter.Status == null && filter.WorkflowStatusId == null;
+
+    /// <summary>The status menu's value: "c:{category}" (any status in it), "w:{id}" (one workflow status) or "".</summary>
+    private string StatusFilter
     {
-        get => filter.Status;
-        set { filter.Status = value; if (value != null) filter.Open = null; }
+        get => filter.WorkflowStatusId is { } w ? $"w:{w}" : filter.Status is { } s ? $"c:{s}" : "";
+        set
+        {
+            filter.Status = null;
+            filter.WorkflowStatusId = null;
+            if (value.StartsWith("w:") && int.TryParse(value[2..], out var id)) filter.WorkflowStatusId = id;
+            else if (value.StartsWith("c:") && Enum.TryParse<IssueStatus>(value[2..], out var c)) filter.Status = c;
+            if (!NoStatus) filter.Open = null;
+        }
     }
 
-    private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || filter.Status != null || filter.AssigneeId != null
+    private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || !NoStatus || filter.AssigneeId != null
         || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null
         || filter.EpicId != null || filter.HideSubtasks || filter.SprintId != null;
 
@@ -159,6 +179,7 @@ else if (project != null)
     private async Task Load()
     {
         if (project == null) return;
+        workflow = await Workflows.GetAsync(project.Id);
         issues = await Issues.GetIssuesAsync(project.Id, filter);
         counts = await Issues.CountAsync(project.Id);
     }
@@ -221,6 +242,7 @@ else if (project != null)
     private async Task SetOpen(bool? open)
     {
         filter.Status = null;
+        filter.WorkflowStatusId = null;
         filter.Open = open;
         await Apply();
     }

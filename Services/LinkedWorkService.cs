@@ -277,7 +277,7 @@ public class LinkedWorkService(IDbContextFactory<AppDbContext> dbFactory, Projec
         AddActivity(db, other.Id, actorId, $"added a link: **{Phrase(Inverse(relation))}** {Mention(from, other)}");
         await db.SaveChangesAsync();
         await TouchAsync(db, from.Id, other.Id);
-        await notifications.OnIssueLinkChangedAsync(source, target, actorId);
+        await notifications.OnIssueLinkChangedAsync(source, target, actorId, type, added: true);
         return new IssueLinkView(link.Id, relation, other, link.CreatedAt);
     }
 
@@ -297,7 +297,7 @@ public class LinkedWorkService(IDbContextFactory<AppDbContext> dbFactory, Projec
         AddActivity(db, otherId, actorId, $"removed the link: **{Phrase(Inverse(relation))}** {Mention(refs[fromIssueId], refs[otherId])}");
         await db.SaveChangesAsync();
         await TouchAsync(db, fromIssueId, otherId);
-        await notifications.OnIssueLinkChangedAsync(link.SourceIssueId, link.TargetIssueId, actorId);
+        await notifications.OnIssueLinkChangedAsync(link.SourceIssueId, link.TargetIssueId, actorId, link.Type, added: false);
     }
 
     /// <summary>

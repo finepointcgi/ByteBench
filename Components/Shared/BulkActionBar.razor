@@ -7,7 +7,12 @@
     <b class="bulk-count">@SelectedIds.Count selected</b>
     <select @key="(nameof(SetStatus), version)" class="form-select form-select-sm" disabled="@busy" @onchange="SetStatus" aria-label="Set status">
         <option value="" selected>Status…</option>
-        @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
+        @foreach (var g in Workflow.Statuses.GroupBy(s => s.Category).OrderBy(g => g.Key))
+        {
+            <optgroup label="@g.Key.Name()">
+                @foreach (var ws in g) { <option value="@ws.Id">@ws.Name</option> }
+            </optgroup>
+        }
     </select>
     <select @key="(nameof(SetAssignee), version)" class="form-select form-select-sm" disabled="@busy" @onchange="SetAssignee" aria-label="Set assignee">
         <option value="" selected>Assignee…</option>
@@ -48,6 +53,8 @@
 
 @code {
     [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    /// <summary>The project's workflow: the status menu lists its statuses, grouped by category.</summary>
+    [Parameter, EditorRequired] public ProjectWorkflow Workflow { get; set; } = ProjectWorkflow.Empty;
     [Parameter, EditorRequired] public List<User> Users { get; set; } = [];
     [Parameter, EditorRequired] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
     [Parameter, EditorRequired] public IReadOnlyCollection<int> SelectedIds { get; set; } = [];
@@ -62,7 +69,9 @@
     private static int? Id(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? v : null;
     private static string Val(ChangeEventArgs e) => e.Value?.ToString() ?? "";
 
-    private Task SetStatus(ChangeEventArgs e) => Enum.TryParse<IssueStatus>(Val(e), out var s) ? Run(new() { Status = s }, $"status → {s.Name()}") : Task.CompletedTask;
+    // Bulk status goes through IssueService.ReconcileStatusAsync, so transitions apply and a refusal changes nothing.
+    private Task SetStatus(ChangeEventArgs e) => Id(e) is { } id && Workflow.Find(id) is { } ws
+        ? Run(new() { WorkflowStatusId = id }, $"status → {ws.Name}") : Task.CompletedTask;
     private Task SetPriority(ChangeEventArgs e) => Enum.TryParse<IssuePriority>(Val(e), out var p) ? Run(new() { Priority = p }, $"priority → {p}") : Task.CompletedTask;
 
     private Task SetAssignee(ChangeEventArgs e) => Val(e) switch

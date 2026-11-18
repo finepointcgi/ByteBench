@@ -518,7 +518,7 @@ curl -H "Authorization: Bearer gbp_…" http://localhost:5108/api/v1/user
 |---|---|---|
 | GET | `/user` | You, with the token's scopes |
 | GET | `/projects`, `/projects/{key}` | Includes your role |
-| GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status name; `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?sprint=` id, `none` or `active`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
+| GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status category; `?workflowStatus=` a workflow status id (see `/workflow`; without `?status=` it matches open and closed issues); `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?sprint=` id, `none` or `active`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
 | POST | `/projects/{key}/issues` | `{title, description?, type?, priority?, status?, assignee?, labels?: [names], milestoneId?, storyPoints?, dueDate?}`; returns `201` |
 | GET / PATCH | `/projects/{key}/issues/{number}` | PATCH changes only the fields you send; `null` clears a field and `labels` replaces the set. Each change is logged in the issue's activity |
 | GET / POST | `/projects/{key}/issues/{number}/comments` | `{body}` |
@@ -546,12 +546,13 @@ They require `Permission.ManageRepositories`. Webhooks are integration settings 
 
 - Set a URL, a secret, the events and an Active flag.
 - Leave the secret blank and GitBench generates one. The secret is shown once and masked afterwards. **New secret** rotates it.
+- **Secrets are encrypted at rest** with ASP.NET Core Data Protection (purpose `GitBench.Webhooks.Secret.v1`, `Services/Webhooks/WebhookSecrets.cs`). The stored value is `dp:` + ciphertext, and only the delivery worker decrypts it to sign; the settings page gets a masked value. Secrets saved before encryption (no `dp:` prefix) still work and are encrypted at the next start. If the Data Protection keys are lost, stored secrets can't be decrypted: deliveries fail with a message saying so, and **New secret** fixes the hook.
 - Use **Send test ping**.
 - Look at the last 25 deliveries: status, duration, attempts, the payload and the first 4 KB of the response. Each has a **Redeliver** button, which resends the same body under the same delivery id with `X-GitBench-Redelivery: true`.
 
 | Event | When |
 |---|---|
-| `push` | A git push moved a ref. One event per ref: `ref`, `before`, `after`, `created`, `deleted`, `repository`, `commits` (newest first, up to 20), `totalCommits`, `headCommit`, `compareUrl` |
+| `push` | A git push moved a ref, or a pull request was merged in GitBench (UI or API): the merge sends one for the target branch and, if "delete source branch" was ticked, a `deleted: true` one for the source branch. One event per ref: `ref`, `before`, `after`, `created`, `deleted`, `repository`, `commits` (newest first, up to 20), `totalCommits`, `headCommit`, `compareUrl` |
 | `issue.created` / `issue.updated` / `issue.commented` | `issue` (plus `change`, the activity text, for updates; plus `comment` for comments) |
 | `pull_request.opened` / `.merged` / `.declined` | `pullRequest` and `repository` |
 | `pull_request.updated` | Same, plus `action`: `edited`, `reopened`, `approved`, `changes_requested` or `review_dismissed` |
@@ -604,7 +605,7 @@ var ok = CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expecte
 dispatcher.Enqueue(projectId, "pipeline.completed", new { pipeline = new { id, status, @ref, sha, webUrl } }, senderUserId);
 ```
 
-The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Other push listeners can inject `PushCapture` to get them too.
+The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Both it and `PullRequestService.MergeAsync` hand ref updates to `WebhookPushEvents.SendAsync`, which builds the payload after checking that each ref really is at `after`. Other push listeners can inject `PushCapture` to get them too.
 
 ## Linked work: sub-tasks, epics and issue links
 
@@ -624,7 +625,7 @@ The payload is serialized with the API's camelCase settings and merged into the 
 - Adding a "duplicates" link offers to close the issue. An issue with an open "is blocked by" link shows ⛔ on its board card, list row and links panel. Moving it to In Progress or Done still works, but shows a warning.
 - Issue list: the type filter includes Sub-task, plus an **epic** filter (its children and their sub-tasks) and **Hide sub-tasks**. Board cards show the parent key and child progress (☑ 2/5).
 - **Epics** page (`/p/{KEY}/epics`, in the sidebar): each epic with its child count, points and progress. New issues can start with a parent: `/p/{KEY}/issues/new?parent=WEB-9`.
-- Parent changes and link changes are written to the activity of every issue involved (both ends of a link) and notify their watchers (`IssueHierarchyChanged`, `IssueLinked`).
+- Parent changes and link changes are written to the activity of every issue involved (both ends of a link) and notify their watchers (`IssueHierarchyChanged`, `IssueLinked`). A link notification says what changed ("WEB-5 Avatar images broken · link added: blocks OPS-2"). Like the activity text, it names an issue in another project only to watchers who can view that project; the others read "link added: blocks an issue in another project".
 
 **API.** Issues carry `parentId` (the parent's issue id). `POST /issues` and `PATCH /issues/{number}` accept `parentId` (`null` removes it); rule violations return `422`.
 
@@ -657,11 +658,13 @@ curl -H "Authorization: Bearer gbp_…" -F "file=@screenshot.png" http://localho
 
 The issue list keeps its whole filter in the URL (`/p/WEB/issues?type=Bug&assigneeId=3&sort=priority`), so every filtered view is a link. `IssueFilterQuery` maps every public property of `IssueFilter` to a camelCase query parameter (defaults are left out; an empty value means null, e.g. `open=` for open and closed), so a new `IssueFilter` property is URL- and saved-filter-ready with no other change.
 
+**Status filter.** The status menu lists the project's workflow statuses grouped by category (`workflowStatusId=12`), plus one "Any … status" entry per category (`status=Done`, e.g. "Any Done status" matches every Done-category status). Picking either clears the Open/Closed tab, since a status already implies it.
+
 A saved filter is a name plus that query string. **Filters ▾** on the issue list applies, stars and saves filters (and offers to update the last-applied one after you change it); **Manage filters…** (`/p/{key}/filters`) renames, deletes, shares and unshares them. Filters are private to their owner; sharing with the project needs Developer+, and Maintainers+ can also unshare or delete shared filters. Anyone who can see a filter can star it, and starred filters appear in the sidebar under the project.
 
 ### Bulk edit
 
-Users with EditIssues get checkboxes on the issue list (plus "select all on this page"). While issues are selected a sticky bar shows "N selected" and actions: status, assignee, priority, milestone, add label, remove label, and Delete (Maintainer+, with confirmation). Each action is one `IssueService.BulkUpdateAsync` call that checks permissions for every affected project and validates values before changing anything, applies all changes in one transaction with a per-issue activity entry, publishes the live events in one batch (the issue list coalesces them into one reload), and sends each watcher or new assignee at most one notification for the batch ("2 issues in WEB: WEB-5, WEB-10").
+Users with EditIssues get checkboxes on the issue list (plus "select all on this page"). While issues are selected a sticky bar shows "N selected" and actions: status (the project's workflow statuses, grouped by category), assignee, priority, milestone, add label, remove label, and Delete (Maintainer+, with confirmation). Each action is one `IssueService.BulkUpdateAsync` call that checks permissions for every affected project and validates values before changing anything, applies all changes in one transaction with a per-issue activity entry, publishes the live events in one batch (the issue list coalesces them into one reload), and sends each watcher or new assignee at most one notification for the batch ("2 issues in WEB: WEB-5, WEB-10"). A bulk status change goes through `ReconcileStatusAsync` for each issue, like a single move, so the workflow's transitions apply. If one issue may not move, nothing changes and the message names that issue.
 
 Code: `Services/Attachments/`, `Api/AttachmentEndpoints.cs`, `Services/IssueFilterQuery.cs`, `Services/SavedFilterService.cs`, `Services/IssueService.Bulk.cs`, `Services/NotificationService.Bulk.cs`, `Components/Shared/{AttachmentsPanel,MarkdownEditor,SavedFiltersMenu,StarredFiltersNav,BulkActionBar}.razor`, `Components/Pages/Projects/SavedFilters.razor`, `wwwroot/js/attachments.js`, `wwwroot/css/attachments-filters.css`. Schema: `Attachment`, `SavedFilter`, `SavedFilterStar` (migration `AttachmentsFilters`).
 

@@ -16,7 +16,7 @@ public static class IssueEndpoints
 
         issues.MapGet("/issues", ListIssues).WithName("ListIssues")
             .WithSummary("List issues")
-            .WithDescription("Filters: status (open [default], closed, all, or backlog/todo/inProgress/inReview/done), assignee (username or 'none'), label (name), milestone (id or 'none'), sprint (id, 'none' or 'active'), q (text or issue key), sort (updated [default], created, priority, due, number).");
+            .WithDescription("Filters: status (open [default], closed, all, or a category: backlog/todo/inProgress/inReview/done), workflowStatus (a workflow status id from GET /projects/{key}/workflow; without status it matches open and closed issues), assignee (username or 'none'), label (name), milestone (id or 'none'), sprint (id, 'none' or 'active'), q (text or issue key), sort (updated [default], created, priority, due, number).");
         issues.MapGet("/issues/{number:int}", GetIssue).WithName("GetIssue").WithSummary("Get an issue");
         issues.MapPost("/issues", CreateIssue).WithName("CreateIssue").WithSummary("Create an issue")
             .WithJsonBody<CreateIssueRequest>().Produces<IssueDto>(StatusCodes.Status201Created);
@@ -41,7 +41,8 @@ public static class IssueEndpoints
         await issues.GetIssueAsync(key, number) ?? throw ApiException.NotFound($"Issue {key.ToUpperInvariant()}-{number} not found.");
 
     private static async Task<List<IssueDto>> ListIssues(HttpContext http, IssueService issues, IDbContextFactory<AppDbContext> dbFactory, PublicBaseUrl url,
-        string key, string? status, string? assignee, string? label, string? milestone, string? q, string? sort, string? sprint, SprintService sprints)
+        string key, string? status, string? assignee, string? label, string? milestone, string? q, string? sort, string? sprint, SprintService sprints,
+        WorkflowService workflows, string? workflowStatus)
     {
         var paging = Paging.From(http.Request);
         var project = await RequireProjectAsync(issues, key);
@@ -55,6 +56,12 @@ public static class IssueEndpoints
                 filter.Open = null;
                 filter.Status = ParseEnum<IssueStatus>(status, "status");
                 break;
+        }
+        if (!string.IsNullOrEmpty(workflowStatus))
+        {
+            if (!int.TryParse(workflowStatus, out var wsid)) throw ApiException.BadRequest("workflowStatus must be a workflow status id (see GET /projects/{key}/workflow).");
+            filter.WorkflowStatusId = await ValidWorkflowStatusAsync(workflows, project, wsid, null);
+            if (string.IsNullOrEmpty(status)) filter.Open = null; // a Done-category status would otherwise match nothing
         }
         if (!string.IsNullOrEmpty(assignee))
         {

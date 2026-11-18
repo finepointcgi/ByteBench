@@ -14,7 +14,7 @@ namespace GitBench.Services.Webhooks;
 /// After <see cref="WebhookService.MaxConsecutiveFailures"/> failed deliveries in a row, the hook is deactivated.
 /// </summary>
 public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender sender, IDbContextFactory<AppDbContext> dbFactory,
-    PublicBaseUrl baseUrl, ILogger<WebhookWorker> log) : BackgroundService
+    PublicBaseUrl baseUrl, WebhookSecrets secrets, ILogger<WebhookWorker> log) : BackgroundService
 {
     public const int MaxConcurrent = 8;
     /// <summary>Waits before retries 1, 2 and 3.</summary>
@@ -155,10 +155,21 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
         var body = Encoding.UTF8.GetBytes(delivery.Payload);
         WebhookAttempt attempt;
         var attempts = 0;
+        string? secret = null;
+        try { secret = secrets.Reveal(hook.Secret); }
+        catch (System.Security.Cryptography.CryptographicException ex)
+        {
+            log.LogError(ex, "Webhook {HookId}: the secret can't be decrypted (Data Protection keys changed?)", hook.Id);
+        }
         while (true)
         {
             attempts++;
-            attempt = await sender.SendAsync(hook.Url, delivery.Event, delivery.DeliveryId, hook.Secret, body, delivery.IsRedelivery, hook.Id, ct);
+            if (secret == null)
+            {
+                attempt = new WebhookAttempt(false, null, "The webhook's secret can't be decrypted (the server's Data Protection keys changed). Rotate the secret with New secret.", null, 0, false);
+                break;
+            }
+            attempt = await sender.SendAsync(hook.Url, delivery.Event, delivery.DeliveryId, secret, body, delivery.IsRedelivery, hook.Id, ct);
             if (attempt.Success || !attempt.Retryable || attempts > Backoff.Length) break;
             log.LogInformation("Webhook {HookId} delivery {Delivery} attempt {N} failed ({Error}); retrying", hook.Id, delivery.DeliveryId, attempts, attempt.Error);
             await Task.Delay(Backoff[attempts - 1], ct);
