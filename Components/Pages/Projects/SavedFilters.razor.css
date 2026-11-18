@@ -1,0 +1,23 @@
+.sf-header { margin-bottom: 16px; }
+.sf-page ::deep .sf-title { font-weight: 600; margin-bottom: 4px; }
+.sf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sf-page ::deep .sf-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 16px; color: var(--mud-palette-text-secondary); }
+/* Wide table: scrolls sideways on phones. */
+.sf-page ::deep .sf-table-wrap { overflow-x: auto; }
+.sf-page ::deep .sf-table th { font-size: 12px; font-weight: 600; color: var(--mud-palette-text-secondary); white-space: nowrap; }
+.sf-page ::deep .sf-table td { vertical-align: middle; }
+.sf-name { min-width: 160px; }
+.sf-rename { display: flex; align-items: center; gap: 6px; }
+.sf-rename ::deep .mud-input-control { margin: 0; min-width: 160px; }
+.sf-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.sf-chip {
+    font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 10px; white-space: nowrap;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-primary);
+}
+.sf-small { font-size: 12px; white-space: nowrap; }
+.sf-actions { text-align: right; white-space: nowrap; }
+.sf-actions ::deep .mud-button-root { text-transform: none; min-width: 0; }
+
+@media (max-width: 760px) {
+    .sf-page ::deep .sf-table table { min-width: 620px; }
+}

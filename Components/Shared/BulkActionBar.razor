@@ -1,48 +1,53 @@
 @inject IssueService Issues
 @inject CurrentUser Me
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 @* Sticky bar over the issue list while issues are selected. Each action is one IssueService.BulkUpdateAsync call. *@
 <div class="bulk-bar" role="toolbar" aria-label="Bulk edit">
     <b class="bulk-count">@SelectedIds.Count selected</b>
-    <select @key="(nameof(SetStatus), version)" class="form-select form-select-sm" disabled="@busy" @onchange="SetStatus" aria-label="Set status">
-        <option value="" selected>Status…</option>
-        @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
-    </select>
-    <select @key="(nameof(SetAssignee), version)" class="form-select form-select-sm" disabled="@busy" @onchange="SetAssignee" aria-label="Set assignee">
-        <option value="" selected>Assignee…</option>
-        <option value="none">Unassigned</option>
-        <option value="@Me.Id">Me</option>
-        @foreach (var u in Users.Where(u => u.Id != Me.Id)) { <option value="@u.Id">@u.DisplayName</option> }
-    </select>
-    <select @key="(nameof(SetPriority), version)" class="form-select form-select-sm" disabled="@busy" @onchange="SetPriority" aria-label="Set priority">
-        <option value="" selected>Priority…</option>
-        @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p.Icon() @p</option> }
-    </select>
-    <select @key="(nameof(SetMilestone), version)" class="form-select form-select-sm" disabled="@busy" @onchange="SetMilestone" aria-label="Set milestone">
-        <option value="" selected>Milestone…</option>
-        <option value="none">No milestone</option>
-        @foreach (var m in Project.Milestones.Where(m => !m.IsClosed)) { <option value="@m.Id">@m.Title</option> }
-    </select>
+    <MudMenu Label="Status" AriaLabel="Set status" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+             EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
+        @foreach (var s in Enum.GetValues<IssueStatus>()) { <MudMenuItem OnClick="() => SetStatus(s)">@s.Name()</MudMenuItem> }
+    </MudMenu>
+    <MudMenu Label="Assignee" AriaLabel="Set assignee" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+             EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
+        <MudMenuItem OnClick="() => SetAssignee(null)">Unassigned</MudMenuItem>
+        <MudMenuItem OnClick="() => SetAssignee(Me.Id)">Me</MudMenuItem>
+        @foreach (var u in Users.Where(u => u.Id != Me.Id)) { <MudMenuItem OnClick="() => SetAssignee(u.Id)">@u.DisplayName</MudMenuItem> }
+    </MudMenu>
+    <MudMenu Label="Priority" AriaLabel="Set priority" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+             EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
+        @foreach (var p in Enum.GetValues<IssuePriority>().Reverse())
+        {
+            <MudMenuItem OnClick="() => SetPriority(p)"><span class="d-inline-flex align-center gap-2"><PriorityIcon Priority="p" /> @p</span></MudMenuItem>
+        }
+    </MudMenu>
+    <MudMenu Label="Milestone" AriaLabel="Set milestone" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+             EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
+        <MudMenuItem OnClick="() => SetMilestone(null)">No milestone</MudMenuItem>
+        @foreach (var m in Project.Milestones.Where(m => !m.IsClosed)) { <MudMenuItem OnClick="() => SetMilestone(m.Id)">@m.Title</MudMenuItem> }
+    </MudMenu>
     @if (Project.Labels.Count > 0)
     {
-        <select @key="(nameof(AddLabel), version)" class="form-select form-select-sm" disabled="@busy" @onchange="AddLabel" aria-label="Add label">
-            <option value="" selected>+ Label…</option>
-            @foreach (var l in Project.Labels) { <option value="@l.Id">@l.Name</option> }
-        </select>
-        <select @key="(nameof(RemoveLabel), version)" class="form-select form-select-sm" disabled="@busy" @onchange="RemoveLabel" aria-label="Remove label">
-            <option value="" selected>− Label…</option>
-            @foreach (var l in Project.Labels) { <option value="@l.Id">@l.Name</option> }
-        </select>
+        <MudMenu Label="Add label" AriaLabel="Add label" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+                 StartIcon="@Icons.Material.Filled.Add" EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
+            @foreach (var l in Project.Labels) { <MudMenuItem OnClick="() => AddLabel(l)"><LabelChip Label="l" /></MudMenuItem> }
+        </MudMenu>
+        <MudMenu Label="Remove label" AriaLabel="Remove label" Disabled="busy" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+                 StartIcon="@Icons.Material.Filled.Remove" EndIcon="@Icons.Material.Filled.ArrowDropDown" Dense="true" MaxHeight="360" Class="bulk-menu">
+            @foreach (var l in Project.Labels) { <MudMenuItem OnClick="() => RemoveLabel(l)"><LabelChip Label="l" /></MudMenuItem> }
+        </MudMenu>
     }
     @if (Perms.Role >= ProjectRole.Maintainer)
     {
-        <button type="button" class="btn btn-outline-danger btn-sm" disabled="@busy" @onclick="Delete">Delete</button>
+        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Delete" Disabled="busy"
+                   OnClick="Delete" Class="bulk-delete">Delete</MudButton>
     }
-    <span class="ms-auto d-flex align-items-center gap-2">
-        @if (busy) { <span class="spinner-border spinner-border-sm"></span> }
-        @if (message != null) { <span class="small @(isError ? "text-danger" : "text-success")">@message</span> }
-        <button type="button" class="btn btn-link btn-sm" @onclick="OnClear">Clear selection</button>
+    <span class="bulk-end">
+        @if (busy) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:18px;height:18px" Color="Color.Inherit" /> }
+        @if (error != null) { <span class="bulk-error" role="alert">@error</span> }
+        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit" OnClick="OnClear" Class="bulk-clear">Clear selection</MudButton>
     </span>
 </div>
 
@@ -55,52 +60,44 @@
     /// <summary>Raised after an action (argument: whether issues were deleted).</summary>
     [Parameter] public EventCallback<bool> OnDone { get; set; }
 
-    private bool busy, isError;
-    private int version; // bumped after each action so the selects re-render showing their placeholder
-    private string? message;
+    private bool busy;
+    private string? error;
 
-    private static int? Id(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? v : null;
-    private static string Val(ChangeEventArgs e) => e.Value?.ToString() ?? "";
+    private Task SetStatus(IssueStatus s) => Run(new() { Status = s }, $"status → {s.Name()}");
+    private Task SetPriority(IssuePriority p) => Run(new() { Priority = p }, $"priority → {p}");
 
-    private Task SetStatus(ChangeEventArgs e) => Enum.TryParse<IssueStatus>(Val(e), out var s) ? Run(new() { Status = s }, $"status → {s.Name()}") : Task.CompletedTask;
-    private Task SetPriority(ChangeEventArgs e) => Enum.TryParse<IssuePriority>(Val(e), out var p) ? Run(new() { Priority = p }, $"priority → {p}") : Task.CompletedTask;
+    private Task SetAssignee(int? id) => id == null
+        ? Run(new() { SetAssignee = true }, "unassigned")
+        : Run(new() { SetAssignee = true, AssigneeId = id }, "assignee → " + (id == Me.Id ? Me.User?.DisplayName : Users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "?"));
 
-    private Task SetAssignee(ChangeEventArgs e) => Val(e) switch
-    {
-        "" => Task.CompletedTask,
-        "none" => Run(new() { SetAssignee = true }, "unassigned"),
-        _ => Run(new() { SetAssignee = true, AssigneeId = Id(e) }, "assignee → " + (Users.FirstOrDefault(u => u.Id == Id(e))?.DisplayName ?? "?")),
-    };
+    private Task SetMilestone(int? id) => id == null
+        ? Run(new() { SetMilestone = true }, "milestone removed")
+        : Run(new() { SetMilestone = true, MilestoneId = id }, "milestone → " + Project.Milestones.FirstOrDefault(m => m.Id == id)?.Title);
 
-    private Task SetMilestone(ChangeEventArgs e) => Val(e) switch
-    {
-        "" => Task.CompletedTask,
-        "none" => Run(new() { SetMilestone = true }, "milestone removed"),
-        _ => Run(new() { SetMilestone = true, MilestoneId = Id(e) }, "milestone → " + Project.Milestones.FirstOrDefault(m => m.Id == Id(e))?.Title),
-    };
-
-    private Task AddLabel(ChangeEventArgs e) => Id(e) is { } id ? Run(new() { AddLabelId = id }, "+ " + Project.Labels.FirstOrDefault(l => l.Id == id)?.Name) : Task.CompletedTask;
-    private Task RemoveLabel(ChangeEventArgs e) => Id(e) is { } id ? Run(new() { RemoveLabelId = id }, "− " + Project.Labels.FirstOrDefault(l => l.Id == id)?.Name) : Task.CompletedTask;
+    private Task AddLabel(Label l) => Run(new() { AddLabelId = l.Id }, "+ " + l.Name);
+    private Task RemoveLabel(Label l) => Run(new() { RemoveLabelId = l.Id }, "− " + l.Name);
 
     private async Task Delete()
     {
         var n = SelectedIds.Count;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete {n} issue{(n == 1 ? "" : "s")}? This cannot be undone.")) return;
+        var ok = await Dialogs.ShowMessageBoxAsync($"Delete {n} issue{(n == 1 ? "" : "s")}?", "This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
         await Run(new() { Delete = true }, "deleted");
     }
 
     private async Task Run(BulkIssueChange change, string what)
     {
         if (SelectedIds.Count == 0) return;
-        busy = true; message = null; isError = false;
+        busy = true; error = null;
         try
         {
             var r = await Issues.BulkUpdateAsync(SelectedIds.ToList(), change, Me.Id);
-            message = change.Delete ? $"Deleted {r.Deleted} issue{(r.Deleted == 1 ? "" : "s")}."
-                : $"{what}: {r.Changed} updated" + (r.Unchanged > 0 ? $", {r.Unchanged} already set" : "") + ".";
+            Snackbar.Add(change.Delete ? $"Deleted {r.Deleted} issue{(r.Deleted == 1 ? "" : "s")}."
+                : $"{what}: {r.Changed} updated" + (r.Unchanged > 0 ? $", {r.Unchanged} already set" : "") + ".", Severity.Success);
             await OnDone.InvokeAsync(change.Delete);
         }
-        catch (InvalidOperationException ex) { message = ex.Message; isError = true; }
-        finally { busy = false; version++; }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
     }
 }

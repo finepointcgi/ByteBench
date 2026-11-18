@@ -56,6 +56,7 @@ public static class GitBenchTheme
         Typography = new Typography
         {
             Default = new DefaultTypography { FontFamily = ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"], FontSize = "0.875rem" },
+            Button = new ButtonTypography { TextTransform = "none", FontWeight = "500" },
         },
         LayoutProperties = new LayoutProperties { DefaultBorderRadius = "8px", DrawerWidthLeft = "240px" },
     };

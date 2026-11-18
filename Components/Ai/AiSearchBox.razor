@@ -6,28 +6,31 @@
 @* "Ask" toggle for the issue filter bar: a plain-English query becomes filters, shown as removable chips. *@
 @if (Ai.IsConfigured)
 {
-    <button type="button" class="btn btn-sm ai-toggle @(open ? "on" : "")" @onclick="Toggle" title="Search in plain English with AI">✨ Ask</button>
+    <MudButton Variant="@(open ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" OnClick="Toggle" StartIcon="@Icons.Material.Outlined.AutoAwesome"
+               title="Search in plain English with AI" Class="ai-toggle">Ask</MudButton>
     @if (open || VisibleChips.Any() || error != null)
     {
         <div class="ai-search">
             @if (open)
             {
-                <div class="d-flex gap-2">
-                    <input class="form-control form-control-sm" maxlength="500" @bind="query" @bind:event="oninput" @onkeydown="Key"
-                           placeholder="e.g. my open high priority bugs in sprint 2 with the ui label" disabled="@busy" />
-                    <button type="button" class="btn btn-sm btn-ai" disabled="@(busy || string.IsNullOrWhiteSpace(query))" @onclick="Ask">
-                        @if (busy) { <span class="spinner-border spinner-border-sm"></span> } else { <span>Ask</span> }
-                    </button>
+                <div class="ai-search-row">
+                    <MudTextField T="string" @bind-Value="query" Immediate="true" MaxLength="500" OnKeyDown="Key" Disabled="busy" AutoFocus="true"
+                                  Placeholder="e.g. my open high priority bugs in sprint 2 with the ui label" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.AutoAwesome" IconSize="Size.Small" aria-label="Ask AI" Class="flex-grow-1" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || string.IsNullOrWhiteSpace(query))" OnClick="Ask">
+                        @if (busy) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:16px;height:16px" /> } else { <span>Ask</span> }
+                    </MudButton>
                 </div>
             }
-            @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+            @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-1">@error</MudText> }
             @if (VisibleChips.Any())
             {
                 <div class="ai-chips">
-                    <span class="muted small">AI filters:</span>
+                    <span class="ai-muted">AI filters:</span>
                     @foreach (var c in VisibleChips)
                     {
-                        <span class="ai-chip">@c.Text<button type="button" aria-label="Remove @c.Text" @onclick="() => Remove(c)">×</button></span>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text" OnClose="() => Remove(c)" Class="ma-0"
+                                 CloseIcon="@Icons.Material.Filled.Close" aria-label="@($"Remove {c.Text}")">@c.Text</MudChip>
                     }
                 </div>
             }

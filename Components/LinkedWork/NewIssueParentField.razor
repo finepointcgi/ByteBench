@@ -2,22 +2,23 @@
 @inject LinkedWorkService LinkedWork
 @inject NavigationManager Nav
 
-<div class="field">
-    <label>Parent</label>
+<div class="lw-field">
+    <MudText Typo="Typo.caption" Class="mud-text-secondary lw-field-label">Parent</MudText>
     @if (Issue.Type == IssueType.Epic)
     {
-        <span class="muted small">Epics are top-level issues.</span>
+        <span class="lw-muted">Epics are top-level issues.</span>
     }
     else if (parent != null)
     {
         <div class="lw-parent">
-            <span>@parent.Type.Icon()</span> <span class="mono small">@parent.Key</span>
+            <span>@parent.Type.Icon()</span> <span class="mono lw-key">@parent.Key</span>
             <span class="lw-parent-title" title="@parent.Title">@parent.Title</span>
-            <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger" title="Clear" @onclick="() => Set(null)">✕</button>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" title="Clear" aria-label="Clear parent"
+                           Class="ml-auto lw-remove" OnClick="() => Set(null)" />
         </div>
         @if (!HierarchyRules.CanBeChildOf(Issue.Type, parent.Type))
         {
-            <div class="text-danger small mt-1">@HierarchyRules.ParentRule(Issue.Type)</div>
+            <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-1">@HierarchyRules.ParentRule(Issue.Type)</MudText>
         }
     }
     else

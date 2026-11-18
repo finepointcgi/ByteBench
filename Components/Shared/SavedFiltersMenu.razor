@@ -4,47 +4,51 @@
 
 @* "Filters" dropdown on the issue list: apply, star and save filters (a saved filter is the list's query string). *@
 <div class="filters-menu">
-    <button type="button" class="btn btn-outline-secondary btn-sm @(open ? "active" : "")" @onclick="Toggle" aria-expanded="@open">
-        ☰ Filters@(Current is { } c ? $": {c.Name}" : "") ▾
-    </button>
-    @if (open)
-    {
-        <div class="filters-backdrop" @onclick="() => open = false"></div>
-        <div class="filters-dropdown" role="menu">
+    <MudButton Variant="@(open ? Variant.Filled : Variant.Outlined)" Color="@(open ? Color.Primary : Color.Default)" OnClick="Toggle"
+               StartIcon="@Icons.Material.Filled.FilterList" EndIcon="@Icons.Material.Filled.ArrowDropDown" aria-expanded="@(open ? "true" : "false")"
+               Class="filters-btn">
+        <span class="filters-btn-text">Filters@(Current is { } c ? $": {c.Name}" : "")</span>
+    </MudButton>
+    <MudPopover Open="open" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Paper="true" Elevation="8" Class="filters-popover">
+        <div class="filters-dropdown" role="menu" @onkeydown="PopoverKey">
             @if (filters.Count == 0)
             {
-                <div class="muted small px-3 py-2">No saved filters yet. Set up the list, then save it below.</div>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary px-4 py-2">No saved filters yet. Set up the list, then save it below.</MudText>
             }
             @foreach (var f in filters)
             {
                 <div class="filters-item @(f.Id == Current?.Id ? "current" : "")" @key="f.Id">
-                    <button type="button" class="star @(f.IsStarred ? "on" : "")" title="@(f.IsStarred ? "Unstar" : "Star (show in sidebar)")" @onclick="() => Star(f)">@(f.IsStarred ? "★" : "☆")</button>
+                    <MudIconButton Icon="@(f.IsStarred ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" Size="Size.Small"
+                                   Color="@(f.IsStarred ? Color.Warning : Color.Default)" title="@(f.IsStarred ? "Unstar" : "Star (show in sidebar)")"
+                                   aria-label="@(f.IsStarred ? $"Unstar {f.Name}" : $"Star {f.Name}")" OnClick="() => Star(f)" />
                     <a href="@Href(f.Query)" @onclick="() => open = false">@f.Name</a>
-                    @if (f.IsShared) { <span class="badge text-bg-light" title="Shared with the project by @f.OwnerName">shared</span> }
-                    @if (f.IsMine && f.Id == Current?.Id) { <span class="muted small ms-auto">current</span> }
+                    @if (f.IsShared) { <span class="filters-shared" title="Shared with the project by @f.OwnerName">shared</span> }
+                    @if (f.IsMine && f.Id == Current?.Id) { <span class="filters-current">current</span> }
                 </div>
             }
             <div class="filters-save">
                 @if (Changed is { } changed)
                 {
-                    <button type="button" class="btn btn-link btn-sm p-0 mb-2" @onclick="() => UpdateQuery(changed)">Update “@changed.Name” with the current filter</button>
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Class="mb-2 filters-update" OnClick="() => UpdateQuery(changed)">
+                        Update “@changed.Name” with the current filter
+                    </MudButton>
                 }
-                <div class="small fw-semibold mb-1">Save current filter</div>
-                <div class="d-flex gap-2">
-                    <input class="form-control form-control-sm" maxlength="100" placeholder="Name, e.g. My open bugs" @bind="name" @bind:event="oninput" @onkeydown="Key" />
-                    <button type="button" class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(name)" @onclick="Save">Save</button>
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Save current filter</MudText>
+                <div class="d-flex gap-2 align-center">
+                    <MudTextField T="string" @bind-Value="name" Immediate="true" MaxLength="100" Placeholder="Name, e.g. My open bugs"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyDown="Key" Class="flex-grow-1 mt-0" aria-label="Filter name" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(name)" OnClick="Save">Save</MudButton>
                 </div>
                 @if (Perms.Role >= ProjectRole.Developer)
                 {
-                    <label class="form-check small mt-1 mb-0">
-                        <input type="checkbox" class="form-check-input" @bind="shared" /> Share with the project
-                    </label>
+                    <MudCheckBox T="bool" @bind-Value="shared" Dense="true" Size="Size.Small" Label="Share with the project" Class="ml-n2 mt-1" />
                 }
-                @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+                @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-1">@error</MudText> }
             </div>
             <a class="filters-manage" href="/p/@Project.Key/filters" @onclick="() => open = false">Manage filters…</a>
         </div>
-    }
+    </MudPopover>
+    <MudOverlay Visible="open" OnClick="() => open = false" AutoClose="true" />
 </div>
 
 @code {
@@ -87,10 +91,14 @@
 
     private void Toggle() { open = !open; error = null; }
 
+    private void PopoverKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") open = false;
+    }
+
     private async Task Key(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(name)) await Save();
-        if (e.Key == "Escape") open = false;
     }
 
     private async Task Save()

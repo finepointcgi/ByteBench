@@ -9,18 +9,19 @@
     <div class="dup-panel">
         @if (checking)
         {
-            <div class="muted small"><span class="spinner-border spinner-border-sm me-1"></span>Checking for possible duplicates…</div>
+            <div class="dup-muted"><MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:14px;height:14px" Class="mr-2" />Checking for possible duplicates…</div>
         }
         else if (error != null)
         {
-            <div class="muted small">Duplicate check unavailable: @error</div>
+            <div class="dup-muted">Duplicate check unavailable: @error</div>
         }
         else
         {
             <div class="dup-head">
+                <MudIcon Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" Color="Color.Warning" />
                 <b>Possible duplicates</b>
-                <span class="ai-badge">AI-generated</span>
-                <button type="button" class="btn btn-link btn-sm ms-auto p-0" @onclick="() => hints = []">Dismiss</button>
+                <span class="ai-tag">AI-generated</span>
+                <MudButton Variant="Variant.Text" Size="Size.Small" Class="ml-auto dup-dismiss" OnClick="() => hints = []">Dismiss</MudButton>
             </div>
             <ul class="dup-list">
                 @foreach (var h in hints)
@@ -29,8 +30,8 @@
                         <a href="/p/@Project.Key/issues/@h.Number" target="_blank" rel="noopener">
                             <span class="mono">@h.Key</span> @h.Title
                         </a>
-                        @if (h.Closed) { <span class="status-badge status-done ms-1">Closed</span> }
-                        <div class="muted small">@h.Reason</div>
+                        @if (h.Closed) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="my-0 mr-0 ml-1" Style="height:20px">Closed</MudChip> }
+                        <div class="dup-muted">@h.Reason</div>
                     </li>
                 }
             </ul>

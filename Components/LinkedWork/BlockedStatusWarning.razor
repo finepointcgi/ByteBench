@@ -3,10 +3,7 @@
 
 @if (warning != null)
 {
-    <div class="alert alert-warning py-2 d-flex align-items-center gap-2">
-        <span>@warning</span>
-        <button type="button" class="btn-close ms-auto" aria-label="Dismiss" @onclick="() => warning = null"></button>
-    </div>
+    <MudAlert Severity="Severity.Warning" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => warning = null" Class="mb-3">@warning</MudAlert>
 }
 
 @code {

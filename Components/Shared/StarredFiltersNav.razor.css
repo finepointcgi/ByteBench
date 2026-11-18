@@ -1,0 +1,7 @@
+/* Matches MainLayout's drawer (.gb-drawer / .gb-nav-heading in app.css). */
+.side-filters-heading { display: block; text-decoration: none; }
+.side-filters-heading:hover { color: var(--mud-palette-drawer-text); text-decoration: none; }
+.side-filters ::deep .side-filter .mud-nav-link .mud-nav-link-icon.mud-nav-link-icon-default { color: #f59e0b; font-size: 18px; }
+::deep .side-filter .mud-nav-link-text { min-width: 0; }
+.side-filter-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+::deep .side-filter.active .mud-nav-link, ::deep .side-filter .mud-nav-link.active { background: rgba(167, 139, 250, .18); color: #fff; }

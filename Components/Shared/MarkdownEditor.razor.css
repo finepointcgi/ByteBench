@@ -1,0 +1,38 @@
+.md-editor {
+    border: 1px solid var(--mud-palette-lines-inputs); border-radius: 6px; overflow: hidden; background: var(--mud-palette-surface);
+    transition: border-color .15s;
+}
+.md-editor:focus-within { border-color: var(--mud-palette-primary); }
+.md-editor.dragging { outline: 2px dashed var(--mud-palette-primary); outline-offset: -2px; background: rgba(var(--mud-palette-primary-rgb), .08); }
+
+.md-toolbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 0 8px 0 0;
+    background: var(--mud-palette-background); border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+::deep .md-tabbar { flex: none; }
+::deep .md-tabbar .mud-tabs-tabbar { background: transparent; }
+::deep .md-tabbar .mud-tab { min-height: 36px; padding: 4px 12px; text-transform: none; font-size: 13px; }
+
+::deep .md-attach { text-transform: none; color: var(--mud-palette-text-secondary); cursor: pointer; }
+::deep .md-attach:hover { color: var(--mud-palette-primary); }
+::deep .md-attach input[type=file] { display: none; }
+.md-uploading { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mud-palette-text-secondary); }
+.md-hint { margin-left: auto; font-size: 12px; color: var(--mud-palette-text-secondary); }
+.md-attach-error {
+    padding: 4px 10px; font-size: 12px; color: var(--mud-palette-error);
+    background: rgba(var(--mud-palette-error-rgb), .08); border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+
+.md-textarea {
+    display: block; width: 100%; border: 0; outline: none; resize: vertical; padding: 10px 12px; margin: 0;
+    font: inherit; font-size: 14px; line-height: 1.5; color: var(--mud-palette-text-primary); background: transparent;
+}
+.md-textarea::placeholder { color: var(--mud-palette-text-disabled); }
+.md-preview { padding: 12px; min-height: 120px; }
+.md-empty { color: var(--mud-palette-text-secondary); }
+.md-preview ::deep img { max-width: 100%; height: auto; border-radius: 4px; }
+.md-preview ::deep pre, .md-preview ::deep code { background: var(--mud-palette-background-gray); }
+
+@media (max-width: 600px) {
+    .md-hint { display: none; }
+}

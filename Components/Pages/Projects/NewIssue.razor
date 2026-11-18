@@ -17,86 +17,86 @@ else if (project != null && !canCreate)
 }
 else if (project != null)
 {
-    <div class="page-header"><h1>New issue <span class="muted">in @project.Name</span></h1></div>
+<div class="ni-page">
+    <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-2" />
+    <MudText Typo="Typo.h5" Class="ni-title mb-4">New issue <span class="ni-muted">in @project.Name</span></MudText>
 
     <GitBench.Components.Ai.AiIssueDraft Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
     <EditForm Model="issue" OnValidSubmit="Create" FormName="new-issue">
         <DataAnnotationsValidator />
-        <div class="detail-grid">
-            <div class="card-panel">
-                <div class="mb-3">
-                    <label class="form-label">Title</label>
-                    <InputText class="form-control form-control-lg" @bind-Value="issue.Title" placeholder="Short summary" autofocus />
-                    <ValidationMessage For="() => issue.Title" />
+        <MudGrid Spacing="4">
+            <MudItem xs="12" md="8">
+                <MudPaper Outlined="true" Class="pa-4 pa-sm-5">
+                    <MudTextField T="string" @bind-Value="issue.Title" For="() => issue.Title" Label="Title" Placeholder="Short summary" AutoFocus="true"
+                                  Variant="Variant.Outlined" Typo="Typo.h6" Class="mb-1" />
                     <GitBench.Components.Ai.DuplicateHints Project="project" Title="@issue.Title" Description="@issue.Description" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Description</label>
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Description</MudText>
                     <MarkdownEditor @bind-Value="issue.Description" Rows="10"
                                     Placeholder="Describe the problem or feature. Markdown and task lists (- [ ]) are supported." />
-                </div>
-                @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-                <button class="btn btn-primary" type="submit">Create issue</button>
-                <a class="btn btn-link" href="/p/@project.Key/issues">Cancel</a>
-            </div>
-
-            <div class="side-panel">
-                <div class="field">
-                    <label>Type</label>
-                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.Type">
-                        @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
-                    </InputSelect>
-                </div>
-                <GitBench.Components.LinkedWork.NewIssueParentField Project="project" Issue="issue" OnChanged="StateHasChanged" />
-                <div class="field">
-                    <label>Status</label>
-                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.WorkflowStatusId">
-                        @foreach (var s in workflow.Statuses) { <option value="@s.Id">@s.Name</option> }
-                    </InputSelect>
-                </div>
-                <div class="field">
-                    <label>Priority</label>
-                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.Priority">
-                        @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p.Icon() @p</option> }
-                    </InputSelect>
-                </div>
-                <div class="field">
-                    <label>Assignee</label>
-                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.AssigneeId">
-                        <option value="">Unassigned</option>
-                        @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
-                    </InputSelect>
-                    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => issue.AssigneeId = Me.Id">Assign to me</button>
-                </div>
-                <div class="field">
-                    <label>Milestone</label>
-                    <InputSelect class="form-select form-select-sm" @bind-Value="issue.MilestoneId">
-                        <option value="">None</option>
-                        @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <option value="@m.Id">@m.Title</option> }
-                    </InputSelect>
-                </div>
-                <div class="field">
-                    <label>Labels</label>
-                    <div class="label-picker">
-                        @foreach (var l in project.Labels)
-                        {
-                            var on = labelIds.Contains(l.Id);
-                            <button type="button" class="label-toggle @(on ? "on" : "")" @onclick="() => Toggle(l.Id)"
-                                    style="--c:@l.Color;--t:@Display.TextOn(l.Color)">@l.Name</button>
-                        }
+                    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@error</MudAlert> }
+                    <div class="d-flex gap-2 mt-4">
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">Create issue</MudButton>
+                        <MudButton Href="@($"/p/{project.Key}/issues")" Variant="Variant.Text">Cancel</MudButton>
                     </div>
-                </div>
-                <div class="field">
-                    <label>Story points</label>
-                    <InputNumber class="form-control form-control-sm" @bind-Value="issue.StoryPoints" />
-                </div>
-                <div class="field">
-                    <label>Due date</label>
-                    <InputDate class="form-control form-control-sm" @bind-Value="issue.DueDate" />
-                </div>
-            </div>
-        </div>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudPaper Outlined="true" Class="pa-4">
+                    <MudStack Spacing="4">
+                        <MudSelect T="IssueType" @bind-Value="issue.Type" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   ToStringFunc="@(t => $"{t.Icon()} {t}")">
+                            @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
+                        </MudSelect>
+                        <GitBench.Components.LinkedWork.NewIssueParentField Project="project" Issue="issue" OnChanged="StateHasChanged" />
+                        <MudSelect T="int?" @bind-Value="issue.WorkflowStatusId" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   ToStringFunc="@(id => workflow.Statuses.FirstOrDefault(s => s.Id == id)?.Name ?? "")">
+                            @foreach (var s in workflow.Statuses) { <MudSelectItem T="int?" Value="s.Id">@s.Name</MudSelectItem> }
+                        </MudSelect>
+                        <MudSelect T="IssuePriority" @bind-Value="issue.Priority" Label="Priority" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                            @foreach (var p in Enum.GetValues<IssuePriority>().Reverse())
+                            {
+                                <MudSelectItem Value="p"><span class="d-inline-flex align-center gap-2"><PriorityIcon Priority="p" /> @p</span></MudSelectItem>
+                            }
+                        </MudSelect>
+                        <div>
+                            @* 0 stands for "Unassigned". *@
+                            <MudSelect T="int" Value="@(issue.AssigneeId ?? 0)" ValueChanged="v => issue.AssigneeId = v == 0 ? null : v" Label="Assignee"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="AssigneeName">
+                                <MudSelectItem Value="0">Unassigned</MudSelectItem>
+                                @foreach (var u in users) { <MudSelectItem Value="u.Id">@u.DisplayName</MudSelectItem> }
+                            </MudSelect>
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Class="ni-link-btn" OnClick="() => issue.AssigneeId = Me.Id">Assign to me</MudButton>
+                        </div>
+                        <MudSelect T="int" Value="@(issue.MilestoneId ?? 0)" ValueChanged="v => issue.MilestoneId = v == 0 ? null : v" Label="Milestone"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                   ToStringFunc="@(id => id == 0 ? "None" : project.Milestones.FirstOrDefault(m => m.Id == id)?.Title ?? "")">
+                            <MudSelectItem Value="0">None</MudSelectItem>
+                            @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <MudSelectItem Value="m.Id">@m.Title</MudSelectItem> }
+                        </MudSelect>
+                        <div>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary ni-label">Labels</MudText>
+                            <div class="ni-labels">
+                                @foreach (var l in project.Labels)
+                                {
+                                    var on = labelIds.Contains(l.Id);
+                                    <MudChip T="string" Size="Size.Small" Class="ma-0" OnClick="() => Toggle(l.Id)" aria-pressed="@(on ? "true" : "false")"
+                                             Variant="@(on ? Variant.Filled : Variant.Outlined)" Icon="@(on ? Icons.Material.Filled.Check : null)"
+                                             Style="@(on ? $"background:{l.Color};color:{Display.TextOn(l.Color)}" : $"border-color:{l.Color};color:var(--mud-palette-text-primary)")">@l.Name</MudChip>
+                                }
+                                @if (project.Labels.Count == 0) { <span class="ni-muted">No labels in this project.</span> }
+                            </div>
+                        </div>
+                        <MudNumericField T="int?" @bind-Value="issue.StoryPoints" Label="Story points" Min="0" Max="100"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudDatePicker @bind-Date="issue.DueDate" Label="Due date" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                       DateFormat="yyyy-MM-dd" Editable="true" />
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
     </EditForm>
+</div>
 }
 
 @code {
@@ -109,6 +109,9 @@ else if (project != null)
     private Issue issue = new();
     private HashSet<int> labelIds = [];
     private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private List<BreadcrumbItem> crumbs = [];
+
+    private string AssigneeName(int id) => id == 0 ? "Unassigned" : users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,7 +119,11 @@ else if (project != null)
         notFound = project == null;
         canCreate = project != null && await Access.CanAsync(project.Id, Permission.EditIssues);
         users = await Issues.GetUsersAsync();
-        if (project != null) workflow = await Workflows.GetAsync(project.Id);
+        if (project != null)
+        {
+            workflow = await Workflows.GetAsync(project.Id);
+            crumbs = [new(project.Name, $"/p/{project.Key}/issues"), new("Issues", $"/p/{project.Key}/issues"), new("New issue", null, disabled: true)];
+        }
         issue.WorkflowStatusId = workflow.FirstOf(issue.Status)?.Id; // defaults to the first To Do status
     }
 

@@ -1,5 +1,5 @@
-@* Status chip: the workflow status name and colour when known (Issue or WorkflowStatus), else the category. *@
-<span class="status-badge status-@Category.Css()" style="@Display.StatusStyle(Workflow?.Color)">@(Workflow?.Name ?? Category.Name())</span>
+@* Status chip: the workflow status name and colour when known (Issue or WorkflowStatus), else the category's colour. *@
+<MudChip T="string" Size="Size.Small" Ripple="false" Class="@($"gb-status gb-status-{Category.Css()} ma-0")" Style="@ChipStyle">@(Workflow?.Name ?? Category.Name())</MudChip>
 
 @code {
     [Parameter] public IssueStatus Status { get; set; }
@@ -8,4 +8,25 @@
 
     private IssueStatus Category => Issue?.Status ?? WorkflowStatus?.Category ?? Status;
     private WorkflowStatus? Workflow => Issue != null ? Display.WorkflowStatusOf(Issue) : WorkflowStatus;
+
+    // A tint of the status colour over the theme surface, so the chip reads in light and dark mode.
+    private string ChipStyle
+    {
+        get
+        {
+            var c = string.IsNullOrEmpty(Workflow?.Color) ? CategoryColor(Category) : Workflow!.Color;
+            return $"height:22px;font-size:12px;font-weight:500;white-space:nowrap;"
+                 + $"background:color-mix(in srgb, {c} 20%, var(--mud-palette-surface));"
+                 + $"color:color-mix(in srgb, {c} 70%, var(--mud-palette-text-primary))";
+        }
+    }
+
+    private static string CategoryColor(IssueStatus s) => s switch
+    {
+        IssueStatus.Todo => "#3b82f6",
+        IssueStatus.InProgress => "#f59e0b",
+        IssueStatus.InReview => "#a855f7",
+        IssueStatus.Done => "#22c55e",
+        _ => "#9ca3af",
+    };
 }

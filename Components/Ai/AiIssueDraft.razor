@@ -6,33 +6,39 @@
 @* "Draft with AI" box for the new-issue form. Fills the form; never creates anything. *@
 @if (!Ai.IsConfigured)
 {
-    <div class="ai-hint">✨ AI features need <code>ANTHROPIC_API_KEY</code> (or <code>Ai:ApiKey</code>) to be set.</div>
+    <div class="ai-hint">
+        <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small" />
+        <span>AI features need <code>ANTHROPIC_API_KEY</code> (or <code>Ai:ApiKey</code>) to be set.</span>
+    </div>
 }
 else
 {
     <div class="ai-draft">
-        <button type="button" class="ai-draft-head" @onclick="() => open = !open" aria-expanded="@open">
-            <span>✨ Draft with AI</span>
-            <span class="muted small">Describe it in a sentence or paste an error log — Claude fills in the form for you to review.</span>
-            <span class="ms-auto muted">@(open ? "▾" : "▸")</span>
+        <button type="button" class="ai-draft-head" @onclick="() => open = !open" aria-expanded="@(open ? "true" : "false")">
+            <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small" />
+            <span class="ai-draft-title">Draft with AI</span>
+            <span class="ai-draft-sub">Describe it in a sentence or paste an error log — Claude fills in the form for you to review.</span>
+            <MudIcon Icon="@(open ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" Class="ml-auto" />
         </button>
         @if (open)
         {
             <div class="ai-draft-body">
-                <textarea class="form-control" rows="3" maxlength="12000" @bind="rough" @bind:event="oninput" @onkeydown="Key"
-                          placeholder="e.g. checkout button does nothing on Safari after applying a coupon" disabled="@busy"></textarea>
-                <div class="d-flex align-items-center gap-2 mt-2">
-                    <button type="button" class="btn btn-sm btn-ai" disabled="@(busy || string.IsNullOrWhiteSpace(rough))" @onclick="Draft">
-                        @if (busy) { <span class="spinner-border spinner-border-sm me-1"></span><span>Drafting…</span> }
-                        else { <span>✨ Draft issue</span> }
-                    </button>
-                    <span class="muted small">Ctrl+Enter</span>
-                    @if (error != null) { <span class="text-danger small">@error</span> }
-                    @if (applied) { <span class="text-success small">Form filled. Review and edit before creating.</span> }
+                <MudTextField T="string" @bind-Value="rough" Immediate="true" Lines="3" Sizing="InputSizing.Auto" MaxLength="12000" OnKeyDown="Key"
+                              Placeholder="e.g. checkout button does nothing on Safari after applying a coupon" Disabled="busy"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="Describe the issue" />
+                <div class="ai-draft-actions">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(busy || string.IsNullOrWhiteSpace(rough))" OnClick="Draft"
+                               StartIcon="@(busy ? null : Icons.Material.Outlined.AutoAwesome)">
+                        @if (busy) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" Style="width:14px;height:14px" /><span>Drafting…</span> }
+                        else { <span>Draft issue</span> }
+                    </MudButton>
+                    <span class="ai-muted">Ctrl+Enter</span>
+                    @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText> }
+                    @if (applied) { <MudText Typo="Typo.caption" Color="Color.Success">Form filled. Review and edit before creating.</MudText> }
                 </div>
                 @if (dropped.Count > 0)
                 {
-                    <div class="muted small mt-1">Ignored labels that don't exist in this project: @string.Join(", ", dropped)</div>
+                    <div class="ai-muted mt-1">Ignored labels that don't exist in this project: @string.Join(", ", dropped)</div>
                 }
             </div>
         }

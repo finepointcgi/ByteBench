@@ -1,0 +1,18 @@
+.filters-menu { position: relative; }
+::deep .filters-btn { max-width: 280px; }
+.filters-btn-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The popover is rendered by MudPopoverProvider, but its child content is still this component's markup. */
+.filters-dropdown { width: 340px; max-width: calc(100vw - 32px); padding: 6px 0; }
+.filters-item { display: flex; align-items: center; gap: 4px; padding: 2px 12px 2px 6px; }
+.filters-item:hover { background: var(--mud-palette-action-default-hover); }
+.filters-item.current { background: rgba(var(--mud-palette-primary-rgb), .12); }
+.filters-item a { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--mud-palette-text-primary); }
+.filters-shared {
+    font-size: 11px; padding: 0 6px; border-radius: 8px; line-height: 18px;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary);
+}
+.filters-current { font-size: 12px; color: var(--mud-palette-text-secondary); margin-left: auto; }
+.filters-save { border-top: 1px solid var(--mud-palette-lines-default); margin-top: 6px; padding: 10px 14px 6px; }
+::deep .filters-update { text-transform: none; padding-left: 0; }
+.filters-manage { display: block; border-top: 1px solid var(--mud-palette-lines-default); padding: 8px 14px 4px; font-size: 13px; }
