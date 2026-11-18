@@ -335,6 +335,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureAutomation(b);
         ConfigureWikiSnippets(b);
         ConfigureForks(b);
+        ConfigureSsoLdap(b);
     }
 
     // ----- Forks -----
@@ -347,9 +348,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequest>().HasOne(p => p.SourceRepository).WithMany().HasForeignKey(p => p.SourceRepositoryId).OnDelete(DeleteBehavior.SetNull);
         b.Entity<PullRequest>().HasIndex(p => new { p.SourceRepositoryId, p.State });
         b.Entity<Pipeline>().HasOne(p => p.ApprovedBy).WithMany().HasForeignKey(p => p.ApprovedById).OnDelete(DeleteBehavior.SetNull);
-    }
-
-        ConfigureSsoLdap(b);
     }
 
     // ----- SSO & LDAP -----
