@@ -1,0 +1,141 @@
+@page "/p/{Key}/repos/{Slug}/settings/deploy-keys"
+@inherits RepoPageBase
+@using GitBench.Services.Ssh
+@using Microsoft.Extensions.Options
+@inject SshKeyService Keys
+@inject ProjectAccess Access
+@inject IOptions<SshOptions> SshOptions
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Deploy keys · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage deploy keys." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="deploy-keys" />
+        <div class="gb-min0">
+            <div class="mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.VpnKey" /> Deploy keys</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    A deploy key is an SSH key for a server or CI system that needs this repository and nothing else. It is read-only
+                    (clone and fetch) unless you allow write access; then it can push like a Developer, and
+                    <a href="@RepoUrls.BranchProtection(Repo)">branch protection</a> applies to it without any admin bypass.
+                    Pushes from a deploy key run webhooks, pipelines and smart commits as the person who added it.
+                    @if (!SshOptions.Value.Enabled) { <b> Git over SSH is turned off on this server, so deploy keys don't work until it is turned on.</b> }
+                </MudText>
+            </div>
+
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-3">Add a deploy key</MudText>
+                @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" Label="Title" @bind-Value="title" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100"
+                                      Placeholder="e.g. Production server" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string" Label="Key" @bind-Value="keyText" Lines="4" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… deploy@server" Class="gb-mono-input" Immediate="true" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudCheckBox T="bool" @bind-Value="canWrite" Color="Color.Primary" Dense="true">
+                            <b>Allow write access</b> <span class="mud-text-secondary">(push; branch protection still applies)</span>
+                        </MudCheckBox>
+                    </MudItem>
+                </MudGrid>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="mt-3" StartIcon="@Icons.Material.Filled.Add"
+                           Disabled="@(string.IsNullOrWhiteSpace(keyText) || busy)" OnClick="Add">Add deploy key</MudButton>
+            </MudPaper>
+
+            <div class="gb-rows">
+                @if (keys.Count == 0)
+                {
+                    <div class="empty">No deploy keys yet.</div>
+                }
+                @foreach (var k in keys)
+                {
+                    <div class="gb-row" @key="k.Id">
+                        <MudIcon Icon="@Icons.Material.Outlined.VpnKey" Size="Size.Small" Class="mud-text-secondary" />
+                        <div class="gb-row-main gb-min0">
+                            <div class="gb-row-title">
+                                @k.Title
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(k.CanWrite ? Color.Warning : Color.Default)" Class="ma-0 ml-2">
+                                    @(k.CanWrite ? "Read and write" : "Read-only")
+                                </MudChip>
+                            </div>
+                            <div class="gb-row-meta">
+                                <span class="mono">@k.Fingerprint</span><br />
+                                Added @k.CreatedAt.ToLocalTime().ToString("d")@(k.CreatedBy != null ? $" by {k.CreatedBy.DisplayName}" : "") ·
+                                Last used @(k.LastUsedAt?.ToLocalTime().ToString("g") ?? "never")
+                            </div>
+                        </div>
+                        <div class="gb-row-right">
+                            <MudTooltip Text="Delete deploy key">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                               aria-label="@($"Delete the deploy key {k.Title}")" OnClick="() => Delete(k)" />
+                            </MudTooltip>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<SshKey> keys = [];
+    private string? title, keyText;
+    private bool canWrite, busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (!perms.Can(Permission.ManageRepositories)) return;
+        await Load();
+    }
+
+    private async Task Load() => keys = await Keys.ListDeployKeysAsync(Repo!.Id);
+
+    private async Task Add()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            var key = await Keys.AddDeployKeyAsync(Repo!.Id, title ?? "", keyText ?? "", canWrite);
+            Snackbar.Add($"Added the deploy key '{key.Title}'.", Severity.Success);
+            title = keyText = null;
+            canWrite = false;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Delete(SshKey k)
+    {
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Delete deploy key", $"Delete the deploy key '{k.Title}'? Anything using it loses access to this repository.")) return;
+        try
+        {
+            await Keys.DeleteDeployKeyAsync(Repo!.Id, k.Id);
+            Snackbar.Add($"Deleted the deploy key '{k.Title}'.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+}

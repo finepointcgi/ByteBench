@@ -9,6 +9,7 @@ using GitBench.Api;
 using GitBench.Services.Audit;
 using GitBench.Services.Releases;
 using GitBench.Services.Hosting;
+using GitBench.Services.Ssh;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -97,6 +98,7 @@ builder.Services.AddScoped<GitBench.Services.Explore.ExploreService>();
 builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
 builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
 builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
+builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

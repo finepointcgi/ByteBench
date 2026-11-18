@@ -42,6 +42,7 @@ public class TestApp : WebApplicationFactory<Program>
             ["Ci:Enabled"] = "false",
             ["Ci:WorkDirectory"] = Path.Combine(DataRoot, "ci"),
             ["Webhooks:AllowPrivateNetworks"] = "true",
+            ["Ssh:Enabled"] = "false", // SshTests turns it on with a free port
             ["Logging:LogLevel:Default"] = "Warning",
             ["Logging:LogLevel:Microsoft"] = "Warning",
             ["Logging:LogLevel:GitBench.GitHttp"] = "Warning",

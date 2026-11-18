@@ -19,7 +19,7 @@ dotnet test                              # everything (about 15 s)
 dotnet test --filter "Category!=Docker"  # skip the Docker pipeline test (what CI runs)
 ```
 
-The suite is in `tests/GitBench.Tests` (xUnit, referenced from `GitBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs a pipeline in `alpine:3.20`; it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
+The suite is in `tests/GitBench.Tests` (xUnit, referenced from `GitBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs a pipeline in `alpine:3.20`; it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
 
 ## UI
 
@@ -182,6 +182,30 @@ git push origin main
 - Repositories live as bare repos under `Git:RepositoryRoot` (default `./repos`).
 - **Smart commits:** after each push, commits whose message mentions an issue key (e.g. `WEB-5: virtualize the list`) are added to that issue's activity and show in its Development panel (`Services/Git/IssueCommitPushListener.cs`). Each commit is linked once per issue.
 - Code can react to pushes by registering an `IGitPushListener` (`Services/Git/GitHttpPushListener.cs`) in DI.
+
+### Git over SSH
+
+GitBench has its own SSH server for git, so you can clone and push with an SSH key instead of a password or token. It is **off by default** (on in `appsettings.Development.json` and in the Docker image).
+
+```bash
+git clone ssh://git@localhost:2222/WEB/web-app.git      # Development: port 2222
+git clone git@gitbench.example.com:WEB/web-app.git      # scp-like form, only when the public port is 22
+```
+
+- **Your keys:** add them under **Profile → SSH keys** (`/account/ssh-keys`): paste the `.pub` file, give it a title (default: the key's comment) and optionally an expiry. The list shows each key's `SHA256:` fingerprint (as `ssh-keygen -lf key.pub` prints it), when it was added and last used. Supported: `ssh-ed25519` (recommended), `ecdsa-sha2-nistp256/384/521` and `ssh-rsa` of 2048 bits or more. FIDO (`sk-…`) keys aren't supported yet.
+  - A key acts as you, with your project permissions: clone and fetch need ViewProject, push needs PushCode. A project you can't see answers `Repository not found`, like a missing repository.
+  - Two-factor sign-in doesn't apply: SSH keys work for accounts with 2FA, as access tokens do.
+  - Keys of deactivated or locked accounts stop working at once, as do expired keys.
+  - A key (by fingerprint) can be registered only once across all users and deploy keys.
+  - Adding and removing keys is audited (`ssh_key.added` / `ssh_key.removed`).
+- **Deploy keys:** under a repository's **Settings → Deploy keys** (Maintainer or Owner), add an SSH key for a server or CI system. It works for that repository only, read-only unless *Allow write access* is ticked. A write deploy key pushes like a Developer: branch protection applies, with no admin bypass. Its pushes run webhooks, pipelines and smart commits as the person who added it, and it can't push once that person's account is deactivated. Audited as `deploy_key.added` / `deploy_key.removed`.
+- **Clone URLs:** the repository page has *HTTPS* and *SSH* tabs. The SSH URL is `ssh://git@{Ssh:PublicHost}:{Ssh:PublicPort}/KEY/slug.git` (host defaults to the site's host, port to `Ssh:Port`); when the public port is 22 the scp-like `git@host:KEY/slug.git` is shown too. Any SSH user name works; use `git`. Old slugs of renamed repositories keep working, as over HTTP.
+- **Same rules as HTTP:** archived repositories refuse pushes; branch protection and release tags are checked before git sees the push (the same `ProtectedPushGuard` checks, so a refused push gets `! [remote rejected] main -> main (reason)` and writes nothing), and force pushes to protected branches are caught by the same pre-receive hook. After a push, every `IGitPushListener` runs (webhooks with the pushed refs, CI, smart commits, stale approvals, AI review). Commands are rate limited per user or deploy key (`RateLimiting:Ssh`). Protocol v2 works (git sends `GIT_PROTOCOL`).
+- **Only git:** the server runs `git-upload-pack` and `git-receive-pack` for `KEY/slug.git` paths and nothing else. Password and keyboard-interactive auth are not offered; `ssh git@host` prints "Hi alice! You've successfully authenticated, but GitBench does not provide shell access."; other commands, PTYs, port/agent/X11 forwarding and subsystems such as sftp are refused.
+- **Host key:** an RSA 3072 host key is generated on first start at `Ssh:HostKeyPath` (default `{DataProtection:KeysPath}/ssh_host_rsa_key`, i.e. `keys/` locally and `/data/keys` in Docker; gitignored, mode 600) and its fingerprint is logged and shown on the SSH keys page. Back it up with the key ring: a new host key makes every client warn about a changed host.
+- **Library:** the server is built on [Microsoft.DevTunnels.Ssh](https://github.com/microsoft/dev-tunnels-ssh) (Microsoft's maintained, async SSH library with server sessions, public-key auth and exec channels; FxSsh was the alternative, but it is synchronous, thread-per-channel and also lacks ed25519). ed25519 signatures are verified with BouncyCastle (`Services/Ssh/Ed25519Algorithm.cs`).
+- **Post-quantum warning:** OpenSSH 10.1+ prints "WARNING: connection is not using a post-quantum key exchange algorithm" because the library offers ECDH and DH key exchange only. The connection is still encrypted; silence it per host with `WarnWeakCrypto no-pq-kex` in `~/.ssh/config`.
+- **Testing locally:** `ssh -p 2222 git@localhost` should greet you; `GIT_SSH_COMMAND="ssh -i ~/.ssh/other_key -o IdentitiesOnly=yes" git clone …` picks a specific key.
 
 ## AI for issues
 
@@ -940,6 +964,7 @@ docker compose logs -f gitbench     # JSON logs
 - **First admin.** Register your account in the UI, then restart once with `Bootstrap__AdminUsers=<your username>`; separate several usernames with commas. The setting only ever promotes users, so it's fine to leave it set.
 - **TLS.** Production cookies are `Secure`, so serve GitBench over HTTPS. `docker-compose.yml` has a commented-out Caddy service that gets certificates automatically: uncomment it, set the domain, and remove the `ports:` mapping of `gitbench`. For a quick trial over plain HTTP, set `Security__SecureCookies=false` instead. GitBench logs a warning when it sees plain HTTP with Secure cookies on.
 - **Health checks.** The container health check calls `/health/live`; compose checks `/health/ready`.
+- **Git over SSH.** The image turns the SSH server on (`Ssh__Enabled=true`) on port 2222 (`EXPOSE 2222`); its host key lives in the `/data/keys` volume, so it survives upgrades. `docker-compose.yml` publishes it as `2222:2222`. To offer the usual `git@host:KEY/slug.git` URLs, map the host's port 22 instead (`"22:2222"`, after moving the host's own sshd to another port) and set `Ssh__PublicPort=22`; set `Ssh__PublicHost` if the SSH host name differs from the web one. The TLS proxy doesn't carry SSH: publish the port directly or use a TCP (layer 4) proxy.
 
 **CI in the container.** Pipelines need a Docker daemon, so they're off by default. There are three options:
 
@@ -994,6 +1019,12 @@ Settings come from these sources; later ones override earlier ones:
 | `RateLimiting:Api` | 300 / 60 s | `/api/*`: per access token, else per signed-in user, else per IP |
 | `RateLimiting:Git` | 120 / 60 s | `/git/*`: per user named in the credentials, else per IP |
 | `RateLimiting:WebhookPing` | 5 / 60 s | Webhook test pings, per user |
+| `RateLimiting:Ssh` | 120 / 60 s | Git commands over SSH, per user or deploy key. Over the limit, git prints "Too many requests. Try again in N seconds." |
+| `Ssh:Enabled` | `false` (`true` in Development and the Docker image) | Run the git SSH server (see [Git over SSH](#git-over-ssh)) |
+| `Ssh:Port` / `Ssh:ListenAddress` | 2222 / all interfaces | Where the SSH server listens |
+| `Ssh:HostKeyPath` | `{DataProtection:KeysPath}/ssh_host_rsa_key` | SSH host key (PEM), generated on first start. Keep it with the key ring |
+| `Ssh:PublicHost` / `Ssh:PublicPort` | the site's host / `Ssh:Port` | Host and port shown in SSH clone URLs, e.g. `22` when the host maps port 22 to the container's 2222 |
+| `Ssh:MaxConnections` / `Ssh:AuthTimeoutSeconds` | 200 / 30 | Simultaneous SSH connections; seconds a connection may take to authenticate |
 | `Ci:*` | see [CI pipelines](#ci-pipelines) | `Enabled`, `MaxConcurrentJobs`, `JobTimeoutMinutes`, `Network`, `Memory`, `Cpus`, `PidsLimit`, `DockerExecutable`, `WorkDirectory`, `MaxLogChars` |
 | `Webhooks:AllowPrivateNetworks` | `false` | Allow webhook targets on private networks |
 | `Audit:RetentionDays` | 365 | Audit event retention (`0` keeps them forever) |

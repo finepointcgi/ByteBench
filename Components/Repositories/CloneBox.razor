@@ -1,26 +1,64 @@
+@using GitBench.Services.Ssh
+@using Microsoft.Extensions.Options
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
+@inject IOptions<SshOptions> SshOptions
 
 @* focusin bubbles from the input, so the whole URL is selected when the field is focused. *@
 <div class="clone-box" onfocusin="if (event.target.select) event.target.select()">
-    <MudTextField T="string" Value="@Url" ReadOnly="true" Label="Clone" Variant="Variant.Outlined" Margin="Margin.Dense"
-                  Adornment="Adornment.End" AdornmentIcon="@(copied ? Icons.Material.Filled.Check : Icons.Material.Outlined.ContentCopy)"
-                  OnAdornmentClick="Copy" AdornmentAriaLabel="Copy clone URL" Class="clone-input gb-mono-input" />
+    @if (SshEnabled)
+    {
+        <div class="clone-tabs">
+            <MudToggleGroup T="string" @bind-Value="mode" Size="Size.Small" Outlined="true" CheckMark="false" aria-label="Clone protocol">
+                <MudToggleItem Value="@("https")" Text="HTTPS" />
+                <MudToggleItem Value="@("ssh")" Text="SSH" />
+            </MudToggleGroup>
+            @if (mode == "ssh")
+            {
+                <MudLink Href="/account/ssh-keys" Typo="Typo.caption">Manage SSH keys</MudLink>
+            }
+        </div>
+    }
+    @foreach (var (label, url) in Urls)
+    {
+        <MudTextField T="string" Value="@url" ReadOnly="true" Label="@label" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Adornment="Adornment.End" AdornmentIcon="@(copied == url ? Icons.Material.Filled.Check : Icons.Material.Outlined.ContentCopy)"
+                      OnAdornmentClick="() => Copy(url)" AdornmentAriaLabel="@($"Copy {label} URL")" Class="clone-input gb-mono-input" />
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
 
-    private bool copied;
-    private string Url => RepoUrls.CloneUrl(Nav.BaseUri, Repo);
+    private string mode = "https";
+    private string? copied;
 
-    private async Task Copy()
+    private bool SshEnabled => SshOptions.Value.Enabled;
+
+    private string SshHost => SshOptions.Value.PublicHost is { Length: > 0 } h ? h : new Uri(Nav.BaseUri).Host;
+
+    private IEnumerable<(string Label, string Url)> Urls
+    {
+        get
+        {
+            if (mode != "ssh" || !SshEnabled)
+            {
+                yield return ("Clone", RepoUrls.CloneUrl(Nav.BaseUri, Repo));
+                yield break;
+            }
+            var port = SshOptions.Value.EffectivePublicPort;
+            yield return ("Clone with SSH", RepoUrls.SshCloneUrl(SshHost, port, Repo));
+            if (port == 22) yield return ("or", RepoUrls.ScpCloneUrl(SshHost, Repo));
+        }
+    }
+
+    private async Task Copy(string url)
     {
         try
         {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", Url);
-            copied = true;
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            copied = url;
             Snackbar.Add("Clone URL copied", Severity.Normal);
         }
         catch (JSException) { /* clipboard unavailable (e.g. insecure context); the field is still selectable */ }

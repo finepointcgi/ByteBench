@@ -20,6 +20,7 @@ public static class RepoUrls
     public static string Commit(Repository r, string sha) => $"{Base(r)}/commits/{sha}";
     public static string Branches(Repository r) => Base(r) + "/branches";
     public static string BranchProtection(Repository r) => Base(r) + "/settings/branches";
+    public static string DeployKeys(Repository r) => Base(r) + "/settings/deploy-keys";
 
     public static string PullRequests(string projectKey, string? state = null, string? repo = null) =>
         $"/p/{projectKey}/pull-requests" + Query(("state", state), ("repo", repo));
@@ -33,6 +34,15 @@ public static class RepoUrls
 
     public static string CloneUrl(string baseUri, Repository r) =>
         $"{baseUri.TrimEnd('/')}/git/{r.Project.Key}/{r.Slug}.git";
+
+    /// <summary><c>ssh://git@host:port/KEY/slug.git</c> (no port when it is 22).</summary>
+    public static string SshCloneUrl(string host, int port, Repository r) =>
+        $"ssh://git@{SshHost(host)}{(port == 22 ? "" : ":" + port)}/{r.Project.Key}/{r.Slug}.git";
+
+    /// <summary>The scp-like form <c>git@host:KEY/slug.git</c>, which only works on port 22.</summary>
+    public static string ScpCloneUrl(string host, Repository r) => $"git@{host}:{r.Project.Key}/{r.Slug}.git";
+
+    private static string SshHost(string host) => host.Contains(':') && !host.StartsWith('[') ? $"[{host}]" : host; // IPv6 literal
 
     private static string? NullIfDefault(Repository r, string? @ref) =>
         string.IsNullOrEmpty(@ref) || @ref == r.DefaultBranch ? null : @ref;

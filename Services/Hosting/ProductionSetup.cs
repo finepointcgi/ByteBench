@@ -293,6 +293,8 @@ public sealed class RateLimitSettings
     public WindowLimit Git { get; set; } = new() { PermitLimit = 120, WindowSeconds = 60 };
     /// <summary>Webhook test pings, per user.</summary>
     public WindowLimit WebhookPing { get; set; } = new() { PermitLimit = 5, WindowSeconds = 60 };
+    /// <summary>Git commands over SSH (each clone, fetch or push), per user or deploy key.</summary>
+    public WindowLimit Ssh { get; set; } = new() { PermitLimit = 120, WindowSeconds = 60 };
 }
 
 /// <summary>Partitioning for the global HTTP rate limiter, the 429 response, and the in-app limiter for webhook test pings.</summary>
@@ -302,6 +304,22 @@ public sealed class AppRateLimits(IOptions<RateLimitSettings> options)
         options.Value.Enabled && options.Value.WebhookPing.PermitLimit > 0
             ? RateLimitPartition.GetFixedWindowLimiter(key, _ => Window(options.Value.WebhookPing))
             : RateLimitPartition.GetNoLimiter(key));
+
+    private readonly PartitionedRateLimiter<string> ssh = PartitionedRateLimiter.Create<string, string>(key =>
+        options.Value.Enabled && options.Value.Ssh.PermitLimit > 0
+            ? RateLimitPartition.GetFixedWindowLimiter(key, _ => Window(options.Value.Ssh))
+            : RateLimitPartition.GetNoLimiter(key));
+
+    /// <summary>
+    /// Git over SSH (<c>RateLimiting:Ssh</c>), keyed per user or deploy key like <c>/git/*</c> is per user. Returns null when
+    /// the command may run, else the seconds to wait.
+    /// </summary>
+    public int? TryAcquireSsh(string key)
+    {
+        using var lease = ssh.AttemptAcquire("ssh:" + key);
+        if (lease.IsAcquired) return null;
+        return lease.TryGetMetadata(MetadataName.RetryAfter, out var retry) ? Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds)) : options.Value.Ssh.WindowSeconds;
+    }
 
     /// <summary>Throws (with a "try again in N seconds" message) when the user sent too many test pings.</summary>
     public void CheckWebhookPing(int? userId)

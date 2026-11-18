@@ -1,10 +1,11 @@
 using System.IO.Compression;
 using System.Text;
+using GitBench.Data;
 
 namespace GitBench.Services.Git;
 
 /// <summary>
-/// Enforces branch protection on <c>git push</c> over HTTP. Before the request reaches <c>git http-backend</c> it
+/// Enforces branch protection on <c>git push</c> over HTTP (and, through the shared pieces below, over SSH). Before the request reaches <c>git http-backend</c> it
 /// reads the receive-pack ref update commands (<c>old-sha new-sha refname</c> pkt-lines, up to the first flush) from
 /// the request body and checks each branch against <see cref="BranchProtectionService"/>:
 /// <list type="bullet">
@@ -18,6 +19,11 @@ namespace GitBench.Services.Git;
 /// </list>
 /// The bytes read are replayed to http-backend unchanged (gzip bodies are inflated first), so the push itself is not
 /// affected. Repositories without rules skip all of this.
+/// <para>
+/// The checks are transport-agnostic and shared with git over SSH (<see cref="Ssh.SshGitCommand"/>):
+/// <see cref="ReadCommandsAsync"/> parses the command list, <see cref="Policy.Check"/> decides, <see cref="RefusalReport"/>
+/// builds receive-pack's answer, and the hook environment enables the force-push check.
+/// </para>
 /// </summary>
 internal static class ProtectedPushGuard
 {
@@ -26,73 +32,128 @@ internal static class ProtectedPushGuard
         public static readonly Result PassThrough = new(false, null, null);
     }
 
-    private sealed record Command(string OldSha, string NewSha, string Ref);
+    /// <summary>One ref update: <c>old-sha new-sha refname</c>.</summary>
+    public sealed record Command(string OldSha, string NewSha, string Ref);
+
+    /// <summary>The receive-pack command list: the raw bytes read (to replay to git), the commands and the client's capabilities.</summary>
+    public sealed record ParsedCommands(byte[] Prefix, List<Command> Commands, HashSet<string> Caps, bool Signed);
+
+    /// <summary>
+    /// The protection that applies to one pusher in one repository. <see cref="IsAdmin"/> (site admin or project Owner)
+    /// skips rules that allow admin bypass; deploy keys never bypass.
+    /// </summary>
+    public sealed record Policy(IReadOnlyList<BranchProtectionRule> Rules, IReadOnlySet<string> ReleaseTags, bool IsAdmin)
+    {
+        public bool IsEmpty => Rules.Count == 0 && ReleaseTags.Count == 0;
+
+        /// <summary>Which refs are refused (ref → reason) and which protected branches may only fast-forward.</summary>
+        public Decision Check(ParsedCommands parsed)
+        {
+            var refusals = new Dictionary<string, string>();
+            var fastForwardOnly = new List<string>();
+            foreach (var c in parsed.Commands)
+            {
+                if (c.Ref.StartsWith("refs/tags/", StringComparison.Ordinal) && IsZero(c.NewSha) && ReleaseTags.Contains(c.Ref["refs/tags/".Length..]))
+                    refusals[c.Ref] = $"tag '{c.Ref["refs/tags/".Length..]}' is used by a release: delete the release first";
+                if (!c.Ref.StartsWith("refs/heads/", StringComparison.Ordinal)) continue;
+                var branch = c.Ref["refs/heads/".Length..];
+                var p = BranchProtectionService.ApplicableTo(Rules, branch, IsAdmin);
+                if (!p.IsProtected) continue;
+                var kind = IsZero(c.NewSha) ? RefChangeKind.Delete : IsZero(c.OldSha) ? RefChangeKind.Create : RefChangeKind.Update;
+                if (BranchProtectionService.Refusal(p, branch, kind, isFastForward: null) is { } why) refusals[c.Ref] = why;
+                else if (kind == RefChangeKind.Update && p.BlockForcePushes) fastForwardOnly.Add(c.Ref);
+            }
+            if (parsed.Signed && !IsEmpty) refusals["(signed push)"] = "signed pushes can't be checked against branch protection";
+            return new Decision(refusals, fastForwardOnly);
+        }
+    }
+
+    public sealed record Decision(Dictionary<string, string> Refusals, List<string> FastForwardOnly)
+    {
+        public bool Refused => Refusals.Count > 0;
+    }
 
     private const int MaxCommandBytes = 4 * 1024 * 1024;
     private const string HookFolder = ".hooks";
 
+    /// <summary>
+    /// Loads the branch protection rules and release tags of the repository. <paramref name="userId"/> is the pusher, or
+    /// null for a deploy key (treated like a Developer: no admin bypass).
+    /// </summary>
+    public static async Task<Policy> LoadPolicyAsync(IServiceProvider services, int repositoryId, int projectId, int? userId)
+    {
+        var protection = services.GetRequiredService<BranchProtectionService>();
+        var rules = await protection.RulesForAsync(repositoryId);
+        var dbFactory = services.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<GitBench.Data.AppDbContext>>();
+        HashSet<string> releaseTags; // tags used by releases can't be deleted by a push
+        await using (var db = await dbFactory.CreateDbContextAsync())
+            releaseTags = (await Releases.ReleaseService.ReleaseTagsAsync(db, repositoryId)).ToHashSet(StringComparer.Ordinal);
+        var isAdmin = userId != null && rules.Count > 0 && await protection.IsBypassAdminAsync(projectId, userId);
+        return new Policy(rules, releaseTags, isAdmin);
+    }
+
+    /// <summary>HTTP: reads the commands from the request body, refuses the push or passes it on (with the force-push hook).</summary>
     public static async Task<Result> InspectAsync(HttpContext ctx, ILogger logger, int repositoryId, int projectId, int userId, RepoStorage storage)
     {
-        var protection = ctx.RequestServices.GetRequiredService<BranchProtectionService>();
-        var rules = await protection.RulesForAsync(repositoryId);
-        var releaseTags = await ReleaseTagsAsync(ctx, repositoryId); // tags used by releases can't be deleted by a push
-        if (rules.Count == 0 && releaseTags.Count == 0) return Result.PassThrough;
-        var isAdmin = rules.Count > 0 && await protection.IsBypassAdminAsync(projectId, userId);
+        var policy = await LoadPolicyAsync(ctx.RequestServices, repositoryId, projectId, userId);
+        if (policy.IsEmpty) return Result.PassThrough;
 
         var encoding = ctx.Request.Headers.ContentEncoding.ToString();
         var source = encoding is "gzip" or "x-gzip" ? new GZipStream(ctx.Request.Body, CompressionMode.Decompress) : ctx.Request.Body;
 
-        var (prefix, commands, caps, signed) = await ReadCommandsAsync(source, ctx.RequestAborted);
-        var body = new PrefixedStream(prefix, source);
-        if (commands.Count == 0 && !signed) return new Result(false, body, null);
+        var parsed = await ReadCommandsAsync(source, ctx.RequestAborted);
+        var body = new PrefixedStream(parsed.Prefix, source);
+        if (parsed.Commands.Count == 0 && !parsed.Signed) return new Result(false, body, null);
 
-        var refusals = new Dictionary<string, string>();
-        var fastForwardOnly = new List<string>();
-        foreach (var c in commands)
+        var decision = policy.Check(parsed);
+        if (decision.Refused)
         {
-            if (c.Ref.StartsWith("refs/tags/", StringComparison.Ordinal) && IsZero(c.NewSha) && releaseTags.Contains(c.Ref["refs/tags/".Length..]))
-                refusals[c.Ref] = $"tag '{c.Ref["refs/tags/".Length..]}' is used by a release: delete the release first";
-            if (!c.Ref.StartsWith("refs/heads/", StringComparison.Ordinal)) continue;
-            var branch = c.Ref["refs/heads/".Length..];
-            var p = BranchProtectionService.ApplicableTo(rules, branch, isAdmin);
-            if (!p.IsProtected) continue;
-            var kind = IsZero(c.NewSha) ? RefChangeKind.Delete : IsZero(c.OldSha) ? RefChangeKind.Create : RefChangeKind.Update;
-            if (BranchProtectionService.Refusal(p, branch, kind, isFastForward: null) is { } why) refusals[c.Ref] = why;
-            else if (kind == RefChangeKind.Update && p.BlockForcePushes) fastForwardOnly.Add(c.Ref);
-        }
-        if (signed) refusals["(signed push)"] = "signed pushes can't be checked against branch protection";
-
-        if (refusals.Count > 0)
-        {
-            logger.LogInformation("Push to repository {Id} by user {User} refused by branch protection: {Refusals}",
-                repositoryId, userId, string.Join("; ", refusals.Select(r => $"{r.Key}: {r.Value}")));
+            LogRefusal(logger, repositoryId, userId.ToString(System.Globalization.CultureInfo.InvariantCulture), decision);
             await DrainAsync(body, ctx.RequestAborted);
-            await WriteRefusalAsync(ctx, commands, caps, refusals);
+            await WriteRefusalAsync(ctx, parsed, decision.Refusals);
             return new Result(true, null, null);
         }
 
-        if (fastForwardOnly.Count == 0) return new Result(false, body, null);
+        return new Result(false, body, HookEnvironment(storage, decision.FastForwardOnly));
+    }
+
+    public static void LogRefusal(ILogger logger, int repositoryId, string pusher, Decision decision) =>
+        logger.LogInformation("Push to repository {Id} by {User} refused by branch protection: {Refusals}",
+            repositoryId, pusher, string.Join("; ", decision.Refusals.Select(r => $"{r.Key}: {r.Value}")));
+
+    /// <summary>
+    /// Environment for <c>receive-pack</c> / <c>http-backend</c> that enables the force-push <c>pre-receive</c> hook for
+    /// <paramref name="fastForwardOnly"/>; null when there is nothing to check.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string>? HookEnvironment(RepoStorage storage, IReadOnlyCollection<string> fastForwardOnly)
+    {
+        if (fastForwardOnly.Count == 0) return null;
+        return HookEnvironment(storage, "GITBENCH_FF_ONLY_REFS", string.Join(' ', fastForwardOnly));
+    }
+
+    /// <summary>
+    /// SSH: enables the force-push hook for a receive-pack started before the ref commands arrive. The hook reads the
+    /// fast-forward-only refs from <paramref name="refsFile"/>, which the caller writes once it has read the commands.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> HookEnvironmentWithRefsFile(RepoStorage storage, string refsFile) =>
+        HookEnvironment(storage, "GITBENCH_FF_ONLY_FILE", refsFile);
+
+    private static Dictionary<string, string> HookEnvironment(RepoStorage storage, string variable, string value)
+    {
         var hooks = EnsureHook(storage);
-        return new Result(false, body, new Dictionary<string, string>
+        return new Dictionary<string, string>
         {
             ["GIT_CONFIG_COUNT"] = "1",
             ["GIT_CONFIG_KEY_0"] = "core.hooksPath",
             ["GIT_CONFIG_VALUE_0"] = hooks,
-            ["GITBENCH_FF_ONLY_REFS"] = string.Join(' ', fastForwardOnly),
-        });
+            [variable] = value,
+        };
     }
 
     private static bool IsZero(string sha) => sha.All(ch => ch == '0');
 
-    private static async Task<HashSet<string>> ReleaseTagsAsync(HttpContext ctx, int repositoryId)
-    {
-        var dbFactory = ctx.RequestServices.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<GitBench.Data.AppDbContext>>();
-        await using var db = await dbFactory.CreateDbContextAsync(ctx.RequestAborted);
-        return (await Releases.ReleaseService.ReleaseTagsAsync(db, repositoryId)).ToHashSet(StringComparer.Ordinal);
-    }
-
     /// <summary>Reads pkt-lines up to the first flush. Returns the raw bytes read (to replay) and the parsed commands.</summary>
-    private static async Task<(byte[] Prefix, List<Command> Commands, HashSet<string> Caps, bool Signed)> ReadCommandsAsync(Stream source, CancellationToken ct)
+    public static async Task<ParsedCommands> ReadCommandsAsync(Stream source, CancellationToken ct)
     {
         var raw = new MemoryStream();
         var commands = new List<Command>();
@@ -123,7 +184,7 @@ internal static class ProtectedPushGuard
             var parts = line.Split(' ');
             if (parts.Length == 3) commands.Add(new Command(parts[0], parts[1], parts[2]));
         }
-        return (raw.ToArray(), commands, caps, signed);
+        return new ParsedCommands(raw.ToArray(), commands, caps, signed);
     }
 
     private static async Task<bool> ReadExactlyOrEofAsync(Stream s, byte[] buffer, CancellationToken ct)
@@ -138,7 +199,7 @@ internal static class ProtectedPushGuard
         return true;
     }
 
-    private static async Task DrainAsync(Stream body, CancellationToken ct)
+    public static async Task DrainAsync(Stream body, CancellationToken ct)
     {
         var buffer = new byte[81920];
         try { while (await body.ReadAsync(buffer, ct) > 0) { } }
@@ -146,9 +207,29 @@ internal static class ProtectedPushGuard
         catch (InvalidDataException) { /* corrupt gzip: nothing more to read */ }
     }
 
-    /// <summary>Answers the push like receive-pack would: "unpack ok", then "ng ref reason" for every ref.</summary>
-    private static async Task WriteRefusalAsync(HttpContext ctx, List<Command> commands, HashSet<string> caps, Dictionary<string, string> refusals)
+    /// <summary>HTTP: the refusal report as the receive-pack response, or a plain 403 if the client asked for neither report nor sideband.</summary>
+    private static async Task WriteRefusalAsync(HttpContext ctx, ParsedCommands parsed, Dictionary<string, string> refusals)
     {
+        var output = RefusalReport(parsed, refusals);
+        if (output.Length == 0)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            ctx.Response.ContentType = "text/plain; charset=utf-8";
+            await ctx.Response.WriteAsync("Push refused by branch protection: " + string.Join("; ", refusals.Values) + "\n");
+            return;
+        }
+        ctx.Response.StatusCode = StatusCodes.Status200OK;
+        ctx.Response.ContentType = "application/x-git-receive-pack-result";
+        await ctx.Response.Body.WriteAsync(output);
+    }
+
+    /// <summary>
+    /// Answers the push like receive-pack would: "unpack ok", then "ng ref reason" for every ref, with the reasons also on
+    /// sideband 2 (git prints them as <c>remote: …</c>). Empty when the client asked for neither report-status nor sideband.
+    /// </summary>
+    public static byte[] RefusalReport(ParsedCommands parsed, Dictionary<string, string> refusals)
+    {
+        var caps = parsed.Caps;
         var sideband = caps.Contains("side-band-64k") || caps.Contains("side-band");
         var reportStatus = caps.Contains("report-status") || caps.Contains("report-status-v2");
 
@@ -156,7 +237,7 @@ internal static class ProtectedPushGuard
         if (reportStatus)
         {
             Pkt(report, "unpack ok\n");
-            foreach (var c in commands)
+            foreach (var c in parsed.Commands)
                 Pkt(report, refusals.TryGetValue(c.Ref, out var why)
                     ? $"ng {c.Ref} {why}\n"
                     : $"ng {c.Ref} not updated: another ref in this push was refused by branch protection\n");
@@ -176,17 +257,7 @@ internal static class ProtectedPushGuard
         {
             report.WriteTo(output);
         }
-
-        if (output.Length == 0)
-        {
-            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-            ctx.Response.ContentType = "text/plain; charset=utf-8";
-            await ctx.Response.WriteAsync("Push refused by branch protection: " + string.Join("; ", refusals.Values) + "\n");
-            return;
-        }
-        ctx.Response.StatusCode = StatusCodes.Status200OK;
-        ctx.Response.ContentType = "application/x-git-receive-pack-result";
-        await ctx.Response.Body.WriteAsync(output.ToArray());
+        return output.ToArray();
     }
 
     private static void Pkt(Stream s, string text) => Pkt(s, Encoding.UTF8.GetBytes(text));
@@ -214,10 +285,13 @@ internal static class ProtectedPushGuard
     private const string HookScript = """
         #!/bin/sh
         # Installed by GitBench (Services/Git/ProtectedPushGuard.cs) and enabled per push through core.hooksPath.
-        # Declines non-fast-forward updates of the refs listed in GITBENCH_FF_ONLY_REFS (protected branches).
+        # Declines non-fast-forward updates of the refs listed in GITBENCH_FF_ONLY_REFS (protected branches), plus those
+        # in the file GITBENCH_FF_ONLY_FILE (SSH pushes: the refs are only known after receive-pack has started).
         status=0
+        refs="$GITBENCH_FF_ONLY_REFS"
+        if [ -n "$GITBENCH_FF_ONLY_FILE" ] && [ -f "$GITBENCH_FF_ONLY_FILE" ]; then refs="$refs $(cat "$GITBENCH_FF_ONLY_FILE")"; fi
         while read -r old new ref; do
-          case " $GITBENCH_FF_ONLY_REFS " in *" $ref "*) ;; *) continue ;; esac
+          case " $refs " in *" $ref "*) ;; *) continue ;; esac
           case "$old" in *[!0]*) ;; *) continue ;; esac
           case "$new" in *[!0]*) ;; *) continue ;; esac
           if ! git merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
@@ -252,7 +326,7 @@ internal static class ProtectedPushGuard
     }
 
     /// <summary>Replays <c>prefix</c>, then the rest of <c>inner</c>.</summary>
-    private sealed class PrefixedStream(byte[] prefix, Stream inner) : Stream
+    public sealed class PrefixedStream(byte[] prefix, Stream inner) : Stream
     {
         private int pos;
 
