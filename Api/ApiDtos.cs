@@ -28,7 +28,8 @@ public record MilestoneDto(int Id, string Title, string? Description, DateOnly? 
 public partial record IssueDto(int Id, string Key, int Number, string Title, string? Description,
     IssueType Type, IssueStatus Status, IssuePriority Priority, int? StoryPoints, DateOnly? DueDate,
     UserDto? Assignee, UserDto Reporter, MilestoneRefDto? Milestone, IReadOnlyList<LabelDto> Labels,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl,
+    int? SprintId);
 
 public record CommentDto(int Id, string Body, UserDto Author, DateTimeOffset CreatedAt, DateTimeOffset? EditedAt);
 
@@ -109,7 +110,8 @@ public static class Dto
         i.Id, i.Key, i.Number, i.Title, i.Description, i.Type, i.Status, i.Priority, i.StoryPoints, Date(i.DueDate),
         UserOrNull(i.Assignee), User(i.Reporter), i.Milestone is { } m ? new MilestoneRefDto(m.Id, m.Title) : null,
         i.Labels.OrderBy(l => l.Name).Select(Label).ToList(),
-        Utc(i.CreatedAt), Utc(i.UpdatedAt), Utc(i.ClosedAt), $"{baseUrl}/p/{i.Project.Key}/issues/{i.Number}") { ParentId = i.ParentId };
+        Utc(i.CreatedAt), Utc(i.UpdatedAt), Utc(i.ClosedAt), $"{baseUrl}/p/{i.Project.Key}/issues/{i.Number}",
+        i.SprintId) { ParentId = i.ParentId };
 
     public static CommentDto Comment(Comment c) => new(c.Id, c.Body, User(c.Author), Utc(c.CreatedAt), Utc(c.EditedAt));
 

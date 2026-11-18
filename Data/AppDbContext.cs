@@ -45,6 +45,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<SavedFilter> SavedFilters => Set<SavedFilter>();
     public DbSet<SavedFilterStar> SavedFilterStars => Set<SavedFilterStar>();
+    // ----- Sprints -----
+    public DbSet<Sprint> Sprints => Set<Sprint>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -146,5 +148,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<SavedFilterStar>().HasIndex(s => new { s.UserId, s.SavedFilterId }).IsUnique();
         b.Entity<SavedFilterStar>().HasOne<SavedFilter>().WithMany().HasForeignKey(s => s.SavedFilterId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<SavedFilterStar>().HasOne<User>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- Sprints -----
+        b.Entity<Sprint>().HasIndex(s => new { s.ProjectId, s.State });
+        // At most one active sprint per project, enforced by the database too (State 1 = Active).
+        b.Entity<Sprint>().HasIndex(s => s.ProjectId).IsUnique().HasFilter("\"State\" = 1").HasDatabaseName("IX_Sprints_OneActivePerProject");
+        b.Entity<Sprint>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Issue>().HasOne(i => i.Sprint).WithMany().HasForeignKey(i => i.SprintId).OnDelete(DeleteBehavior.SetNull);
     }
 }

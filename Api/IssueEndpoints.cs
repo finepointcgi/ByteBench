@@ -16,7 +16,7 @@ public static class IssueEndpoints
 
         issues.MapGet("/issues", ListIssues).WithName("ListIssues")
             .WithSummary("List issues")
-            .WithDescription("Filters: status (open [default], closed, all, or backlog/todo/inProgress/inReview/done), assignee (username or 'none'), label (name), milestone (id or 'none'), q (text or issue key), sort (updated [default], created, priority, due, number).");
+            .WithDescription("Filters: status (open [default], closed, all, or backlog/todo/inProgress/inReview/done), assignee (username or 'none'), label (name), milestone (id or 'none'), sprint (id, 'none' or 'active'), q (text or issue key), sort (updated [default], created, priority, due, number).");
         issues.MapGet("/issues/{number:int}", GetIssue).WithName("GetIssue").WithSummary("Get an issue");
         issues.MapPost("/issues", CreateIssue).WithName("CreateIssue").WithSummary("Create an issue")
             .WithJsonBody<CreateIssueRequest>().Produces<IssueDto>(StatusCodes.Status201Created);
@@ -38,7 +38,7 @@ public static class IssueEndpoints
         await issues.GetIssueAsync(key, number) ?? throw ApiException.NotFound($"Issue {key.ToUpperInvariant()}-{number} not found.");
 
     private static async Task<List<IssueDto>> ListIssues(HttpContext http, IssueService issues, IDbContextFactory<AppDbContext> dbFactory, PublicBaseUrl url,
-        string key, string? status, string? assignee, string? label, string? milestone, string? q, string? sort)
+        string key, string? status, string? assignee, string? label, string? milestone, string? q, string? sort, string? sprint, SprintService sprints)
     {
         var paging = Paging.From(http.Request);
         var project = await RequireProjectAsync(issues, key);
@@ -67,6 +67,8 @@ public static class IssueEndpoints
         if (!string.IsNullOrEmpty(milestone))
             filter.MilestoneId = milestone.Equals("none", StringComparison.OrdinalIgnoreCase) ? 0
                 : int.TryParse(milestone, out var mid) ? mid : throw ApiException.BadRequest("milestone must be an id or 'none'.");
+
+        if (!string.IsNullOrEmpty(sprint)) filter.SprintId = await SprintEndpoints.ResolveSprintFilterAsync(sprints, project.Id, sprint);
 
         var list = await issues.GetIssuesAsync(project.Id, filter);
         // GetIssuesAsync doesn't load reporters; fetch them for this page only.
@@ -167,8 +169,8 @@ public static class IssueEndpoints
             }
             if (Has("storyPoints") && i.StoryPoints != points)
             {
+                changes.Add(SprintHistory.EstimateText(i.StoryPoints, points));
                 i.StoryPoints = points;
-                changes.Add(points == null ? "removed the estimate" : $"estimated **{points}** story points");
             }
             if (Has("dueDate"))
             {

@@ -621,3 +621,41 @@ public class SavedFilterStar
     public int UserId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Sprints -----
+
+public enum SprintState { Planned, Active, Completed }
+
+/// <summary>
+/// A time-boxed iteration of a project (Scrum-style). At most one sprint per project is <see cref="SprintState.Active"/>.
+/// Managed by <see cref="GitBench.Services.SprintService"/>; report history is rebuilt from issue activity by
+/// <see cref="GitBench.Services.SprintHistory"/>.
+/// </summary>
+public class Sprint
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    [MaxLength(500)] public string? Goal { get; set; }
+    /// <summary>Planned dates (UTC calendar dates, time 00:00).</summary>
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public SprintState State { get; set; } = SprintState.Planned;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>When someone pressed "Start sprint" / "Complete sprint".</summary>
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    /// <summary>Snapshot taken when the sprint started: issues and story points in it (the "committed" scope for velocity).</summary>
+    public int? CommittedCount { get; set; }
+    public int? CommittedPoints { get; set; }
+    /// <summary>Snapshot taken when the sprint was completed: issues and story points done in it.</summary>
+    public int? CompletedCount { get; set; }
+    public int? CompletedPoints { get; set; }
+}
+
+public partial class Issue
+{
+    /// <summary>The sprint this issue is planned in; null = the backlog.</summary>
+    public int? SprintId { get; set; }
+    public Sprint? Sprint { get; set; }
+}

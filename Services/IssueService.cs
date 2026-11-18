@@ -14,6 +14,7 @@ public partial record IssueFilter
     public IssueType? Type { get; set; }
     public IssuePriority? Priority { get; set; }
     public string Sort { get; set; } = "updated";
+    public int? SprintId { get; set; }     // 0 = no sprint (backlog)
 }
 
 /// <summary>
@@ -128,6 +129,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         if (f.Type is { } t) q = q.Where(i => i.Type == t);
         if (f.Priority is { } p) q = q.Where(i => i.Priority == p);
         q = f.ApplyLinkedWork(q);
+        if (f.SprintId is { } sp) q = sp == 0 ? q.Where(i => i.SprintId == null) : q.Where(i => i.SprintId == sp);
 
         q = f.Sort switch
         {

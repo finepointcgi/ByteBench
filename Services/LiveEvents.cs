@@ -11,6 +11,9 @@ public sealed record IssueChanged(int ProjectId, int IssueId) : LiveEvent;
 /// <summary>Something on a project's board changed: a card moved, was created, deleted or edited.</summary>
 public sealed record BoardChanged(int ProjectId) : LiveEvent;
 
+/// <summary>A project's sprints changed (created, edited, started, completed, deleted) or issues moved between sprints/backlog.</summary>
+public sealed record SprintChanged(int ProjectId) : LiveEvent;
+
 /// <summary>A pull request's state, comments, reviews or description changed.</summary>
 public sealed record PullRequestChanged(int PullRequestId, int ProjectId) : LiveEvent;
 

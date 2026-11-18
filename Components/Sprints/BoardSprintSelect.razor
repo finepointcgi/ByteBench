@@ -1,0 +1,53 @@
+@* Board filter: one sprint, or all issues. Defaults (once) to the active sprint when there is one. *@
+@implements IDisposable
+@inject SprintService Sprints
+@inject LiveEvents Live
+
+<select class="form-select form-select-sm" aria-label="Sprint" value="@(SprintId?.ToString() ?? "")" @onchange="Change">
+    <option value="">All issues</option>
+    @foreach (var s in sprints)
+    {
+        <option value="@s.Id">@(s.State == SprintState.Active ? "🏃 " : "")@s.Name@(s.State == SprintState.Completed ? " (completed)" : "")</option>
+    }
+</select>
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    [Parameter] public int? SprintId { get; set; }
+    [Parameter] public EventCallback<int?> SprintIdChanged { get; set; }
+
+    private List<Sprint> sprints = [];
+    private int loadedFor;
+    private IDisposable? sub;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == ProjectId) return;
+        loadedFor = ProjectId;
+        await LoadAsync();
+        if (sprints.FirstOrDefault(s => s.State == SprintState.Active) is { } active && SprintId == null)
+            await SprintIdChanged.InvokeAsync(active.Id);
+    }
+
+    private async Task LoadAsync()
+    {
+        var all = await Sprints.GetSprintsAsync(ProjectId);
+        // Active and planned sprints, plus the most recently completed ones (and whatever is selected).
+        sprints = all.Where(s => s.State != SprintState.Completed).Concat(all.Where(s => s.State == SprintState.Completed).Take(3))
+            .Concat(all.Where(s => s.Id == SprintId)).DistinctBy(s => s.Id).ToList();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<SprintChanged>(e => e.ProjectId != ProjectId ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }));
+    }
+
+    private Task Change(ChangeEventArgs e) =>
+        SprintIdChanged.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : null);
+
+    public void Dispose() => sub?.Dispose();
+}

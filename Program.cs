@@ -73,6 +73,7 @@ builder.Services.AddGitBenchApi();
 builder.Services.AddSingleton<GitBench.Services.Attachments.AttachmentStorage>();
 builder.Services.AddScoped<GitBench.Services.Attachments.AttachmentService>();
 builder.Services.AddScoped<SavedFilterService>();
+builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndown & velocity
 
 var app = builder.Build();
 
@@ -84,6 +85,7 @@ using (var scope = app.Services.CreateScope())
     RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     NotificationService.Initialize(db);
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
+    SprintSeeder.Initialize(db);
 }
 
 if (!app.Environment.IsDevelopment())

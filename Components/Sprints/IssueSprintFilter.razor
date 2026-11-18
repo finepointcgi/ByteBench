@@ -1,0 +1,33 @@
+@* Issue list filter by sprint (sets IssueFilter.SprintId: null = any, 0 = no sprint). *@
+@inject SprintService Sprints
+
+<select class="form-select form-select-sm" aria-label="Sprint" value="@(Filter.SprintId?.ToString() ?? "")" @onchange="Change">
+    <option value="">Any sprint</option>
+    <option value="0">No sprint (backlog)</option>
+    @foreach (var s in sprints)
+    {
+        <option value="@s.Id">@s.Name@(s.State == SprintState.Active ? " (active)" : s.State == SprintState.Completed ? " (completed)" : "")</option>
+    }
+</select>
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    [Parameter, EditorRequired] public IssueFilter Filter { get; set; } = null!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private List<Sprint> sprints = [];
+    private int loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == ProjectId) return;
+        loadedFor = ProjectId;
+        sprints = await Sprints.GetSprintsAsync(ProjectId);
+    }
+
+    private async Task Change(ChangeEventArgs e)
+    {
+        Filter.SprintId = int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+        await OnChanged.InvokeAsync();
+    }
+}

@@ -1,0 +1,391 @@
+@page "/p/{Key}/backlog"
+@implements IDisposable
+@inject IssueService Issues
+@inject SprintService Sprints
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@inject IJSRuntime JS
+
+<PageTitle>Backlog · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Backlog</h1>
+            <div class="muted">@project.Name · plan sprints by dragging issues, or use each issue's “Move” menu</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/reports">📈 Reports</a>
+            @if (perms.Can(Permission.ManageLabelsAndMilestones) && !creating)
+            {
+                <button class="btn btn-primary btn-sm" @onclick="StartCreate">+ Create sprint</button>
+            }
+        </div>
+    </div>
+
+    @if (error != null) { <div class="alert alert-danger py-2" role="alert">@error</div> }
+
+    @if (creating)
+    {
+        <form class="sprint-panel sprint-inline-create" @onsubmit="CreateSprint" @onsubmit:preventDefault>
+            <label class="visually-hidden" for="new-sprint-name">Sprint name</label>
+            <input id="new-sprint-name" class="form-control form-control-sm" @bind="newName" maxlength="100" placeholder="Sprint name" />
+            <label class="visually-hidden" for="new-sprint-goal">Goal</label>
+            <input id="new-sprint-goal" class="form-control form-control-sm" @bind="newGoal" maxlength="500" placeholder="Goal (optional)" />
+            <button class="btn btn-primary btn-sm" type="submit">Create</button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="() => creating = false">Cancel</button>
+        </form>
+    }
+
+    @foreach (var section in sections)
+    {
+        var s = section.Sprint;
+        var isOver = dragOver == section.DomId;
+        <section class="bl-section @(s == null ? "bl-backlog" : "bl-" + s.State.ToString().ToLowerInvariant()) @(isOver ? "drag-over" : "")"
+                 id="@section.DomId" aria-label="@(s?.Name ?? "Backlog")"
+                 @ondragover:preventDefault
+                 @ondragenter="() => dragOver = section.DomId"
+                 @ondrop="() => Drop(section, null)">
+            <header class="bl-head">
+                <div class="bl-title">
+                    <h2 class="bl-name">@(s?.Name ?? "Backlog")</h2>
+                    @if (s?.State == SprintState.Active) { <span class="status-badge status-inprogress">Active</span> }
+                    @if (s != null && (s.StartDate != null || s.EndDate != null))
+                    {
+                        <span class="muted small">@s.StartDate?.ToString("MMM d") – @s.EndDate?.ToString("MMM d, yyyy")@DaysLeft(s)</span>
+                    }
+                </div>
+                <div class="bl-stats">
+                    <span class="count" title="Issues">@section.Issues.Count @(section.Issues.Count == 1 ? "issue" : "issues")</span>
+                    <span class="points" title="Story points">@section.Points pts</span>
+                    @if (s?.State == SprintState.Active)
+                    {
+                        <span class="muted small">@section.DoneCount/@section.Issues.Count done · @section.DonePoints/@section.Points pts</span>
+                    }
+                </div>
+                @if (s != null && perms.Can(Permission.ManageLabelsAndMilestones))
+                {
+                    <div class="bl-actions">
+                        @if (s.State == SprintState.Planned)
+                        {
+                            <button class="btn btn-sm btn-primary" disabled="@(Active != null)" title="@(Active != null ? "Complete the active sprint first" : "")"
+                                    @onclick="() => OpenPanel(s, Panel.Start)">Start sprint</button>
+                        }
+                        @if (s.State == SprintState.Active)
+                        {
+                            <button class="btn btn-sm btn-success" @onclick="() => OpenPanel(s, Panel.Complete)">Complete sprint</button>
+                        }
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => OpenPanel(s, Panel.Edit)">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSprint(s)">Delete</button>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(s?.Goal)) { <div class="bl-goal">🎯 @s.Goal</div> }
+            </header>
+
+            @if (s != null && panelFor == s.Id)
+            {
+                @if (panel is Panel.Start or Panel.Edit)
+                {
+                    <form class="sprint-panel" @onsubmit="SubmitPanel" @onsubmit:preventDefault>
+                        <div class="sprint-form-grid">
+                            @if (panel == Panel.Edit)
+                            {
+                                <div><label class="form-label small" for="sp-name">Name</label>
+                                    <input id="sp-name" class="form-control form-control-sm" @bind="draftName" maxlength="100" required /></div>
+                            }
+                            <div><label class="form-label small" for="sp-start">Start date</label>
+                                <input id="sp-start" type="date" class="form-control form-control-sm" @bind="draftStart" required="@(panel == Panel.Start)" /></div>
+                            <div><label class="form-label small" for="sp-end">End date</label>
+                                <input id="sp-end" type="date" class="form-control form-control-sm" @bind="draftEnd" required="@(panel == Panel.Start)" /></div>
+                            <div class="sprint-form-wide"><label class="form-label small" for="sp-goal">Sprint goal</label>
+                                <input id="sp-goal" class="form-control form-control-sm" @bind="draftGoal" maxlength="500" placeholder="What should this sprint achieve?" /></div>
+                        </div>
+                        @if (panel == Panel.Start)
+                        {
+                            <p class="small muted mb-2">@section.Issues.Count issues (@section.Points story points) will be committed to this sprint.</p>
+                        }
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary btn-sm" type="submit">@(panel == Panel.Start ? "Start sprint" : "Save")</button>
+                            <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="ClosePanel">Cancel</button>
+                        </div>
+                    </form>
+                }
+                else if (panel == Panel.Complete)
+                {
+                    var openCount = section.Issues.Count - section.DoneCount;
+                    <div class="sprint-panel">
+                        <div class="sprint-complete-stats">
+                            <div><strong>@section.DoneCount</strong> done <span class="muted">(@section.DonePoints pts)</span></div>
+                            <div><strong>@openCount</strong> open <span class="muted">(@(section.Points - section.DonePoints) pts)</span></div>
+                        </div>
+                        @if (openCount > 0)
+                        {
+                            <label class="form-label small" for="carry">Move the open issues to</label>
+                            <select id="carry" class="form-select form-select-sm mb-2" @bind="carryTarget" @bind:after="SuggestCarryNameAsync">
+                                @foreach (var p in Planned) { <option value="s:@p.Id">@p.Name</option> }
+                                <option value="new">A new sprint</option>
+                                <option value="backlog">The backlog</option>
+                            </select>
+                            @if (carryTarget == "new")
+                            {
+                                <input class="form-control form-control-sm mb-2" @bind="carryNewName" maxlength="100" aria-label="New sprint name" />
+                            }
+                        }
+                        else
+                        {
+                            <p class="small mb-2">🎉 Every issue in this sprint is done.</p>
+                        }
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success btn-sm" @onclick="() => CompleteSprint(s)">Complete sprint</button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="ClosePanel">Cancel</button>
+                        </div>
+                    </div>
+                }
+            }
+
+            <div class="bl-issues" role="list">
+                @foreach (var i in section.Issues)
+                {
+                    var idx = section.Issues.IndexOf(i);
+                    <div class="bl-row @(i.Status == IssueStatus.Done ? "done" : "") @(dragging?.Id == i.Id ? "dragging" : "")" role="listitem" @key="i.Id"
+                         draggable="@(canEdit ? "true" : "false")"
+                         @ondragstart="() => dragging = i"
+                         @ondragend="() => { dragging = null; dragOver = null; }"
+                         @ondrop="() => Drop(section, i.Id)" @ondrop:stopPropagation>
+                        @if (canEdit) { <span class="bl-grip" aria-hidden="true">⋮⋮</span> }
+                        <span class="issue-type" title="@i.Type">@i.Type.Icon()</span>
+                        <a class="mono small bl-key" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Key</a>
+                        <a class="bl-issue-title" href="/p/@project.Key/issues/@i.Number" draggable="false">@i.Title</a>
+                        <span class="bl-labels">@foreach (var l in i.Labels.OrderBy(l => l.Name)) { <LabelChip Label="l" /> }</span>
+                        <span class="bl-meta">
+                            <StatusBadge Status="i.Status" />
+                            <PriorityIcon Priority="i.Priority" />
+                            <span class="points" title="Story points">@(i.StoryPoints?.ToString() ?? "–")</span>
+                            <Avatar User="i.Assignee" Size="22" />
+                            @if (canEdit)
+                            {
+                                <select class="form-select form-select-sm bl-move" aria-label="Move @i.Key" @key="(i.Id, moveNonce)" @onchange="e => MoveVia(section, idx, e)">
+                                    <option value="">Move…</option>
+                                    @if (idx > 0) { <option value="top">⤒ To top</option><option value="up">↑ Up</option> }
+                                    @if (idx < section.Issues.Count - 1) { <option value="down">↓ Down</option><option value="bottom">⤓ To bottom</option> }
+                                    @foreach (var other in sections.Where(x => x != section))
+                                    {
+                                        <option value="@(other.Sprint is { } os ? $"s:{os.Id}" : "backlog")">→ @(other.Sprint?.Name ?? "Backlog")</option>
+                                    }
+                                </select>
+                            }
+                        </span>
+                    </div>
+                }
+                @if (section.Issues.Count == 0)
+                {
+                    <div class="board-empty">@(s == null ? "The backlog is empty." : canEdit ? "Plan this sprint by dragging issues here." : "No issues in this sprint.")</div>
+                }
+            </div>
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private enum Panel { None, Start, Edit, Complete }
+
+    private Project? project;
+    private bool notFound, canEdit;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<BacklogSection> sections = [];
+    private string? error;
+
+    private Issue? dragging;
+    private string? dragOver;
+    private int moveNonce;
+
+    private bool creating;
+    private string? newName, newGoal;
+
+    private Panel panel;
+    private int? panelFor;
+    private string draftName = "";
+    private string? draftGoal;
+    private DateTime? draftStart, draftEnd;
+    private string carryTarget = "backlog";
+    private string? carryNewName;
+
+    private Sprint? Active => sections.Select(x => x.Sprint).FirstOrDefault(s => s?.State == SprintState.Active);
+    private IEnumerable<Sprint> Planned => sections.Select(x => x.Sprint).OfType<Sprint>().Where(s => s.State == SprintState.Planned);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (project?.Key == Key.ToUpperInvariant()) return;
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        canEdit = perms.Can(Permission.EditIssues);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (project == null) return;
+        sections = await Sprints.GetBacklogAsync(project.Id);
+        moveNonce++;
+    }
+
+    private static string DaysLeft(Sprint s)
+    {
+        if (s.State != SprintState.Active || s.EndDate is not { } end) return "";
+        var d = (end.Date - DateTime.UtcNow.Date).Days;
+        return d < 0 ? $" · ended {-d}d ago" : d == 0 ? " · ends today" : $" · {d}d left";
+    }
+
+    // ----- Live updates: anyone changed sprints, issues or the board in this project -----
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe(OnLive);
+    }
+
+    private Task OnLive(LiveEvent e)
+    {
+        var pid = e switch { SprintChanged x => x.ProjectId, BoardChanged x => x.ProjectId, IssueChanged x => x.ProjectId, _ => -1 };
+        if (pid != project?.Id || dragging != null) return Task.CompletedTask;
+        return InvokeAsync(async () => { await Load(); StateHasChanged(); });
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+
+    private async Task Guard(Func<Task> action)
+    {
+        error = null;
+        try { await action(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    // ----- Planning -----
+
+    private async Task Drop(BacklogSection target, int? beforeId)
+    {
+        var moved = dragging;
+        dragging = null;
+        dragOver = null;
+        if (moved == null || moved.Id == beforeId) return;
+
+        // Optimistic local move so the UI responds instantly.
+        foreach (var sec in sections) sec.Issues.RemoveAll(x => x.Id == moved.Id);
+        var idx = beforeId is { } b ? target.Issues.FindIndex(x => x.Id == b) : -1;
+        if (idx < 0) target.Issues.Add(moved); else target.Issues.Insert(idx, moved);
+
+        await Guard(() => Sprints.MoveIssueAsync(moved.Id, target.Sprint?.Id, beforeId));
+    }
+
+    private async Task MoveVia(BacklogSection section, int idx, ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        var list = section.Issues;
+        if (value == "" || idx < 0 || idx >= list.Count) return;
+        var issue = list[idx];
+        int? sid = section.Sprint?.Id;
+        switch (value)
+        {
+            case "top": await Guard(() => Sprints.MoveIssueAsync(issue.Id, sid, list[0].Id)); break;
+            case "up": await Guard(() => Sprints.MoveIssueAsync(issue.Id, sid, list[idx - 1].Id)); break;
+            case "down": await Guard(() => Sprints.MoveIssueAsync(issue.Id, sid, idx + 2 < list.Count ? list[idx + 2].Id : null)); break;
+            case "bottom": await Guard(() => Sprints.MoveIssueAsync(issue.Id, sid, null)); break;
+            case "backlog": await Guard(() => Sprints.MoveIssueAsync(issue.Id, null, null)); break;
+            default:
+                if (value.StartsWith("s:") && int.TryParse(value[2..], out var target))
+                    await Guard(() => Sprints.MoveIssueAsync(issue.Id, target, null));
+                break;
+        }
+    }
+
+    // ----- Sprints -----
+
+    private async Task StartCreate()
+    {
+        newName = await Sprints.SuggestNameAsync(project!.Id);
+        newGoal = null;
+        creating = true;
+    }
+
+    private async Task CreateSprint()
+    {
+        await Guard(async () =>
+        {
+            await Sprints.CreateSprintAsync(project!.Id, newName, newGoal);
+            creating = false;
+        });
+    }
+
+    private void OpenPanel(Sprint s, Panel p)
+    {
+        error = null;
+        panel = p;
+        panelFor = s.Id;
+        draftName = s.Name;
+        draftGoal = s.Goal;
+        var today = DateTime.UtcNow.Date;
+        draftStart = s.StartDate;
+        draftEnd = s.EndDate;
+        if (p == Panel.Start)
+        {
+            // Starting now: begin today and keep the planned length (two weeks by default).
+            var length = s.StartDate is { } ps && s.EndDate is { } pe && pe >= ps ? (pe - ps).Days : 13;
+            draftStart = today;
+            draftEnd = today.AddDays(length);
+        }
+        carryTarget = Planned.FirstOrDefault(x => x.Id != s.Id) is { } next ? $"s:{next.Id}" : "new";
+        carryNewName = null;
+        if (carryTarget == "new") _ = SuggestCarryNameAsync();
+    }
+
+    private async Task SuggestCarryNameAsync()
+    {
+        if (carryTarget != "new" || !string.IsNullOrWhiteSpace(carryNewName)) return;
+        carryNewName = await Sprints.SuggestNameAsync(project!.Id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ClosePanel() { panel = Panel.None; panelFor = null; }
+
+    private async Task SubmitPanel()
+    {
+        if (panelFor is not { } id) return;
+        if (panel == Panel.Start)
+        {
+            if (draftStart is not { } start || draftEnd is not { } end) { error = "Pick a start and an end date."; return; }
+            await Guard(async () => { await Sprints.StartSprintAsync(id, start, end, draftGoal); ClosePanel(); });
+        }
+        else
+        {
+            await Guard(async () => { await Sprints.UpdateSprintAsync(id, draftName, draftGoal, draftStart, draftEnd); ClosePanel(); });
+        }
+    }
+
+    private async Task CompleteSprint(Sprint s)
+    {
+        var (mode, target) = carryTarget switch
+        {
+            "backlog" => (CarryOver.Backlog, (int?)null),
+            "new" => (CarryOver.NewSprint, null),
+            var v when v.StartsWith("s:") && int.TryParse(v[2..], out var t) => (CarryOver.ExistingSprint, t),
+            _ => (CarryOver.Backlog, null),
+        };
+        await Guard(async () => { await Sprints.CompleteSprintAsync(s.Id, mode, target, carryNewName); ClosePanel(); });
+    }
+
+    private async Task DeleteSprint(Sprint s)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete sprint \"{s.Name}\"? Its issues go back to the backlog.")) return;
+        await Guard(() => Sprints.DeleteSprintAsync(s.Id));
+    }
+}

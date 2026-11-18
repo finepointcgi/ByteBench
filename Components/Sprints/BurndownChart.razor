@@ -1,0 +1,139 @@
+@* Sprint burndown as inline SVG: remaining work per day (solid) against the ideal line (dashed). Hover a day for details. *@
+@using static GitBench.Components.Sprints.ChartScale
+
+<figure class="chart" aria-label="@($"Burndown: remaining {Unit} per day")">
+    <div class="chart-legend" aria-hidden="true">
+        <span><i class="sw sw-remaining"></i>Remaining @Unit</span>
+        <span><i class="sw sw-ideal"></i>Ideal</span>
+        @if (todayIdx is not null) { <span><i class="sw sw-today"></i>Today</span> }
+    </div>
+    <svg viewBox="0 0 @W @H" class="chart-svg" role="img">
+        <title>Burndown of @Data.Sprint.Name in @Unit</title>
+        @* grid + y axis *@
+        @for (var v = 0.0; v <= yMax + 0.001; v += yStep)
+        {
+            var y = Y(v);
+            <g>
+                <line x1="@L" x2="@(W - R)" y1="@F(y)" y2="@F(y)" class="chart-grid" />
+                <text x="@(L - 8)" y="@F(y + 4)" text-anchor="end" class="chart-tick">@F(v)</text>
+            </g>
+        }
+        <text x="12" y="@F(T + PlotH / 2)" class="chart-axis-label" text-anchor="middle" transform="rotate(-90 12 @F(T + PlotH / 2))">@UnitTitle</text>
+        @* x axis *@
+        <line x1="@L" x2="@(W - R)" y1="@F(Y(0))" y2="@F(Y(0))" class="chart-axis" />
+        @for (var k = 0; k < n; k++)
+        {
+            if (k % labelEvery != 0 && k != n - 1) continue;
+            <g><text x="@F(X(k))" y="@(H - B + 18)" text-anchor="middle" class="chart-tick">@Data.Days[k].Date.ToString("MMM d")</text></g>
+        }
+        @if (todayIdx is { } ti)
+        {
+            <line x1="@F(X(ti))" x2="@F(X(ti))" y1="@T" y2="@F(Y(0))" class="chart-today" />
+        }
+        @* ideal *@
+        <polyline points="@IdealPoints" class="chart-line-ideal" />
+        @* remaining: horizontal-then-vertical steps read as "work left at the end of each day" *@
+        <polyline points="@RemainingPoints" class="chart-line-remaining" />
+        @for (var k = 0; k < n; k++)
+        {
+            var d = Data.Days[k];
+            if (Rem(d) is { } r)
+            {
+                <circle cx="@F(X(k))" cy="@F(Y(r))" r="4" class="chart-dot-remaining" />
+            }
+        }
+        @* hover targets: one column per day, wider than the marks *@
+        @for (var k = 0; k < n; k++)
+        {
+            var d = Data.Days[k];
+            <rect x="@F(X(k) - colW / 2)" y="@T" width="@F(colW)" height="@PlotH" class="chart-hit">
+                <title>@Tooltip(d)</title>
+            </rect>
+        }
+    </svg>
+    <figcaption class="visually-hidden">@Summary</figcaption>
+</figure>
+
+<details class="chart-table">
+    <summary>Data table</summary>
+    <table class="table table-sm">
+        <thead><tr><th scope="col">Day</th><th scope="col" class="text-end">Remaining @Unit</th><th scope="col" class="text-end">Ideal</th><th scope="col" class="text-end">Sprint scope</th></tr></thead>
+        <tbody>
+            @foreach (var d in Data.Days)
+            {
+                <tr>
+                    <td>@d.Date.ToString("ddd MMM d")</td>
+                    <td class="text-end">@(Rem(d)?.ToString() ?? "—")</td>
+                    <td class="text-end">@F(Ideal(d))</td>
+                    <td class="text-end">@(Scope(d)?.ToString() ?? "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public Burndown Data { get; set; } = null!;
+    /// <summary>Count issues instead of story points.</summary>
+    [Parameter] public bool CountMode { get; set; }
+
+    private const int W = 760, H = 300, L = 48, R = 16, T = 12, B = 34;
+    private const int PlotW = W - L - R, PlotH = H - T - B;
+
+    private int n, labelEvery;
+    private int? todayIdx;
+    private double yMax, yStep, colW;
+
+    private string Unit => CountMode ? "issues" : "points";
+    private string UnitTitle => CountMode ? "Issues" : "Story points";
+    private int? Rem(BurndownDay d) => CountMode ? d.RemainingCount : d.RemainingPoints;
+    private int? Scope(BurndownDay d) => CountMode ? d.ScopeCount : d.ScopePoints;
+    private double Ideal(BurndownDay d) => CountMode ? d.IdealCount : d.IdealPoints;
+
+    private double X(int k) => L + (n <= 1 ? PlotW / 2.0 : k * (double)PlotW / (n - 1));
+    private double Y(double v) => T + PlotH - v / yMax * PlotH;
+
+    protected override void OnParametersSet()
+    {
+        n = Data.Days.Count;
+        var max = Data.Days.Select(d => Math.Max(Ideal(d), Math.Max(Rem(d) ?? 0, Scope(d) ?? 0))).DefaultIfEmpty(0).Max();
+        (yMax, yStep) = Nice(max);
+        labelEvery = n <= 10 ? 1 : n <= 20 ? 2 : (int)Math.Ceiling(n / 10.0);
+        colW = n <= 1 ? PlotW : PlotW / (double)(n - 1);
+        var today = DateTime.UtcNow.Date;
+        todayIdx = Data.Sprint.State == SprintState.Active ? Data.Days.ToList().FindIndex(d => d.Date == today) : null;
+        if (todayIdx < 0) todayIdx = null;
+    }
+
+    private string IdealPoints => string.Join(" ", Data.Days.Select((d, k) => $"{F(X(k))},{F(Y(Ideal(d)))}"));
+
+    private string RemainingPoints
+    {
+        get
+        {
+            var pts = new List<string>();
+            int? prev = null;
+            for (var k = 0; k < n; k++)
+            {
+                if (Rem(Data.Days[k]) is not { } r) break;
+                if (prev is { } p && p != r) pts.Add($"{F(X(k))},{F(Y(p))}");
+                pts.Add($"{F(X(k))},{F(Y(r))}");
+                prev = r;
+            }
+            return string.Join(" ", pts);
+        }
+    }
+
+    private string Tooltip(BurndownDay d) => Rem(d) is { } r
+        ? $"{d.Date:ddd MMM d}\nRemaining: {r} {Unit}\nIdeal: {F(Ideal(d))}\nSprint scope: {Scope(d)} {Unit}"
+        : $"{d.Date:ddd MMM d}\nIdeal: {F(Ideal(d))} (not reached yet)";
+
+    private string Summary
+    {
+        get
+        {
+            var last = Data.Days.LastOrDefault(d => Rem(d) != null);
+            return last == null ? "No data yet." : $"Started with {(CountMode ? Data.StartCount : Data.StartPoints)} {Unit}; {Rem(last)} remaining on {last.Date:MMM d}.";
+        }
+    }
+}

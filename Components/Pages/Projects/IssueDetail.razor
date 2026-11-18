@@ -212,6 +212,7 @@ else if (issue != null && project != null)
                     @foreach (var m in project.Milestones.Where(m => !m.IsClosed || m.Id == issue.MilestoneId)) { <option value="@m.Id">@m.Title</option> }
                 </select>
             </div>
+            <IssueSprintField Issue="issue" />
             <div class="field">
                 <label>Labels</label>
                 <div class="label-picker">
@@ -421,8 +422,9 @@ else if (issue != null && project != null)
     {
         int? p = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v, 0, 100) : null;
         if (i.StoryPoints == p) return null;
+        var old = i.StoryPoints;
         i.StoryPoints = p;
-        return p == null ? "removed the estimate" : $"estimated **{p}** story points";
+        return SprintHistory.EstimateText(old, p);
     });
 
     private Task SetDue(ChangeEventArgs e) => Change(i =>

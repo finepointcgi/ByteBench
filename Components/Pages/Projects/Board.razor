@@ -19,6 +19,7 @@ else if (project != null)
             <div class="muted">@project.Name</div>
         </div>
         <div class="filter-bar compact">
+            <BoardSprintSelect ProjectId="project.Id" @bind-SprintId="sprintId" />
             <select class="form-select form-select-sm" @bind="milestoneId" @bind:after="Load">
                 <option value="">All milestones</option>
                 @foreach (var m in project.Milestones.Where(m => !m.IsClosed)) { <option value="@m.Id">@m.Title</option> }
@@ -94,9 +95,12 @@ else if (project != null)
     private Issue? dragging;
     private IssueStatus? dragOverStatus;
 
+    private int? sprintId; // set by BoardSprintSelect (defaults to the active sprint); null = all issues
+    private IEnumerable<Issue> SprintIssues => sprintId is { } sid ? issues.Where(i => i.SprintId == sid) : issues;
+
     private IEnumerable<Issue> Visible => string.IsNullOrWhiteSpace(search)
-        ? issues
-        : issues.Where(i => i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) || i.Key.Contains(search, StringComparison.OrdinalIgnoreCase));
+        ? SprintIssues
+        : SprintIssues.Where(i => i.Title.Contains(search, StringComparison.OrdinalIgnoreCase) || i.Key.Contains(search, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnParametersSetAsync()
     {
@@ -105,8 +109,6 @@ else if (project != null)
         if (project == null) return;
         canEdit = await Access.CanAsync(project.Id, Permission.EditIssues);
         users = await Issues.GetUsersAsync();
-        // Default to the active sprint, if there is one.
-        milestoneId ??= project.Milestones.FirstOrDefault(m => !m.IsClosed && m.StartDate <= DateTime.Today && m.DueDate >= DateTime.Today)?.Id;
         await Load();
     }
 
