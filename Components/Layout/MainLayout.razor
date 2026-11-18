@@ -5,6 +5,8 @@
 @inject CurrentUser Me
 @inject ProjectAccess Access
 @inject IJSRuntime JS
+@inject GitBench.Services.Explore.StarService Stars
+@inject IDialogService Dialogs
 
 <MudThemeProvider @ref="themeProvider" Theme="GitBenchTheme.Theme" @bind-IsDarkMode="isDark" />
 <MudPopoverProvider />
@@ -27,6 +29,11 @@
                     }
                 </MudSelect>
             </div>
+        }
+
+        @if (Me.User != null)
+        {
+            <GlobalSearchBox />
         }
 
         <MudSpacer />
@@ -71,6 +78,7 @@
     <MudDrawer @bind-Open="drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive" Class="gb-drawer">
         <MudNavMenu Dense="true" Class="gb-nav">
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/explore" Icon="@Icons.Material.Outlined.TravelExplore">Explore</MudNavLink>
             <MudNavLink Href="/projects/new" Icon="@Icons.Material.Outlined.AddBox">New project</MudNavLink>
             @if (Me.User?.IsAdmin == true)
             {
@@ -87,6 +95,7 @@
                         <div class="gb-nav-project-name">@cp.Name</div>
                         <div class="gb-nav-project-key">@cp.Key</div>
                     </div>
+                    <StarButton ProjectId="cp.Id" Compact="true" @key="cp.Id" />
                 </div>
                 <MudNavLink Href="@($"/p/{cp.Key}/issues")" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.ListAlt">Issues</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/board")" Icon="@Icons.Material.Outlined.ViewKanban">Board</MudNavLink>
@@ -107,10 +116,15 @@
 
             <MudDivider Class="my-2 gb-nav-divider" />
             <div class="gb-nav-heading">Projects</div>
-            @foreach (var p in projects)
+            @* Starred projects first (marked with a star), then the rest by name. *@
+            @foreach (var p in projects.OrderBy(p => starred.Contains(p.Id) ? 0 : 1))
             {
                 <MudNavLink Href="@($"/p/{p.Key}/issues")" Match="NavLinkMatch.Prefix">
                     <span class="proj-avatar sm">@p.Key[..1]</span> @p.Name
+                    @if (starred.Contains(p.Id))
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Class="gb-nav-star" aria-label="Starred" />
+                    }
                 </MudNavLink>
             }
         </MudNavMenu>
@@ -135,6 +149,8 @@
 
 @code {
     private List<ProjectSummary> projects = [];
+    private HashSet<int> starred = [];
+    private DotNetObjectReference<MainLayout>? shortcutsRef;
     private ProjectPermissions projectPerms = ProjectPermissions.None;
     private string? projectKey;
     private bool userLoaded;
@@ -150,6 +166,7 @@
         userLoaded = true;
         await RefreshProjects();
         Nav.LocationChanged += OnLocationChanged;
+        Stars.Changed += OnStarsChanged;
         ParseProjectKey();
     }
 
@@ -158,6 +175,7 @@
     private async Task RefreshProjects()
     {
         projects = Me.IsSignedIn ? await Issues.GetProjectsAsync() : [];
+        starred = Me.IsSignedIn ? [.. await Stars.StarredProjectIdsAsync()] : [];
         var key = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('/') is [ "p", var k, .. ] ? k.ToUpperInvariant() : null;
         projectPerms = projects.FirstOrDefault(p => p.Key == key) is { } cur ? await Access.GetPermissionsAsync(cur.Id) : ProjectPermissions.None;
     }
@@ -193,6 +211,32 @@
         }
         catch (InvalidOperationException) { } // static render: no JS interop
         catch (JSException) { }
+
+        // Keyboard shortcuts (wwwroot/js/shortcuts.js); "?" calls back into ShowShortcutHelp.
+        try
+        {
+            shortcutsRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("gitbenchShortcuts.attach", shortcutsRef);
+        }
+        catch (InvalidOperationException) { }
+        catch (JSException) { }
+    }
+
+    [JSInvokable]
+    public async Task ShowShortcutHelp()
+    {
+        await InvokeAsync(async () => await Dialogs.ShowAsync<ShortcutHelpDialog>("Keyboard shortcuts",
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true }));
+    }
+
+    private async void OnStarsChanged()
+    {
+        try
+        {
+            starred = [.. await Stars.StarredProjectIdsAsync()];
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task ToggleDark()
@@ -203,5 +247,10 @@
 
     private void OpenProfile() => Nav.NavigateTo("account/profile", forceLoad: true);
 
-    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        Stars.Changed -= OnStarsChanged;
+        shortcutsRef?.Dispose();
+    }
 }

@@ -1,0 +1,3 @@
+.gb-star { display: inline-flex; }
+.gb-star-count { margin-left: 6px; padding: 0 7px; border-radius: 10px; font-size: 12px; background: var(--mud-palette-action-default-hover); }
+.gb-star-compact .gb-star-count { margin-left: 2px; }

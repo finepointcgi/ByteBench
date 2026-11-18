@@ -1,1 +1,4 @@
 .gb-avatar-name { margin-left: 6px; vertical-align: middle; }
+.gb-avatar-link { display: inline-flex; align-items: center; color: inherit; border-radius: 999px; }
+.gb-avatar-link:hover .gb-avatar-name { text-decoration: underline; }
+.gb-avatar-link:hover { text-decoration: none; }

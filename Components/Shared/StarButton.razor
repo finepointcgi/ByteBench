@@ -1,0 +1,61 @@
+@* Star / unstar a project, with its star count. Loads its own state unless Starred and Count are passed in. *@
+@using GitBench.Services.Explore
+@inject StarService Stars
+@inject ISnackbar Snackbar
+
+<span class="gb-star @(Compact ? "gb-star-compact" : "")">
+    <MudTooltip Text="@(starred ? "Unstar this project" : "Star this project")">
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="@(starred ? Color.Warning : Color.Default)" Disabled="busy"
+                   StartIcon="@(starred ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" OnClick="Toggle"
+                   aria-pressed="@(starred ? "true" : "false")" aria-label="@(starred ? "Unstar" : "Star")" Class="gb-star-btn">
+            @if (!Compact) { <span>@(starred ? "Starred" : "Star")</span> }
+            <span class="gb-star-count">@count</span>
+        </MudButton>
+    </MudTooltip>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    [Parameter] public bool? Starred { get; set; }
+    [Parameter] public int? Count { get; set; }
+    /// <summary>Only the icon and count.</summary>
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public EventCallback<(bool Starred, int Count)> OnChanged { get; set; }
+
+    private bool starred, busy;
+    private int count;
+    private int loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Starred is { } s && Count is { } c)
+        {
+            (starred, count) = (s, c);
+        }
+        else if (loadedFor != ProjectId)
+        {
+            starred = await Stars.IsStarredAsync(ProjectId);
+            count = await Stars.CountAsync(ProjectId);
+        }
+        loadedFor = ProjectId;
+    }
+
+    private async Task Toggle()
+    {
+        busy = true;
+        try
+        {
+            count = starred ? await Stars.UnstarAsync(ProjectId) : await Stars.StarAsync(ProjectId);
+            starred = !starred;
+            await OnChanged.InvokeAsync((starred, count));
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

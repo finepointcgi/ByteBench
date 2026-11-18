@@ -861,3 +861,42 @@ public class ReleaseAsset
     public int DownloadCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Explore & profiles -----
+
+/// <summary>A user's star on a project (Explore, the sidebar's starred projects). One per user and project.</summary>
+public class ProjectStar
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public Project Project { get; set; } = null!;
+    public int UserId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// One branch or tag that a <c>git push</c> moved, recorded for the profile activity feed and contribution calendar
+/// (<see cref="GitBench.Services.Explore.PushActivityListener"/>).
+/// </summary>
+public class PushEvent
+{
+    public long Id { get; set; }
+    public int ProjectId { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    /// <summary>Full ref name, e.g. <c>refs/heads/main</c>.</summary>
+    [Required, MaxLength(250)] public string Ref { get; set; } = "";
+    [MaxLength(40)] public string? Before { get; set; }
+    [MaxLength(40)] public string? After { get; set; }
+    /// <summary>Commits the push added to the ref (capped at <see cref="GitBench.Services.Explore.PushActivityListener.MaxCommits"/>); 0 for a deletion.</summary>
+    public int CommitCount { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public partial class User
+{
+    /// <summary>When the account was created ("member since"). Null for accounts created before this was recorded.</summary>
+    public DateTime? CreatedAt { get; set; } = DateTime.UtcNow;
+}

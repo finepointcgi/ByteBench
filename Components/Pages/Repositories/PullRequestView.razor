@@ -48,10 +48,10 @@ else if (pr != null)
     <div class="pr-subhead">
         <PrStateBadge State="pr.State" />
         <span class="muted">
-            <b>@pr.Author.DisplayName</b>@(pr.State == PullRequestState.Merged ? "" : " ")
+            <UserLink User="pr.Author" />@(pr.State == PullRequestState.Merged ? "" : " ")
             @if (pr.State == PullRequestState.Merged)
             {
-                <span>'s changes were merged by <b>@pr.MergedBy?.DisplayName</b> @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt) ·</span>
+                <span>'s changes were merged by <UserLink User="pr.MergedBy" /> @Display.Ago(pr.ClosedAt ?? pr.UpdatedAt) ·</span>
             }
             else
             {
@@ -98,7 +98,7 @@ else if (pr != null)
                 <!-- Description -->
                 <div class="pr-card">
                     <div class="pr-card-head">
-                        <Avatar User="pr.Author" Size="22" /> <b>@pr.Author.DisplayName</b>
+                        <Avatar User="pr.Author" Size="22" Link /> <UserLink User="pr.Author" />
                         <span class="muted small">opened @Display.Ago(pr.CreatedAt)</span>
                         @if (CanEditPr && !editingDesc)
                         {
@@ -134,7 +134,7 @@ else if (pr != null)
                         {
                             <div class="pr-card" @key="(1, c.Id)">
                                 <div class="pr-card-head">
-                                    <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b> <AiBadge User="c.Author" />
+                                    <Avatar User="c.Author" Size="22" Link /> <UserLink User="c.Author" /> <AiBadge User="c.Author" />
                                     <span class="muted small">
                                         @if (c.IsInline)
                                         {
@@ -176,8 +176,8 @@ else if (pr != null)
                         else if (entry is PullRequestActivity a)
                         {
                             <div class="pr-activity" @key="(2, a.Id)">
-                                <Avatar User="a.Actor" Size="18" />
-                                <b>@a.Actor.DisplayName</b> <AiBadge User="a.Actor" /> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                                <Avatar User="a.Actor" Size="18" Link />
+                                <UserLink User="a.Actor" /> <AiBadge User="a.Actor" /> <span class="md-inline">@Display.Markdown(a.Text)</span>
                                 <span class="muted">@Display.Ago(a.CreatedAt)</span>
                             </div>
                         }
@@ -240,7 +240,7 @@ else if (pr != null)
                 else if (pr.State == PullRequestState.Merged)
                 {
                     <MudAlert Severity="Severity.Success" Dense="true" Variant="Variant.Outlined" Class="merge-status" Icon="@Icons.Material.Filled.Merge">
-                        Merged into <span class="mono">@pr.TargetBranch</span> by <b>@pr.MergedBy?.DisplayName</b>
+                        Merged into <span class="mono">@pr.TargetBranch</span> by <UserLink User="pr.MergedBy" />
                         @if (pr.MergeCommitSha != null)
                         {
                             <div class="mt-1"><a class="sha-pill" href="@RepoUrls.Commit(repo, pr.MergeCommitSha)">@pr.MergeCommitSha[..7]</a></div>

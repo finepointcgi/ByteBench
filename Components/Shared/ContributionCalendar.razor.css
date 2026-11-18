@@ -1,0 +1,15 @@
+.gb-cal-head { margin-bottom: 8px; }
+/* rtl: when the calendar is wider than its box it starts scrolled to the newest weeks. */
+.gb-cal-scroll { overflow-x: auto; padding-bottom: 4px; direction: rtl; }
+.gb-cal-svg { display: block; direction: ltr; width: 100%; height: auto; min-width: 600px; }
+/* The labels are emitted as markup (no scope attribute): reach them with ::deep. */
+.gb-cal-scroll ::deep .gb-cal-label { font-size: 9px; fill: var(--mud-palette-text-secondary); }
+.gb-cal-cell { stroke: var(--mud-palette-lines-default); stroke-opacity: .6; stroke-width: 1; }
+.gb-cal-l0 { fill: var(--mud-palette-action-default-hover); }
+.gb-cal-l1 { fill: rgba(var(--mud-palette-primary-rgb), .28); }
+.gb-cal-l2 { fill: rgba(var(--mud-palette-primary-rgb), .5); }
+.gb-cal-l3 { fill: rgba(var(--mud-palette-primary-rgb), .75); }
+.gb-cal-l4 { fill: var(--mud-palette-primary); }
+.gb-cal-legend { display: flex; align-items: center; justify-content: flex-end; gap: 3px; font-size: 11px; color: var(--mud-palette-text-secondary); margin-top: 6px; }
+.gb-cal-legend span { margin: 0 4px; }
+.gb-cal-legend svg { display: block; }

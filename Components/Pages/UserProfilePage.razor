@@ -1,0 +1,127 @@
+@page "/u/{UserName}"
+@using GitBench.Services.Explore
+@inject UserActivityService Activity
+@inject CurrentUser Me
+@inject NavigationManager Nav
+
+<PageTitle>@(profile?.User.DisplayName ?? UserName) · GitBench</PageTitle>
+
+@if (notFound)
+{
+    <div class="empty">
+        <MudText Typo="Typo.h6">User not found</MudText>
+        <MudText Typo="Typo.body2" Class="mt-1">There is no user called @@@UserName.</MudText>
+    </div>
+}
+else if (profile != null)
+{
+    var u = profile.User;
+    <div class="up">
+        <MudGrid Spacing="4">
+            <MudItem xs="12" md="3">
+                <div class="up-card">
+                    <div class="up-avatar"><Avatar User="u" Size="112" /></div>
+                    <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold up-name">@u.DisplayName</MudText>
+                    <MudText Typo="Typo.body1" Class="mud-text-secondary">@@@u.UserName</MudText>
+                    <div class="up-facts">
+                        @if (u.IsAdmin)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.Shield" Class="ma-0">Site admin</MudChip>
+                        }
+                        @if (u.DeactivatedAt != null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="ma-0">Deactivated</MudChip>
+                        }
+                        @if (profile.MemberSince is { } since)
+                        {
+                            <div class="up-fact"><MudIcon Icon="@Icons.Material.Outlined.CalendarMonth" Size="Size.Small" /> Member since @since.ToLocalTime().ToString("MMMM yyyy")</div>
+                        }
+                        <div class="up-fact"><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" /> @profile.Projects.Count project@(profile.Projects.Count == 1 ? "" : "s")</div>
+                    </div>
+                    @if (u.Id == Me.Id)
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" FullWidth="true" Class="mt-3" OnClick="EditProfile"
+                                   StartIcon="@Icons.Material.Outlined.Edit">Edit profile</MudButton>
+                    }
+                </div>
+            </MudItem>
+
+            <MudItem xs="12" md="9">
+                <MudPaper Outlined="true" Class="up-section pa-4">
+                    <ContributionCalendar Days="contributions" />
+                </MudPaper>
+
+                <MudGrid Spacing="4" Class="mt-0">
+                    <MudItem xs="12" lg="7">
+                        <MudCard Outlined="true">
+                            <MudCardHeader Class="up-card-head">
+                                <CardHeaderContent>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudIcon Icon="@Icons.Material.Outlined.History" Size="Size.Small" Color="Color.Primary" />
+                                        <MudText Typo="Typo.subtitle1" Class="gb-bold">Activity</MudText>
+                                    </div>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudDivider />
+                            <ActivityFeed Items="feed" ShowActor="false" Empty="@($"{u.DisplayName} has no activity you can see yet.")" />
+                        </MudCard>
+                    </MudItem>
+                    <MudItem xs="12" lg="5">
+                        <MudCard Outlined="true">
+                            <MudCardHeader Class="up-card-head">
+                                <CardHeaderContent>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" Color="Color.Primary" />
+                                        <MudText Typo="Typo.subtitle1" Class="gb-bold">Projects</MudText>
+                                    </div>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudDivider />
+                            @if (profile.Projects.Count == 0)
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary pa-6" Align="Align.Center">No projects you can see.</MudText>
+                            }
+                            <ul class="up-projects">
+                                @foreach (var p in profile.Projects)
+                                {
+                                    <li>
+                                        <span class="proj-avatar sm">@p.Key[..1]</span>
+                                        <div class="up-min0">
+                                            <a href="/p/@p.Key/issues" class="gb-bold">@p.Name</a> <span class="mono mud-text-secondary up-small">@p.Key</span>
+                                            @if (!string.IsNullOrWhiteSpace(p.Description))
+                                            {
+                                                <div class="mud-text-secondary up-small up-ellipsis">@p.Description</div>
+                                            }
+                                        </div>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0 ml-auto">@p.Role</MudChip>
+                                    </li>
+                                }
+                            </ul>
+                        </MudCard>
+                    </MudItem>
+                </MudGrid>
+            </MudItem>
+        </MudGrid>
+    </div>
+}
+
+@code {
+    [Parameter] public string UserName { get; set; } = "";
+
+    private UserProfile? profile;
+    private List<FeedItem> feed = [];
+    private Dictionary<DateOnly, int> contributions = [];
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        profile = await Activity.GetProfileAsync(UserName);
+        notFound = profile == null;
+        if (profile == null) return;
+        feed = await Activity.GetFeedAsync(profile.User.Id, take: 40);
+        contributions = await Activity.GetContributionsAsync(profile.User.Id);
+    }
+
+    // The account profile page is static SSR: force a full load.
+    private void EditProfile() => Nav.NavigateTo("account/profile", forceLoad: true);
+}

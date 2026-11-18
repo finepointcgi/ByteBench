@@ -89,6 +89,12 @@ builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Pr
 // Re-check cookies against the security stamp every minute, so an admin's "sign out" or lock takes effect quickly.
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 builder.Services.AddReleases(); // tags, releases, assets, source archives
+// ----- Explore & profiles -----
+builder.Services.AddScoped<GitBench.Services.Explore.StarService>();
+builder.Services.AddScoped<GitBench.Services.Explore.ExploreService>();
+builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
+builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
+builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

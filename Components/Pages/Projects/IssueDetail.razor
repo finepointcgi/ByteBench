@@ -65,7 +65,7 @@ else if (issue != null && project != null)
     <div class="id-subhead">
         <StatusBadge Issue="issue" />
         <span class="id-muted">
-            <b>@issue.Reporter.DisplayName</b> opened this @Display.Ago(issue.CreatedAt)
+            <UserLink User="issue.Reporter" /> opened this @Display.Ago(issue.CreatedAt)
             @if (issue.ClosedAt is { } ca) { <span> · closed @Display.Ago(ca)</span> }
         </span>
     </div>
@@ -76,11 +76,11 @@ else if (issue != null && project != null)
             <!-- Description -->
             <MudPaper Outlined="true" Class="id-card">
                 <div class="id-card-head">
-                    <Avatar User="issue.Reporter" Size="22" /> <b>@issue.Reporter.DisplayName</b>
+                    <Avatar User="issue.Reporter" Size="22" Link /> <UserLink User="issue.Reporter" />
                     <span class="id-muted id-small">@Display.Ago(issue.CreatedAt)</span>
                     @if (!editingDesc && CanEdit)
                     {
-                        <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" Class="ml-auto id-text-btn" OnClick="StartEditDesc">Edit</MudButton>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" Class="ml-auto id-text-btn" data-shortcut="edit" OnClick="StartEditDesc">Edit</MudButton>
                     }
                 </div>
                 <div class="id-card-body">
@@ -116,7 +116,7 @@ else if (issue != null && project != null)
                     {
                         <MudPaper Outlined="true" Class="id-card" @key="(1, c.Id)">
                             <div class="id-card-head">
-                                <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
+                                <Avatar User="c.Author" Size="22" Link /> <UserLink User="c.Author" />
                                 <span class="id-muted id-small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
                                 @if (CanModerate(c) && editingCommentId != c.Id)
                                 {
@@ -147,8 +147,8 @@ else if (issue != null && project != null)
                     else if (entry is Activity a)
                     {
                         <div class="id-activity" @key="(2, a.Id)">
-                            <Avatar User="a.Actor" Size="18" />
-                            <span><b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                            <Avatar User="a.Actor" Size="18" Link />
+                            <span><UserLink User="a.Actor" /> <span class="md-inline">@Display.Markdown(a.Text)</span>
                             <span class="id-muted">@Display.Ago(a.CreatedAt)</span></span>
                         </div>
                     }
@@ -193,7 +193,7 @@ else if (issue != null && project != null)
                     </MudSelect>
                     <div>
                         <div class="d-flex align-center gap-2">
-                            <Avatar User="issue.Assignee" Size="24" />
+                            <Avatar User="issue.Assignee" Size="24" Link />
                             @* 0 stands for "Unassigned". *@
                             <MudSelect T="int" @key="(nameof(SetAssigneeId), fieldsVersion)" Value="@(issue.AssigneeId ?? 0)" ValueChanged="v => SetAssigneeId(v == 0 ? null : v)"
                                        Label="Assignee" Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="AssigneeName">
@@ -203,7 +203,7 @@ else if (issue != null && project != null)
                         </div>
                         @if (issue.AssigneeId != Me.Id && CanEdit)
                         {
-                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Class="id-link-btn" OnClick="() => SetAssigneeId(Me.Id)">Assign to me</MudButton>
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Class="id-link-btn" data-shortcut="assign-me" OnClick="() => SetAssigneeId(Me.Id)">Assign to me</MudButton>
                         }
                     </div>
                     <MudSelect T="IssuePriority" @key="(nameof(SetPriority), fieldsVersion)" Value="issue.Priority" ValueChanged="SetPriority" Label="Priority"
@@ -249,7 +249,7 @@ else if (issue != null && project != null)
                 </MudStack>
                 <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
                 <div class="id-reporter">
-                    <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName /></div>
+                    <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName Link /></div>
                     <div>Created @issue.CreatedAt.ToLocalTime().ToString("g")</div>
                     <div>Updated @Display.Ago(issue.UpdatedAt)</div>
                 </div>

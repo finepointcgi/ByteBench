@@ -1,0 +1,72 @@
+@* App-bar search: debounced suggestions (top 3 issues, pull requests, projects and users) and, first, either the issue
+   a typed key like WEB-12 names or "all results", so Enter goes to /search?q=… (which jumps straight to a key's issue). *@
+@using GitBench.Services.Explore
+@inject SearchService Search
+@inject NavigationManager Nav
+
+<div class="gb-global-search" id="gb-global-search">
+    <MudAutocomplete @ref="box" T="Suggestion" Value="selected" ValueChanged="Go" SearchFunc="Suggest" ToStringFunc="@(s => s?.Query)"
+                     DebounceInterval="250" MaxItems="null" CoerceText="false" CoerceValue="false" Strict="false" ResetValueOnEmptyText="true"
+                     Placeholder="Search or jump to…  ( / )" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                     Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Inherit"
+                     AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" PopoverClass="gb-search-popover"
+                     ShowProgressIndicator="false" SelectOnActivation="true" aria-label="Search GitBench">
+        <ItemTemplate Context="s">
+            @if (s.Group != null)
+            {
+                <div class="gb-sugg-group">@s.Group</div>
+            }
+            <div class="gb-sugg">
+                <MudIcon Icon="@s.Icon" Size="Size.Small" Class="gb-sugg-icon" />
+                <span class="gb-sugg-text">@s.Text</span>
+                @if (s.Sub != null)
+                {
+                    <span class="gb-sugg-sub">@s.Sub</span>
+                }
+            </div>
+        </ItemTemplate>
+        <NoItemsTemplate>
+            <div class="gb-sugg-none">No suggestions. Press Enter for all results.</div>
+        </NoItemsTemplate>
+    </MudAutocomplete>
+</div>
+
+@code {
+    /// <summary>One suggestion; <see cref="Group"/> is set on the first item of each type to draw a heading above it.</summary>
+    public sealed record Suggestion(string Query, string Text, string? Sub, string Url, string Icon, string? Group = null);
+
+    private MudAutocomplete<Suggestion>? box;
+    private Suggestion? selected;
+
+    private async Task<IEnumerable<Suggestion>> Suggest(string? text, CancellationToken ct)
+    {
+        var q = text?.Trim() ?? "";
+        if (q.Length == 0) return [];
+        var all = new Suggestion(q, $"Search for “{q}”", "all results", "/search?q=" + Uri.EscapeDataString(q), Icons.Material.Filled.Search);
+        GlobalSearchResults r;
+        try { r = await Search.SearchAsync(q, limit: 3, withCounts: false, ct: ct); }
+        catch (OperationCanceledException) { return [all]; }
+
+        var list = new List<Suggestion>();
+        if (r.JumpUrl != null && r.Issues.FirstOrDefault(i => i.Url == r.JumpUrl) is { } hit)
+            list.Add(new Suggestion(q, $"{hit.Key} {hit.Title}", "go to issue", hit.Url, Icons.Material.Outlined.ArrowForward));
+        list.Add(all);
+        list.AddRange(r.Issues.Where(i => i.Url != r.JumpUrl).Select((i, n) =>
+            new Suggestion(q, i.Title, i.Key, i.Url, Icons.Material.Outlined.ListAlt, n == 0 ? "Issues" : null)));
+        list.AddRange(r.PullRequests.Select((p, n) =>
+            new Suggestion(q, p.Title, $"{p.Repository}#{p.Number}", p.Url, Icons.Material.Outlined.MergeType, n == 0 ? "Pull requests" : null)));
+        list.AddRange(r.Projects.Select((p, n) =>
+            new Suggestion(q, p.Name, p.Key, p.Url, Icons.Material.Outlined.Folder, n == 0 ? "Projects" : null)));
+        list.AddRange(r.Users.Select((u, n) =>
+            new Suggestion(q, u.User.DisplayName, "@" + u.User.UserName, u.Url, Icons.Material.Outlined.Person, n == 0 ? "Users" : null)));
+        return list;
+    }
+
+    private async Task Go(Suggestion? s)
+    {
+        if (s == null) return;
+        selected = null;
+        if (box != null) await box.ClearAsync();
+        Nav.NavigateTo(s.Url);
+    }
+}

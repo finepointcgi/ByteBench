@@ -1,0 +1,16 @@
+.up-card { padding: 4px 4px 0; }
+.up-avatar { margin-bottom: 12px; }
+.up ::deep .up-name { margin: 0; line-height: 1.25; }
+.up-facts { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 14px; color: var(--mud-palette-text-secondary); }
+.up-fact { display: inline-flex; align-items: center; gap: 6px; }
+.up ::deep .up-card-head { padding: 12px 16px; }
+.up-projects { list-style: none; padding: 0; margin: 0; }
+.up-projects li { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--mud-palette-lines-default); }
+.up-projects li:last-child { border-bottom: none; }
+.up-min0 { min-width: 0; }
+.up-small { font-size: 12px; }
+.up-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 960px) {
+    .up-card { display: flex; flex-direction: column; align-items: center; text-align: center; }
+    .up-facts { align-items: center; }
+}

@@ -1,0 +1,97 @@
+@* GitHub-style contribution heatmap: 52 weeks (plus this one) of daily counts, Sunday at the top. Cells carry
+   native SVG <title> tooltips; colors come from the MudBlazor palette, so both themes work. *@
+@using System.Globalization
+
+<div class="gb-cal">
+    <div class="gb-cal-head">
+        <MudText Typo="Typo.subtitle2" Class="gb-bold">@Total.ToString("N0") contribution@(Total == 1 ? "" : "s") in the last year</MudText>
+    </div>
+    <div class="gb-cal-scroll">
+        <svg class="gb-cal-svg" viewBox="0 0 @Width @Height" style="max-width:@(Width * 5 / 4)px" role="img"
+             aria-label="@($"Contribution calendar: {Total} contributions in the last year")">
+            @Labels
+            @for (var d = start; d <= end; d = d.AddDays(1))
+            {
+                var index = d.DayNumber - start.DayNumber;
+                var n = Days.GetValueOrDefault(d);
+                <rect x="@(Left + index / 7 * Step)" y="@(Top + index % 7 * Step)" width="@Cell" height="@Cell" rx="2" ry="2"
+                      class="gb-cal-cell gb-cal-l@(Level(n))" data-date="@d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" data-count="@n">
+                    <title>@Tooltip(d, n)</title>
+                </rect>
+            }
+        </svg>
+    </div>
+    <div class="gb-cal-legend" aria-hidden="true">
+        <span>Less</span>
+        @for (var l = 0; l <= 4; l++)
+        {
+            <svg width="@Cell" height="@Cell"><rect width="@Cell" height="@Cell" rx="2" ry="2" class="gb-cal-cell gb-cal-l@(l)" /></svg>
+        }
+        <span>More</span>
+    </div>
+</div>
+
+@code {
+    /// <summary>Contributions per UTC day (UserActivityService.GetContributionsAsync).</summary>
+    [Parameter, EditorRequired] public IReadOnlyDictionary<DateOnly, int> Days { get; set; } = new Dictionary<DateOnly, int>();
+    /// <summary>The last day shown (default: today, UTC).</summary>
+    [Parameter] public DateOnly? Today { get; set; }
+
+    private const int Cell = 11, Step = 14, Left = 30, Top = 16;
+    private DateOnly start, end;
+    private int max;
+
+    private int Total => Days.Where(kv => kv.Key >= start && kv.Key <= end).Sum(kv => kv.Value);
+    private int Weeks => (end.DayNumber - start.DayNumber) / 7 + 1;
+    private int Width => Left + Weeks * Step;
+    private int Height => Top + 7 * Step;
+
+    protected override void OnParametersSet()
+    {
+        end = Today ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var first = end.AddDays(-GitBench.Services.Explore.UserActivityService.CalendarDays);
+        start = first.AddDays(-(int)first.DayOfWeek); // back to Sunday
+        max = Days.Where(kv => kv.Key >= start && kv.Key <= end).Select(kv => kv.Value).DefaultIfEmpty(0).Max();
+    }
+
+    // Razor reserves <text>, so the SVG text labels are emitted as markup (fixed strings and numbers only).
+    private MarkupString Labels
+    {
+        get
+        {
+            var sb = new System.Text.StringBuilder();
+            void Text(int x, int y, string s) =>
+                sb.Append(CultureInfo.InvariantCulture, $"<text x=\"{x}\" y=\"{y}\" class=\"gb-cal-label\">{s}</text>");
+            foreach (var (label, col) in Months) Text(Left + col * Step, 10, label);
+            Text(0, Top + 1 * Step + Cell - 1, "Mon");
+            Text(0, Top + 3 * Step + Cell - 1, "Wed");
+            Text(0, Top + 5 * Step + Cell - 1, "Fri");
+            return new MarkupString(sb.ToString());
+        }
+    }
+
+    /// <summary>0 for none, else 1-4 by quarter of the busiest day.</summary>
+    private int Level(int n) => n <= 0 || max == 0 ? 0 : Math.Clamp((int)Math.Ceiling(n * 4.0 / max), 1, 4);
+
+    private static string Tooltip(DateOnly d, int n) =>
+        (n == 0 ? "No contributions" : n == 1 ? "1 contribution" : $"{n} contributions") + " on " + d.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture);
+
+    /// <summary>Month labels at the first column whose week starts in a new month (skipping one squeezed in at the far left).</summary>
+    private IEnumerable<(string Label, int Col)> Months
+    {
+        get
+        {
+            var last = -1;
+            for (var col = 0; col < Weeks; col++)
+            {
+                var weekStart = start.AddDays(col * 7);
+                var month = weekStart.Month;
+                if (col == 0) { last = weekStart.Day <= 7 ? -1 : month; }
+                if (month == last) continue;
+                last = month;
+                if (col > Weeks - 2) continue;
+                yield return (weekStart.ToString("MMM", CultureInfo.InvariantCulture), col);
+            }
+        }
+    }
+}

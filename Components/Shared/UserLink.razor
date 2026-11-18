@@ -1,0 +1,23 @@
+@* A user's display name linking to their profile (/u/{username}). Bold by default, like the inline names it replaces. *@
+@if (User is null)
+{
+    <span>@Fallback</span>
+}
+else if (string.IsNullOrEmpty(User.UserName))
+{
+    <b>@User.DisplayName</b>
+}
+else
+{
+    <a class="gb-user-link @(Plain ? "" : "gb-user-link-bold")" href="@Url(User)" title="@($"@{User.UserName}")">@User.DisplayName</a>
+}
+
+@code {
+    [Parameter] public User? User { get; set; }
+    /// <summary>Normal weight instead of bold.</summary>
+    [Parameter] public bool Plain { get; set; }
+    [Parameter] public string Fallback { get; set; } = "";
+
+    public static string Url(User u) => Url(u.UserName ?? "");
+    public static string Url(string userName) => "/u/" + Uri.EscapeDataString(userName);
+}
