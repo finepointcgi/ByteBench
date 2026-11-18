@@ -272,8 +272,8 @@ public class LinkedWorkService(IDbContextFactory<AppDbContext> dbFactory, Projec
 
         var link = new IssueLink { SourceIssueId = source, TargetIssueId = target, Type = type, CreatedById = actorId, CreatedAt = DateTime.UtcNow };
         db.IssueLinks.Add(link);
-        AddActivity(db, from.Id, actorId, $"added a link: **{Phrase(relation)}** [{other.Key}]({other.Url})");
-        AddActivity(db, other.Id, actorId, $"added a link: **{Phrase(Inverse(relation))}** [{from.Key}]({from.Url})");
+        AddActivity(db, from.Id, actorId, $"added a link: **{Phrase(relation)}** {Mention(other, from)}");
+        AddActivity(db, other.Id, actorId, $"added a link: **{Phrase(Inverse(relation))}** {Mention(from, other)}");
         await db.SaveChangesAsync();
         await TouchAsync(db, from.Id, other.Id);
         await notifications.OnIssueLinkChangedAsync(source, target, actorId);
@@ -292,12 +292,20 @@ public class LinkedWorkService(IDbContextFactory<AppDbContext> dbFactory, Projec
         var refs = await db.Issues.Where(i => i.Id == fromIssueId || i.Id == otherId).Select(ToRef).ToDictionaryAsync(i => i.Id);
         var relation = Relation(link.Type, outgoing);
         db.IssueLinks.Remove(link);
-        AddActivity(db, fromIssueId, actorId, $"removed the link: **{Phrase(relation)}** [{refs[otherId].Key}]({refs[otherId].Url})");
-        AddActivity(db, otherId, actorId, $"removed the link: **{Phrase(Inverse(relation))}** [{refs[fromIssueId].Key}]({refs[fromIssueId].Url})");
+        AddActivity(db, fromIssueId, actorId, $"removed the link: **{Phrase(relation)}** {Mention(refs[otherId], refs[fromIssueId])}");
+        AddActivity(db, otherId, actorId, $"removed the link: **{Phrase(Inverse(relation))}** {Mention(refs[fromIssueId], refs[otherId])}");
         await db.SaveChangesAsync();
         await TouchAsync(db, fromIssueId, otherId);
         await notifications.OnIssueLinkChangedAsync(link.SourceIssueId, link.TargetIssueId, actorId);
     }
+
+    /// <summary>
+    /// How <paramref name="other"/> is named in <paramref name="here"/>'s activity. Activity is visible to everyone who can
+    /// see <paramref name="here"/>, so an issue in another project is not named (its key would leak to people who can't
+    /// view that project); the Linked issues panel shows it to those who can.
+    /// </summary>
+    private static string Mention(IssueRef other, IssueRef here) =>
+        other.ProjectId == here.ProjectId ? $"[{other.Key}]({other.Url})" : "an issue in another project";
 
     private static void AddActivity(AppDbContext db, int issueId, int actorId, string text) =>
         db.Activities.Add(new Activity { IssueId = issueId, ActorId = actorId, Text = text, CreatedAt = DateTime.UtcNow });
