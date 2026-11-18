@@ -13,7 +13,8 @@
         {
             <div class="go-empty">
                 <MudIcon Icon="@Icons.Material.Outlined.FolderOpen" Size="Size.Large" />
-                <div>This group has no projects or subgroups yet.@if (Perms.Can(GroupPermission.CreateInGroup)) { <span> <a href="/projects/new?group=@Group.Id">Create a project</a>.</span> }</div>
+                <div>This group has no projects or subgroups yet.</div>
+                @if (Perms.Can(GroupPermission.CreateInGroup)) { <div><a href="/projects/new?group=@Group.Id">Create a project</a> or <a href="/groups/new?parent=@Group.Id">a subgroup</a>.</div> }
             </div>
         }
         else

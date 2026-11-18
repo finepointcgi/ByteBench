@@ -102,6 +102,26 @@ Seeded demo data:
 - Inject `ProjectAccess` and call `CanAsync(projectId, Permission.X, userId?)`, `RequireAsync(...)`, `GetRoleAsync(...)` or `VisibleProjectIdsAsync(userId?)`.
 - With no `userId`, the signed-in user is used.
 - Outside a circuit (HTTP endpoints, background jobs), pass `userId` or call `access.ActAs(userId)` before calling services. For trusted system work, call `access.ActAsSystem()`.
+- Projects can also inherit roles from their groups; see [Groups](#groups).
+
+## Groups
+
+GitLab-style namespaces that own projects (`Group`, `GroupMember`, `GroupRedirect` and `Project.GroupId` in `Data/Models.cs`; logic in `Services/GroupService.cs` and `GroupService.Labels.cs`; permissions in `Services/ProjectAccess.Groups.cs`; UI in `Components/Groups/` and `Components/Pages/Groups/`).
+
+- **Structure:** a group has a name, a path segment, a description, a visibility and an avatar colour. Subgroups nest at most 4 levels deep (`Group.MaxDepth`). A group's URL is `/g/{full path}`, e.g. `/g/acme/platform`; its sections are under `/-/` (`/g/acme/-/issues`, `-/pull-requests`, `-/labels`, `-/members`, `-/settings`).
+- **Projects** optionally belong to one group (`Project.GroupId`; null = top-level). Project keys stay globally unique, so `/p/{KEY}`, git URLs (`/git/{KEY}/…`), webhooks, CI and the API still find projects by key. Create a project in a group from the group page or the group picker on **New project**; move it between groups under **Settings → Group** (needs Owner of the project and Maintainer in the target group).
+- **Visibility:** *Private* groups are seen only by their members, members of a subgroup or of a project in them (they see the chain of parent groups), and admins. *Internal* groups are seen by every signed-in user. A subgroup can't be more visible than its parent. Group visibility never opens a Private project: an Internal group with a Private project still hides the project from non-members.
+- **Roles and inheritance:** group members have the usual roles (Viewer, Developer, Maintainer, Owner). A member of a group has at least that role in every subgroup and project below it. A user's **effective project role** is the highest of their direct project role, their roles in the project's group and its ancestors, Viewer if the project is Internal, and Owner for site admins. `ProjectAccess.GetRoleAsync` and `VisibleProjectIdsAsync` compute this in one query each (the ancestor chain is joined through `Parent`, which the depth limit keeps to 4 hops).
+- **Group permissions** (`GroupPermission`): view (any role, or visible as above); create projects and subgroups, manage group labels and milestones: Maintainer; manage members and settings, delete: Owner. The creator of a group becomes its Owner. A top-level group must keep a direct Owner; subgroups inherit their parents' Owners.
+- **Members pages:** `/g/{path}/-/members` lists direct members (Owners add, change and remove them) and the members inherited from parent groups. A project's Members page shows inherited members read-only with their source ("via acme").
+- **Settings:** rename and change visibility/colour; change the path; move the group under another group (Owner of the group plus Maintainer in the new parent; the depth limit and visibility rule are checked); delete. Old paths of the group and all its subgroups keep working as redirects (`GroupRedirect`, also in the API) until a new group takes the path. An empty group is deleted after a confirmation; a group with subgroups or projects needs its full path typed, and then deletes everything in it (projects with their issues, repositories and files).
+- **Overview:** subgroups and projects as a collapsible tree with subgroup, project, open issue and open pull request counts.
+- **Aggregated lists:** group **Issues** (search, project, assignee, group label and milestone, type, sort) and **Pull requests** (by state) span every project of the group and its subgroups that you can view.
+- **Group labels and milestones** (`Label.GroupId` / `Milestone.GroupId`, with `ProjectId` null) are defined on the group's **Labels & milestones** page and inherited by every project below it: they appear next to the project's own labels and milestones in pickers, filters, bulk edit and the API, read-only in the project (marked *Group*). When a project or group moves so that a project loses access to a group label or milestone its issues use, the project gets its own copy and its issues switch to it.
+- **Breadcrumbs:** project pages in a group show `Groups › acme › platform › project`; group pages show their chain.
+- **Audit:** `group.created`, `group.settings_changed`, `group.path_changed`, `group.moved`, `group.deleted`, `group.member_added`/`_role_changed`/`_removed`, `group.label_*`, `group.milestone_*` and `project.transferred`.
+- **API:** `GET /api/v1/groups` (`?q=`), `/groups/{group}`, `/groups/{group}/subgroups`, `/groups/{group}/projects` (`?includeSubgroups=true`) and `/groups/{group}/issues` (`?status=`, `?q=`, `?sort=`). `{group}` is the id or the URL-encoded full path (`acme%2Fplatform`). Groups you can't view are 404.
+- **Seed:** a fresh database gets the Internal group **Acme** (alice Owner, dan Developer) with the Internal subgroup **Platform** owning WEB and OPS, plus a group label (`customer-reported`) and milestone on Acme. Existing databases migrate with every project top-level and no groups.
 
 ## Features
 
@@ -189,6 +209,7 @@ Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls
 | `Services/CurrentUser.cs` | The signed-in `User` for the current circuit/request |
 | `Services/ProjectAccess.cs` | Roles, permissions and project visibility: the single authorization point |
 | `Services/MemberService.cs` / `Services/AccessTokenService.cs` | Project membership; personal access tokens |
+| `Services/GroupService.cs` / `Services/ProjectAccess.Groups.cs` | Groups: subgroups, members, group labels/milestones, transfers; group permissions |
 | `Api/` | REST API (`/api/v1`): endpoints, DTOs, auth filter, paging, OpenAPI |
 | `Services/Webhooks/` | Outgoing webhooks: dispatcher, worker, sender (SSRF guard), push capture, notifier |
 | `Components/Account/` | Login, register and profile pages (static SSR), `RedirectToLogin` |
@@ -529,6 +550,7 @@ curl -H "Authorization: Bearer gbp_…" http://localhost:5108/api/v1/user
 |---|---|---|
 | GET | `/user` | You, with the token's scopes |
 | GET | `/projects`, `/projects/{key}` | Includes your role |
+| GET | `/groups`, `/groups/{group}`, `/groups/{group}/subgroups`, `/groups/{group}/projects`, `/groups/{group}/issues` | `{group}` is an id or URL-encoded full path; see [Groups](#groups) |
 | GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status category; `?workflowStatus=` a workflow status id (see `/workflow`; without `?status=` it matches open and closed issues); `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?sprint=` id, `none` or `active`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
 | POST | `/projects/{key}/issues` | `{title, description?, type?, priority?, status?, assignee?, labels?: [names], milestoneId?, storyPoints?, dueDate?}`; returns `201` |
 | GET / PATCH | `/projects/{key}/issues/{number}` | PATCH changes only the fields you send; `null` clears a field and `labels` replaces the set. Each change is logged in the issue's activity |
