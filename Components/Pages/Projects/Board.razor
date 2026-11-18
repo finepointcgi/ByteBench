@@ -4,6 +4,7 @@
 @inject LiveEvents Live
 @implements IDisposable
 @inject ProjectAccess Access
+@inject WorkflowService Workflows
 
 <PageTitle>Board · @project?.Name</PageTitle>
 
@@ -34,17 +35,19 @@ else if (project != null)
 
     @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
     @if (warning != null) { <div class="alert alert-warning py-2">@warning</div> }
-    <div class="board">
-        @foreach (var status in Enum.GetValues<IssueStatus>())
+    <div class="board" style="grid-template-columns: repeat(@Math.Max(workflow.Statuses.Count, 1), minmax(220px, 1fr))">
+        @foreach (var status in workflow.Statuses)
         {
-            var col = Visible.Where(i => i.Status == status).ToList();
-            <div class="board-col @(dragOverStatus == status ? "drag-over" : "")"
-                 @ondragover:preventDefault
-                 @ondragenter="() => dragOverStatus = status"
+            var col = Visible.Where(i => workflow.Effective(i)?.Id == status.Id).ToList();
+            var allowed = CanDropOn(status);
+            @* Columns the workflow doesn't allow the dragged card to move to don't accept the drop. *@
+            <div class="board-col @(dragOverStatus == status.Id && allowed ? "drag-over" : "") @(allowed ? "" : "drop-disabled")"
+                 @ondragover:preventDefault="allowed"
+                 @ondragenter="() => dragOverStatus = status.Id"
                  @ondrop="() => Drop(status, null)">
-                <div class="board-col-head">
-                    <span class="status-dot status-@status.Css()"></span>
-                    @status.Name()
+                <div class="board-col-head" title="@status.Category.Name()">
+                    <span class="status-dot" style="background:@status.Color"></span>
+                    @status.Name
                     <span class="count">@col.Count</span>
                     <span class="muted small ms-auto">@col.Sum(i => i.StoryPoints ?? 0) pts</span>
                 </div>
@@ -93,7 +96,11 @@ else if (project != null)
     private int? milestoneId, assigneeId;
     private string? search;
     private Issue? dragging;
-    private IssueStatus? dragOverStatus;
+    private int? dragOverStatus;
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+
+    /// <summary>While dragging: whether the workflow lets the dragged issue move to <paramref name="status"/>.</summary>
+    private bool CanDropOn(WorkflowStatus status) => dragging == null || workflow.IsAllowed(workflow.Effective(dragging)?.Id, status.Id);
 
     private int? sprintId; // set by BoardSprintSelect (defaults to the active sprint); null = all issues
     private IEnumerable<Issue> SprintIssues => sprintId is { } sid ? issues.Where(i => i.SprintId == sid) : issues;
@@ -114,7 +121,9 @@ else if (project != null)
 
     private async Task Load()
     {
-        if (project != null) issues = await Issues.GetBoardAsync(project.Id, milestoneId, assigneeId);
+        if (project == null) return;
+        workflow = await Workflows.GetAsync(project.Id);
+        issues = await Issues.GetBoardAsync(project.Id, milestoneId, assigneeId);
     }
 
     // ----- Live updates: another user moved, created or edited a card in this project -----
@@ -133,22 +142,23 @@ else if (project != null)
 
     public void Dispose() => liveSubscription?.Dispose();
 
-    private async Task Drop(IssueStatus status, int? beforeId)
+    private async Task Drop(WorkflowStatus status, int? beforeId)
     {
         var moved = dragging;
+        var allowed = CanDropOn(status);
         dragging = null;
         dragOverStatus = null;
-        if (moved == null || moved.Id == beforeId) return;
+        if (moved == null || moved.Id == beforeId || !allowed) return;
 
         // Optimistic local reorder so the UI responds instantly.
         issues.Remove(moved);
-        warning = moved.Status == status ? null : HierarchyRules.BlockedMoveWarning(moved.Key, status, moved.Work?.BlockedBy ?? []);
-        moved.Status = status;
+        warning = moved.WorkflowStatusId == status.Id ? null : HierarchyRules.BlockedMoveWarning(moved.Key, status.Category, moved.Work?.BlockedBy ?? []);
+        (moved.Status, moved.WorkflowStatusId, moved.WorkflowStatus) = (status.Category, status.Id, status);
         var idx = beforeId is { } b ? issues.FindIndex(x => x.Id == b) : -1;
         if (idx < 0) issues.Add(moved); else issues.Insert(idx, moved);
 
         error = null;
-        try { await Issues.MoveOnBoardAsync(moved.Id, status, beforeId, Me.Id); }
+        try { await Issues.MoveOnBoardAsync(moved.Id, status.Id, beforeId, Me.Id); }
         catch (InvalidOperationException ex) { error = ex.Message; }
         await Load();
     }

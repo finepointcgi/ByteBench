@@ -21,12 +21,15 @@ public static class IssueEndpoints
         issues.MapPost("/issues", CreateIssue).WithName("CreateIssue").WithSummary("Create an issue")
             .WithJsonBody<CreateIssueRequest>().Produces<IssueDto>(StatusCodes.Status201Created);
         issues.MapPatch("/issues/{number:int}", UpdateIssue).WithName("UpdateIssue").WithSummary("Update an issue")
-            .WithDescription("Only fields present in the body change. null clears assignee, milestoneId, parentId, storyPoints, dueDate and description; labels replaces the label set.")
+            .WithDescription("Only fields present in the body change. null clears assignee, milestoneId, parentId, storyPoints, dueDate and description; labels replaces the label set. Set the status with either status (a category: the issue gets that category's first workflow status unless it already has one in it) or workflowStatusId (see GET /projects/{key}/workflow); moves the workflow doesn't allow are refused with 422.")
             .WithJsonBody<UpdateIssueRequest>();
         issues.MapGet("/issues/{number:int}/comments", ListComments).WithName("ListIssueComments").WithSummary("List an issue's comments");
         issues.MapPost("/issues/{number:int}/comments", AddComment).WithName("AddIssueComment").WithSummary("Comment on an issue")
             .WithJsonBody<AddCommentRequest>().Produces<CommentDto>(StatusCodes.Status201Created);
 
+        issues.MapGet("/workflow", GetWorkflow).WithName("GetWorkflow").WithSummary("Get the project's workflow")
+            .WithDescription("Statuses in board order (each with its category, one of the issue status values) and allowed transitions. A status with no transitions listed may move to any status.")
+            .WithTags("Projects");
         issues.MapGet("/labels", ListLabels).WithName("ListLabels").WithSummary("List labels").WithTags("Projects");
         issues.MapGet("/milestones", ListMilestones).WithName("ListMilestones").WithSummary("List milestones").WithTags("Projects");
     }
@@ -88,7 +91,7 @@ public static class IssueEndpoints
         Dto.Issue(await RequireIssueAsync(issues, key, number), url.For(http.Request));
 
     private static async Task<IResult> CreateIssue(HttpContext http, IssueService issues, ApiCaller caller, UserManager<User> users,
-        ProjectAccess access, PublicBaseUrl url, string key)
+        ProjectAccess access, PublicBaseUrl url, WorkflowService workflows, string key)
     {
         var project = await RequireProjectAsync(issues, key);
         var body = await ApiResults.ReadBodyAsync<CreateIssueRequest>(http.Request);
@@ -104,6 +107,7 @@ public static class IssueEndpoints
             Type = body.Type ?? IssueType.Task,
             Priority = body.Priority ?? IssuePriority.Medium,
             Status = body.Status ?? IssueStatus.Todo,
+            WorkflowStatusId = body.WorkflowStatusId is { } wsid ? await ValidWorkflowStatusAsync(workflows, project, wsid, body.Status) : null,
             StoryPoints = ValidPoints(body.StoryPoints),
             DueDate = body.DueDate?.ToDateTime(TimeOnly.MinValue),
             AssigneeId = string.IsNullOrEmpty(body.Assignee) ? null : await ResolveAssigneeAsync(users, access, project.Id, body.Assignee),
@@ -120,7 +124,7 @@ public static class IssueEndpoints
     }
 
     private static async Task<IssueDto> UpdateIssue(HttpContext http, IssueService issues, ApiCaller caller, UserManager<User> users,
-        ProjectAccess access, PublicBaseUrl url, string key, int number)
+        ProjectAccess access, PublicBaseUrl url, WorkflowService workflows, string key, int number)
     {
         var issue = await RequireIssueAsync(issues, key, number);
         var project = await RequireProjectAsync(issues, key);
@@ -144,6 +148,9 @@ public static class IssueEndpoints
         var milestone = Has("milestoneId") && body.MilestoneId is { } mid and not 0 ? project.Milestones.First(m => m.Id == ValidMilestone(project, mid)) : null;
         var labels = Has("labels") ? ResolveLabels(project, body.Labels) : null;
         var points = Has("storyPoints") ? ValidPoints(body.StoryPoints) : null;
+        int? workflowStatusId = Has("workflowStatusId")
+            ? await ValidWorkflowStatusAsync(workflows, project, body.WorkflowStatusId ?? throw ApiException.Unprocessable("workflowStatusId can't be null."), body.Status)
+            : null;
 
         await issues.UpdateIssueAsync(issue.Id, caller.Id, async (i, db) =>
         {
@@ -154,7 +161,10 @@ public static class IssueEndpoints
                 var d = string.IsNullOrWhiteSpace(body.Description) ? null : body.Description;
                 if (i.Description != d) { i.Description = d; changes.Add("updated the description"); }
             }
-            if (body.Status is { } s && i.Status != s) { changes.Add($"changed status from **{i.Status.Name()}** to **{s.Name()}**"); i.Status = s; }
+            var (beforeStatus, beforeWorkflow) = (i.Status, i.WorkflowStatusId);
+            if (workflowStatusId is { } ws) i.WorkflowStatusId = ws;
+            else if (body.Status is { } s) i.Status = s;
+            if (await issues.ReconcileStatusAsync(i, beforeStatus, beforeWorkflow) is { } statusChange) changes.Add(statusChange.Describe());
             if (body.Priority is { } p && i.Priority != p) { i.Priority = p; changes.Add($"set priority to **{p}**"); }
             if (body.Type is { } t && i.Type != t) { i.Type = t; changes.Add($"changed type to **{t}**"); }
             if (Has("assignee") && i.AssigneeId != assignee?.Id)
@@ -219,6 +229,15 @@ public static class IssueEndpoints
         return TypedResults.Created($"{url.For(http.Request)}/api/v1/projects/{issue.Project.Key}/issues/{number}/comments", Dto.Comment(comment));
     }
 
+    private static async Task<WorkflowDto> GetWorkflow(IssueService issues, WorkflowService workflows, string key)
+    {
+        var project = await RequireProjectAsync(issues, key);
+        var wf = await workflows.GetAsync(project.Id);
+        return new WorkflowDto(
+            wf.Statuses.Select(s => new WorkflowStatusDto(s.Id, s.Name, s.Color, s.Order, s.Category)).ToList(),
+            wf.Transitions.OrderBy(t => t.FromStatusId).ThenBy(t => t.ToStatusId).Select(t => new WorkflowTransitionDto(t.FromStatusId, t.ToStatusId)).ToList());
+    }
+
     private static async Task<List<LabelDto>> ListLabels(HttpContext http, IssueService issues, string key)
     {
         var paging = Paging.From(http.Request);
@@ -256,6 +275,16 @@ public static class IssueEndpoints
 
     private static int ValidMilestone(Project project, int id) =>
         project.Milestones.Any(m => m.Id == id) ? id : throw ApiException.Unprocessable($"Milestone {id} doesn't exist in {project.Key}.");
+
+    /// <summary>The id if it's a status of the project's workflow (and in <paramref name="category"/>, when that's given too).</summary>
+    private static async Task<int> ValidWorkflowStatusAsync(WorkflowService workflows, Project project, int id, IssueStatus? category)
+    {
+        var status = (await workflows.GetAsync(project.Id)).Find(id)
+                     ?? throw ApiException.Unprocessable($"Workflow status {id} doesn't exist in {project.Key}. See GET /api/v1/projects/{project.Key}/workflow.");
+        if (category is { } c && c != status.Category)
+            throw ApiException.Unprocessable($"status '{JsonNamingPolicy.CamelCase.ConvertName(c.ToString())}' doesn't match workflow status \"{status.Name}\" (category '{JsonNamingPolicy.CamelCase.ConvertName(status.Category.ToString())}'). Send one of them.");
+        return id;
+    }
 
     private static int? ValidPoints(int? points) =>
         points is null or (>= 0 and <= 100) ? points : throw ApiException.Unprocessable("storyPoints must be between 0 and 100.");

@@ -90,6 +90,16 @@ else if (project != null)
         </div>
     }
 
+    @if (perms.Can(Permission.ManageProjectSettings))
+    {
+        <div class="card-panel narrow mb-4">
+            <h2 class="section-title">Workflow &amp; audit log</h2>
+            <p class="small muted mb-2">Customise this project's issue statuses and the moves allowed between them, and see who changed what.</p>
+            <a class="btn btn-outline-primary btn-sm" href="/p/@project.Key/settings/workflow">Edit workflow</a>
+            <a class="btn btn-outline-secondary btn-sm ms-2" href="/p/@project.Key/settings/audit">Audit log</a>
+        </div>
+    }
+
     @if (perms.Can(Permission.DeleteProject))
     {
         <div class="card-panel narrow danger-zone">

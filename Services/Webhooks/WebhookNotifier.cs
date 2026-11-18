@@ -28,7 +28,7 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
         var projectId = await db.Issues.Where(i => i.Id == issueId).Select(i => (int?)i.ProjectId).FirstOrDefaultAsync();
         if (projectId is not { } pid || !await AnyListenerAsync(db, pid, eventName)) return;
         var issue = await db.Issues.AsNoTracking().Include(i => i.Project).Include(i => i.Assignee).Include(i => i.Reporter)
-            .Include(i => i.Milestone).Include(i => i.Labels).AsSplitQuery().FirstAsync(i => i.Id == issueId);
+            .Include(i => i.Milestone).Include(i => i.Labels).Include(i => i.WorkflowStatus).AsSplitQuery().FirstAsync(i => i.Id == issueId);
         var dto = Dto.Issue(issue, baseUrl.Value);
         object payload = commentId is { } cid
             ? new { issue = dto, comment = Dto.Comment(await db.Comments.AsNoTracking().Include(c => c.Author).FirstAsync(c => c.Id == cid)) }

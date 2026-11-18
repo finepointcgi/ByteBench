@@ -29,7 +29,18 @@ public partial record IssueDto(int Id, string Key, int Number, string Title, str
     IssueType Type, IssueStatus Status, IssuePriority Priority, int? StoryPoints, DateOnly? DueDate,
     UserDto? Assignee, UserDto Reporter, MilestoneRefDto? Milestone, IReadOnlyList<LabelDto> Labels,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl,
-    int? SprintId);
+    int? SprintId,
+    WorkflowStatusRefDto? WorkflowStatus = null);
+
+/// <summary>An issue's status in its project's workflow; <c>category</c> equals the issue's <c>status</c>.</summary>
+public record WorkflowStatusRefDto(int Id, string Name, IssueStatus Category);
+
+public record WorkflowStatusDto(int Id, string Name, string Color, int Order, IssueStatus Category);
+
+public record WorkflowTransitionDto(int From, int To);
+
+/// <summary>A project's workflow. A status with no transitions listed may move to any status.</summary>
+public record WorkflowDto(IReadOnlyList<WorkflowStatusDto> Statuses, IReadOnlyList<WorkflowTransitionDto> Transitions);
 
 public record CommentDto(int Id, string Body, UserDto Author, DateTimeOffset CreatedAt, DateTimeOffset? EditedAt);
 
@@ -57,7 +68,7 @@ public record MergeResultDto(bool Merged, string? MergeCommitSha, bool FastForwa
 
 public partial record CreateIssueRequest(string Title, string? Description = null, IssueType? Type = null, IssuePriority? Priority = null,
     IssueStatus? Status = null, string? Assignee = null, IReadOnlyList<string>? Labels = null, int? MilestoneId = null,
-    int? StoryPoints = null, DateOnly? DueDate = null);
+    int? StoryPoints = null, DateOnly? DueDate = null, int? WorkflowStatusId = null);
 
 /// <summary>
 /// PATCH semantics: only fields present in the JSON change. <c>null</c> clears assignee, milestoneId, storyPoints,
@@ -65,7 +76,7 @@ public partial record CreateIssueRequest(string Title, string? Description = nul
 /// </summary>
 public partial record UpdateIssueRequest(string? Title = null, string? Description = null, IssueType? Type = null, IssuePriority? Priority = null,
     IssueStatus? Status = null, string? Assignee = null, IReadOnlyList<string>? Labels = null, int? MilestoneId = null,
-    int? StoryPoints = null, DateOnly? DueDate = null);
+    int? StoryPoints = null, DateOnly? DueDate = null, int? WorkflowStatusId = null);
 
 public record AddCommentRequest(string Body);
 
@@ -105,13 +116,14 @@ public static class Dto
 
     public static LabelDto Label(Label l) => new(l.Id, l.Name, l.Color);
 
-    /// <summary>Requires Project, Assignee, Reporter, Milestone and Labels to be loaded.</summary>
+    /// <summary>Requires Project, Assignee, Reporter, Milestone and Labels to be loaded (and WorkflowStatus, for workflowStatus).</summary>
     public static IssueDto Issue(Issue i, string baseUrl) => new(
         i.Id, i.Key, i.Number, i.Title, i.Description, i.Type, i.Status, i.Priority, i.StoryPoints, Date(i.DueDate),
         UserOrNull(i.Assignee), User(i.Reporter), i.Milestone is { } m ? new MilestoneRefDto(m.Id, m.Title) : null,
         i.Labels.OrderBy(l => l.Name).Select(Label).ToList(),
         Utc(i.CreatedAt), Utc(i.UpdatedAt), Utc(i.ClosedAt), $"{baseUrl}/p/{i.Project.Key}/issues/{i.Number}",
-        i.SprintId) { ParentId = i.ParentId };
+        i.SprintId,
+        Services.Display.WorkflowStatusOf(i) is { } w ? new WorkflowStatusRefDto(w.Id, w.Name, w.Category) : null) { ParentId = i.ParentId };
 
     public static CommentDto Comment(Comment c) => new(c.Id, c.Body, User(c.Author), Utc(c.CreatedAt), Utc(c.EditedAt));
 

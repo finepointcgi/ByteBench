@@ -19,7 +19,7 @@ public class User : IdentityUser<int>
     public bool IsAdmin { get; set; }
 }
 
-public class Project
+public partial class Project
 {
     public int Id { get; set; }
     [Required, MaxLength(10), RegularExpression("^[A-Z][A-Z0-9]{1,9}$", ErrorMessage = "Key must be 2-10 uppercase letters/digits, starting with a letter.")]
@@ -658,4 +658,73 @@ public partial class Issue
     /// <summary>The sprint this issue is planned in; null = the backlog.</summary>
     public int? SprintId { get; set; }
     public Sprint? Sprint { get; set; }
+}
+
+// ----- Workflows & audit -----
+
+public partial class Project
+{
+    /// <summary>The project's workflow: its issue statuses, in board order. See <see cref="GitBench.Services.WorkflowService"/>.</summary>
+    public List<WorkflowStatus> WorkflowStatuses { get; set; } = [];
+}
+
+public partial class Issue
+{
+    /// <summary>
+    /// The issue's status in its project's workflow. <see cref="Status"/> always equals this status's
+    /// <see cref="WorkflowStatus.Category"/>: <see cref="GitBench.Services.IssueService"/> sets both together.
+    /// </summary>
+    public int? WorkflowStatusId { get; set; }
+    public WorkflowStatus? WorkflowStatus { get; set; }
+}
+
+/// <summary>
+/// A per-project issue status (e.g. "Blocked", "QA"). Its <see cref="Category"/> is one of the five built-in
+/// <see cref="IssueStatus"/> values, which code that only knows categories (sprints, the API, filters) keeps using.
+/// </summary>
+public class WorkflowStatus
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    [Required, MaxLength(40)] public string Name { get; set; } = "";
+    [MaxLength(9)] public string Color { get; set; } = "#64748b";
+    /// <summary>Board column order (ascending).</summary>
+    public int Order { get; set; }
+    public IssueStatus Category { get; set; }
+}
+
+/// <summary>
+/// An allowed move from one workflow status to another. A status with no outgoing transitions may move anywhere;
+/// once it has at least one, only the listed targets are allowed.
+/// </summary>
+public class WorkflowTransition
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public int FromStatusId { get; set; }
+    public int ToStatusId { get; set; }
+}
+
+/// <summary>
+/// One security-relevant event (sign-in, membership change, settings change, ...). Append-only: the app never updates
+/// or deletes these rows except for retention cleanup (<see cref="GitBench.Services.Audit.AuditRetentionService"/>).
+/// No foreign keys, so events outlive the users and projects they mention. <see cref="Details"/> never holds secrets.
+/// </summary>
+public class AuditEvent
+{
+    public long Id { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>The acting user; null for the system or an anonymous caller (e.g. a failed sign-in).</summary>
+    public int? ActorId { get; set; }
+    /// <summary>The actor's username when the event was recorded (kept if the account is later renamed or deleted).</summary>
+    [MaxLength(256)] public string? ActorName { get; set; }
+    [MaxLength(64)] public string? IpAddress { get; set; }
+    [MaxLength(512)] public string? UserAgent { get; set; }
+    /// <summary>Dotted name, e.g. <c>member.role_changed</c>.</summary>
+    [Required, MaxLength(100)] public string Action { get; set; } = "";
+    [MaxLength(50)] public string? TargetType { get; set; }
+    [MaxLength(100)] public string? TargetId { get; set; }
+    public int? ProjectId { get; set; }
+    /// <summary>JSON object with event-specific details.</summary>
+    public string? Details { get; set; }
 }

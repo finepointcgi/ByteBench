@@ -10,7 +10,7 @@ namespace GitBench.Services;
 /// Personal access tokens for Git over HTTP. A token is <c>gbp_</c> + 32 random bytes in base64url. Only its SHA-256
 /// hash is stored; the plaintext is returned once, from <see cref="CreateAsync"/>.
 /// </summary>
-public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory)
+public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory, Audit.AuditLog audit)
 {
     public const string TokenPrefix = "gbp_";
     private const int DisplayPrefixLength = 10; // "gbp_" + 6 characters
@@ -42,6 +42,7 @@ public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory)
         await using var db = await dbFactory.CreateDbContextAsync();
         db.PersonalAccessTokens.Add(token);
         await db.SaveChangesAsync();
+        await audit.RecordAsync("token.created", "access_token", token.Id, details: new { tokenName = name, scopes = scopes.ToString(), expiresAt = expiresAtUtc }, actorId: userId);
         return (token, plaintext);
     }
 
@@ -65,8 +66,9 @@ public class AccessTokenService(IDbContextFactory<AppDbContext> dbFactory)
     public async Task RevokeAsync(int userId, int tokenId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        await db.PersonalAccessTokens.Where(t => t.Id == tokenId && t.UserId == userId && t.RevokedAt == null)
+        var n = await db.PersonalAccessTokens.Where(t => t.Id == tokenId && t.UserId == userId && t.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
+        if (n > 0) await audit.RecordAsync("token.revoked", "access_token", tokenId, actorId: userId);
     }
 
     /// <summary>

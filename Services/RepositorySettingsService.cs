@@ -10,7 +10,8 @@ namespace GitBench.Services;
 /// archive/unarchive and delete. Every write requires <see cref="Permission.ManageRepositories"/>.
 /// </summary>
 public partial class RepositorySettingsService(
-    IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access, ILogger<RepositorySettingsService> logger)
+    IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access, ILogger<RepositorySettingsService> logger,
+    Audit.AuditLog audit)
 {
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$")]
     private static partial Regex SlugRx();
@@ -71,6 +72,7 @@ public partial class RepositorySettingsService(
         var repo = await db.Repositories.Include(r => r.Project).FirstOrDefaultAsync(r => r.Id == repoId)
                    ?? throw new InvalidOperationException("Repository not found.");
 
+        var before = new { repo.Name, repo.Description, repo.DefaultBranch };
         if (defaultBranch != repo.DefaultBranch)
         {
             var path = storage.PathFor(repo.Project.Key, repo.Slug);
@@ -80,6 +82,10 @@ public partial class RepositorySettingsService(
         repo.Name = name;
         repo.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         await db.SaveChangesAsync();
+        if (before.DefaultBranch != repo.DefaultBranch)
+            await audit.RecordAsync("repository.default_branch_changed", "repository", repoId, repo.ProjectId, new { repo.Slug, from = before.DefaultBranch, to = repo.DefaultBranch });
+        if (before.Name != repo.Name || before.Description != repo.Description)
+            await audit.RecordAsync("repository.settings_changed", "repository", repoId, repo.ProjectId, new { repo.Slug, before = new { before.Name, before.Description }, after = new { repo.Name, repo.Description } });
     }
 
     /// <summary>
@@ -127,6 +133,7 @@ public partial class RepositorySettingsService(
             throw;
         }
         logger.LogInformation("Renamed repository {Key}/{Old} to {Key}/{New}", repo.Project.Key, oldSlug, repo.Project.Key, newSlug);
+        await audit.RecordAsync("repository.renamed", "repository", repoId, repo.ProjectId, new { from = oldSlug, to = newSlug });
         return newSlug;
     }
 
@@ -135,9 +142,11 @@ public partial class RepositorySettingsService(
         await access.RequireForRepositoryAsync(repoId, Permission.ManageRepositories);
         await using var db = await dbFactory.CreateDbContextAsync();
         var repo = await db.Repositories.FindAsync(repoId) ?? throw new InvalidOperationException("Repository not found.");
+        var changed = repo.IsArchived != archived;
         repo.IsArchived = archived;
         repo.ArchivedAt = archived ? DateTime.UtcNow : null;
         await db.SaveChangesAsync();
+        if (changed) await audit.RecordAsync(archived ? "repository.archived" : "repository.unarchived", "repository", repoId, repo.ProjectId, new { repo.Slug });
     }
 
     /// <summary>
@@ -162,6 +171,7 @@ public partial class RepositorySettingsService(
             await db.SaveChangesAsync();
             await tx.CommitAsync();
         }
+        await audit.RecordAsync("repository.deleted", "repository", repoId, repo.ProjectId, new { repo.Slug, repo.Name });
 
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         if (!Directory.Exists(path)) return;

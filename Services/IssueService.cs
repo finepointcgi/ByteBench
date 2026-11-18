@@ -22,7 +22,8 @@ public partial record IssueFilter
 /// writes check <see cref="ProjectAccess"/> first (throwing <see cref="ForbiddenException"/>).
 /// </summary>
 public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications, Webhooks.WebhookNotifier webhooks,
-    Attachments.AttachmentStorage attachmentFiles)
+    Attachments.AttachmentStorage attachmentFiles,
+    Audit.AuditLog audit)
 {
     // ---------- Projects ----------
 
@@ -64,8 +65,10 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
             new() { Name = "enhancement", Color = "#2563eb" },
             new() { Name = "documentation", Color = "#0d9488" },
         ];
+        project.WorkflowStatuses = WorkflowService.DefaultStatuses();
         db.Projects.Add(project);
         await db.SaveChangesAsync();
+        await audit.RecordAsync("project.created", "project", project.Id, project.Id, new { project.Key, project.Name, visibility = project.Visibility.ToString() }, owner);
         return project;
     }
 
@@ -74,9 +77,11 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await access.RequireAsync(id, Permission.ManageProjectSettings);
         await using var db = await dbFactory.CreateDbContextAsync();
         var p = await db.Projects.FindAsync(id) ?? throw new InvalidOperationException("Project not found.");
+        var before = new { p.Name, p.Description };
         p.Name = name;
         p.Description = description;
         await db.SaveChangesAsync();
+        if (before.Name != name || before.Description != description) await audit.RecordAsync("project.settings_changed", "project", id, id, new { before, after = new { name, description } });
     }
 
     /// <summary>Name, description and visibility in one go (requires ManageProjectSettings).</summary>
@@ -84,7 +89,9 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     {
         await UpdateProjectAsync(id, name, description);
         await using var db = await dbFactory.CreateDbContextAsync();
+        var old = await db.Projects.Where(p => p.Id == id).Select(p => p.Visibility).FirstAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteUpdateAsync(s => s.SetProperty(p => p.Visibility, visibility));
+        if (old != visibility) await audit.RecordAsync("project.visibility_changed", "project", id, id, new { from = old.ToString(), to = visibility.ToString() });
     }
 
     public async Task DeleteProjectAsync(int id)
@@ -92,8 +99,10 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await access.RequireAsync(id, Permission.DeleteProject);
         await using var db = await dbFactory.CreateDbContextAsync();
         var files = await Attachments.AttachmentService.StoredNamesForProjectAsync(db, id);
+        var gone = await db.Projects.Where(p => p.Id == id).Select(p => new { p.Key, p.Name, Issues = p.Issues.Count }).FirstOrDefaultAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
         attachmentFiles.Delete(files); // rows first, then files
+        await audit.RecordAsync("project.deleted", "project", id, id, gone);
     }
 
     // ---------- Users ----------
@@ -178,7 +187,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         return await db.Issues.Where(i => visible.Contains(i.ProjectId))
             .Include(i => i.Project)
             .Include(i => i.Assignee).Include(i => i.Reporter).Include(i => i.Milestone)
-            .Include(i => i.Labels)
+            .Include(i => i.Labels).Include(i => i.WorkflowStatus)
             .Include(i => i.Comments).ThenInclude(c => c.Author)
             .Include(i => i.Activities).ThenInclude(a => a.Actor)
             .AsSplitQuery()
@@ -202,6 +211,8 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         issue.Activities.Add(new Activity { ActorId = actorId, Text = "created this issue" });
         await HierarchyRules.ValidateAsync(db, issue);
         var hierarchy = await HierarchyRules.RecordAsync(db, issue, null, actorId);
+        await ReconcileStatusAsync(issue, null, null); // picks the workflow status (or the category's first one)
+        if (issue.Status.IsClosed()) issue.ClosedAt ??= DateTime.UtcNow;
 
         db.Issues.Add(issue);
         await db.SaveChangesAsync();
@@ -222,7 +233,9 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         var wasClosed = issue.Status.IsClosed();
         var before = IssueSnapshot.Of(issue);
         var (parentBefore, typeBefore) = (issue.ParentId, issue.Type);
+        var beforeWorkflowStatusId = issue.WorkflowStatusId;
         var text = await change(issue, db);
+        await ReconcileStatusAsync(issue, before.Status, beforeWorkflowStatusId); // keeps Status and WorkflowStatusId in step; enforces transitions
         if (text == null) return;
         if (issue.ParentId != parentBefore || issue.Type != typeBefore) await HierarchyRules.ValidateAsync(db, issue);
         var hierarchy = await HierarchyRules.RecordAsync(db, issue, parentBefore, actorId);
@@ -237,36 +250,22 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await webhooks.IssueUpdatedAsync(issueId, actorId, text);
     }
 
+    /// <summary>Sets the status category: the issue keeps its workflow status if it's in that category, else gets the category's first one.</summary>
     public Task SetStatusAsync(int issueId, IssueStatus status, int actorId) =>
-        UpdateIssueAsync(issueId, actorId, (i, _) =>
+        UpdateIssueAsync(issueId, actorId, async (i, _) =>
         {
-            if (i.Status == status) return Task.FromResult<string?>(null);
-            var from = i.Status;
+            var (from, wf) = (i.Status, i.WorkflowStatusId);
             i.Status = status;
-            return Task.FromResult<string?>($"changed status from **{from.Name()}** to **{status.Name()}**");
+            return (await ReconcileStatusAsync(i, from, wf))?.Describe();
         });
 
-    /// <summary>Moves an issue on the board: new column and position between neighbours.</summary>
+    /// <summary>Moves an issue on the board to the first workflow status of <paramref name="status"/> (see the workflow overload).</summary>
     public async Task MoveOnBoardAsync(int issueId, IssueStatus status, int? beforeIssueId, int actorId)
     {
-        await access.RequireForIssueAsync(issueId, Permission.EditIssues, actorId);
-        await using (var db = await dbFactory.CreateDbContextAsync())
-        {
-            var projectId = await db.Issues.Where(i => i.Id == issueId).Select(i => i.ProjectId).FirstAsync();
-            var column = await db.Issues
-                .Where(i => i.ProjectId == projectId && i.Status == status && i.Id != issueId)
-                .OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.SortOrder }).ToListAsync();
-
-            double order;
-            var idx = beforeIssueId is { } b ? column.FindIndex(c => c.Id == b) : -1;
-            if (idx < 0) order = (column.LastOrDefault()?.SortOrder ?? 0) + 1;
-            else if (idx == 0) order = column[0].SortOrder - 1;
-            else order = (column[idx - 1].SortOrder + column[idx].SortOrder) / 2;
-
-            await db.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.SortOrder, order));
-        }
-        await SetStatusAsync(issueId, status, actorId);
-        await notifications.OnIssueMovedAsync(issueId);
+        var projectId = await access.ProjectOf(d => d.Issues.Where(i => i.Id == issueId).Select(i => (int?)i.ProjectId));
+        var target = (await WorkflowService.LoadAsync(dbFactory, projectId)).FirstOf(status)
+                     ?? throw new InvalidOperationException($"This project's workflow has no status in the {status.Name()} category.");
+        await MoveOnBoardAsync(issueId, target.Id, beforeIssueId, actorId);
     }
 
     public async Task<Comment> AddCommentAsync(int issueId, int authorId, string body)
@@ -335,6 +334,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         db.Issues.Remove(issue);
         await db.SaveChangesAsync();
         attachmentFiles.Delete(files); // rows first, then files
+        await audit.RecordAsync("issue.deleted", "issue", issueId, issue.ProjectId, new { issue.Number, issue.Title });
         await notifications.OnIssueDeletedAsync(issue.ProjectId, issueId);
     }
 
@@ -406,7 +406,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     }
 
     private static IQueryable<Issue> BaseIssueQuery(AppDbContext db) => db.Issues
-        .Include(i => i.Project).Include(i => i.Assignee).Include(i => i.Labels).Include(i => i.Milestone)
+        .Include(i => i.Project).Include(i => i.Assignee).Include(i => i.Labels).Include(i => i.Milestone).Include(i => i.WorkflowStatus)
         .AsSplitQuery();
 }
 

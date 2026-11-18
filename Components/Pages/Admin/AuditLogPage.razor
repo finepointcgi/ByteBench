@@ -1,0 +1,23 @@
+@page "/admin/audit"
+@inject CurrentUser Me
+
+<PageTitle>Audit log · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can view the audit log." />
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <h1>Audit log</h1>
+            <div class="muted">Sign-ins, access tokens, membership, settings, repositories, branch protection, webhooks and workflows across GitBench.</div>
+        </div>
+    </div>
+    <AuditViewer />
+}
+
+@code {
+    protected override Task OnInitializedAsync() => Me.EnsureLoadedAsync();
+}

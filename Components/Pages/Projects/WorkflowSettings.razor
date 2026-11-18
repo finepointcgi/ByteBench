@@ -1,0 +1,239 @@
+@page "/p/{Key}/settings/workflow"
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject WorkflowService Workflows
+@inject IJSRuntime JS
+
+<PageTitle>Workflow · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !perms.Can(Permission.ManageProjectSettings))
+{
+    <Forbidden Message="Only project Owners can change this project's workflow." BackHref="@($"/p/{Key}/settings")" />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Workflow</h1>
+            <div class="muted">@project.Name</div>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/settings">← Settings</a>
+    </div>
+    <p class="muted small" style="max-width:820px">
+        Statuses are the board's columns, in this order. Each belongs to a <b>category</b>: Done-category statuses count as closed,
+        and sprints, filters and the API work with categories. Setting only a category (e.g. "Close issue") picks that category's
+        first status. The workflow needs at least one Done status and at least one open status.
+    </p>
+    @if (error != null) { <div class="alert alert-danger py-2" style="max-width:820px">@error</div> }
+    @if (message != null) { <div class="alert alert-success py-2" style="max-width:820px">@message</div> }
+
+    <div class="card-panel mb-4" style="max-width:820px">
+        <h2 class="section-title">Statuses</h2>
+        <table class="table table-sm wf-table mb-2">
+            <thead>
+                <tr><th style="width:70px">Order</th><th style="width:56px">Colour</th><th>Name</th><th style="width:150px">Category</th><th style="width:70px">Issues</th><th style="width:150px"></th></tr>
+            </thead>
+            <tbody>
+                @for (var idx = 0; idx < workflow.Statuses.Count; idx++)
+                {
+                    var s = workflow.Statuses[idx];
+                    var d = drafts[s.Id];
+                    var count = counts.GetValueOrDefault(s.Id);
+                    var first = idx == 0;
+                    var last = idx == workflow.Statuses.Count - 1;
+                    <tr @key="s.Id">
+                        <td>
+                            <button class="btn btn-link btn-sm p-0" title="Move left on the board" disabled="@first" @onclick="() => Move(s, -1)">▲</button>
+                            <button class="btn btn-link btn-sm p-0 ms-1" title="Move right on the board" disabled="@last" @onclick="() => Move(s, 1)">▼</button>
+                        </td>
+                        <td><input type="color" class="form-control form-control-color form-control-sm" aria-label="Colour of @s.Name" @bind="d.Color" /></td>
+                        <td><input class="form-control form-control-sm" aria-label="Name" maxlength="40" @bind="d.Name" @bind:event="oninput" /></td>
+                        <td>
+                            <select class="form-select form-select-sm" aria-label="Category of @s.Name" @bind="d.Category">
+                                @foreach (var c in Enum.GetValues<IssueStatus>()) { <option value="@c">@c.Name()</option> }
+                            </select>
+                        </td>
+                        <td>@count</td>
+                        <td class="text-end">
+                            @if (d.Name.Trim() != s.Name || !d.Color.Equals(s.Color, StringComparison.OrdinalIgnoreCase) || d.Category != s.Category)
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick="() => SaveStatus(s)">Save</button>
+                            }
+                            <button class="btn btn-link btn-sm text-danger" @onclick="() => StartDelete(s, count)">Delete</button>
+                        </td>
+                    </tr>
+                    @if (deleting?.Id == s.Id)
+                    {
+                        <tr @key="(s.Id, 'd')">
+                            <td colspan="6" class="bg-light">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span><b>@count</b> issue@(count == 1 ? "" : "s") @(count == 1 ? "has" : "have") the status <b>@s.Name</b>. Move @(count == 1 ? "it" : "them") to</span>
+                                    <select class="form-select form-select-sm" style="width:auto" aria-label="Move issues to" @bind="moveTo">
+                                        @foreach (var other in workflow.Statuses.Where(o => o.Id != s.Id)) { <option value="@other.Id">@other.Name</option> }
+                                    </select>
+                                    <button class="btn btn-danger btn-sm" @onclick="() => Delete(s, moveTo)">Move issues &amp; delete</button>
+                                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => deleting = null">Cancel</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        <div class="d-flex gap-2 align-items-center">
+            <input type="color" class="form-control form-control-color form-control-sm" aria-label="New status colour" @bind="newColor" />
+            <input class="form-control form-control-sm" style="max-width:240px" placeholder="New status name" maxlength="40" @bind="newName" @bind:event="oninput" />
+            <select class="form-select form-select-sm" style="width:auto" aria-label="New status category" @bind="newCategory">
+                @foreach (var c in Enum.GetValues<IssueStatus>()) { <option value="@c">@c.Name()</option> }
+            </select>
+            <button class="btn btn-outline-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newName)" @onclick="AddStatus">Add status</button>
+        </div>
+    </div>
+
+    <div class="card-panel mb-4" style="max-width:820px">
+        <h2 class="section-title">Transitions</h2>
+        <p class="small muted">
+            Tick the statuses an issue may move <b>to</b> from each status. A row with nothing ticked allows any move.
+            The board and the status picker only offer allowed moves, and the API refuses the others.
+        </p>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered wf-matrix mb-2">
+                <thead>
+                    <tr>
+                        <th class="small muted">From ↓ / To →</th>
+                        @foreach (var to in workflow.Statuses) { <th class="rot">@to.Name</th> }
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var from in workflow.Statuses)
+                    {
+                        var set = matrix[from.Id];
+                        <tr @key="from.Id">
+                            <th class="rot"><span class="status-dot" style="background:@from.Color"></span> @from.Name</th>
+                            @foreach (var to in workflow.Statuses)
+                            {
+                                <td>
+                                    @if (to.Id == from.Id) { <span class="muted">—</span> }
+                                    else
+                                    {
+                                        <input type="checkbox" class="form-check-input" aria-label="@from.Name to @to.Name" checked="@set.Contains(to.Id)"
+                                               @onchange="e => Toggle(set, to.Id, e.Value is true)" />
+                                    }
+                                </td>
+                            }
+                            <td class="small muted">@(set.Count == 0 ? "any move" : "")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <button class="btn btn-primary btn-sm" disabled="@(!matrixDirty)" @onclick="SaveTransitions">Save transitions</button>
+        <button class="btn btn-outline-secondary btn-sm ms-2" @onclick="ClearTransitions">Allow every move</button>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private sealed class Draft { public string Name = ""; public string Color = ""; public IssueStatus Category; }
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound, matrixDirty;
+    private string? error, message;
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+    private Dictionary<int, int> counts = [];
+    private Dictionary<int, Draft> drafts = [];
+    private Dictionary<int, HashSet<int>> matrix = [];
+    private WorkflowStatus? deleting;
+    private int moveTo;
+    private string newName = "", newColor = "#64748b";
+    private IssueStatus newCategory = IssueStatus.InProgress;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        workflow = await Workflows.GetAsync(project!.Id);
+        counts = await Workflows.CountIssuesAsync(project.Id);
+        drafts = workflow.Statuses.ToDictionary(s => s.Id, s => new Draft { Name = s.Name, Color = s.Color, Category = s.Category });
+        matrix = workflow.Statuses.ToDictionary(s => s.Id, s => workflow.Transitions.Where(t => t.FromStatusId == s.Id).Select(t => t.ToStatusId).ToHashSet());
+        matrixDirty = false;
+    }
+
+    private async Task Run(Func<Task> action, string? success = null)
+    {
+        error = message = null;
+        try
+        {
+            await action();
+            message = success;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private Task SaveStatus(WorkflowStatus s)
+    {
+        var d = drafts[s.Id];
+        return Run(() => Workflows.UpdateStatusAsync(project!.Id, s.Id, d.Name, d.Color, d.Category), $"Saved \"{d.Name.Trim()}\".");
+    }
+
+    private Task Move(WorkflowStatus s, int delta) => Run(() => Workflows.MoveStatusAsync(project!.Id, s.Id, delta));
+
+    private async Task AddStatus()
+    {
+        var name = newName.Trim();
+        await Run(() => Workflows.AddStatusAsync(project!.Id, name, newColor, newCategory), $"Added \"{name}\".");
+        if (error == null) newName = "";
+    }
+
+    private async Task StartDelete(WorkflowStatus s, int count)
+    {
+        error = message = null;
+        if (count > 0)
+        {
+            deleting = s;
+            moveTo = workflow.Statuses.Where(o => o.Id != s.Id).OrderBy(o => o.Category == s.Category ? 0 : 1).First().Id;
+            return;
+        }
+        if (await JS.InvokeAsync<bool>("confirm", $"Delete the status \"{s.Name}\"?")) await Delete(s, null);
+    }
+
+    private async Task Delete(WorkflowStatus s, int? target)
+    {
+        var moved = 0;
+        await Run(async () => moved = await Workflows.DeleteStatusAsync(project!.Id, s.Id, target));
+        if (error == null)
+        {
+            message = moved > 0 ? $"Moved {moved} issue{(moved == 1 ? "" : "s")} and deleted \"{s.Name}\"." : $"Deleted \"{s.Name}\".";
+            deleting = null;
+        }
+    }
+
+    private void Toggle(HashSet<int> set, int id, bool on)
+    {
+        if (on) set.Add(id); else set.Remove(id);
+        matrixDirty = true;
+    }
+
+    private Task SaveTransitions() => Run(() => Workflows.SetTransitionsAsync(project!.Id, matrix), "Transitions saved.");
+
+    private void ClearTransitions()
+    {
+        foreach (var set in matrix.Values) set.Clear();
+        matrixDirty = true;
+    }
+}

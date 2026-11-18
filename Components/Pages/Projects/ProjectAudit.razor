@@ -1,0 +1,40 @@
+@page "/p/{Key}/settings/audit"
+@inject IssueService Issues
+@inject ProjectAccess Access
+
+<PageTitle>Audit log · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !perms.Can(Permission.ManageProjectSettings))
+{
+    <Forbidden Message="Only project Owners can view this project's audit log." BackHref="@($"/p/{Key}/settings")" />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Audit log</h1>
+            <div class="muted">@project.Name: settings, members, repositories, branch protection, webhooks, workflow and deleted issues.</div>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/settings">← Settings</a>
+    </div>
+    <AuditViewer ProjectId="project.Id" ProjectKey="@project.Key" />
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project != null) perms = await Access.GetPermissionsAsync(project.Id);
+    }
+}

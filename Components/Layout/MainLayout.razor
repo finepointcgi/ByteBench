@@ -49,6 +49,10 @@
         <nav class="sidebar">
             <NavLink class="side-link" href="/" Match="NavLinkMatch.All">🏠 Dashboard</NavLink>
             <NavLink class="side-link" href="/projects/new">➕ New project</NavLink>
+            @if (Me.User?.IsAdmin == true)
+            {
+                <NavLink class="side-link" href="/admin/audit">🛡️ Audit log</NavLink>
+            }
 
             @if (projectKey != null && CurrentProject is { } cp)
             {

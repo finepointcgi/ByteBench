@@ -591,6 +591,46 @@ Users with EditIssues get checkboxes on the issue list (plus "select all on this
 
 Code: `Services/Attachments/`, `Api/AttachmentEndpoints.cs`, `Services/IssueFilterQuery.cs`, `Services/SavedFilterService.cs`, `Services/IssueService.Bulk.cs`, `Services/NotificationService.Bulk.cs`, `Components/Shared/{AttachmentsPanel,MarkdownEditor,SavedFiltersMenu,StarredFiltersNav,BulkActionBar}.razor`, `Components/Pages/Projects/SavedFilters.razor`, `wwwroot/js/attachments.js`, `wwwroot/css/attachments-filters.css`. Schema: `Attachment`, `SavedFilter`, `SavedFilterStar` (migration `AttachmentsFilters`).
 
+## Workflows & audit log
+
+### Custom workflows
+
+Each project has its own **workflow**: an ordered list of statuses (name, colour, category) and, optionally, the moves allowed between them. Project Owners edit it at **Settings → Edit workflow** (`/p/{KEY}/settings/workflow`, needs `ManageProjectSettings`).
+
+- **Categories.** Every status belongs to one of the five built-in categories (Backlog, To Do, In Progress, In Review, Done). `Issue.Status` *is* the category and `Issue.WorkflowStatusId` is the project's status. The two always agree, so code that only knows categories keeps working: sprints, filters, open/closed counts, AI search and the API's `status` field. Done-category statuses count as closed.
+- **Defaults.** New projects get the five statuses matching the categories. At startup, `WorkflowService.EnsureDefaults` gives any project without a workflow the default one and maps every issue whose workflow status is missing or inconsistent to the first status of its category.
+- **Editing.** Add, rename, recolour, reorder (▲/▼) and recategorise statuses. Changing a status's category also changes its issues' category (and closes or reopens them). A status with issues can only be deleted after moving them to another status, which the page offers; each moved issue gets an activity entry. The workflow must keep at least one Done status and at least one open status.
+- **Transitions.** A matrix of checkboxes: tick where issues may move *to* from each status. A status with nothing ticked may move anywhere. The board greys out and refuses drops on disallowed columns, the issue's status picker disables them, "Close issue"/"Reopen" pick the first allowed Done/open status (and hide when there is none), and the service refuses the move with a clear message (422 in the API). Admin operations (deleting a status) ignore transitions.
+- **Board** columns are the project's statuses, in order. **Status chips** (issue list, issue page, linked issues) show the workflow status name and colour, falling back to the category (`Display.StatusName(issue)`, `<StatusBadge Issue="issue" />`).
+
+**For code that changes statuses.** Every change goes through `IssueService.ReconcileStatusAsync`, which `UpdateIssueAsync` calls after every change. Inside an `UpdateIssueAsync` callback (bulk edits included), you can set either `issue.Status` (a category: the issue keeps its workflow status if it is already in that category, otherwise it gets the category's first status) or `issue.WorkflowStatusId`. The other field follows, and transitions are enforced. Use `SetStatusAsync` (category), `SetWorkflowStatusAsync` and `MoveOnBoardAsync` (either overload) for single moves. Code that writes `Status` with `ExecuteUpdate`, bypassing `IssueService`, leaves `WorkflowStatusId` stale. Display then falls back to the category, and the next update or app start repairs it.
+
+**API.** Issues carry `workflowStatus: {id, name, category}`. `PATCH …/issues/{n}` and `POST …/issues` accept `status` (category) or `workflowStatusId`. If both are sent they must agree. `GET /api/v1/projects/{key}/workflow` returns `{statuses: [{id, name, color, order, category}], transitions: [{from, to}]}`.
+
+### Audit log
+
+`AuditLog` (`Services/Audit/AuditLog.cs`) records security-relevant events as `AuditEvent` rows: time, actor (user id and username, null for system or anonymous), IP, user agent, a dotted action, target type and id, project id, and JSON details.
+
+- **What's recorded:**
+  - `auth.sign_in`, `auth.sign_in_failed`, `auth.lockout`, `auth.sign_out`, `auth.registered`, `user.password_changed`
+  - `token.created`, `token.revoked`
+  - `project.created`, `project.settings_changed` (including the AI review toggle), `project.visibility_changed`, `project.deleted`
+  - `member.added`, `member.role_changed`, `member.removed`
+  - `repository.created`, `repository.settings_changed`, `repository.renamed`, `repository.archived`, `repository.unarchived`, `repository.deleted`, `repository.default_branch_changed`
+  - `branch_protection.created`, `branch_protection.updated`, `branch_protection.deleted`, `pull_request.merged_bypassing_protection`
+  - `webhook.created`, `webhook.updated`, `webhook.secret_rotated`, `webhook.deleted`
+  - `workflow.status_added`, `workflow.status_updated`, `workflow.status_reordered`, `workflow.status_deleted`, `workflow.transitions_changed`
+  - `issue.deleted`, `audit.exported`
+  - There is no UI for changing the site-admin flag, so there's no event for it yet.
+- **No secrets.** Passwords, tokens (not even their prefix) and webhook secrets are never passed. Webhook URLs are logged as scheme and host only, because paths and queries often carry credentials. As a backstop, detail keys that look like secrets (`password`, `secret`, `token`, `hash`, …) are dropped before storing.
+- **Actor, IP and user agent.** The actor is the explicit `actorId`, else the acting user (`ProjectAccess`), else the signed-in user of the HTTP request. Blazor circuits have no reliable `HttpContext`, so `AuditCircuitHandler` copies IP and user agent from the connection's request into the scoped `AuditRequestInfo` when the circuit opens. Static SSR pages, the API and minimal endpoints read them from `IHttpContextAccessor`. `RemoteIpAddress` is used as-is: add `ForwardedHeaders` middleware if you run behind a proxy.
+- **Append-only.** `AppDbContext` refuses tracked updates and deletes of audit rows, and the table has no foreign keys, so events outlive the users and projects they name. The only deletion is retention: `AuditRetentionService` deletes events older than `Audit:RetentionDays` (default 365; `0` keeps them forever) at startup and then daily.
+- **Pages:**
+  - `/admin/audit` (site admins, linked in the sidebar) filters by actor username (or `system`), action prefix (e.g. `member.`), project key and UTC date range. It shows 50 events per page, and each row's **Details** expands to show the JSON and user agent.
+  - `/p/{KEY}/settings/audit` (project Owners, linked from project Settings) shows the same view limited to that project.
+  - **Export CSV** downloads every matching event (up to 100,000) from `GET /admin/audit/export.csv?project=&actor=&action=&from=&to=`, which is checked the same way. Cells that start like a spreadsheet formula are prefixed with `'`.
+- **Recording from new code:** `await audit.RecordAsync("area.verb", "target_type", targetId, projectId, new { …details… });`. For example, a bulk delete would record `issue.bulk_deleted` with the issue numbers. Recording never throws.
+
 ## Next steps
 
 - **More features:** email delivery of notifications, @mention autocomplete.

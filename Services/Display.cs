@@ -40,6 +40,16 @@ public static class Display
 
     public static bool IsClosed(this IssueStatus s) => s == IssueStatus.Done;
 
+    /// <summary>The issue's workflow status if it's loaded and consistent with its category; otherwise null.</summary>
+    public static WorkflowStatus? WorkflowStatusOf(Issue i) => i.WorkflowStatus is { } w && w.Category == i.Status ? w : null;
+
+    /// <summary>Status to show for an issue: its workflow status name, falling back to the category name.</summary>
+    public static string StatusName(Issue i) => WorkflowStatusOf(i)?.Name ?? i.Status.Name();
+
+    /// <summary>Inline style for a status chip in the workflow status's colour (empty: use the category's CSS class).</summary>
+    public static string StatusStyle(string? color) => string.IsNullOrEmpty(color) ? ""
+        : $"background:color-mix(in srgb, {color} 18%, white);color:color-mix(in srgb, {color} 75%, black)";
+
     /// <summary>Picks black or white text for readable contrast on a hex background.</summary>
     public static string TextOn(string hex)
     {
