@@ -1,0 +1,5 @@
+.snippet-file-edit { border: 1px solid var(--border); border-radius: var(--radius, 6px); padding: 10px; }
+.snippet-textarea { width: 100%; box-sizing: border-box; font-size: 13px; line-height: 1.5; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 4px; background: var(--mud-palette-background); color: var(--mud-palette-text-primary); resize: vertical; tab-size: 4; }
+::deep .snippet-file-name { max-width: 360px; }
+::deep .snippet-vis-select { max-width: 420px; }

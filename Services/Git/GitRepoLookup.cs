@@ -11,7 +11,15 @@ namespace GitBench.Services.Git;
 /// </summary>
 internal static partial class GitRepoLookup
 {
-    public sealed record RepoInfo(int Id, string Key, string Slug, int ProjectId, bool IsArchived);
+    public sealed record RepoInfo(int Id, string Key, string Slug, int ProjectId, bool IsArchived)
+    {
+        /// <summary>The project wiki (<see cref="Wiki.WikiService"/>): Id is 0, reads need ViewProject and pushes EditIssues.</summary>
+        public bool IsWiki { get; init; }
+        public bool WikiEnabled { get; init; }
+    }
+
+    /// <summary>What a push needs: PushCode for code repositories, the wiki's edit permission for a wiki.</summary>
+    public static Permission WritePermission(RepoInfo found) => found.IsWiki ? Wiki.WikiService.EditPermission : Permission.PushCode;
 
     public const string ArchivedMessage = "This repository is archived and read-only. A Maintainer can unarchive it in the repository settings.";
 
@@ -39,7 +47,13 @@ internal static partial class GitRepoLookup
                ?? await db.RepositoryRedirects.AsNoTracking()
                    .Where(r => r.Repository.Project.Key.ToUpper() == upperKey && r.OldSlug == slug)
                    .Select(r => new RepoInfo(r.Repository.Id, r.Repository.Project.Key, r.Repository.Slug, r.Repository.ProjectId, r.Repository.IsArchived))
-                   .FirstOrDefaultAsync(ct);
+                   .FirstOrDefaultAsync(ct)
+               // KEY/wiki.git and KEY/{key}.wiki.git: the project wiki.
+               ?? (Wiki.WikiService.IsWikiSlug(projectKey, slug)
+                   ? await db.Projects.AsNoTracking().Where(p => p.Key.ToUpper() == upperKey)
+                       .Select(p => new RepoInfo(0, p.Key, Wiki.WikiService.WikiSlug(p.Key), p.Id, false) { IsWiki = true, WikiEnabled = p.WikiEnabled })
+                       .FirstOrDefaultAsync(ct)
+                   : null);
     }
 
     /// <summary>The bare repository's full path, or null (logged) if it is missing or outside the repository root.</summary>
@@ -48,6 +62,7 @@ internal static partial class GitRepoLookup
         var root = Path.TrimEndingDirectorySeparator(storage.Root) + Path.DirectorySeparatorChar;
         var diskPath = Path.GetFullPath(storage.PathFor(found.Key, found.Slug));
         if (!diskPath.StartsWith(root, StringComparison.Ordinal)) return null;
+        if (found.IsWiki) Wiki.WikiService.EnsureRepository(diskPath); // a wiki's repository is created on first use
         if (!Directory.Exists(diskPath))
         {
             logger.LogWarning("Repository {Key}/{Slug} (id {Id}) is in the database but missing on disk at {Path}",
@@ -55,6 +70,19 @@ internal static partial class GitRepoLookup
             return null;
         }
         return diskPath;
+    }
+
+    /// <summary>After a push to a wiki: rebuild its search index (code push listeners don't run for wikis). Failures are logged.</summary>
+    public static async Task AfterWikiPushAsync(IServiceProvider services, ILogger logger, RepoInfo found)
+    {
+        try
+        {
+            await services.GetRequiredService<Wiki.WikiService>().ReindexAsync(found.ProjectId, found.Key);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Reindexing the wiki of {Key} after a push failed", found.Key);
+        }
     }
 
     /// <summary>

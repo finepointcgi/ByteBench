@@ -98,6 +98,8 @@ public partial class RepositorySettingsService(
         newSlug = (newSlug ?? "").Trim().ToLowerInvariant();
         if (newSlug.Length is 0 or > 100 || !SlugRx().IsMatch(newSlug) || newSlug.EndsWith(".git") || newSlug.Contains(".."))
             throw new InvalidOperationException("Slug must start with a letter or digit and use only lowercase letters, digits, '.', '_' or '-'.");
+        if (Wiki.WikiService.IsReservedRepositorySlug(newSlug))
+            throw new InvalidOperationException("Slugs 'wiki' and '….wiki' are reserved for the project wiki.");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var repo = await db.Repositories.Include(r => r.Project).FirstOrDefaultAsync(r => r.Id == repoId)

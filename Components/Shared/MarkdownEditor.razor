@@ -32,7 +32,7 @@
     {
         <div class="markdown md-preview">
             @if (string.IsNullOrWhiteSpace(Value)) { <span class="md-empty">Nothing to preview.</span> }
-            else { @Display.Markdown(Value) }
+            else { @(Render != null ? Render(Value) : Display.Markdown(Value)) }
         </div>
     }
     else
@@ -47,6 +47,8 @@
     [Parameter] public EventCallback<string?> ValueChanged { get; set; }
     [Parameter] public int Rows { get; set; } = 6;
     [Parameter] public string? Placeholder { get; set; }
+    /// <summary>Renders the preview (default: <see cref="Display.Markdown"/>); the wiki passes its own renderer for [[links]].</summary>
+    [Parameter] public Func<string?, MarkupString>? Render { get; set; }
     /// <summary>When set, files picked, dropped or pasted are uploaded to this issue and linked into the text.</summary>
     [Parameter] public int? AttachToIssueId { get; set; }
     /// <summary>Uploads come from a comment box (need Comment rather than EditIssues).</summary>

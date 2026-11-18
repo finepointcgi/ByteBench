@@ -1165,6 +1165,11 @@ namespace GitBench.Data.Migrations
                     b.Property<int>("Visibility")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("WikiEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
                     b.HasKey("Id");
 
                     b.HasIndex("GroupId");
@@ -1873,6 +1878,133 @@ namespace GitBench.Data.Migrations
                     b.ToTable("SavedFilterStars");
                 });
 
+            modelBuilder.Entity("GitBench.Data.Snippet", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CurrentRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Visibility")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId", "UpdatedAt");
+
+                    b.HasIndex("ProjectId", "UpdatedAt");
+
+                    b.ToTable("Snippets");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(20000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SnippetId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("SnippetId", "CreatedAt");
+
+                    b.ToTable("SnippetComments");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RevisionId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RevisionId", "Position");
+
+                    b.ToTable("SnippetFiles");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SnippetId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("SnippetId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("SnippetRevisions");
+                });
+
             modelBuilder.Entity("GitBench.Data.Sprint", b =>
                 {
                     b.Property<int>("Id")
@@ -2241,6 +2373,40 @@ namespace GitBench.Data.Migrations
                     b.HasIndex("WebhookId", "CreatedAt");
 
                     b.ToTable("WebhookDeliveries");
+                });
+
+            modelBuilder.Entity("GitBench.Data.WikiPageIndex", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("WikiPageIndex");
                 });
 
             modelBuilder.Entity("GitBench.Data.WorkflowStatus", b =>
@@ -3131,6 +3297,67 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.Snippet", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetComment", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Snippet", null)
+                        .WithMany("Comments")
+                        .HasForeignKey("SnippetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetFile", b =>
+                {
+                    b.HasOne("GitBench.Data.SnippetRevision", null)
+                        .WithMany("Files")
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetRevision", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Snippet", null)
+                        .WithMany("Revisions")
+                        .HasForeignKey("SnippetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+                });
+
             modelBuilder.Entity("GitBench.Data.Sprint", b =>
                 {
                     b.HasOne("GitBench.Data.Project", null)
@@ -3212,6 +3439,15 @@ namespace GitBench.Data.Migrations
                     b.HasOne("GitBench.Data.Webhook", null)
                         .WithMany()
                         .HasForeignKey("WebhookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.WikiPageIndex", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -3376,6 +3612,18 @@ namespace GitBench.Data.Migrations
             modelBuilder.Entity("GitBench.Data.Release", b =>
                 {
                     b.Navigation("Assets");
+                });
+
+            modelBuilder.Entity("GitBench.Data.Snippet", b =>
+                {
+                    b.Navigation("Comments");
+
+                    b.Navigation("Revisions");
+                });
+
+            modelBuilder.Entity("GitBench.Data.SnippetRevision", b =>
+                {
+                    b.Navigation("Files");
                 });
 #pragma warning restore 612, 618
         }

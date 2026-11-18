@@ -102,6 +102,8 @@ builder.Services.AddScoped<GitBench.Services.Explore.StarService>();
 builder.Services.AddScoped<GitBench.Services.Explore.ExploreService>();
 builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
 builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
+builder.Services.AddScoped<GitBench.Services.Wiki.WikiService>(); // project wikis (git-backed) and snippets
+builder.Services.AddScoped<GitBench.Services.Snippets.SnippetService>();
 builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
 builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
 // ----- Mirroring, protected tags & Git LFS -----
@@ -152,6 +154,7 @@ GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info
 app.MapCiEndpoints();
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
+GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();
 GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 app.MapReleases();

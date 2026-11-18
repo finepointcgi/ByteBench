@@ -106,6 +106,33 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Release> Releases => Set<Release>();
     public DbSet<ReleaseAsset> ReleaseAssets => Set<ReleaseAsset>();
 
+    // ----- Wiki & snippets -----
+    public DbSet<WikiPageIndex> WikiPageIndex => Set<WikiPageIndex>();
+    public DbSet<Snippet> Snippets => Set<Snippet>();
+    public DbSet<SnippetRevision> SnippetRevisions => Set<SnippetRevision>();
+    public DbSet<SnippetFile> SnippetFiles => Set<SnippetFile>();
+    public DbSet<SnippetComment> SnippetComments => Set<SnippetComment>();
+
+    private static void ConfigureWikiSnippets(ModelBuilder b)
+    {
+        // Existing projects get the wiki on; the sentinel makes EF send false explicitly (true is left to the default).
+        b.Entity<Project>().Property(p => p.WikiEnabled).HasDefaultValue(true).HasSentinel(true);
+        b.Entity<WikiPageIndex>().HasIndex(w => new { w.ProjectId, w.Path }).IsUnique();
+        b.Entity<WikiPageIndex>().HasOne<Project>().WithMany().HasForeignKey(w => w.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Snippet>().HasIndex(s => new { s.AuthorId, s.UpdatedAt });
+        b.Entity<Snippet>().HasIndex(s => new { s.ProjectId, s.UpdatedAt });
+        b.Entity<Snippet>().HasOne(s => s.Author).WithMany().HasForeignKey(s => s.AuthorId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Snippet>().HasOne(s => s.Project).WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SnippetRevision>().HasIndex(r => new { r.SnippetId, r.Number }).IsUnique();
+        b.Entity<SnippetRevision>().HasOne<Snippet>().WithMany(s => s.Revisions).HasForeignKey(r => r.SnippetId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SnippetRevision>().HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SnippetFile>().HasIndex(f => new { f.RevisionId, f.Position });
+        b.Entity<SnippetFile>().HasOne<SnippetRevision>().WithMany(r => r.Files).HasForeignKey(f => f.RevisionId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SnippetComment>().HasIndex(c => new { c.SnippetId, c.CreatedAt });
+        b.Entity<SnippetComment>().HasOne<Snippet>().WithMany(s => s.Comments).HasForeignKey(c => c.SnippetId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SnippetComment>().HasOne(c => c.Author).WithMany().HasForeignKey(c => c.AuthorId).OnDelete(DeleteBehavior.Cascade);
+    }
+
     // ----- SSH -----
     public DbSet<SshKey> SshKeys => Set<SshKey>();
 
@@ -306,6 +333,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureMirrorTagsLfs(b);
         ConfigureRoadmapDashboards(b);
         ConfigureAutomation(b);
+        ConfigureWikiSnippets(b);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----

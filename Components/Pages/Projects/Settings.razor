@@ -94,6 +94,11 @@ else if (project != null)
 
     <AiReviewSettings Project="project" />
 
+    @if (perms.Can(Permission.ManageProjectSettings))
+    {
+        <GitBench.Components.Wiki.WikiSettings Project="project" />
+    }
+
     @if (perms.Can(GitBench.Services.Webhooks.WebhookService.RequiredPermission))
     {
         <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">

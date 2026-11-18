@@ -1,0 +1,506 @@
+@page "/p/{Key}/wiki"
+@page "/p/{Key}/wiki/{*PagePath}"
+@using GitBench.Services.Wiki
+@using GitBench.Components.Wiki
+@using GitBench.Components.Repositories
+@using GitBench.Services.Git
+@inject WikiService Wikis
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>@(page?.Title ?? (path == null ? "Wiki" : WikiPaths.TitleOf(path))) · Wiki · @wiki?.ProjectName</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="@notFoundMessage" />
+}
+else if (wiki != null && !wiki.Enabled)
+{
+    <div class="empty">
+        The wiki is turned off for this project.
+        @if (wiki.Perms.Can(Permission.ManageProjectSettings))
+        {
+            <span>Turn it on in <a href="/p/@wiki.ProjectKey/settings">project settings</a>.</span>
+        }
+    </div>
+}
+else if (wiki != null && path != null)
+{
+    <div class="wiki-layout">
+        <div class="wiki-main">
+            <div class="wiki-header">
+                <div class="wiki-title-block">
+                    <div class="wiki-crumbs mud-text-secondary">
+                        <a href="@WikiPaths.Url(wiki.ProjectKey, null)">Wiki</a>
+                        @foreach (var (crumb, _) in Crumbs())
+                        {
+                            <span class="wiki-crumb-sep">/</span>
+                            <span>@crumb</span>
+                        }
+                    </div>
+                    <MudText Typo="Typo.h5" HtmlTag="h1" Class="wiki-title">@(Action == "edit" && isNew ? "New page" : WikiPaths.TitleOf(path))</MudText>
+                    @if (page?.LastCommit is { } last && Action is null or "")
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Last edited by @last.AuthorName @Display.Ago(last.When.UtcDateTime)
+                        </MudText>
+                    }
+                </div>
+                <div class="wiki-actions">
+                    @if (Action is not "edit")
+                    {
+                        @if (page != null)
+                        {
+                            <MudButton Href="@WikiPaths.Url(wiki.ProjectKey, path, "action=history")" Variant="Variant.Outlined" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Outlined.History">History</MudButton>
+                        }
+                        @if (wiki.CanEdit)
+                        {
+                            @if (page != null && Rev == null)
+                            {
+                                <MudButton Href="@WikiPaths.Url(wiki.ProjectKey, path, "action=edit")" Variant="Variant.Outlined" Size="Size.Small"
+                                           StartIcon="@Icons.Material.Outlined.Edit">Edit</MudButton>
+                            }
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                                       OnClick="NewPage">New page</MudButton>
+                        }
+                    }
+                </div>
+            </div>
+
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => error = null">@error</MudAlert> }
+
+            @switch (Action)
+            {
+                case "edit":
+                    @if (!wiki.CanEdit)
+                    {
+                        <Forbidden Message="Developers and above can edit the wiki." />
+                    }
+                    else
+                    {
+                        @RenderEditor()
+                    }
+                    break;
+                case "history":
+                    @RenderHistory()
+                    break;
+                case "diff":
+                    @RenderDiff()
+                    break;
+                default:
+                    @RenderPage()
+                    break;
+            }
+        </div>
+
+        <aside class="wiki-sidebar">
+            @if (sidebar != null)
+            {
+                <div class="markdown wiki-custom-sidebar">@WikiMarkdown.Render(sidebar.Content, new WikiRenderContext(wiki.ProjectKey, WikiPaths.Sidebar, PagePaths))</div>
+                @if (wiki.CanEdit)
+                {
+                    <a class="wiki-sidebar-edit small" href="@WikiPaths.Url(wiki.ProjectKey, WikiPaths.Sidebar, "action=edit")">Edit sidebar</a>
+                }
+            }
+            else
+            {
+                <div class="wiki-sidebar-heading">
+                    <span>Pages</span>
+                    <span class="mud-text-secondary small">@pages.Count(p => p.Path != WikiPaths.Sidebar)</span>
+                </div>
+                @if (tree.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No pages yet.</MudText>
+                }
+                else
+                {
+                    <WikiTree ProjectKey="@wiki.ProjectKey" Nodes="tree" Current="@path" />
+                }
+                @if (wiki.CanEdit)
+                {
+                    <a class="wiki-sidebar-edit small" href="@WikiPaths.Url(wiki.ProjectKey, WikiPaths.Sidebar, "action=edit")"
+                       title="Write a _sidebar page to replace this generated list">Customise sidebar</a>
+                }
+            }
+            <div class="wiki-clone">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Clone this wiki</MudText>
+                <CloneBox Repo="cloneRepo" />
+            </div>
+        </aside>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public string? PagePath { get; set; }
+    [SupplyParameterFromQuery(Name = "action")] public string? Action { get; set; }
+    [SupplyParameterFromQuery(Name = "rev")] public string? Rev { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
+
+    private WikiInfo? wiki;
+    private string? path;
+    private WikiPage? page, sidebar;
+    private List<WikiPageEntry> pages = [];
+    private List<WikiTree.Node> tree = [];
+    private bool notFound;
+    private string notFoundMessage = "This project does not exist, or you don't have access to it.";
+    private string? error;
+    private Repository cloneRepo = new();
+
+    // History & diff
+    private List<CommitInfo>? history;
+    private bool historyMore;
+    private List<FileDiff>? diff;
+    private CommitInfo? diffCommit;
+
+    // Editor
+    private bool isNew, saving, uploading;
+    private string editPath = "", editContent = "", editMessage = "";
+    private string? baseSha;
+    private WikiConflictException? conflict;
+    private string? loadedFor;
+
+    private IReadOnlyCollection<string> PagePaths => pages.Select(p => p.Path).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        error = null;
+        notFound = false;
+        wiki = await Wikis.GetWikiAsync(Key);
+        if (wiki == null) { notFound = true; return; }
+        cloneRepo = new Repository { Slug = "wiki", Name = "wiki", Project = new Project { Key = wiki.ProjectKey, Name = wiki.ProjectName } };
+        if (!wiki.Enabled) return;
+
+        path = string.IsNullOrEmpty(PagePath) ? WikiPaths.Home : WikiPaths.Normalize(PagePath);
+        if (path == null)
+        {
+            notFound = true;
+            notFoundMessage = "That isn't a valid wiki page name.";
+            return;
+        }
+        pages = await Wikis.ListPagesAsync(wiki);
+        tree = WikiTree.Build(pages);
+        sidebar = pages.Any(p => p.Path == WikiPaths.Sidebar) ? await Wikis.GetPageAsync(wiki, WikiPaths.Sidebar) : null;
+        page = await Wikis.GetPageAsync(wiki, path, Action is "edit" ? null : Rev);
+        history = null;
+        diff = null;
+
+        switch (Action)
+        {
+            case "edit":
+                // Keep the user's draft across re-renders of the same page; reload when they move to another page.
+                var key = path + "|edit";
+                if (loadedFor != key)
+                {
+                    loadedFor = key;
+                    isNew = page == null;
+                    editPath = path;
+                    editContent = page?.Content ?? (path == WikiPaths.Sidebar ? "- [[Home]]\n" : "");
+                    editMessage = "";
+                    baseSha = page?.BlobSha;
+                    conflict = null;
+                }
+                break;
+            case "history":
+                loadedFor = null;
+                (history, historyMore) = await Wikis.HistoryAsync(wiki, path, 0, 100);
+                break;
+            case "diff":
+                loadedFor = null;
+                if (To != null)
+                {
+                    diff = await Wikis.DiffAsync(wiki, path, From, To);
+                    diffCommit = (await Wikis.HistoryAsync(wiki, path, 0, 200)).Items.FirstOrDefault(c => c.Sha.StartsWith(To, StringComparison.OrdinalIgnoreCase));
+                }
+                break;
+            default:
+                loadedFor = null;
+                break;
+        }
+    }
+
+    private IEnumerable<(string Name, string Path)> Crumbs()
+    {
+        if (path == null) yield break;
+        var parts = path.Split('/');
+        for (var i = 0; i < parts.Length - 1; i++)
+            yield return (parts[i].Replace('-', ' '), string.Join('/', parts.Take(i + 1)));
+    }
+
+    private MarkupString Render(string? markdown) =>
+        WikiMarkdown.Render(markdown, new WikiRenderContext(wiki!.ProjectKey, path ?? WikiPaths.Home, PagePaths));
+
+    // ---------- View ----------
+
+    private RenderFragment RenderPage() => __builder =>
+    {
+        if (page == null)
+        {
+            <div class="empty">
+                @if (path == WikiPaths.Home && pages.Count == 0)
+                {
+                    <div class="mb-2">This project's wiki is empty.</div>
+                }
+                else
+                {
+                    <div class="mb-2">The page <b>@WikiPaths.TitleOf(path!)</b> doesn't exist@(Rev != null ? " in that version" : "").</div>
+                }
+                @if (wiki!.CanEdit && Rev == null)
+                {
+                    <MudButton Href="@WikiPaths.Url(wiki.ProjectKey, path, "action=edit")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add">Create this page</MudButton>
+                }
+            </div>
+            return;
+        }
+        if (Rev != null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                You're viewing an older version (<span class="mono">@(page.LastCommit?.ShortSha ?? Rev)</span>).
+                <a href="@WikiPaths.Url(wiki!.ProjectKey, path)">View the current version</a>
+            </MudAlert>
+        }
+        <MudPaper Outlined="true" Class="pa-5 wiki-content">
+            @if (string.IsNullOrWhiteSpace(page.Content))
+            {
+                <span class="mud-text-secondary">This page is empty.</span>
+            }
+            else
+            {
+                <div class="markdown">@Render(page.Content)</div>
+            }
+        </MudPaper>
+    };
+
+    private async Task NewPage()
+    {
+        var parameters = new DialogParameters<WikiNewPageDialog> { { x => x.Folder, path == null ? "" : WikiPaths.DirOf(path) } };
+        var dialog = await Dialogs.ShowAsync<WikiNewPageDialog>("New wiki page", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string newPath })
+            Nav.NavigateTo(WikiPaths.Url(wiki!.ProjectKey, newPath, "action=edit"));
+    }
+
+    // ---------- Edit ----------
+
+    private RenderFragment RenderEditor() => __builder =>
+    {
+        if (conflict != null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                <div class="gb-bold">@conflict.Message</div>
+                <div>Your changes haven't been saved. Compare with the current version below, then keep yours (overwriting theirs) or start over from theirs.</div>
+                <div class="d-flex gap-2 mt-2 flex-wrap">
+                    @if (conflict.CurrentSha != null)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" OnClick="OverwriteAfterConflict">Save mine anyway</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="TakeTheirs">Discard mine, edit theirs</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" OnClick="RecreateAfterConflict">Save mine as a new page</MudButton>
+                    }
+                </div>
+            </MudAlert>
+            @if (conflict.CurrentContent != null)
+            {
+                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Current version</MudText>
+                    <pre class="wiki-conflict-text">@conflict.CurrentContent</pre>
+                </MudPaper>
+            }
+        }
+        <MudPaper Outlined="true" Class="pa-4">
+            <MudStack Spacing="3">
+                <MudTextField T="string" @bind-Value="editPath" Label="Page path" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Disabled="@(path == WikiPaths.Sidebar || path == WikiPaths.Home && !isNew)"
+                              HelperText="@(isNew ? "Use / for folders, e.g. guides/Getting started" : "Change it to rename or move the page")" />
+                <div>
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudButton HtmlTag="label" Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Image" Disabled="uploading" Style="white-space:nowrap;flex-shrink:0">
+                            Upload image
+                            <InputFile OnChange="OnUpload" accept="image/png,image/jpeg,image/gif,image/webp" disabled="@uploading" class="d-none" />
+                        </MudButton>
+                        @if (uploading) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> }
+                        <span class="mud-text-secondary small">[[Page name]] links to pages · issue keys like @(wiki!.ProjectKey)-1 link to issues</span>
+                    </div>
+                    <MarkdownEditor @bind-Value="editContent" Rows="18" ProjectId="wiki.ProjectId" Render="Render"
+                                    Placeholder="Write the page in Markdown…" />
+                </div>
+                <MudTextField T="string" @bind-Value="editMessage" Label="Commit message (optional)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="@(isNew ? $"Create {WikiPaths.TitleOf(path!)}" : $"Update {WikiPaths.TitleOf(path!)}")" />
+                <div class="d-flex gap-2 align-center">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">
+                        @(isNew ? "Create page" : "Save changes")
+                    </MudButton>
+                    <MudButton Variant="Variant.Text" Href="@WikiPaths.Url(wiki.ProjectKey, isNew ? null : path)">Cancel</MudButton>
+                    <MudSpacer />
+                    @if (!isNew && path != WikiPaths.Home)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete"
+                                   OnClick="DeleteAsync" Disabled="saving">Delete page</MudButton>
+                    }
+                </div>
+            </MudStack>
+        </MudPaper>
+    };
+
+    private async Task SaveAsync()
+    {
+        if (wiki == null || path == null) return;
+        saving = true;
+        error = null;
+        try
+        {
+            var saved = await Wikis.SavePageAsync(wiki, isNew ? null : path, editPath, editContent, editMessage, baseSha);
+            conflict = null;
+            loadedFor = null;
+            Snackbar.Add(isNew ? "Page created." : "Page saved.", Severity.Success);
+            Nav.NavigateTo(WikiPaths.Url(wiki.ProjectKey, saved));
+        }
+        catch (WikiConflictException ex)
+        {
+            conflict = ex;
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task OverwriteAfterConflict()
+    {
+        baseSha = conflict?.CurrentSha;
+        conflict = null;
+        await SaveAsync();
+    }
+
+    private async Task RecreateAfterConflict()
+    {
+        isNew = true;
+        baseSha = null;
+        conflict = null;
+        await SaveAsync();
+    }
+
+    private void TakeTheirs()
+    {
+        if (conflict == null) return;
+        editContent = conflict.CurrentContent ?? "";
+        baseSha = conflict.CurrentSha;
+        conflict = null;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (wiki == null || path == null) return;
+        if (!await Dialogs.ConfirmAsync("Delete page", $"Delete \"{WikiPaths.TitleOf(path)}\"? It stays in the wiki's git history.")) return;
+        try
+        {
+            await Wikis.DeletePageAsync(wiki, path, baseSha);
+            loadedFor = null;
+            Snackbar.Add("Page deleted.", Severity.Success);
+            Nav.NavigateTo(WikiPaths.Url(wiki.ProjectKey, null));
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task OnUpload(InputFileChangeEventArgs e)
+    {
+        if (wiki == null) return;
+        uploading = true;
+        error = null;
+        try
+        {
+            var file = e.File;
+            if (file.Size > WikiService.MaxUploadBytes) throw new InvalidOperationException("Images can be at most 10 MB.");
+            await using var stream = file.OpenReadStream(WikiService.MaxUploadBytes);
+            var uploaded = await Wikis.UploadAsync(wiki, file.Name, stream);
+            var alt = Path.GetFileNameWithoutExtension(file.Name).Replace("]", "").Replace("[", "");
+            editContent = editContent + (editContent.Length > 0 && !editContent.EndsWith('\n') ? "\n" : "") + $"![{alt}]({uploaded})\n";
+            Snackbar.Add("Image uploaded and linked at the end of the page.", Severity.Success);
+            pages = await Wikis.ListPagesAsync(wiki);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        catch (IOException ex) { error = "Upload failed: " + ex.Message; }
+        finally { uploading = false; }
+    }
+
+    // ---------- History & diff ----------
+
+    private RenderFragment RenderHistory() => __builder =>
+    {
+        if (history == null || history.Count == 0)
+        {
+            <div class="empty">No history for this page.</div>
+            return;
+        }
+        <MudPaper Outlined="true" Class="wiki-history">
+            @foreach (var (c, i) in history.Select((c, i) => (c, i)))
+            {
+                <div class="wiki-history-row" @key="c.Sha">
+                    <div class="wiki-history-main">
+                        <div class="gb-bold">@c.MessageShort</div>
+                        <div class="mud-text-secondary small">@c.AuthorName · @Display.Ago(c.When.UtcDateTime) · <span class="mono">@c.ShortSha</span></div>
+                    </div>
+                    <div class="wiki-history-actions">
+                        <MudButton Href="@WikiPaths.Url(wiki!.ProjectKey, path, "rev=" + c.Sha)" Size="Size.Small" Variant="Variant.Text">View</MudButton>
+                        <MudButton Href="@WikiPaths.Url(wiki.ProjectKey, path, "action=diff&to=" + c.Sha)" Size="Size.Small" Variant="Variant.Text">Changes</MudButton>
+                        @if (i > 0)
+                        {
+                            <MudButton Href="@WikiPaths.Url(wiki.ProjectKey, path, $"action=diff&from={c.Sha}&to={history[0].Sha}")" Size="Size.Small" Variant="Variant.Text"
+                                       title="What changed between this version and the current one">Compare with current</MudButton>
+                        }
+                        @if (wiki.CanEdit && i > 0)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => RevertAsync(c)">Revert to this</MudButton>
+                        }
+                    </div>
+                </div>
+            }
+        </MudPaper>
+        @if (historyMore) { <MudText Typo="Typo.caption" Class="mud-text-secondary">Showing the latest 100 changes. Clone the wiki for the full history.</MudText> }
+    };
+
+    private async Task RevertAsync(CommitInfo c)
+    {
+        if (wiki == null || path == null) return;
+        if (!await Dialogs.ConfirmAsync("Revert page", $"Restore this page as it was in {c.ShortSha}? This adds a new commit.", "Revert")) return;
+        try
+        {
+            await Wikis.RevertPageAsync(wiki, path, c.Sha);
+            Snackbar.Add($"Page reverted to {c.ShortSha}.", Severity.Success);
+            Nav.NavigateTo(WikiPaths.Url(wiki.ProjectKey, path));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private RenderFragment RenderDiff() => __builder =>
+    {
+        <div class="d-flex align-center gap-2 mb-3 flex-wrap">
+            <MudButton Href="@WikiPaths.Url(wiki!.ProjectKey, path, "action=history")" Size="Size.Small" Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Outlined.ArrowBack">History</MudButton>
+            @if (diffCommit != null && From == null)
+            {
+                <span><b>@diffCommit.MessageShort</b> <span class="mud-text-secondary small">by @diffCommit.AuthorName · @Display.Ago(diffCommit.When.UtcDateTime) · <span class="mono">@diffCommit.ShortSha</span></span></span>
+            }
+            else if (From != null && To != null)
+            {
+                <span class="mud-text-secondary small">Changes from <span class="mono">@From[..Math.Min(7, From.Length)]</span> to <span class="mono">@To[..Math.Min(7, To.Length)]</span></span>
+            }
+        </div>
+        <DiffView Files="@(diff ?? [])" EmptyText="No changes to this page." />
+    };
+
+}

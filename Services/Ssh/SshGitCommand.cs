@@ -77,7 +77,7 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
         int? actingUser; // whose permissions apply and who push listeners act as
         if (id.IsDeployKey)
         {
-            if (found.Id != id.DeployRepositoryId) return NotFound(); // a deploy key only exists for its own repository
+            if (found.IsWiki || found.Id != id.DeployRepositoryId) return NotFound(); // a deploy key only exists for its own repository
             if (writing && !id.DeployCanWrite)
                 return Error("This deploy key is read-only. A Maintainer can allow write access in the repository's deploy key settings.");
             actingUser = id.DeployCreatorId;
@@ -88,8 +88,8 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
         {
             actingUser = id.UserId;
             var role = await services.GetRequiredService<ProjectAccess>().GetRoleAsync(found.ProjectId, id.UserId);
-            if (role is null) return NotFound(); // don't reveal private repositories
-            if (writing && !ProjectAccess.RoleHas(role.Value, Permission.PushCode))
+            if (role is null || (found.IsWiki && !found.WikiEnabled)) return NotFound(); // don't reveal private repositories
+            if (writing && !ProjectAccess.RoleHas(role.Value, GitRepoLookup.WritePermission(found)))
             {
                 log.LogInformation("SSH push to {Key}/{Slug} denied for {User} (role {Role})", found.Key, found.Slug, id.Name, role);
                 return Error($"You don't have permission to push to this repository (requires Developer; you are {role}).");
@@ -105,6 +105,13 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
         if (actingUser is { } uid) services.GetRequiredService<ProjectAccess>().ActAs(uid); // push listeners run as this user
 
         log.LogInformation("SSH {Service} {Key}/{Slug} by {Name} from {Remote}", parsed.Service, found.Key, found.Slug, id.Name, remote);
+        if (writing && found.IsWiki)
+        {
+            // Wikis have no branch protection and no code push listeners: run receive-pack as is, then reindex the wiki.
+            var exit = await RunGitAsync("receive-pack", diskPath, gitProtocol, null, channel, CopyAllAsync, ct);
+            if (exit == 0) await GitRepoLookup.AfterWikiPushAsync(services, log, found);
+            return (exit, null, null);
+        }
         return writing
             ? await ReceivePackAsync(services, id, actingUser, found, diskPath, gitProtocol, channel, ct)
             : (await RunGitAsync("upload-pack", diskPath, gitProtocol, null, channel, CopyAllAsync, ct), null, null);

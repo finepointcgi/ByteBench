@@ -1,0 +1,4 @@
+::deep .snippet-file { overflow: hidden; }
+.snippet-file-head { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--mud-palette-background-gray); }
+.snippet-code { overflow-x: auto; }
+::deep .snippet-rev-select { min-width: 240px; }

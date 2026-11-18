@@ -1,0 +1,2 @@
+.snippet-vis { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; padding: 0 6px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); }
+.snippet-vis ::deep .mud-icon-root { font-size: 14px; }

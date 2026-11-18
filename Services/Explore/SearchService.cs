@@ -5,7 +5,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Services.Explore;
 
-public enum SearchType { Issues, PullRequests, Projects, Users, Code }
+public enum SearchType { Issues, PullRequests, Projects, Users, Code, Wiki }
+
+/// <summary>A wiki page (<see cref="GitBench.Services.Wiki.WikiService"/>) whose title or Markdown matches.</summary>
+public sealed record WikiHit(string ProjectKey, string ProjectName, string Path, string Title, string? Excerpt, DateTime UpdatedAt)
+{
+    public string Url => GitBench.Services.Wiki.WikiPaths.Url(ProjectKey, Path);
+}
 
 public sealed record IssueHit(int Id, string Key, string ProjectKey, int Number, string Title, IssueType Type, IssueStatus Status, DateTime UpdatedAt)
 {
@@ -40,7 +46,11 @@ public sealed record GlobalSearchResults(string Query, string? JumpUrl,
     IReadOnlyList<RepoSearchResult> Code)
 {
     public static GlobalSearchResults Empty(string q) => new(q, null, [], 0, [], 0, [], 0, [], 0, []);
-    public bool IsEmpty => IssueCount + PullRequestCount + ProjectCount + UserCount == 0 && Code.All(c => c.IsEmpty);
+    public bool IsEmpty => IssueCount + PullRequestCount + ProjectCount + UserCount + WikiCount == 0 && Code.All(c => c.IsEmpty);
+
+    // ----- Wiki -----
+    public IReadOnlyList<WikiHit> Wiki { get; init; } = [];
+    public int WikiCount { get; init; }
 }
 
 /// <summary>
@@ -64,7 +74,7 @@ public partial class SearchService(IDbContextFactory<AppDbContext> dbFactory, Pr
         var q = (query ?? "").Trim();
         if (q.Length == 0 || await access.ResolveUserIdAsync() == null) return GlobalSearchResults.Empty(q);
         if (q.Length > MaxQueryLength) q = q[..MaxQueryLength];
-        types ??= [SearchType.Issues, SearchType.PullRequests, SearchType.Projects, SearchType.Users];
+        types ??= [SearchType.Issues, SearchType.PullRequests, SearchType.Projects, SearchType.Users, SearchType.Wiki];
         var visible = await access.VisibleProjectIdsAsync();
         var like = Like.Contains(q);
         await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -135,8 +145,36 @@ public partial class SearchService(IDbContextFactory<AppDbContext> dbFactory, Pr
         }
 
         var code = types.Contains(SearchType.Code) ? await SearchCodeAsync(db, visible, q, ct) : [];
-        return new GlobalSearchResults(q, jump, issues, issueCount, prs, prCount, projects, projectCount, users, userCount, code);
+        var (wiki, wikiCount) = types.Contains(SearchType.Wiki) ? await SearchWikiAsync(db, visible, q, like, limit, withCounts, ct) : ([], 0);
+        return new GlobalSearchResults(q, jump, issues, issueCount, prs, prCount, projects, projectCount, users, userCount, code)
+            { Wiki = wiki, WikiCount = wikiCount };
     }
+
+    /// <summary>Wiki pages (title, path or Markdown) of visible projects whose wiki is on, from <see cref="WikiPageIndex"/>.</summary>
+    private static async Task<(List<WikiHit>, int)> SearchWikiAsync(AppDbContext db, IReadOnlyList<int> visible, string q, string like,
+        int limit, bool withCounts, CancellationToken ct)
+    {
+        var wq = db.WikiPageIndex.AsNoTracking()
+            .Join(db.Projects.Where(p => p.WikiEnabled && visible.Contains(p.Id)), w => w.ProjectId, p => p.Id, (w, p) => new { w, p.Key, p.Name })
+            .Where(x => EF.Functions.Like(x.w.Title, like, Like.Escape) || EF.Functions.Like(x.w.Path, like, Like.Escape)
+                        || EF.Functions.Like(x.w.Content, like, Like.Escape));
+        var rows = await wq.OrderByDescending(x => x.w.UpdatedAt).Take(limit)
+            .Select(x => new { x.Key, x.Name, x.w.Path, x.w.Title, x.w.Content, x.w.UpdatedAt }).ToListAsync(ct);
+        var hits = rows.Select(r => new WikiHit(r.Key, r.Name, r.Path, r.Title, Excerpt(r.Content, q), r.UpdatedAt)).ToList();
+        return (hits, withCounts ? await wq.CountAsync(ct) : hits.Count);
+    }
+
+    /// <summary>About 160 characters of <paramref name="text"/> around the first match of <paramref name="q"/>.</summary>
+    internal static string? Excerpt(string text, string q)
+    {
+        var i = text.IndexOf(q, StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return text.Length == 0 ? null : Squash(text[..Math.Min(text.Length, 160)]);
+        var start = Math.Max(0, i - 60);
+        var end = Math.Min(text.Length, i + q.Length + 100);
+        return (start > 0 ? "…" : "") + Squash(text[start..end]) + (end < text.Length ? "…" : "");
+    }
+
+    private static string Squash(string s) => Regex.Replace(s, @"\s+", " ").Trim();
 
     /// <summary>Default branch of each visible repository (capped), plain text, case-insensitive. Repositories without matches are left out.</summary>
     private async Task<List<RepoSearchResult>> SearchCodeAsync(AppDbContext db, IReadOnlyList<int> visible, string q, CancellationToken ct)

@@ -1399,3 +1399,94 @@ public class AutomationRun
     public int Depth { get; set; }
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Wiki & snippets -----
+
+public partial class Project
+{
+    /// <summary>The project wiki (<see cref="GitBench.Services.Wiki.WikiService"/>) is on. Off: its pages, git remote and search hits are hidden.</summary>
+    public bool WikiEnabled { get; set; } = true;
+}
+
+/// <summary>
+/// Search index of one wiki page. The wiki itself is the bare git repository <c>{KEY}/{key}.wiki.git</c>; these rows are a
+/// cache that <see cref="GitBench.Services.Wiki.WikiService"/> rebuilds after every save and every push, so global search can
+/// use SQL LIKE like everything else.
+/// </summary>
+public class WikiPageIndex
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    /// <summary>The page's path in the wiki repository without <c>.md</c>, e.g. <c>guides/Setup</c>.</summary>
+    [Required, MaxLength(400)] public string Path { get; set; } = "";
+    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    /// <summary>The Markdown (truncated to 100 KB).</summary>
+    public string Content { get; set; } = "";
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Who can see a <see cref="Snippet"/>. Personal snippets are Private or Public; project snippets are Private or Project.</summary>
+public enum SnippetVisibility
+{
+    /// <summary>Only the author (and site admins).</summary>
+    Private,
+    /// <summary>Project snippets only: everyone who can view the project.</summary>
+    Project,
+    /// <summary>Personal snippets only: every signed-in user.</summary>
+    Public,
+}
+
+/// <summary>
+/// A gist-style snippet: one or more files, stored in the database with full revisions (<see cref="SnippetRevision"/>).
+/// Personal when <see cref="ProjectId"/> is null, else it belongs to that project. Rules: <see cref="GitBench.Services.Snippets.SnippetService"/>.
+/// </summary>
+public class Snippet
+{
+    public int Id { get; set; }
+    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    [MaxLength(4000)] public string? Description { get; set; }
+    public SnippetVisibility Visibility { get; set; } = SnippetVisibility.Private;
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    public int? ProjectId { get; set; }
+    public Project? Project { get; set; }
+    /// <summary>The newest <see cref="SnippetRevision.Number"/>; its files are the snippet's current content.</summary>
+    public int CurrentRevision { get; set; } = 1;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public List<SnippetRevision> Revisions { get; set; } = [];
+    public List<SnippetComment> Comments { get; set; } = [];
+}
+
+/// <summary>One saved version of a snippet: every file as it was (a revision copies all files, so each is self-contained).</summary>
+public class SnippetRevision
+{
+    public int Id { get; set; }
+    public int SnippetId { get; set; }
+    public int Number { get; set; }
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public List<SnippetFile> Files { get; set; } = [];
+}
+
+public class SnippetFile
+{
+    public int Id { get; set; }
+    public int RevisionId { get; set; }
+    /// <summary>Order in the snippet (0 first).</summary>
+    public int Position { get; set; }
+    [Required, MaxLength(255)] public string FileName { get; set; } = "";
+    public string Content { get; set; } = "";
+}
+
+public class SnippetComment
+{
+    public int Id { get; set; }
+    public int SnippetId { get; set; }
+    public int AuthorId { get; set; }
+    public User Author { get; set; } = null!;
+    [Required, MaxLength(20000)] public string Body { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
