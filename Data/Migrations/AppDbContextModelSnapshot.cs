@@ -269,6 +269,9 @@ namespace GitBench.Data.Migrations
                     b.Property<double>("SortOrder")
                         .HasColumnType("REAL");
 
+                    b.Property<int?>("SprintId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
@@ -293,6 +296,8 @@ namespace GitBench.Data.Migrations
                     b.HasIndex("MilestoneId");
 
                     b.HasIndex("ReporterId");
+
+                    b.HasIndex("SprintId");
 
                     b.HasIndex("ProjectId", "Number")
                         .IsUnique();
@@ -959,6 +964,66 @@ namespace GitBench.Data.Migrations
                     b.ToTable("RepositoryRedirects");
                 });
 
+            modelBuilder.Entity("GitBench.Data.Sprint", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("CommittedCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("CommittedPoints")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("CompletedCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("CompletedPoints")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Goal")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Sprints_OneActivePerProject")
+                        .HasFilter("\"State\" = 1");
+
+                    b.HasIndex("ProjectId", "State");
+
+                    b.ToTable("Sprints");
+                });
+
             modelBuilder.Entity("GitBench.Data.User", b =>
                 {
                     b.Property<int>("Id")
@@ -1404,6 +1469,11 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.Sprint", "Sprint")
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Assignee");
 
                     b.Navigation("Milestone");
@@ -1411,6 +1481,8 @@ namespace GitBench.Data.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("Reporter");
+
+                    b.Navigation("Sprint");
                 });
 
             modelBuilder.Entity("GitBench.Data.Label", b =>
@@ -1658,6 +1730,15 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("GitBench.Data.Sprint", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GitBench.Data.Watch", b =>

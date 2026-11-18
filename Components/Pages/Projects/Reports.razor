@@ -1,0 +1,125 @@
+@page "/p/{Key}/reports"
+@implements IDisposable
+@inject IssueService Issues
+@inject SprintService Sprints
+@inject LiveEvents Live
+
+<PageTitle>Reports · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <h1>Reports</h1>
+            <div class="muted">@project.Name · sprint burndown and velocity</div>
+        </div>
+        <div class="filter-bar compact">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Measure">
+                <button class="btn @(countMode ? "btn-outline-secondary" : "btn-secondary")" aria-pressed="@(!countMode)" @onclick="() => countMode = false">Story points</button>
+                <button class="btn @(countMode ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@countMode" @onclick="() => countMode = true">Issue count</button>
+            </div>
+            <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/backlog">🏃 Backlog</a>
+        </div>
+    </div>
+
+    <section class="card-panel mb-4">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+            <h2 class="section-title mb-0">Burndown</h2>
+            @if (started.Count > 0)
+            {
+                <select class="form-select form-select-sm w-auto" aria-label="Sprint" @bind="sprintId" @bind:after="LoadBurndown">
+                    @foreach (var s in started)
+                    {
+                        <option value="@s.Id">@s.Name@(s.State == SprintState.Active ? " (active)" : "")</option>
+                    }
+                </select>
+            }
+        </div>
+        @if (burndown is { } b)
+        {
+            var last = b.Days.LastOrDefault(d => d.RemainingPoints != null);
+            var completed = b.Sprint.State == SprintState.Completed;
+            <div class="report-stats">
+                <div><span class="muted small">Committed</span><strong>@(countMode ? b.StartCount : b.StartPoints)</strong></div>
+                <div><span class="muted small">@(completed ? "Final scope" : "Scope now")</span><strong>@(countMode ? last?.ScopeCount : last?.ScopePoints)</strong></div>
+                <div><span class="muted small">@(completed ? "Left open" : "Remaining")</span><strong>@(countMode ? last?.RemainingCount : last?.RemainingPoints)</strong></div>
+                <div><span class="muted small">Dates</span><strong class="fw-normal">@b.Days[0].Date.ToString("MMM d") – @b.Days[^1].Date.ToString("MMM d")</strong></div>
+            </div>
+            @if (!string.IsNullOrEmpty(b.Sprint.Goal)) { <p class="muted small mb-2">🎯 @b.Sprint.Goal</p> }
+            <BurndownChart Data="b" CountMode="countMode" />
+            <p class="muted small mt-2 mb-0">
+                Rebuilt from issue activity: status changes to and from Done, estimate changes and sprint membership. Issues without an estimate count as 0 points.
+            </p>
+        }
+        else
+        {
+            <div class="empty">No sprint has been started yet. Plan and start one on the <a href="/p/@project.Key/backlog">backlog</a>.</div>
+        }
+    </section>
+
+    <section class="card-panel">
+        <h2 class="section-title">Velocity</h2>
+        @if (velocity.Count > 0)
+        {
+            <p class="muted small">Committed: in the sprint when it started. Completed: done when it was completed. Last @velocity.Count completed sprints.</p>
+            <VelocityChart Data="velocity" CountMode="countMode" />
+        }
+        else
+        {
+            <div class="empty">Velocity appears once a sprint has been completed.</div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound, countMode;
+    private List<Sprint> started = [];
+    private int sprintId;
+    private Burndown? burndown;
+    private List<VelocityEntry> velocity = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (project?.Key == Key.ToUpperInvariant()) return;
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        sprintId = 0;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (project == null) return;
+        started = (await Sprints.GetSprintsAsync(project.Id)).Where(s => s.State != SprintState.Planned).ToList();
+        if (started.All(s => s.Id != sprintId)) sprintId = started.FirstOrDefault()?.Id ?? 0;
+        velocity = await Sprints.GetVelocityAsync(project.Id, 8);
+        await LoadBurndown();
+    }
+
+    private async Task LoadBurndown() =>
+        burndown = sprintId == 0 || project == null ? null : await Sprints.GetBurndownAsync(project.Id, sprintId);
+
+    // ----- Live updates: issues or sprints changed in this project -----
+    private IDisposable? liveSubscription;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe(OnLive);
+    }
+
+    private Task OnLive(LiveEvent e)
+    {
+        var pid = e switch { SprintChanged x => x.ProjectId, IssueChanged x => x.ProjectId, _ => -1 };
+        return pid != project?.Id ? Task.CompletedTask : InvokeAsync(async () => { await Load(); StateHasChanged(); });
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+}

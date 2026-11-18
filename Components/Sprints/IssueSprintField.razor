@@ -1,0 +1,58 @@
+@* Sprint picker for the issue detail sidebar. Changing it records a sprint activity; the page reloads via IssueChanged. *@
+@implements IDisposable
+@inject SprintService Sprints
+@inject ProjectAccess Access
+@inject LiveEvents Live
+
+<div class="field">
+    <label for="issue-sprint-@Issue.Id">Sprint</label>
+    <select id="issue-sprint-@Issue.Id" class="form-select form-select-sm" value="@(Issue.SprintId?.ToString() ?? "")" @onchange="Change" disabled="@(!canEdit)">
+        <option value="">Backlog (no sprint)</option>
+        @foreach (var s in sprints.Where(s => s.State != SprintState.Completed || s.Id == Issue.SprintId))
+        {
+            <option value="@s.Id">@s.Name@(s.State == SprintState.Planned ? "" : $" ({s.State.ToString().ToLowerInvariant()})")</option>
+        }
+    </select>
+    @if (Issue.SprintId != null)
+    {
+        <a class="small" href="/p/@Issue.Project?.Key/backlog#sprint-@Issue.SprintId">View in backlog</a>
+    }
+    @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private List<Sprint> sprints = [];
+    private bool canEdit;
+    private int loadedFor;
+    private string? error;
+    private IDisposable? sub;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == Issue.ProjectId) return;
+        loadedFor = Issue.ProjectId;
+        canEdit = (await Access.GetPermissionsAsync(Issue.ProjectId)).Can(Permission.EditIssues);
+        sprints = await Sprints.GetSprintsAsync(Issue.ProjectId);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<SprintChanged>(e => e.ProjectId != Issue.ProjectId ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            sprints = await Sprints.GetSprintsAsync(Issue.ProjectId);
+            StateHasChanged();
+        }));
+    }
+
+    private async Task Change(ChangeEventArgs e)
+    {
+        error = null;
+        int? id = int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+        try { await Sprints.MoveIssueAsync(Issue.Id, id, null, reorder: false); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    public void Dispose() => sub?.Dispose();
+}

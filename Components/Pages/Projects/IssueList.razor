@@ -53,6 +53,7 @@ else if (project != null)
             <option value="0">No milestone</option>
             @foreach (var m in project.Milestones) { <option value="@m.Id">@m.Title</option> }
         </select>
+        <IssueSprintFilter ProjectId="project.Id" Filter="filter" OnChanged="Load" />
         <select class="form-select form-select-sm" @bind="filter.Type" @bind:after="Load">
             <option value="">Any type</option>
             @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
@@ -103,7 +104,7 @@ else if (project != null)
     }
 
     private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || filter.Status != null || filter.AssigneeId != null
-        || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null;
+        || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null || filter.SprintId != null;
 
     protected override async Task OnParametersSetAsync()
     {

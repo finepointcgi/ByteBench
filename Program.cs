@@ -68,6 +68,7 @@ builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo set
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
 builder.Services.AddGitBenchApi();
+builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndown & velocity
 
 var app = builder.Build();
 
@@ -79,6 +80,7 @@ using (var scope = app.Services.CreateScope())
     RepoSeeder.Initialize(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     NotificationService.Initialize(db);
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
+    SprintSeeder.Initialize(db);
 }
 
 if (!app.Environment.IsDevelopment())

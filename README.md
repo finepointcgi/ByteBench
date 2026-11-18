@@ -44,7 +44,7 @@ Every project has members, each with one role. `Services/ProjectAccess.cs` makes
 | PushCode (git push, create branches) | | ✓ | ✓ | ✓ |
 | CreatePullRequest | | ✓ | ✓ | ✓ |
 | ReviewPullRequest | | ✓ | ✓ | ✓ |
-| ManageLabelsAndMilestones | | | ✓ | ✓ |
+| ManageLabelsAndMilestones (also sprints: create, edit, start, complete, delete) | | | ✓ | ✓ |
 | MergePullRequest | | | ✓ | ✓ |
 | DeleteBranch | | | ✓ | ✓ |
 | ManageRepositories | | | ✓ | ✓ |
@@ -90,9 +90,29 @@ Seeded demo data:
 - **Issue list** with open/closed tabs, search (including by key), filters and sorting
 - **Kanban board** with drag-and-drop between and within columns, filtered by sprint or assignee
 - **Issue detail** with inline editing, Markdown descriptions and comments (Write/Preview), and an activity timeline
-- **Milestones/sprints** with progress and story-point burn-up
+- **Milestones** with progress and story-point burn-up
+- **Sprints**: backlog planning, start/complete, burndown and velocity reports (see [Sprints](#sprints))
 - **Project settings**: rename, manage labels, delete the project
 - **Dashboard**: your assigned work, all projects, recent activity
+
+## Sprints
+
+Scrum-style sprints per project (`Sprint` in `Data/Models.cs`, `Issue.SprintId`; logic in `Services/SprintService.cs`).
+
+- **States:** Planned → Active → Completed. At most one sprint per project is Active; a filtered unique index (`IX_Sprints_OneActivePerProject`) enforces it in the database too.
+- **Permissions:** creating, editing, starting, completing and deleting sprints needs `ManageLabelsAndMilestones` (Maintainer+). Moving issues in and out of sprints and ranking them needs `EditIssues` (Developer+).
+- **Backlog** (`/p/{KEY}/backlog`, sidebar **🏃 Backlog**): the active sprint, the planned sprints, then the backlog (open issues in no sprint). Each section shows its issue count and story points. Drag issues between sections or within one to rank them (ranking reuses `Issue.SortOrder`, the same order as the board). Each row also has a **Move…** menu (top, up, down, bottom, or another sprint) for keyboards and touch screens.
+  - **+ Create sprint** creates one inline ("WEB Sprint 9" is suggested).
+  - **Start sprint** asks for dates and a goal, and snapshots the committed scope (`CommittedCount`/`CommittedPoints`).
+  - **Complete sprint** shows the done and open counts, snapshots what was done (`CompletedCount`/`CompletedPoints`), and moves the open issues to a planned sprint, a new sprint, or the backlog. Done issues stay in the completed sprint.
+  - Deleting a planned or active sprint sends its issues back to the backlog. Completed sprints are kept for reports.
+- **Board:** a sprint selector (defaults to the active sprint) with an "All issues" option. **Issue detail:** a Sprint picker in the sidebar (`Components/Sprints/IssueSprintField.razor`). **Issue list:** a sprint filter.
+- **Reports** (`/p/{KEY}/reports`, sidebar **📈 Reports**), drawn as hand-written inline SVG (`Components/Sprints/BurndownChart.razor`, `VelocityChart.razor`), each with hover tooltips and a data table. A toggle switches between story points and issue count.
+  - **Burndown:** remaining work per day from the start date to the end date, against an ideal line. History is rebuilt from issue `Activity` rows by `Services/SprintHistory.cs`: starting from each issue's current state, it undoes status changes to/from Done, estimate changes and sprint membership changes, newest first. Sprint activities link to the sprint (`…/backlog#sprint-{id}`), so renaming a sprint doesn't break history. Estimate changes record the old value ("changed the estimate from **3** to **5** story points"). Unestimated issues count as 0 points.
+  - **Velocity:** committed vs completed for the last 8 completed sprints, with the average completed.
+- **Live updates:** sprint changes publish `SprintChanged` (plus `BoardChanged`, and `IssueChanged` for moved issues), so open backlogs, boards, reports and issue pages refresh. Moving an issue also fires the `issue.updated` webhook with the activity text.
+- **API:** `GET /api/v1/projects/{key}/sprints` (`?state=`) and `/sprints/{id}`; issues carry `sprintId` and can be filtered with `?sprint={id}`, `none` or `active`.
+- **Seed:** WEB has six completed sprints, an active one (WEB Sprint 7) and a planned one, with backdated activity so the charts have data (`Data/SprintSeeder.cs`; runs once, on a database whose WEB project has no sprints).
 
 ## Cloning & pushing
 
@@ -155,6 +175,8 @@ Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls
 | `Services/Display.cs` | Formatting helpers and safe Markdown rendering (Markdig, raw HTML disabled) |
 | `Components/Pages/Projects/` | Issue list, board, issue detail, new issue, milestones, settings |
 | `Components/Shared/` | Avatar, label chip, status badge, Markdown editor, and more |
+| `Services/SprintService.cs` / `Services/SprintHistory.cs` | Sprints, backlog ranking, reports; activity texts and burndown replay |
+| `Components/Sprints/` | Sprint picker and filters, burndown and velocity SVG charts |
 
 ## Repositories & pull requests
 
@@ -422,11 +444,12 @@ curl -H "Authorization: Bearer gbp_…" http://localhost:5108/api/v1/user
 |---|---|---|
 | GET | `/user` | You, with the token's scopes |
 | GET | `/projects`, `/projects/{key}` | Includes your role |
-| GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status name; `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
+| GET | `/projects/{key}/issues` | `?status=open` (default), `closed`, `all` or a status name; `?assignee=` username or `none`; `?label=`; `?milestone=` id or `none`; `?sprint=` id, `none` or `active`; `?q=`; `?sort=updated` (default), `created`, `priority`, `due` or `number` |
 | POST | `/projects/{key}/issues` | `{title, description?, type?, priority?, status?, assignee?, labels?: [names], milestoneId?, storyPoints?, dueDate?}`; returns `201` |
 | GET / PATCH | `/projects/{key}/issues/{number}` | PATCH changes only the fields you send; `null` clears a field and `labels` replaces the set. Each change is logged in the issue's activity |
 | GET / POST | `/projects/{key}/issues/{number}/comments` | `{body}` |
 | GET | `/projects/{key}/labels`, `/projects/{key}/milestones` | |
+| GET | `/projects/{key}/sprints`, `/projects/{key}/sprints/{id}` | `?state=planned`, `active` or `completed`. Counts, points and the committed/completed snapshots |
 | GET | `/projects/{key}/repos`, `/projects/{key}/repos/{slug}` | |
 | GET | `/projects/{key}/repos/{slug}/branches` | |
 | GET | `/projects/{key}/repos/{slug}/commits` | `?ref=` branch, tag or SHA (default branch if omitted), `?path=` |

@@ -39,6 +39,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
+    // ----- Sprints -----
+    public DbSet<Sprint> Sprints => Set<Sprint>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b); // Identity tables (AspNetUsers, AspNetRoles, …)
@@ -120,5 +123,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Webhook>().HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
         b.Entity<WebhookDelivery>().HasIndex(d => new { d.WebhookId, d.CreatedAt });
         b.Entity<WebhookDelivery>().HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
+
+        // ----- Sprints -----
+        b.Entity<Sprint>().HasIndex(s => new { s.ProjectId, s.State });
+        // At most one active sprint per project, enforced by the database too (State 1 = Active).
+        b.Entity<Sprint>().HasIndex(s => s.ProjectId).IsUnique().HasFilter("\"State\" = 1").HasDatabaseName("IX_Sprints_OneActivePerProject");
+        b.Entity<Sprint>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Issue>().HasOne(i => i.Sprint).WithMany().HasForeignKey(i => i.SprintId).OnDelete(DeleteBehavior.SetNull);
     }
 }

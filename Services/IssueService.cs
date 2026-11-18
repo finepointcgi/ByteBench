@@ -14,6 +14,7 @@ public class IssueFilter
     public IssueType? Type { get; set; }
     public IssuePriority? Priority { get; set; }
     public string Sort { get; set; } = "updated";
+    public int? SprintId { get; set; }     // 0 = no sprint (backlog)
 }
 
 /// <summary>
@@ -124,6 +125,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         if (f.MilestoneId is { } m) q = m == 0 ? q.Where(i => i.MilestoneId == null) : q.Where(i => i.MilestoneId == m);
         if (f.Type is { } t) q = q.Where(i => i.Type == t);
         if (f.Priority is { } p) q = q.Where(i => i.Priority == p);
+        if (f.SprintId is { } sp) q = sp == 0 ? q.Where(i => i.SprintId == null) : q.Where(i => i.SprintId == sp);
 
         q = f.Sort switch
         {
