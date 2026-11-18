@@ -1,7 +1,9 @@
 @* Search-as-you-type issue picker: type a key (WEB-12), a number or title words, then pick with the mouse or ↑ ↓ Enter. *@
 @inject LinkedWorkService LinkedWork
 
-<div class="lw-picker">
+@* Enter picks the highlighted item (see Key); it must never submit a surrounding form (e.g. New issue), which the
+   browser does on keydown before Blazor's handler runs, so the default is cancelled here in the page. *@
+<div class="lw-picker" onkeydown="if (event.key === 'Enter' && event.target.tagName === 'INPUT') event.preventDefault()">
     <input class="form-control form-control-sm" placeholder="@Placeholder" autocomplete="off" disabled="@Disabled"
            @bind="term" @bind:event="oninput" @bind:after="Search"
            @onkeydown="Key" @onfocus="Focus" @onblur="Blur" />
