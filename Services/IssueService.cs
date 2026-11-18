@@ -211,6 +211,9 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         issue.Activities.Add(new Activity { ActorId = actorId, Text = "created this issue" });
         await HierarchyRules.ValidateAsync(db, issue);
         var hierarchy = await HierarchyRules.RecordAsync(db, issue, null, actorId);
+        // A new sub-task joins its parent's sprint unless one was chosen.
+        if (issue.Type == IssueType.Subtask && issue.SprintId == null && issue.ParentId is { } parentId)
+            issue.SprintId = await db.Issues.Where(i => i.Id == parentId).Select(i => i.SprintId).FirstOrDefaultAsync();
         await ReconcileStatusAsync(issue, null, null); // picks the workflow status (or the category's first one)
         if (issue.Status.IsClosed()) issue.ClosedAt ??= DateTime.UtcNow;
 
