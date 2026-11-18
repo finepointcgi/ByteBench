@@ -1,0 +1,8 @@
+.sec-trend { margin: 0; }
+.sec-trend svg { width: 100%; height: 120px; display: block; }
+.sec-trend .axis { stroke: var(--border); stroke-width: 1; }
+.sec-trend .critical { fill: #7f1d1d; }
+.sec-trend .high { fill: #dc2626; }
+.sec-trend .medium { fill: #f59e0b; }
+.sec-trend .low { fill: #3b82f6; }
+.sec-trend .other { fill: #9ca3af; }

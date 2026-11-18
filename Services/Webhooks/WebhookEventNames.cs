@@ -15,6 +15,8 @@ public static class WebhookEventNames
     public const string PullRequestCommented = "pull_request.commented";
     /// <summary>Raised by CI pipelines (not by this module) through <see cref="WebhookDispatcher.Enqueue"/>.</summary>
     public const string PipelineCompleted = "pipeline.completed";
+    /// <summary>Raised by security scanning (Services/Security) when the default branch gets new findings at or above the repository's notify severity.</summary>
+    public const string SecurityNewFindings = "security.new_findings";
     // ----- Releases -----
     public const string ReleasePublished = "release.published";
     public const string TagCreated = "tag.created";
@@ -33,6 +35,7 @@ public static class WebhookEventNames
         (PullRequestDeclined, "A pull request is declined"),
         (PullRequestCommented, "Someone comments on a pull request"),
         (PipelineCompleted, "A CI pipeline finishes"),
+        (SecurityNewFindings, "A security scan finds new high-severity issues on the default branch"),
         (ReleasePublished, "A release is published"),
         (TagCreated, "A tag is created (in GitBench or by a push)"),
         (TagDeleted, "A tag is deleted (in GitBench or by a push)"),

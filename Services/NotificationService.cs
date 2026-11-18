@@ -349,6 +349,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         NotificationKind.IssueLinked => "changed the links of",
         NotificationKind.IssueHierarchyChanged => "changed the parent of",
         NotificationKind.Automation => "notifies you:",
+        NotificationKind.SecurityFindings => "found new security issues:",
         _ => "updated",
     };
 

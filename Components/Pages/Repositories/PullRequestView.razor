@@ -102,6 +102,7 @@ else if (pr != null)
         <TabLink Active="@(CurrentTab == "overview")" Href="@TabUrl(null)" Icon="@Icons.Material.Outlined.Forum">Overview</TabLink>
         <TabLink Active="@(CurrentTab == "commits")" Href="@TabUrl("commits")" Icon="@Icons.Material.Outlined.Commit" Count="@(changes?.Commits.Count ?? 0)">Commits</TabLink>
         <TabLink Active="@(CurrentTab == "files")" Href="@TabUrl("files")" Icon="@Icons.Material.Outlined.Difference" Count="@(changes?.Files.Count ?? 0)">Files changed</TabLink>
+        <TabLink Active="@(CurrentTab == "security")" Href="@TabUrl("security")" Icon="@Icons.Material.Outlined.Shield">Security</TabLink>
     </nav>
 
     @if (actionError != null)
@@ -115,6 +116,10 @@ else if (pr != null)
             {
                 @if (changes == null) { <div class="empty">The commits for this pull request are no longer available.</div> }
                 else { <CommitList Commits="changes.Commits" Repo="repo" Users="usersByEmail" /> }
+            }
+            else if (CurrentTab == "security")
+            {
+                <GitBench.Components.Security.PrSecurityPanel PullRequest="pr" />
             }
             else if (CurrentTab == "files")
             {
@@ -444,7 +449,7 @@ else if (pr != null)
     // A fork PR's author may comment on it with ViewProject alone (see PullRequestService.Forks.cs).
     private bool canComment;
 
-    private string CurrentTab => Tab is "commits" or "files" ? Tab : "overview";
+    private string CurrentTab => Tab is "commits" or "files" or "security" ? Tab : "overview";
     private string TabUrl(string? tab) => RepoUrls.PullRequest(pr!) + (tab == null ? "" : "?tab=" + tab);
     private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean && !pr.Repository.IsArchived
                              && (gate == null || !gate.Blocked || gate.CanBypass);

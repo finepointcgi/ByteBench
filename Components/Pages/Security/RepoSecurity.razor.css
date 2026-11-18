@@ -1,0 +1,8 @@
+.sec-detail-title { overflow-wrap: anywhere; line-height: 1.3; }
+.sec-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 12px 0 0; }
+.sec-facts dt { color: var(--muted); font-size: 12px; padding-top: 1px; }
+.sec-facts dd { margin: 0; overflow-wrap: anywhere; }
+.sec-reason { margin-top: 2px; font-style: italic; }
+.sec-message { margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px 12px; border-radius: var(--radius); background: var(--mud-palette-background-gray); }
+.sec-snippet { display: inline-block; margin: 8px 0; padding: 6px 12px; border-radius: 6px; background: var(--mud-palette-background-gray); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+@media (max-width: 600px) { .sec-facts { grid-template-columns: 1fr; } }

@@ -1,0 +1,103 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "ExampleScanner",
+          "version": "3.2.0",
+          "rules": [
+            {
+              "id": "EX001",
+              "name": "HardcodedPassword",
+              "shortDescription": {
+                "text": "Hard-coded password"
+              },
+              "helpUri": "https://example.com/rules/EX001",
+              "properties": {
+                "tags": [
+                  "security",
+                  "secret"
+                ],
+                "security-severity": "9.1"
+              }
+            },
+            {
+              "id": "EX002",
+              "shortDescription": {
+                "text": "Weak hash (MD5)"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "EX001",
+          "message": {
+            "text": "Password literal assigned to 'dbPassword'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:///workspace/src/Config.cs"
+                },
+                "region": {
+                  "startLine": 7,
+                  "snippet": {
+                    "text": "var dbPassword = \"hunter2\";"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "EX002",
+          "message": {
+            "text": "MD5 is not collision resistant."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/Hash.cs"
+                },
+                "region": {
+                  "startLine": 21
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "EX002",
+          "message": {
+            "text": "MD5 is not collision resistant."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/Hash.cs"
+                },
+                "region": {
+                  "startLine": 21
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

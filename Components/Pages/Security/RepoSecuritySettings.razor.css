@@ -1,0 +1,4 @@
+.sec-code {
+    margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--mud-palette-background-gray);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow-x: auto; white-space: pre;
+}

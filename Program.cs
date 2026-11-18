@@ -79,6 +79,7 @@ builder.Services.AddScoped<ReviewerService>();
 builder.Services.AddScoped<CodeOwnersService>(); // PR features: CODEOWNERS
 builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
 builder.Services.AddCiPipelines(builder.Configuration);
+GitBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanning(builder.Services, builder.Configuration); // Night Owl reports, Security page, merge check
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
@@ -165,6 +166,7 @@ app.UseWebhookPushCapture();
 app.MapGitHttp();
 GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info/lfs/...
 app.MapCiEndpoints();
+GitBench.Services.Security.SecurityServiceCollectionExtensions.MapSecurityDownloads(app); // triage.json export
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed

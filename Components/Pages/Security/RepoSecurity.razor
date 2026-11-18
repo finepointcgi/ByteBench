@@ -1,0 +1,317 @@
+@page "/p/{Key}/repos/{Slug}/security"
+@inherits RepoPageBase
+@inject SecurityService Security
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Options.IOptionsMonitor<NightOwlOptions> NightOwl
+@implements IDisposable
+
+<PageTitle>Security · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="security" />
+
+    <div class="d-flex align-center flex-wrap gap-2 mb-3">
+        @if (branches.Count > 1)
+        {
+            <MudSelect T="string" Value="CurrentBranch" ValueChanged="SelectBranch" Label="Branch" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Style="max-width: 260px" aria-label="Branch">
+                @foreach (var b in branches) { <MudSelectItem T="string" Value="@b">@b@(b == Repo.DefaultBranch ? " (default)" : "")</MudSelectItem> }
+            </MudSelect>
+        }
+        else
+        {
+            <span class="mud-text-secondary">Branch <span class="branch-pill">@CurrentBranch</span></span>
+        }
+        <div class="ml-auto d-flex align-center flex-wrap gap-2">
+            @if (NightOwl.CurrentValue.SafeDashboardUrl is { } dashboard)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.OpenInNew" Href="@dashboard" Target="_blank"
+                           rel="noopener noreferrer">Night Owl dashboard</MudButton>
+            }
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" Href="@SecurityUrls.TriageExport(Repo)"
+                       title="Triage decisions as Night Owl's .nightowl/triage.json">Export triage</MudButton>
+            @if (canManage)
+            {
+                <MudMenu Label="Import triage" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Upload" Dense="true">
+                    <MudMenuItem OnClick="ImportFromRepository">From @NightOwlTriageFile.RepositoryPath on @Repo.DefaultBranch</MudMenuItem>
+                    <MudMenuItem OnClick="ImportPasted">Paste a triage.json…</MudMenuItem>
+                </MudMenu>
+                <MudIconButton Icon="@Icons.Material.Outlined.Settings" Size="Size.Small" Href="@SecurityUrls.Settings(Repo)" aria-label="Security settings" title="Security settings" />
+            }
+        </div>
+    </div>
+
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+    @if (detail != null)
+    {
+        var f = detail.View.Finding;
+        <MudPaper Outlined="true" Class="pa-4 mb-4 sec-detail" aria-label="Finding detail">
+            <div class="d-flex align-start gap-2">
+                <SeverityChip Severity="f.Severity" />
+                <div class="gb-min0" style="flex: 1">
+                    <MudText Typo="Typo.h6" HtmlTag="h2" Class="sec-detail-title">@f.Title</MudText>
+                    <div class="small muted">@SecurityLabels.Category(f.Category) · <span class="mono">@f.RuleId</span> · fingerprint <span class="mono">@f.Fingerprint</span></div>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Href="@SecurityUrls.Repo(Repo, CurrentBranch)" aria-label="Close detail" />
+            </div>
+            <dl class="sec-facts">
+                <dt>Status</dt>
+                <dd>
+                    @SecurityLabels.Triage(detail.View.State)
+                    @if (detail.View.Triage is { } t)
+                    {
+                        <span class="muted"> · @(t.User?.DisplayName ?? t.By ?? "someone") @Display.Ago(t.At)@(t.ExpiresAt is { } e ? $" · expires {e.ToLocalTime():MMM d, yyyy}" : "")@(t.IsActive(DateTime.UtcNow) ? "" : " (expired)")</span>
+                        @if (t.Reason != null) { <div class="sec-reason">“@t.Reason”</div> }
+                    }
+                    else if (f.ReportedTriage != SecurityTriageState.New)
+                    {
+                        <span class="muted"> · from the repository's @NightOwlTriageFile.RepositoryPath</span>
+                    }
+                </dd>
+                @if (f.PackageName != null)
+                {
+                    <dt>Package</dt>
+                    <dd><span class="mono">@FindingRow.Package(f)</span>@(f.Ecosystem != null ? $" ({f.Ecosystem})" : "")</dd>
+                    <dt>Fixed in</dt>
+                    <dd>@(f.FixedVersions is { } fv ? fv : "no fixed version known")</dd>
+                }
+                @if (f.FilePath != null)
+                {
+                    <dt>Location</dt>
+                    <dd>
+                        @if (detail.LastSeen is { } seen)
+                        {
+                            <a class="mono" href="@(RepoUrls.Source(Repo, seen.CommitSha, f.FilePath))">@FindingRow.Location(f)</a>
+                        }
+                        else { <span class="mono">@FindingRow.Location(f)</span> }
+                        @if (f.Context is { } ctx && ctx != "production") { <span class="muted"> · @ctx code</span> }
+                    </dd>
+                }
+                @if (f.Aliases != null) { <dt>Also known as</dt><dd class="mono">@f.Aliases.Replace(",", ", ")</dd> }
+                @if (f.Engines != null) { <dt>Engines</dt><dd>@f.Engines.Replace(",", ", ")</dd> }
+                @if (f.HelpUrl != null) { <dt>Reference</dt><dd><a href="@f.HelpUrl" target="_blank" rel="noopener noreferrer">@f.HelpUrl</a></dd> }
+                <dt>Seen</dt>
+                <dd>
+                    in @detail.ScanCount scan@(detail.ScanCount == 1 ? "" : "s")
+                    @if (detail.FirstSeen is { } first)
+                    {
+                        <span> · first <a href="@PipelineUrls.Detail(Repo, first.PipelineId)">pipeline #@first.PipelineId</a> on <span class="branch-pill">@first.Ref</span> @Display.Ago(first.CreatedAt)</span>
+                    }
+                    @if (detail.LastSeen is { } last && last.Id != detail.FirstSeen?.Id)
+                    {
+                        <span> · last <a href="@PipelineUrls.Detail(Repo, last.PipelineId)">pipeline #@last.PipelineId</a> on <span class="branch-pill">@last.Ref</span></span>
+                    }
+                </dd>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(f.Message) && f.Message != f.Title)
+            {
+                <div class="sec-message">@f.Message</div>
+            }
+            @if (canTriage)
+            {
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    @if (detail.View.IsOpen)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="busy" OnClick="() => Dismiss(SecurityTriageState.FalsePositive)">False positive…</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="busy" OnClick="() => Dismiss(SecurityTriageState.AcceptedRisk)">Accept risk…</MudButton>
+                        @if (detail.View.State != SecurityTriageState.Confirmed)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Disabled="busy" OnClick="() => SetState(SecurityTriageState.Confirmed)">Confirm</MudButton>
+                        }
+                    }
+                    @if (detail.View.Triage != null && detail.View.Triage.State != SecurityTriageState.New)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="busy" OnClick="() => SetState(SecurityTriageState.New)">Reopen</MudButton>
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+
+    @if (snapshot == null)
+    {
+        <div class="empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Shield" Size="Size.Large" /><br />
+            No security scan on <b>@CurrentBranch</b> yet. Add Night Owl to <span class="mono">@CiFile.FileName</span>:
+            <pre class="sec-snippet">include: [nightowl]</pre>
+            Each pipeline then scans dependencies, code, secrets, IaC and container images, and the results appear here.
+            @if (canManage) { <span> See <a href="@SecurityUrls.Settings(Repo)">Security settings</a> for options.</span> }
+        </div>
+    }
+    else
+    {
+        var open = snapshot.Open.ToList();
+        <MudPaper Outlined="true" Class="pa-4 mb-4">
+            <div class="d-flex align-center flex-wrap gap-2 mb-2">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mr-2">@open.Count open finding@(open.Count == 1 ? "" : "s")</MudText>
+                @foreach (var sev in new[] { SecuritySeverity.Critical, SecuritySeverity.High, SecuritySeverity.Medium, SecuritySeverity.Low })
+                {
+                    var n = open.Count(o => o.Severity == sev);
+                    @if (n > 0) { <SeverityChip Severity="sev" Count="n" /> }
+                }
+                <span class="small muted ml-auto">
+                    Latest scan: <a href="@PipelineUrls.Detail(Repo, snapshot.PipelineId)">pipeline #@snapshot.PipelineId</a>
+                    at <a class="sha-pill" href="@RepoUrls.Commit(Repo, snapshot.CommitSha)">@snapshot.CommitSha[..Math.Min(7, snapshot.CommitSha.Length)]</a>
+                    · @Display.Ago(snapshot.CreatedAt)
+                    · @string.Join(", ", snapshot.Scans.Select(s => s.ToolName ?? s.Format).Distinct())
+                </span>
+            </div>
+            <SecurityTrendChart Points="trend" />
+        </MudPaper>
+
+        <div class="d-flex align-center flex-wrap gap-3 mb-3 sec-filters">
+            <MudSelect T="string" @bind-Value="stateFilter" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="max-width: 160px">
+                <MudSelectItem T="string" Value="@("open")">Open</MudSelectItem>
+                <MudSelectItem T="string" Value="@("dismissed")">Dismissed</MudSelectItem>
+                <MudSelectItem T="string" Value="@("all")">All</MudSelectItem>
+            </MudSelect>
+            <MudSelect T="SecuritySeverity?" @bind-Value="minSeverity" Label="Severity" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="max-width: 170px" Clearable="true">
+                @foreach (var s in new[] { SecuritySeverity.Critical, SecuritySeverity.High, SecuritySeverity.Medium, SecuritySeverity.Low, SecuritySeverity.Info })
+                {
+                    <MudSelectItem T="SecuritySeverity?" Value="@s">@s and above</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="SecurityCategory?" @bind-Value="category" Label="Category" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="max-width: 200px" Clearable="true">
+                @foreach (var c in Enum.GetValues<SecurityCategory>())
+                {
+                    <MudSelectItem T="SecurityCategory?" Value="@c">@SecurityLabels.Category(c) (@snapshot.Findings.Count(x => x.Finding.Category == c))</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField T="string" @bind-Value="text" Immediate="true" DebounceInterval="250" Placeholder="Filter: CVE, package, file, rule…" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Style="max-width: 320px" aria-label="Filter findings" />
+        </div>
+
+        var shown = SecurityService.Apply(snapshot.Findings, new SecurityFindingFilter(null, minSeverity, category, stateFilter, text)).ToList();
+        <div class="gb-rows">
+            @if (shown.Count == 0) { <div class="empty">No findings match.</div> }
+            @foreach (var v in shown.Take(limit))
+            {
+                <FindingRow @key="v.Fingerprint" View="v" Repo="Repo" Branch="@CurrentBranch" />
+            }
+        </div>
+        @if (shown.Count > limit)
+        {
+            <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-2" OnClick="() => limit += 200">Show more (@(shown.Count - limit) left)</MudButton>
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "branch")] public string? Branch { get; set; }
+    [SupplyParameterFromQuery(Name = "finding")] public string? Finding { get; set; }
+
+    private SecuritySnapshot? snapshot;
+    private SecurityFindingDetail? detail;
+    private List<SecurityTrendPoint> trend = [];
+    private List<string> branches = [];
+    private bool canManage, canTriage, busy;
+    private string stateFilter = "open";
+    private SecuritySeverity? minSeverity;
+    private SecurityCategory? category;
+    private string? text;
+    private int limit = 200;
+    private IDisposable? sub;
+    private int reloadPending;
+
+    private string CurrentBranch => string.IsNullOrEmpty(Branch) ? Repo!.DefaultBranch : Branch;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        var perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        canManage = perms.Can(Permission.ManageRepositories);
+        canTriage = perms.Can(Permission.PushCode);
+        await LoadAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+    }
+
+    private async Task OnPipelineChanged(PipelineChanged e)
+    {
+        if (Repo == null || e.RepositoryId != Repo.Id) return;
+        if (Interlocked.Exchange(ref reloadPending, 1) == 1) return;
+        await Task.Delay(1500);
+        Interlocked.Exchange(ref reloadPending, 0);
+        await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
+    private async Task LoadAsync()
+    {
+        branches = await Security.BranchesAsync(Repo!);
+        snapshot = await Security.SnapshotAsync(Repo!, CurrentBranch);
+        trend = await Security.TrendAsync(Repo!, CurrentBranch);
+        detail = string.IsNullOrEmpty(Finding) ? null : await Security.GetAsync(Repo!, Finding, CurrentBranch);
+    }
+
+    private void SelectBranch(string branch) => Nav.NavigateTo(SecurityUrls.Repo(Repo!, branch));
+
+    private async Task Dismiss(SecurityTriageState state)
+    {
+        var dialog = await Dialogs.ShowAsync<TriageDialog>("Dismiss finding", new DialogParameters<TriageDialog>
+        {
+            { x => x.State, state }, { x => x.FindingTitle, detail!.View.Finding.Title },
+        }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is { Canceled: false, Data: TriageDialog.Result r })
+            await Run(() => Security.TriageAsync(Repo!, detail!.View.Fingerprint, state, r.Reason, r.Expires), $"Marked as {SecurityLabels.Triage(state).ToLowerInvariant()}.");
+    }
+
+    private Task SetState(SecurityTriageState state) =>
+        Run(() => Security.TriageAsync(Repo!, detail!.View.Fingerprint, state, null), state == SecurityTriageState.New ? "Reopened." : "Confirmed.");
+
+    private async Task Run(Func<Task> action, string done)
+    {
+        busy = true;
+        Error = null;
+        try
+        {
+            await action();
+            Snackbar.Add(done, Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task ImportFromRepository()
+    {
+        if (!await Dialogs.ConfirmAsync("Import triage", $"Apply every decision in {NightOwlTriageFile.RepositoryPath} on {Repo!.DefaultBranch}? They replace GitBench's decisions for the same findings.", "Import"))
+            return;
+        await Run(async () =>
+        {
+            var n = await Security.ImportTriageFromRepositoryAsync(Repo!);
+            Snackbar.Add($"{n} decision{(n == 1 ? "" : "s")} imported.", Severity.Info);
+        }, "Triage imported.");
+    }
+
+    private async Task ImportPasted()
+    {
+        var dialog = await Dialogs.ShowAsync<EditorPromptDialog>("Import triage", new DialogParameters<EditorPromptDialog>
+        {
+            { x => x.Title, "Import a Night Owl triage file" },
+            { x => x.Message, $"Paste the contents of {NightOwlTriageFile.RepositoryPath}. Each decision replaces GitBench's for that fingerprint; \"new\" removes it." },
+            { x => x.Label, "triage.json" },
+            { x => x.ButtonText, "Import" },
+            { x => x.Multiline, true },
+        }, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is { Canceled: false, Data: string json })
+            await Run(async () =>
+            {
+                var n = await Security.ImportTriageAsync(Repo!, json);
+                Snackbar.Add($"{n} decision{(n == 1 ? "" : "s")} imported.", Severity.Info);
+            }, "Triage imported.");
+    }
+
+    public void Dispose() => sub?.Dispose();
+}

@@ -1,0 +1,10 @@
+@* A small coloured severity label (critical, high, medium, low, info). *@
+<span class="sev @SecurityLabels.SeverityCss(Severity)" title="@($"Severity: {Severity}")">@Label</span>
+
+@code {
+    [Parameter, EditorRequired] public SecuritySeverity Severity { get; set; }
+    [Parameter] public int? Count { get; set; }
+
+    private string Label => Count is { } c ? $"{c} {Name}" : Name;
+    private string Name => Severity == SecuritySeverity.Unknown ? "unknown" : Severity.ToString().ToLowerInvariant();
+}

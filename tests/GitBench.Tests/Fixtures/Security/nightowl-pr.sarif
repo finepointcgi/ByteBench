@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Night Owl",
+          "version": "0.1.1",
+          "rules": [
+            {
+              "id": "aws-access-token",
+              "shortDescription": {
+                "text": "AWS access key committed"
+              },
+              "properties": {
+                "tags": [
+                  "secret"
+                ]
+              }
+            },
+            {
+              "id": "python.lang.security.audit.formatted-sql-query",
+              "shortDescription": {
+                "text": "SQL built with string formatting"
+              },
+              "properties": {
+                "tags": [
+                  "code"
+                ]
+              }
+            },
+            {
+              "id": "license/denied",
+              "shortDescription": {
+                "text": "left-pad-gpl@1.0.0 uses GPL-3.0-only (denied by policy)"
+              },
+              "properties": {
+                "tags": [
+                  "license"
+                ]
+              }
+            },
+            {
+              "id": "DS002",
+              "shortDescription": {
+                "text": "Image user should not be 'root'"
+              },
+              "properties": {
+                "tags": [
+                  "infrastructure"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2023-44487",
+              "shortDescription": {
+                "text": "HTTP/2 Rapid Reset in libnghttp2-14@1.52.0-1 (image nginx:1.25)"
+              },
+              "properties": {
+                "tags": [
+                  "vulnerability"
+                ]
+              }
+            },
+            {
+              "id": "complexity",
+              "shortDescription": {
+                "text": "render() has cyclomatic complexity 23 (max 15)"
+              },
+              "properties": {
+                "tags": [
+                  "quality"
+                ]
+              }
+            },
+            {
+              "id": "javascript.browser.security.eval-detected",
+              "shortDescription": {
+                "text": "eval() with dynamic input"
+              },
+              "properties": {
+                "tags": [
+                  "code"
+                ]
+              }
+            },
+            {
+              "id": "duplication",
+              "shortDescription": {
+                "text": "42 duplicated lines (app/api.py, app/views.py)"
+              },
+              "properties": {
+                "tags": [
+                  "quality"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "aws-access-token",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Identified a pattern that may indicate an AWS access key."
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "02257fd41e6907613b51c092d1a64f05"
+          },
+          "properties": {
+            "severity": "Critical",
+            "engines": [
+              "gitleaks"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "config/settings.py"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "python.lang.security.audit.formatted-sql-query",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "Detected possible formatted SQL query. Use parameterized queries instead."
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "a06f2fbfa39f1f4a2a210c1e64c0034f"
+          },
+          "properties": {
+            "severity": "Medium",
+            "engines": [
+              "opengrep"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/db.py"
+                },
+                "region": {
+                  "startLine": 40
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "license/denied",
+          "ruleIndex": 2,
+          "level": "warning",
+          "message": {
+            "text": "left-pad-gpl@1.0.0 uses GPL-3.0-only (denied by policy)"
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "8191934646596fd363a3d5c253ab8592"
+          },
+          "properties": {
+            "severity": "Medium",
+            "engines": [
+              "syft"
+            ]
+          }
+        },
+        {
+          "ruleId": "DS002",
+          "ruleIndex": 3,
+          "level": "note",
+          "message": {
+            "text": "Image user should not be 'root'"
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "1b6d257d4dcac6df4cd657ae8455b1c9"
+          },
+          "properties": {
+            "severity": "Low",
+            "engines": [
+              "trivy"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Dockerfile"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2023-44487",
+          "ruleIndex": 4,
+          "level": "error",
+          "message": {
+            "text": "HTTP/2 Rapid Reset in libnghttp2-14@1.52.0-1 (image nginx:1.25)"
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "2356495ae6832d54cbdf62a3f84be3ec"
+          },
+          "properties": {
+            "severity": "High",
+            "engines": [
+              "trivy-image"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Dockerfile"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "complexity",
+          "ruleIndex": 5,
+          "level": "note",
+          "message": {
+            "text": "render() has cyclomatic complexity 23 (max 15)"
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "3716fd71a893335bfec443739c070f59"
+          },
+          "properties": {
+            "severity": "Low",
+            "engines": [
+              "lizard"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/views.py"
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "javascript.browser.security.eval-detected",
+          "ruleIndex": 6,
+          "level": "error",
+          "message": {
+            "text": "eval() with dynamic input"
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "74f83d20fa17990c6b5da0916324e011"
+          },
+          "properties": {
+            "severity": "High",
+            "engines": [
+              "opengrep"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tests/fixtures/eval.js"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "python.lang.security.audit.formatted-sql-query",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "User input flows into a SQL statement."
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "89ff3fd191545727b6e5793b1b72b7f8"
+          },
+          "properties": {
+            "severity": "Critical",
+            "engines": [
+              "opengrep"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/api.py"
+                },
+                "region": {
+                  "startLine": 88
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "duplication",
+          "ruleIndex": 7,
+          "level": "note",
+          "message": {
+            "text": "42 duplicated lines (app/api.py, app/views.py)"
+          },
+          "partialFingerprints": {
+            "nightowl/v1": "1a5c99c04c4549a25dafd0e7d1c47ac8"
+          },
+          "properties": {
+            "severity": "Low",
+            "engines": [
+              "lizard"
+            ]
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/api.py"
+                },
+                "region": {
+                  "startLine": 120
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

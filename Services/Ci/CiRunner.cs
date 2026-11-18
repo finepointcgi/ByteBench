@@ -356,6 +356,21 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 postNotes.Add($"[gitbench] Could not save the cache or artifacts: {ex.Message}");
                 if (extras.Artifacts != null && result == PipelineStatus.Passed) result = PipelineStatus.Failed;
             }
+            // Security reports (artifacts.reports): read whether the job passed or failed (a failed quality gate still has a report).
+            if (extras.Artifacts?.Reports is { Count: > 0 } reports && lastStarted != null && !ct.IsCancellationRequested && Directory.Exists(workspace))
+            {
+                try
+                {
+                    using var scope = scopes.CreateScope();
+                    postNotes.AddRange(await scope.ServiceProvider.GetRequiredService<Security.SecurityIngestor>()
+                        .IngestWorkspaceAsync(p.Id, job.Id, workspace, reports));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    log.LogWarning(ex, "Reading the security reports of job {Job} failed", job.Id);
+                    postNotes.Add($"[gitbench] Could not read the security reports: {ex.Message}");
+                }
+            }
             if (postNotes.Count > 0 && lastStarted != null) await AppendLogAsync(lastStarted.Id, postNotes, run.Variables);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

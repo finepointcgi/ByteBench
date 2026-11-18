@@ -243,6 +243,8 @@ public enum NotificationKind
     PipelineFailed,
     IssueLinked, IssueHierarchyChanged,
     Automation,
+    /// <summary>New high-severity security findings on a repository's default branch (Services/Security).</summary>
+    SecurityFindings,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -1884,5 +1886,116 @@ public class ProjectEditorSettings
     public int ProjectId { get; set; }
     /// <summary>The AI assistant, inline actions and completions in the web editor. On by default (when AI is configured).</summary>
     public bool AiEnabled { get; set; } = true;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- Security scanning (Night Owl) -----
+
+/// <summary>Finding severity. Same order and values as Night Owl's <c>Severity</c>, so comparisons work (Critical &gt; High &gt; …).</summary>
+public enum SecuritySeverity { Unknown = 0, Info = 1, Low = 2, Medium = 3, High = 4, Critical = 5 }
+
+/// <summary>
+/// What kind of problem a finding is. Night Owl's categories, with dependency vulnerabilities split into packages
+/// (<see cref="Dependency"/>, SCA) and container images (<see cref="Container"/>).
+/// </summary>
+public enum SecurityCategory { Dependency, License, Code, Secret, Infrastructure, Container, Dynamic, Quality }
+
+/// <summary>A triage decision. Same states as Night Owl's <c>TriageState</c> (and its shared <c>.nightowl/triage.json</c>).</summary>
+public enum SecurityTriageState { New, Confirmed, FalsePositive, AcceptedRisk, Fixed }
+
+/// <summary>One security report (Night Owl JSON or SARIF 2.1) published by a CI job through <c>artifacts.reports</c>.</summary>
+public class SecurityScan
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public int PipelineId { get; set; }
+    public int JobId { get; set; }
+    [Required, MaxLength(250)] public string Ref { get; set; } = "";
+    [Required, MaxLength(40)] public string CommitSha { get; set; } = "";
+    /// <summary>"nightowl" (native JSON) or "sarif".</summary>
+    [Required, MaxLength(20)] public string Format { get; set; } = "nightowl";
+    [MaxLength(100)] public string? ToolName { get; set; }
+    [MaxLength(50)] public string? ToolVersion { get; set; }
+    /// <summary>Finding counts at ingestion (after triage then in effect), for the trend chart.</summary>
+    public int Critical { get; set; }
+    public int High { get; set; }
+    public int Medium { get; set; }
+    public int Low { get; set; }
+    /// <summary>Info and Unknown.</summary>
+    public int Other { get; set; }
+    /// <summary>Findings dismissed (false positive, accepted risk, fixed) when the scan was ingested.</summary>
+    public int Dismissed { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public List<SecurityFinding> Findings { get; set; } = [];
+}
+
+/// <summary>One finding of a <see cref="SecurityScan"/>. <see cref="Fingerprint"/> is Night Owl's stable id (the same issue across scans).</summary>
+public class SecurityFinding
+{
+    public int Id { get; set; }
+    public int ScanId { get; set; }
+    public SecurityScan Scan { get; set; } = null!;
+    public int RepositoryId { get; set; }
+    [Required, MaxLength(64)] public string Fingerprint { get; set; } = "";
+    public SecurityCategory Category { get; set; }
+    public SecuritySeverity Severity { get; set; }
+    /// <summary>Rule or advisory id (CVE-…, GHSA-…, a Semgrep/Opengrep rule id).</summary>
+    [Required, MaxLength(200)] public string RuleId { get; set; } = "";
+    [Required, MaxLength(500)] public string Title { get; set; } = "";
+    public string? Message { get; set; }
+    [MaxLength(200)] public string? PackageName { get; set; }
+    [MaxLength(100)] public string? PackageVersion { get; set; }
+    [MaxLength(200)] public string? Ecosystem { get; set; }
+    /// <summary>Comma-separated versions that fix it.</summary>
+    [MaxLength(500)] public string? FixedVersions { get; set; }
+    [MaxLength(1000)] public string? FilePath { get; set; }
+    public int? Line { get; set; }
+    /// <summary>Comma-separated engines that reported it (opengrep, osv-scanner, gitleaks, trivy, …).</summary>
+    [MaxLength(300)] public string? Engines { get; set; }
+    /// <summary>Comma-separated other ids for the same issue (CVE, GHSA, OSV).</summary>
+    [MaxLength(2000)] public string? Aliases { get; set; }
+    /// <summary>First reference URL (advisory, rule docs).</summary>
+    [MaxLength(1000)] public string? HelpUrl { get; set; }
+    /// <summary>Night Owl's path context: production, test, example, docs, generated or vendored.</summary>
+    [MaxLength(20)] public string? Context { get; set; }
+    /// <summary>The triage state the report itself carried (from the repository's <c>.nightowl/triage.json</c> at scan time).</summary>
+    public SecurityTriageState ReportedTriage { get; set; }
+}
+
+/// <summary>
+/// A triage decision for one finding of a repository, keyed by fingerprint so it sticks across scans and branches.
+/// Mirrors a Night Owl <c>TriageDecision</c>; exported and imported as <c>.nightowl/triage.json</c>.
+/// </summary>
+public class SecurityTriage
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    [Required, MaxLength(64)] public string Fingerprint { get; set; } = "";
+    public SecurityTriageState State { get; set; }
+    [MaxLength(2000)] public string? Reason { get; set; }
+    /// <summary>Accepted risks (and other decisions) can expire; after that the finding counts again.</summary>
+    public DateTime? ExpiresAt { get; set; }
+    /// <summary>Title at decision time, so an exported file stays readable.</summary>
+    [MaxLength(500)] public string? Title { get; set; }
+    public int? UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>Who decided, as written in an imported file (when it isn't a GitBench user).</summary>
+    [MaxLength(200)] public string? By { get; set; }
+    public DateTime At { get; set; } = DateTime.UtcNow;
+
+    public bool IsActive(DateTime now) => ExpiresAt is not { } e || e > now;
+    /// <summary>False positive, accepted risk or fixed: the finding doesn't count as open (Night Owl's quality gate rule).</summary>
+    public bool Dismisses(DateTime now) => IsActive(now) && State is SecurityTriageState.FalsePositive or SecurityTriageState.AcceptedRisk or SecurityTriageState.Fixed;
+}
+
+/// <summary>Per-repository security settings (Maintainer+). No row means the defaults.</summary>
+public class RepositorySecuritySettings
+{
+    public int RepositoryId { get; set; }
+    /// <summary>Adds the "Security" merge check: pull requests must not introduce findings at or above <see cref="MergeCheckSeverity"/>.</summary>
+    public bool MergeCheckEnabled { get; set; }
+    public SecuritySeverity MergeCheckSeverity { get; set; } = SecuritySeverity.High;
+    /// <summary>Notify Maintainers (and send the webhook) when the default branch gets new findings at or above this severity.</summary>
+    public SecuritySeverity NotifySeverity { get; set; } = SecuritySeverity.High;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
