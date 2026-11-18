@@ -470,7 +470,8 @@ a.tree-commit:hover { color: var(--accent); }
 .gb-project-switch .mud-input-outlined-border { border-color: rgba(255,255,255,.18) !important; }
 .gb-project-switch .mud-input, .gb-project-switch .mud-select-input, .gb-project-switch .mud-input-adornment-icon { color: #fff !important; }
 .gb-project-switch .mud-input-control { margin: 0 !important; }
-.gb-user-activator { display: inline-flex; padding: 4px; cursor: pointer; }
+.gb-user-activator { all: unset; display: inline-flex; padding: 4px; cursor: pointer; border-radius: 50%; }
+.gb-user-activator:focus-visible { outline: 2px solid #a78bfa; }
 .gb-signout-form { margin: 0; }
 .gb-signout { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; padding: 6px 16px; cursor: pointer; font-size: .875rem; }
 .gb-signout:hover { background: var(--mud-palette-action-default-hover); }

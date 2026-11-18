@@ -18,7 +18,7 @@
         <MudDivider />
         @if (latest.Count == 0)
         {
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">You're all caught up.</MudText>
+            <MudText Typo="Typo.body2" Class="pa-4 mud-text-secondary">You're all caught up.</MudText>
         }
         <MudList T="int" Dense="true" Class="py-0">
             @foreach (var n in latest)
@@ -28,7 +28,7 @@
                         <Avatar User="n.Actor" Size="24" />
                         <div class="flex-grow-1">
                             <MudText Typo="Typo.body2"><b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind) <span>@n.Title</span></MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@Display.Ago(n.CreatedAt)</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@Display.Ago(n.CreatedAt)</MudText>
                         </div>
                         @if (!n.IsRead) { <span class="gb-notif-dot" title="Unread"></span> }
                     </div>

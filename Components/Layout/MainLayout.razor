@@ -44,13 +44,13 @@
         {
             <NotificationBell />
             <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Account menu">
-                <ActivatorContent>
-                    <span class="gb-user-activator"><Avatar User="Me.User" Size="28" /></span>
+                <ActivatorContent Context="menu">
+                    <button type="button" class="gb-user-activator" aria-label="Account menu" @onclick="menu.ToggleAsync"><Avatar User="Me.User" Size="28" /></button>
                 </ActivatorContent>
                 <ChildContent>
                     <div class="px-4 py-2">
                         <MudText Typo="Typo.subtitle2">@Me.User.DisplayName</MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@@@Me.User.UserName</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@@@Me.User.UserName</MudText>
                     </div>
                     <MudDivider />
                     @* Profile is static SSR ([ExcludeFromInteractiveRouting]); force a full load from interactive pages. *@
