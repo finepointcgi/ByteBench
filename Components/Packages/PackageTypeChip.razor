@@ -1,0 +1,11 @@
+@* The kind of a package (NuGet, npm, container image) as a small chip. *@
+
+<MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@Color" Icon="@Icon" Class="ma-0">@Text</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public PackageType Type { get; set; }
+
+    private string Text => Type switch { PackageType.NuGet => "NuGet", PackageType.Npm => "npm", _ => "Container" };
+    private string Icon => Type == PackageType.Container ? Icons.Material.Outlined.Layers : Icons.Material.Outlined.Inventory2;
+    private Color Color => Type switch { PackageType.NuGet => Color.Primary, PackageType.Npm => Color.Error, _ => Color.Info };
+}

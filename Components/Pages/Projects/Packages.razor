@@ -1,0 +1,135 @@
+@page "/p/{Key}/packages"
+@using GitBench.Services.Packages
+@using GitBench.Components.Packages
+@using GitBench.Services.Attachments
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject PackageService PackageSvc
+@inject NavigationManager Nav
+@inject GitBench.Api.PublicBaseUrl PublicUrl
+
+<PageTitle>Packages · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+<div class="pk-page">
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Packages</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                NuGet, npm and container images published to @project.Name · @AttachmentFormat.Size(usage) used
+            </MudText>
+        </div>
+        @if (perms.Can(Permission.DeletePackages))
+        {
+            <MudButton Href="@($"/p/{project.Key}/settings#packages")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Settings">Registry settings</MudButton>
+        }
+    </div>
+
+    @if (!enabled)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            The package registry is turned off for this project. @(perms.Can(Permission.DeletePackages) ? "Turn it on in the project settings." : "A Maintainer can turn it on.")
+        </MudAlert>
+    }
+    else
+    {
+        <div class="pk-filters">
+            <MudToggleGroup T="PackageType?" @bind-Value="typeFilter" Size="Size.Small" Outlined="true" CheckMark="false" aria-label="Package type">
+                <MudToggleItem Value="@((PackageType?)null)" Text="All" />
+                <MudToggleItem Value="@((PackageType?)PackageType.NuGet)" Text="NuGet" />
+                <MudToggleItem Value="@((PackageType?)PackageType.Npm)" Text="npm" />
+                <MudToggleItem Value="@((PackageType?)PackageType.Container)" Text="Containers" />
+            </MudToggleGroup>
+            <MudTextField T="string" @bind-Value="search" Immediate="true" Placeholder="Filter by name" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Class="pk-search" aria-label="Filter packages by name" />
+        </div>
+
+        @if (packages.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">Nothing published yet. Use the commands below to publish your first package or image.</MudText>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Class="mb-4">
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="pk-table">
+                    <thead>
+                        <tr><th>Name</th><th>Type</th><th>Latest</th><th class="num">Versions</th><th class="num">Size</th><th>Last published</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in Filtered)
+                        {
+                            <tr @key="p.Id">
+                                <td><a href="@PackageUrls.Detail(project.Key, p.Id)" class="pk-name">@p.Name</a></td>
+                                <td><PackageTypeChip Type="p.Type" /></td>
+                                <td class="mono">@(p.LatestVersion ?? "—")</td>
+                                <td class="num">@p.VersionCount</td>
+                                <td class="num">@AttachmentFormat.Size(p.Size)</td>
+                                <td title="@p.UpdatedAt.ToString("u")">@p.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        }
+
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Publish &amp; install</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Authenticate with your user name and a <MudLink OnClick="OpenTokens" Typo="Typo.body2">personal access token</MudLink> (write_repository or write_api to publish).
+            CI jobs get <span class="mono">GITBENCH_REGISTRY_USER</span> / <span class="mono">GITBENCH_REGISTRY_PASSWORD</span> (a job token for this project),
+            <span class="mono">GITBENCH_REGISTRY</span>, <span class="mono">GITBENCH_NUGET_SOURCE_URL</span> and <span class="mono">GITBENCH_NPM_REGISTRY_URL</span>.
+        </MudText>
+        <MudTabs Elevation="0" Outlined="true" Rounded="true" PanelClass="pa-4" Class="mb-4">
+            @foreach (var t in new[] { PackageType.NuGet, PackageType.Npm, PackageType.Container })
+            {
+                <MudTabPanel Text="@(t == PackageType.Container ? "Docker" : t == PackageType.Npm ? "npm" : "NuGet")">
+                    <MudStack Spacing="2">
+                        @if (t == PackageType.NuGet) { <CopyBox Label="Source URL" Text="@PackageUrls.NuGetIndex(BaseUrl, project.Key)" /> }
+                        @if (t == PackageType.Npm) { <CopyBox Label="Registry URL" Text="@PackageUrls.NpmRegistry(BaseUrl, project.Key)" /> }
+                        @if (t == PackageType.Container) { <CopyBox Label="Image prefix" Text="@PackageUrls.ImagePrefix(BaseUrl, project.Key)" /> }
+                        <CopyBox Label="Set up" Text="@PackageUrls.SetupCommand(BaseUrl, project.Key, t)" />
+                        <CopyBox Label="Publish" Text="@PackageUrls.PublishCommand(BaseUrl, project.Key, t)" />
+                    </MudStack>
+                </MudTabPanel>
+            }
+        </MudTabs>
+    }
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound, enabled = true;
+    private List<PackageSummary> packages = [];
+    private PackageType? typeFilter;
+    private string? search;
+    private long usage;
+
+    // The profile page is static SSR: force a full load.
+    private void OpenTokens() => Nav.NavigateTo("/account/profile#tokens", forceLoad: true);
+
+    private string BaseUrl => PublicUrl.Value is { Length: > 0 } v ? v : Nav.BaseUri.TrimEnd('/');
+
+    private IEnumerable<PackageSummary> Filtered => packages
+        .Where(p => typeFilter == null || p.Type == typeFilter)
+        .Where(p => string.IsNullOrWhiteSpace(search) || p.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        enabled = await PackageSvc.IsEnabledAsync(project.Id);
+        if (!enabled) return;
+        packages = await PackageSvc.ListAsync(project.Id);
+        usage = await PackageSvc.ProjectUsageAsync(project.Id);
+    }
+}

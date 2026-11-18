@@ -339,6 +339,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureCustomFieldsTime(b);
         ConfigureCiExtras(b);
         ConfigureWebEditor(b);
+        ConfigurePackages(b);
     }
 
     // ----- Forks -----
@@ -535,5 +536,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<EditorWorkspaceChange>().HasOne<EditorWorkspace>().WithMany(w => w.Changes).HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectEditorSettings>().HasKey(s => s.ProjectId);
         b.Entity<ProjectEditorSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+    }
+    // ----- Package & container registry -----
+    public DbSet<Package> Packages => Set<Package>();
+    public DbSet<PackageVersion> PackageVersions => Set<PackageVersion>();
+    public DbSet<PackageFile> PackageFiles => Set<PackageFile>();
+    public DbSet<ContainerBlob> ContainerBlobs => Set<ContainerBlob>();
+    public DbSet<PackageDistTag> PackageDistTags => Set<PackageDistTag>();
+    public DbSet<ProjectPackageSettings> ProjectPackageSettings => Set<ProjectPackageSettings>();
+
+    private static void ConfigurePackages(ModelBuilder b)
+    {
+        b.Entity<Package>().HasIndex(p => new { p.ProjectId, p.Type, p.NormalizedName }).IsUnique();
+        b.Entity<Package>().HasOne(p => p.Project).WithMany().HasForeignKey(p => p.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PackageVersion>().HasIndex(v => new { v.PackageId, v.NormalizedVersion }).IsUnique();
+        b.Entity<PackageVersion>().HasOne(v => v.Package).WithMany(p => p.Versions).HasForeignKey(v => v.PackageId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PackageVersion>().HasOne(v => v.PublishedBy).WithMany().HasForeignKey(v => v.PublishedById).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<PackageFile>().HasIndex(f => f.PackageVersionId);
+        b.Entity<PackageFile>().HasIndex(f => f.Sha256);
+        b.Entity<PackageFile>().HasOne<PackageVersion>().WithMany(v => v.Files).HasForeignKey(f => f.PackageVersionId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ContainerBlob>().HasIndex(x => new { x.PackageId, x.Sha256 }).IsUnique();
+        b.Entity<ContainerBlob>().HasIndex(x => x.Sha256);
+        b.Entity<ContainerBlob>().HasOne(x => x.Package).WithMany().HasForeignKey(x => x.PackageId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PackageDistTag>().HasIndex(t => new { t.PackageId, t.Tag }).IsUnique();
+        b.Entity<PackageDistTag>().HasOne<Package>().WithMany().HasForeignKey(t => t.PackageId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ProjectPackageSettings>().HasKey(s => s.ProjectId);
+        b.Entity<ProjectPackageSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
     }
 }

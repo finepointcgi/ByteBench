@@ -1,0 +1,197 @@
+@page "/p/{Key}/packages/{PackageId:int}"
+@using System.Text.Json.Nodes
+@using GitBench.Services.Packages
+@using GitBench.Components.Packages
+@using GitBench.Services.Attachments
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject PackageService PackageSvc
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject GitBench.Api.PublicBaseUrl PublicUrl
+
+<PageTitle>@(package?.Name ?? "Package") · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && package == null)
+{
+    <div class="pk-page">
+        <MudAlert Severity="Severity.Info" Dense="true">This package doesn't exist (any more). <MudLink Href="@PackageUrls.Page(project.Key)">Back to packages</MudLink></MudAlert>
+    </div>
+}
+else if (project != null && package != null)
+{
+<div class="pk-page">
+    <MudLink Href="@PackageUrls.Page(project.Key)" Typo="Typo.body2" Class="mb-2 d-inline-block">← Packages</MudLink>
+    <div class="page-header">
+        <div>
+            <div class="pk-title">
+                <MudText Typo="Typo.h5" HtmlTag="h1" Class="pk-name">@package.Name</MudText>
+                <PackageTypeChip Type="package.Type" />
+            </div>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                @package.Versions.Count @(package.Type == PackageType.Container ? "tag" : "version")@(package.Versions.Count == 1 ? "" : "s")
+                · first published @package.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")
+                @if (description != null) { <span> · @description</span> }
+            </MudText>
+        </div>
+        @if (perms.Can(Permission.DeletePackages))
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete" OnClick="DeletePackage">Delete package</MudButton>
+        }
+    </div>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => error = null" Class="mb-3">@error</MudAlert> }
+
+    <MudPaper Outlined="true" Class="pa-4 mb-4">
+        <MudStack Spacing="2">
+            <CopyBox Label="@(package.Type == PackageType.Container ? "Pull" : "Install")" Text="@PackageUrls.InstallCommand(BaseUrl, project.Key, package, Latest?.Version)" />
+            <CopyBox Label="Set up" Text="@PackageUrls.SetupCommand(BaseUrl, project.Key, package.Type)" />
+        </MudStack>
+    </MudPaper>
+
+    @if (distTags.Count > 0)
+    {
+        <div class="pk-tags mb-3">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">dist-tags:</MudText>
+            @foreach (var (tag, version) in distTags.OrderBy(t => t.Key))
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0">@tag: @version</MudChip>
+            }
+        </div>
+    }
+
+    <MudPaper Outlined="true">
+        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="pk-table">
+            <thead>
+                <tr>
+                    <th>@(package.Type == PackageType.Container ? "Tag" : "Version")</th>
+                    @if (package.Type == PackageType.Container) { <th>Digest</th> }
+                    <th class="num">Size</th><th>Published</th><th>By</th><th class="actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in package.Versions)
+                {
+                    <tr @key="v.Id">
+                        <td class="mono">@v.Version @if (Deprecated(v) is { } d) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Class="ma-0" title="@d">deprecated</MudChip> }</td>
+                        @if (package.Type == PackageType.Container)
+                        {
+                            <td class="mono" title="@v.ManifestDigest">@ShortDigest(v.ManifestDigest)</td>
+                        }
+                        <td class="num">@AttachmentFormat.Size(v.Size)</td>
+                        <td title="@v.UpdatedAt.ToString("u")">@v.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy HH:mm")</td>
+                        <td>
+                            @if (v.PipelineId is { } pid) { <span class="mud-text-secondary">CI pipeline #@pid</span> @if (v.PublishedBy != null) { <span> · </span> } }
+                            @if (v.PublishedBy is { } u) { <UserLink User="u" /> }
+                        </td>
+                        <td class="actions">
+                            <MudTooltip Text="@(package.Type == PackageType.Container ? "Copy pull command" : "Copy install command")">
+                                <MudIconButton Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small"
+                                               aria-label="@($"Copy the command for {v.Version}")" OnClick="() => Copy(PackageUrls.InstallCommand(BaseUrl, project.Key, package, v.Version))" />
+                            </MudTooltip>
+                            @if (v.Files.FirstOrDefault() is { } f)
+                            {
+                                <MudTooltip Text="@($"Download {f.FileName}")">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Href="@PackageUrls.FileDownload(BaseUrl, project.Key, package, v, f)"
+                                                   Target="_blank" aria-label="@($"Download {f.FileName}")" />
+                                </MudTooltip>
+                            }
+                            @if (perms.Can(Permission.DeletePackages))
+                            {
+                                <MudTooltip Text="Delete">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error"
+                                                   aria-label="@($"Delete {v.Version}")" OnClick="() => DeleteVersion(v)" />
+                                </MudTooltip>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int PackageId { get; set; }
+
+    private Project? project;
+    private Package? package;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private Dictionary<string, string> distTags = [];
+    private bool notFound;
+    private string? error, description;
+
+    private string BaseUrl => PublicUrl.Value is { Length: > 0 } v ? v : Nav.BaseUri.TrimEnd('/');
+    private PackageVersion? Latest => package?.Type == PackageType.Npm && distTags.TryGetValue("latest", out var l)
+        ? package.Versions.FirstOrDefault(v => v.Version == l) : package?.Versions.FirstOrDefault();
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private async Task Load()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null || !await PackageSvc.IsEnabledAsync(project.Id);
+        if (notFound) return;
+        perms = await Access.GetPermissionsAsync(project!.Id);
+        package = await PackageSvc.GetAsync(project.Id, PackageId);
+        distTags = package?.Type == PackageType.Npm ? await PackageSvc.DistTagsAsync(package.Id) : [];
+        description = Metadata(Latest)?["description"]?.GetValue<string>() is { Length: > 0 } d ? d : null;
+    }
+
+    private static JsonObject? Metadata(PackageVersion? v)
+    {
+        if (v?.MetadataJson == null) return null;
+        try { return JsonNode.Parse(v.MetadataJson) as JsonObject; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
+    private static string? Deprecated(PackageVersion v) => Metadata(v)?["deprecated"]?.GetValue<string>();
+
+    private static string ShortDigest(string? digest) => digest is { Length: > 19 } d ? d[..19] : digest ?? "";
+
+    private async Task Copy(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Snackbar.Add("Copied to the clipboard.", Severity.Success);
+        }
+        catch (JSException) { Snackbar.Add(text, Severity.Info); }
+    }
+
+    private async Task DeleteVersion(PackageVersion v)
+    {
+        var what = package!.Type == PackageType.Container ? $"tag {v.Version}" : $"version {v.Version}";
+        var ok = await Dialogs.ShowMessageBoxAsync($"Delete {what}?",
+            $"Delete {what} of {package.Name}? Clients can't install or pull it any more. This can't be undone.", yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        try
+        {
+            await PackageSvc.DeleteVersionAsync(project!.Id, v.Id);
+            Snackbar.Add($"Deleted {what}.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task DeletePackage()
+    {
+        var ok = await Dialogs.ShowMessageBoxAsync("Delete package?",
+            $"Delete {package!.Name} with all {package.Versions.Count} versions or tags? This can't be undone.", yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        try
+        {
+            await PackageSvc.DeletePackageAsync(project!.Id, package.Id);
+            Snackbar.Add($"Deleted {package.Name}.", Severity.Success);
+            Nav.NavigateTo(PackageUrls.Page(project.Key));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

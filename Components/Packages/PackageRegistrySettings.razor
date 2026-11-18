@@ -1,0 +1,63 @@
+@* Project setting: the package & container registry on/off and its cleanup policy (Maintainers: DeletePackages). *@
+@using GitBench.Services.Packages
+@inject PackageService Packages
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="settings-card pa-5 mb-4" id="packages">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Packages &amp; container registry</MudText>
+    <MudSwitch T="bool" Value="enabled" ValueChanged="Toggle" Color="Color.Primary" Label="Enable the NuGet, npm and container registry" />
+    <MudText Typo="Typo.caption" HtmlTag="p" Class="mud-text-secondary mt-1">
+        Viewers pull, Developers (and this project's CI jobs) publish, Maintainers delete. Turning it off hides the packages
+        and refuses every client; nothing is deleted.
+    </MudText>
+    <div class="d-flex flex-wrap gap-3 align-center mt-3">
+        <MudSwitch T="bool" @bind-Value="cleanup" Color="Color.Primary" Label="Cleanup policy: keep only the newest versions" Disabled="!enabled" />
+        @if (cleanup)
+        {
+            <MudNumericField T="int" @bind-Value="keep" Label="Versions or tags to keep per package" Min="1" Max="PackageService.MaxKeepLatest"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 260px" Disabled="!enabled" />
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="SavePolicy" Disabled="!enabled">Save policy</MudButton>
+    </div>
+    <MudText Typo="Typo.caption" HtmlTag="p" Class="mud-text-secondary mt-1">
+        Applied after every publish: older versions are deleted. npm versions with a dist-tag and the image tag <span class="mono">latest</span> are kept.
+    </MudText>
+    <MudButton Href="@PackageUrls.Page(Project.Key)" Variant="Variant.Outlined" Size="Size.Small" Class="mt-2"
+               StartIcon="@Icons.Material.Outlined.Inventory" Disabled="!enabled">Open packages</MudButton>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+
+    private bool enabled = true, cleanup;
+    private int keep = 10;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var s = await Packages.GetSettingsAsync(Project.Id);
+        enabled = s.Enabled;
+        cleanup = s.KeepLatest != null;
+        keep = s.KeepLatest ?? 10;
+    }
+
+    private async Task Toggle(bool on)
+    {
+        try
+        {
+            await Packages.SaveSettingsAsync(Project.Id, on, cleanup ? keep : null);
+            enabled = on;
+            Snackbar.Add(on ? "Package registry turned on." : "Package registry turned off.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task SavePolicy()
+    {
+        try
+        {
+            await Packages.SaveSettingsAsync(Project.Id, enabled, cleanup ? keep : null);
+            Snackbar.Add(cleanup ? $"Keeping the {keep} newest versions of each package." : "Cleanup policy off: every version is kept.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

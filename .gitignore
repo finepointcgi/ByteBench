@@ -507,3 +507,9 @@ gitbench.db*
 # CI artifacts and caches (Ci:ArtifactsRoot, Ci:CacheRoot)
 /ci-artifacts/
 /ci-cache/
+
+# Package & container registry blobs (Packages:Root)
+/packages/
+# Source folders named "Packages" (the NuGet packages rule above would hide them)
+!/Services/Packages/**
+!/Components/Packages/**

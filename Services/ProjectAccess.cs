@@ -19,6 +19,10 @@ public enum Permission
     ManageMembers,
     ManageProjectSettings,
     DeleteProject,
+    /// <summary>Push packages and container images to the project's registry (Developer+).</summary>
+    PublishPackages,
+    /// <summary>Delete packages, versions and image tags from the project's registry (Maintainer+).</summary>
+    DeletePackages,
 }
 
 /// <summary>
@@ -43,8 +47,8 @@ public sealed record ProjectPermissions(int ProjectId, ProjectRole? Role)
 /// <see cref="GroupMember"/>ships in the project's group and its ancestor groups, and <see cref="ProjectRole.Viewer"/> if the
 /// project is <see cref="ProjectVisibility.Internal"/>; with none of these the project is invisible to them. Group
 /// permissions (view, create in, manage, delete a group) are in <c>ProjectAccess.Groups.cs</c>. Each role has all the permissions of the roles below it:
-/// Viewer: ViewProject. Developer: + EditIssues, Comment, PushCode, CreatePullRequest, ReviewPullRequest.
-/// Maintainer: + ManageLabelsAndMilestones, MergePullRequest, DeleteBranch, ManageRepositories.
+/// Viewer: ViewProject. Developer: + EditIssues, Comment, PushCode, CreatePullRequest, ReviewPullRequest, PublishPackages.
+/// Maintainer: + ManageLabelsAndMilestones, MergePullRequest, DeleteBranch, ManageRepositories, DeletePackages.
 /// Owner: + ManageMembers, ManageProjectSettings, DeleteProject.
 /// </para>
 /// <para>
@@ -77,9 +81,9 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
     {
         Permission.ViewProject => ProjectRole.Viewer,
         Permission.EditIssues or Permission.Comment or Permission.PushCode
-            or Permission.CreatePullRequest or Permission.ReviewPullRequest => ProjectRole.Developer,
+            or Permission.CreatePullRequest or Permission.ReviewPullRequest or Permission.PublishPackages => ProjectRole.Developer,
         Permission.ManageLabelsAndMilestones or Permission.MergePullRequest
-            or Permission.DeleteBranch or Permission.ManageRepositories => ProjectRole.Maintainer,
+            or Permission.DeleteBranch or Permission.ManageRepositories or Permission.DeletePackages => ProjectRole.Maintainer,
         _ => ProjectRole.Owner, // ManageMembers, ManageProjectSettings, DeleteProject
     };
 
@@ -216,6 +220,8 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
         Permission.ManageMembers => "manage members of this project",
         Permission.ManageProjectSettings => "change this project's settings",
         Permission.DeleteProject => "delete this project",
+        Permission.PublishPackages => "publish packages in this project",
+        Permission.DeletePackages => "delete packages in this project",
         _ => p.ToString(),
     };
 }

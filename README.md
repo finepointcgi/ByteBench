@@ -236,10 +236,12 @@ Every project has members, each with one role. `Services/ProjectAccess.cs` makes
 | PushCode (git push, create branches) | | ✓ | ✓ | ✓ |
 | CreatePullRequest | | ✓ | ✓ | ✓ |
 | ReviewPullRequest | | ✓ | ✓ | ✓ |
+| PublishPackages (NuGet/npm publish, docker push) | | ✓ | ✓ | ✓ |
 | ManageLabelsAndMilestones (also sprints: create, edit, start, complete, delete) | | | ✓ | ✓ |
 | MergePullRequest | | | ✓ | ✓ |
 | DeleteBranch | | | ✓ | ✓ |
 | ManageRepositories | | | ✓ | ✓ |
+| DeletePackages (packages, versions, image tags) | | | ✓ | ✓ |
 | ManageMembers | | | | ✓ |
 | ManageProjectSettings (name, description, visibility) | | | | ✓ |
 | DeleteProject | | | | ✓ |

@@ -1,0 +1,71 @@
+@page "/admin/packages"
+@using GitBench.Services.Packages
+@using GitBench.Services.Attachments
+@inject CurrentUser Me
+@inject PackageService PackageSvc
+@inject PackageStorage Storage
+
+@* Site-wide registry storage: every project's packages, versions and bytes (each distinct blob counted once per project). *@
+
+<PageTitle>Packages · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can see registry storage." />
+}
+else
+{
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">Package registry storage</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            NuGet packages, npm tarballs and container layers in <span class="mono">@Storage.Root</span>
+            (<code>Packages:Root</code>). Blobs are stored once by digest; unreferenced ones are swept daily.
+        </MudText>
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 900px">
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>On disk</td><td>@AttachmentFormat.Size(disk)</td></tr>
+                <tr><td>Used by projects (before sharing)</td><td>@AttachmentFormat.Size(usage.Sum(u => u.Bytes))</td></tr>
+                <tr><td>Largest blob allowed</td><td>@AttachmentFormat.Size(Storage.MaxBlobBytes) (<code>Packages:MaxBlobBytes</code>)</td></tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Style="max-width: 900px">
+        @if (usage.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary pa-4">No project has published packages yet.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                <thead><tr><th>Project</th><th style="text-align:right">Packages</th><th style="text-align:right">Versions / tags</th><th style="text-align:right">Size</th></tr></thead>
+                <tbody>
+                    @foreach (var u in usage)
+                    {
+                        <tr @key="u.ProjectId">
+                            <td><a href="@PackageUrls.Page(u.ProjectKey)">@u.ProjectName</a> <span class="mud-text-secondary mono">@u.ProjectKey</span></td>
+                            <td style="text-align:right">@u.Packages</td>
+                            <td style="text-align:right">@u.Versions</td>
+                            <td style="text-align:right">@AttachmentFormat.Size(u.Bytes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    private List<PackageUsage> usage = [];
+    private long disk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin != true) return;
+        (usage, disk) = await PackageSvc.SiteUsageAsync();
+    }
+}

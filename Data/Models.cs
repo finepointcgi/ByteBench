@@ -1886,3 +1886,105 @@ public class ProjectEditorSettings
     public bool AiEnabled { get; set; } = true;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// ----- Package & container registry -----
+
+/// <summary>The kind of a <see cref="Package"/>: which protocol published it (Services/Packages).</summary>
+public enum PackageType { NuGet, Npm, Container }
+
+/// <summary>
+/// A package in a project's registry: a NuGet package id, an npm package name, or a container image repository
+/// (the path after the project, e.g. <c>app</c> in <c>t001/app</c>). Unique per project, type and name.
+/// </summary>
+public class Package
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public Project Project { get; set; } = null!;
+    public PackageType Type { get; set; }
+    /// <summary>As published (NuGet ids keep their case for display); <see cref="NormalizedName"/> is the lookup key.</summary>
+    [Required, MaxLength(255)] public string Name { get; set; } = "";
+    [Required, MaxLength(255)] public string NormalizedName { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public List<PackageVersion> Versions { get; set; } = [];
+}
+
+/// <summary>
+/// One published version of a NuGet or npm package, or one tag of a container image (<see cref="Version"/> is the tag and
+/// <see cref="ManifestDigest"/> the manifest it points to). <see cref="Size"/> is the bytes it needs (files, or manifest,
+/// config and layers).
+/// </summary>
+public class PackageVersion
+{
+    public int Id { get; set; }
+    public int PackageId { get; set; }
+    public Package Package { get; set; } = null!;
+    [Required, MaxLength(128)] public string Version { get; set; } = "";
+    /// <summary>Lookup key: the normalized, lowercase NuGet version; the version or tag otherwise.</summary>
+    [Required, MaxLength(128)] public string NormalizedVersion { get; set; } = "";
+    public long Size { get; set; }
+    /// <summary>Containers: <c>sha256:…</c> of the tagged manifest.</summary>
+    [MaxLength(71)] public string? ManifestDigest { get; set; }
+    /// <summary>NuGet: description, authors, dependencies from the nuspec. npm: the version's package.json manifest.</summary>
+    public string? MetadataJson { get; set; }
+    public int? PublishedById { get; set; }
+    public User? PublishedBy { get; set; }
+    /// <summary>Set when a CI job token published it.</summary>
+    public int? PipelineId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public List<PackageFile> Files { get; set; } = [];
+}
+
+/// <summary>A file of a NuGet or npm version (the .nupkg or the .tgz). The bytes are in the blob store by <see cref="Sha256"/>.</summary>
+public class PackageFile
+{
+    public int Id { get; set; }
+    public int PackageVersionId { get; set; }
+    [Required, MaxLength(255)] public string FileName { get; set; } = "";
+    /// <summary>Lowercase hex SHA-256 (the blob store key).</summary>
+    [Required, MaxLength(64)] public string Sha256 { get; set; } = "";
+    /// <summary>Lowercase hex SHA-1 (npm's <c>shasum</c>).</summary>
+    [MaxLength(40)] public string? Sha1 { get; set; }
+    /// <summary>Base64 SHA-512 (npm's <c>integrity</c>, NuGet's package hash).</summary>
+    [MaxLength(100)] public string? Sha512 { get; set; }
+    public long Size { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// A blob or manifest a container image repository has (like <see cref="LfsObject"/>): the bytes are stored once by
+/// digest and shared, but a repository can only read the blobs it has a row for. Manifests keep their media type.
+/// </summary>
+public class ContainerBlob
+{
+    public int Id { get; set; }
+    public int PackageId { get; set; }
+    public Package Package { get; set; } = null!;
+    /// <summary>Lowercase hex SHA-256 (the digest without <c>sha256:</c>).</summary>
+    [Required, MaxLength(64)] public string Sha256 { get; set; } = "";
+    public long Size { get; set; }
+    public bool IsManifest { get; set; }
+    [MaxLength(200)] public string? MediaType { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>An npm dist-tag (<c>latest</c>, <c>beta</c>, …) pointing at a version of a package.</summary>
+public class PackageDistTag
+{
+    public int Id { get; set; }
+    public int PackageId { get; set; }
+    [Required, MaxLength(128)] public string Tag { get; set; } = "";
+    [Required, MaxLength(128)] public string Version { get; set; } = "";
+}
+
+/// <summary>Per-project registry settings (Maintainer+). No row means the defaults: enabled, no cleanup policy.</summary>
+public class ProjectPackageSettings
+{
+    public int ProjectId { get; set; }
+    public bool Enabled { get; set; } = true;
+    /// <summary>Cleanup policy: keep only this many newest versions (tags) of each package; null keeps everything.</summary>
+    public int? KeepLatest { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}

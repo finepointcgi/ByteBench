@@ -123,6 +123,7 @@ builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
 builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
 builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, estimates, Workbench link
 GitBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder.Services, builder.Configuration); // web editor + AI assistant
+GitBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistry(builder.Services); // NuGet, npm and container registry per project
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -164,6 +165,7 @@ app.MapStaticAssets();
 app.UseWebhookPushCapture();
 app.MapGitHttp();
 GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info/lfs/...
+GitBench.Services.Packages.PackagesServiceCollectionExtensions.MapPackageRegistry(app); // /packages/{KEY}/nuget|npm/..., /v2/ (OCI)
 app.MapCiEndpoints();
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);

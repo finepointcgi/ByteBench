@@ -30,7 +30,7 @@ public static class PipelineUrls
 public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbContextFactory<AppDbContext> dbFactory,
     RepoStorage storage, LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options,
     Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, CiArtifactStore artifacts, CiCacheStore caches,
-    CiDeploymentRecorder deployments, ILogger<CiRunner> log, Automation.AutomationQueue automation) : BackgroundService
+    CiDeploymentRecorder deployments, ILogger<CiRunner> log, Automation.AutomationQueue automation, CiJobTokens jobTokens) : BackgroundService
 {
     private SemaphoreSlim jobSlots = null!;
     private readonly List<Task> active = [];
@@ -390,7 +390,9 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     {
         var (p, variables) = (run.Pipeline, run.Variables);
         await SetStepAsync(step.Id, PipelineStatus.Running, started: true);
-        var buffer = new LogBuffer(Options.MaxLogChars, new CiSecretMasker(variables.Values.Values));
+        // The job token (package registry) is a secret like the CI variables: env file only, masked in the log.
+        var jobToken = jobTokens.Create(job.Id);
+        var buffer = new LogBuffer(Options.MaxLogChars, new CiSecretMasker(variables.Values.Values.Append(jobToken)));
         await using (var db = await dbFactory.CreateDbContextAsync(CancellationToken.None))
         {
             if (!await db.PipelineStepLogs.AnyAsync(l => l.StepId == step.Id))
@@ -423,7 +425,9 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         // Secret CI variables, then the pipeline's own (schedule) variables, which win on a clash.
         var fileValues = new Dictionary<string, string>(variables.Values, StringComparer.Ordinal);
         foreach (var (k, v) in run.PipelineVariables) fileValues[k] = v;
-        var envFile = fileValues.Count > 0 ? WriteEnvFile(step.Id, fileValues) : null;
+        fileValues["GITBENCH_JOB_TOKEN"] = jobToken;
+        fileValues["GITBENCH_REGISTRY_PASSWORD"] = jobToken;
+        var envFile = WriteEnvFile(step.Id, fileValues);
         var env = new Dictionary<string, string>
         {
             ["CI"] = "true",
@@ -436,6 +440,8 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             ["GITBENCH_PIPELINE_SOURCE"] = SourceName(p.Trigger),
             ["CI_PIPELINE_SOURCE"] = SourceName(p.Trigger),
         };
+        if (baseUrl.Value is { Length: > 0 } site) // registry URLs (GITBENCH_REGISTRY, GITBENCH_NUGET_SOURCE_URL, ...)
+            foreach (var (k, v) in Packages.PackageUrls.CiVariables(site, p.Repository.Project.Key)) env[k] = v;
         if (job.EnvironmentName != null) env["CI_ENVIRONMENT_NAME"] = job.EnvironmentName;
         if (job.EnvironmentUrl != null) env["CI_ENVIRONMENT_URL"] = job.EnvironmentUrl;
         var spec = new CiContainerSpec($"gitbench-ci-{step.Id}", job.Image, step.Run, workspace, env, envFile);

@@ -1,0 +1,29 @@
+@* A read-only command or URL with a copy button (registry setup, install and pull commands). *@
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudTextField T="string" Value="@Text" ReadOnly="true" Label="@Label" Variant="Variant.Outlined" Margin="Margin.Dense"
+              Adornment="Adornment.End" AdornmentIcon="@(copied ? Icons.Material.Filled.Check : Icons.Material.Outlined.ContentCopy)"
+              OnAdornmentClick="Copy" AdornmentAriaLabel="@($"Copy {Label}")" Class="@("gb-mono-input " + Class)" />
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "Command";
+    [Parameter] public string? Class { get; set; }
+
+    private bool copied;
+
+    private async Task Copy()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", Text);
+            copied = true;
+            Snackbar.Add("Copied to the clipboard.", Severity.Success);
+        }
+        catch (JSException)
+        {
+            Snackbar.Add("Couldn't copy: select the text and copy it yourself.", Severity.Warning);
+        }
+    }
+}

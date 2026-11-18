@@ -13,6 +13,7 @@ public static class CiServiceCollectionExtensions
         services.AddSingleton<CiQueue>();
         services.AddSingleton<CiDocker>();
         services.AddSingleton<CiRefTracker>();
+        services.AddSingleton<CiJobTokens>(); // job tokens for the package registry
         services.AddScoped<CiTriggerService>();
         services.AddScoped<PipelineService>();
         services.AddScoped<IGitPushListener, CiPushListener>();

@@ -1,0 +1,5 @@
+.pk-page { max-width: 1100px; }
+.pk-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.pk-filters ::deep .pk-search { max-width: 280px; }
+::deep .pk-table th.num, ::deep .pk-table td.num { text-align: right; }
+.pk-name { font-weight: 600; word-break: break-all; }

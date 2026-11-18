@@ -19,6 +19,9 @@ public static class WebhookEventNames
     public const string ReleasePublished = "release.published";
     public const string TagCreated = "tag.created";
     public const string TagDeleted = "tag.deleted";
+    // ----- Package & container registry -----
+    public const string PackagePublished = "package.published";
+    public const string PackageDeleted = "package.deleted";
 
     /// <summary>Events a hook can subscribe to, with a short description for the settings page. <c>ping</c> is always sent on request.</summary>
     public static readonly IReadOnlyList<(string Name, string Description)> Subscribable =
@@ -36,6 +39,8 @@ public static class WebhookEventNames
         (ReleasePublished, "A release is published"),
         (TagCreated, "A tag is created (in GitBench or by a push)"),
         (TagDeleted, "A tag is deleted (in GitBench or by a push)"),
+        (PackagePublished, "A package version or container image tag is published"),
+        (PackageDeleted, "A package, version or image tag is deleted"),
     ];
 
     public static bool IsSubscribable(string name) => Subscribable.Any(e => e.Name == name);
