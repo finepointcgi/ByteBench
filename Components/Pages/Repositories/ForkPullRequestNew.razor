@@ -1,0 +1,166 @@
+@page "/p/{Key}/repos/{Slug}/fork-pull-request"
+@using GitBench.Services.Forks
+@inherits RepoPageBase
+@inject ForkService Forks
+@inject ProjectAccess Access
+
+<PageTitle>Pull request to another fork · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="prs" />
+    <MudText Typo="Typo.h6" HtmlTag="h2" Class="gb-bold mb-1">Create a pull request to another fork</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Proposes a branch of <span class="mono">@Repo.Project.Key/@Repo.Slug</span> to a repository of the same fork network. The pull request lives in the target
+        repository; its maintainers review and merge it there. Pushing to your branch updates it.
+    </MudText>
+
+    @if (!canCreate)
+    {
+        <Forbidden Message="You need the Developer role or higher in this project to propose its branches." BackHref="@RepoUrls.Base(Repo)" />
+    }
+    else if (network.Count == 0)
+    {
+        <div class="empty">This repository has no forks or upstream that you can see.</div>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="pa-4">
+            <div class="pr-compare-bar">
+                <MudSelect T="string" Label="Source branch" Value="@(Source ?? "")" ValueChanged="v => Go(Into, v, Target)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="compare-field gb-mono-input">
+                    <MudSelectItem T="string" Value="@("")">Choose a branch…</MudSelectItem>
+                    @foreach (var b in sourceBranches) { <MudSelectItem T="string" Value="@b.Name"><span class="mono">@b.Name</span></MudSelectItem> }
+                </MudSelect>
+                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Class="compare-arrow" />
+                <MudSelect T="string" Label="Target repository" Value="@TargetPath" ValueChanged="v => Go(v, Source, null)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="compare-field">
+                    @foreach (var r in network)
+                    {
+                        <MudSelectItem T="string" Value="@($"{r.Project.Key}/{r.Slug}")">@r.Project.Key/@r.Slug@(r.Id == Repo.ForkedFromId ? " (upstream)" : "")</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="string" Label="Target branch" Value="@TargetBranch" ValueChanged="v => Go(Into, Source, v)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           OuterClass="compare-field gb-mono-input">
+                    @foreach (var b in targetBranches) { <MudSelectItem T="string" Value="@b.Name"><span class="mono">@b.Name</span></MudSelectItem> }
+                </MudSelect>
+            </div>
+        </MudPaper>
+
+        @if (string.IsNullOrEmpty(Source))
+        {
+            <div class="empty mt-3">Choose the branch with your changes to see a preview.</div>
+        }
+        else if (preview?.Compare == null)
+        {
+            <div class="empty mt-3">@(error ?? "One of these branches doesn't exist.")</div>
+        }
+        else if (preview.Compare.Commits.Count == 0)
+        {
+            <div class="empty mt-3"><span class="mono">@TargetBranch</span> already has every commit from <span class="mono">@Source</span>. Nothing to merge.</div>
+        }
+        else
+        {
+            var cmp = preview.Compare;
+            @if (preview.Merge?.Check == MergeCheck.Conflicts)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">These branches have conflicts. You can still open the pull request, but it can't be merged until they're resolved.</MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">Able to merge. These branches can be merged automatically.</MudAlert>
+            }
+            <MudPaper Outlined="true" Class="pa-4 mt-3">
+                <MudStack Spacing="3">
+                    <MudTextField T="string" Label="Title" @bind-Value="title" Immediate="true" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MarkdownEditor @bind-Value="description" Rows="6" Placeholder="What does this change and why?" ProjectId="target?.ProjectId" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @cmp.Commits.Count commit@(cmp.Commits.Count == 1 ? "" : "s"), @cmp.Files.Count file@(cmp.Files.Count == 1 ? "" : "s") changed.
+                        Pipelines for pull requests from forks run only after a Maintainer of the target approves them, and never see its CI variables.
+                    </MudText>
+                    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+                    <div>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.MergeType"
+                                   Disabled="@(busy || string.IsNullOrWhiteSpace(title) || target?.IsArchived == true)" OnClick="() => Create(false)">Create pull request</MudButton>
+                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.EditNote" Class="ml-2"
+                                   Disabled="@(busy || string.IsNullOrWhiteSpace(title) || target?.IsArchived == true)" OnClick="() => Create(true)">Create draft</MudButton>
+                    </div>
+                </MudStack>
+            </MudPaper>
+            <nav class="gb-tabs mt-6" aria-label="Changes">
+                <TabLink Active="@(tab == "commits")" OnClick='() => tab = "commits"' Icon="@Icons.Material.Outlined.Commit" Count="cmp.Commits.Count">Commits</TabLink>
+                <TabLink Active="@(tab == "files")" OnClick='() => tab = "files"' Icon="@Icons.Material.Outlined.Difference" Count="cmp.Files.Count">Files changed</TabLink>
+            </nav>
+            @if (tab == "commits") { <CommitList Commits="cmp.Commits" Repo="Repo" Users="UsersByEmail" /> }
+            else { <DiffView Files="cmp.Files" Repo="Repo" ViewRef="@Source" /> }
+        }
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "into")] public string? Into { get; set; }
+    [SupplyParameterFromQuery(Name = "source")] public string? Source { get; set; }
+    [SupplyParameterFromQuery(Name = "target")] public string? Target { get; set; }
+
+    private List<Repository> network = [];
+    private Repository? target;
+    private List<BranchInfo> sourceBranches = [], targetBranches = [];
+    private ForkCompare? preview;
+    private bool canCreate, busy;
+    private string? title, description, error, previewKey;
+    private string tab = "commits";
+
+    private string? TargetPath => target == null ? null : $"{target.Project.Key}/{target.Slug}";
+    private string TargetBranch => string.IsNullOrEmpty(Target) ? target?.DefaultBranch ?? "main" : Target;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        var repo = Repo!;
+        canCreate = await Access.CanAsync(repo.ProjectId, Permission.CreatePullRequest);
+        if (!canCreate) return;
+        if (network.Count == 0) network = await Forks.NetworkAsync(repo);
+        target = network.FirstOrDefault(r => $"{r.Project.Key}/{r.Slug}".Equals(Into, StringComparison.OrdinalIgnoreCase)) ?? network.FirstOrDefault();
+        if (target == null) return;
+        var t = target;
+        sourceBranches = await Git(path => GitOps.ListBranches(path, repo.DefaultBranch));
+        targetBranches = await Repos.Git(t, path => GitOps.ListBranches(path, t.DefaultBranch));
+
+        var key = $"{TargetPath}|{Source}|{TargetBranch}";
+        if (key == previewKey) return;
+        previewKey = key;
+        preview = null;
+        error = null;
+        if (string.IsNullOrEmpty(Source)) return;
+        try
+        {
+            preview = await Forks.PreviewAsync(repo, Source, t, TargetBranch);
+            if (preview.Compare is { } c)
+            {
+                title = c.Commits.Count == 1 ? c.Commits[0].MessageShort : Source;
+                description = c.Commits.Count > 1 ? string.Join("\n", c.Commits.AsEnumerable().Reverse().Select(x => $"- {x.MessageShort}")) : c.Commits.FirstOrDefault()?.Body;
+            }
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private void Go(string? into, string? source, string? targetBranch) =>
+        Nav.NavigateTo(ForkUrls.NewPullRequest(Repo!, into, string.IsNullOrEmpty(source) ? null : source, string.IsNullOrEmpty(targetBranch) ? null : targetBranch));
+
+    private async Task Create(bool draft)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var pr = await Forks.CreatePullRequestAsync(Repo!, Source!, target!, TargetBranch, title ?? "", description, Me.Id, draft);
+            Nav.NavigateTo(RepoUrls.PullRequest(target!, pr.Number));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

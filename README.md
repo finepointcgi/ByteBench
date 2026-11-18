@@ -459,6 +459,38 @@ Comments in the API carry `parentId`, `startLine`, `resolved`, `commitSha`, `has
 
 Code: `Services/PullRequestService.Features.cs`, `Services/PullRequests/` (CODEOWNERS, suggestions), `Services/Git/GitOps.PrFeatures.cs` (squash, rebase, line edits), `Components/Repositories/DiffThread.razor`, `Components/Pages/Repositories/RepoCompare.razor` and `RepoMergeSettings.razor`. Tests: `tests/GitBench.Tests/PullRequestFeatureTests.cs`.
 
+## Forks & pull requests between forks
+
+**Forking.** The **Fork** button in every repository header (anyone who can view the repository) copies it into a project where you can create repositories (ManageRepositories: Maintainer+), with the slug and name you choose. GitBench has no personal namespaces, so for a fork of your own, create a project (you become its Owner) and fork into it; group projects where you're Maintainer+ work too. The button shows the number of forks (in projects you can see) and links to `/p/{KEY}/repos/{slug}/forks`; a fork's header shows "Forked from KEY/slug". `Repository.ForkedFromId` records the upstream.
+
+**Storage.** The bare repository is copied with `git clone --bare --local`, which hard-links the object files: nearly free on disk, yet each copy is independent. We deliberately don't use `--shared` (alternates): a fork would then read its objects from the upstream's directory, so deleting the upstream, or a gc there after a force push, would break every fork unless each fork were repacked first (`git repack -a -d` and removing `objects/info/alternates`). With hard links, deleting either side only drops a link. Without a git executable, LibGit2Sharp copies the objects instead.
+
+**Sync fork** (fork header; PushCode in the fork, ViewProject on the upstream, branch protection permitting) fetches every upstream branch into the fork's `refs/upstream/*` (so `git fetch origin 'refs/upstream/*:refs/remotes/upstream/*'` works) and fast-forwards the fork's default branch to the upstream's. If the fork has commits upstream doesn't, it reports "ahead" or "diverged" and changes nothing. A fast-forward counts as a push: webhooks, the fork's CI, and fork PRs from that branch follow.
+
+**Cross-fork pull requests.** **PR to upstream** in a fork's header (`/p/{KEY}/repos/{slug}/fork-pull-request?into=KEY/slug&source=&target=`) proposes a branch to any repository in the same fork network (linked through `ForkedFromId` to the same original). You need CreatePullRequest in the fork's project and only ViewProject in the target, the usual open-source model. The PR belongs to the target repository and shows in its project's PR lists as `KEY/slug:branch`.
+- **How it works.** The fork's branch is fetched into the target repository at `refs/pull/{n}/head` (`PullRequest.SourceRef`), and every diff, thread anchor, merge check, CODEOWNERS lookup, stale-approval check, AI review and merge (merge commit, squash, rebase) reads that ref. Nothing is written to the target's branches until the merge.
+- **Pushes to the fork** move the ref (`ForkPushListener`, an `IGitPushListener`). Each move adds a timeline entry, dismisses stale approvals where the target's protection asks for it, re-queues the AI review, sends `pull_request.updated` with action `synchronize`, and starts the PR's pipeline.
+- **The author** may comment on, edit, draft, decline and reopen their fork PR with ViewProject alone. Reviewing and merging need the usual roles in the target. "Delete source branch" isn't offered (the branch is in the fork).
+- **Suggestions** commit to the fork's branch, so **Apply suggestion** shows only for users who can push there (PushCode in the fork's project, its branch protection permitting), not for the target's maintainers.
+- **Deleting the fork** leaves the PR open with source "unknown repository:branch"; `refs/pull/{n}/head` keeps its commits, so it can still be reviewed and merged. **Deleting the upstream** leaves its forks working, just no longer linked.
+
+**CI security.** A fork PR's pipeline runs code from outside the project, so:
+- It's created with `Pipeline.IsForkPullRequest`, and `CiVariableService.ResolveAsync` gives it **no CI variables at all**, protected or not, whatever branch rules match `refs/pull/*`. Only the `GITBENCH_*` variables are set.
+- It waits (Queued, `AwaitingApproval`) until a Maintainer+ clicks **Approve and run** on the pipeline page. The approval covers that one pipeline: the next push waits again. The PR's merge check reads "waiting for a Maintainer to approve and run it". A Maintainer's **Re-run** counts as approval; anyone else's waits again. **Run pipeline** refuses `refs/…` names, so nobody can run a fork head as an ordinary pipeline with variables.
+
+**Webhooks & notifications.** Pull request payloads carry `isCrossFork` and `sourceRepository` (`"KEY/slug"`, or `"unknown repository"` once the fork is gone). Notification titles of fork PRs end with "(from KEY/slug:branch)". Forking is audited as `repository.forked`.
+
+**API.**
+
+| Endpoint | |
+|---|---|
+| `POST /api/v1/projects/{key}/repos/{slug}/forks` | `{ "project": "KEY", "slug": "…", "name": "…" }`: fork into that project. 201 with `{ repository, project, forkedFrom }` |
+| `GET /api/v1/projects/{key}/repos/{slug}/forks` | the forks in projects you can see |
+| `POST /api/v1/projects/{key}/repos/{slug}/sync-fork` | sync a fork: `{ state, before, after, ahead, behind }` with state `upToDate`, `fastForwarded`, `ahead`, `diverged` or `noUpstreamBranch` |
+| `POST …/repos/{slug}/pull-requests` | `sourceRepository: "KEY/slug"` opens a cross-fork PR from that fork's `sourceBranch` |
+
+Code: `Services/Forks/` (`ForkService`, `ForkPullRequestSync` and its push listener), `Services/PullRequestService.Forks.cs`, `Services/Git/GitOps.Forks.cs`, `Services/Ci/PipelineService.Forks.cs`, `Api/ForkEndpoints.cs`, `Components/Repositories/ForkDialog.razor`, `Components/Pages/Repositories/RepoForks.razor` and `ForkPullRequestNew.razor`. Tests: `tests/GitBench.Tests/ForkTests.cs`.
+
 ## CI pipelines
 
 Each repository can run a CI pipeline from a `.gitbench-ci.yml` file at its root. Jobs run in **Docker** containers on the GitBench server.

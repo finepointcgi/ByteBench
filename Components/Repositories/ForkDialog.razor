@@ -1,0 +1,77 @@
+@* "Fork" dialog: pick the project to fork into (Maintainer+), slug and name. Returns DialogResult.Ok(Repository) once forked. *@
+@using GitBench.Services.Forks
+@inject ForkService Forks
+@inject CurrentUser Me
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6" Class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Outlined.CallSplit" /> Fork @Upstream.Project.Key/@Upstream.Slug
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (targets == null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else if (targets.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                You can only fork into a project where you're a Maintainer or Owner. GitBench has no personal namespaces:
+                <a href="/projects/new">create a project of your own</a> (you'll be its Owner) to hold your forks.
+            </MudAlert>
+        }
+        else
+        {
+            <MudStack Spacing="3">
+                <MudSelect T="int" @bind-Value="projectId" Label="Fork into project" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                    @foreach (var p in targets) { <MudSelectItem T="int" Value="@p.Id">@p.Name (@p.Key)</MudSelectItem> }
+                </MudSelect>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Projects where you're a Maintainer or Owner. No personal namespaces exist: for a fork of your own, create a project and fork into it.
+                </MudText>
+                <MudTextField T="string" @bind-Value="slug" Label="Slug" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                <MudTextField T="string" @bind-Value="name" Label="Name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+            </MudStack>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || targets is not { Count: > 0 })" OnClick="Fork">
+            @(busy ? "Forking…" : "Fork")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter, EditorRequired] public Repository Upstream { get; set; } = null!;
+
+    private List<Project>? targets;
+    private int projectId;
+    private string? slug, name, error;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        slug = Upstream.Slug;
+        name = Upstream.Name;
+        targets = await Forks.TargetProjectsAsync();
+        projectId = targets.FirstOrDefault(p => p.Id != Upstream.ProjectId)?.Id ?? targets.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task Fork()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await Me.EnsureLoadedAsync();
+            var fork = await Forks.ForkAsync(Upstream, projectId, slug, name, Me.User!);
+            MudDialog.Close(DialogResult.Ok(fork));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

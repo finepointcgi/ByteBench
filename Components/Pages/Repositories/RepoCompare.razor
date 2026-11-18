@@ -124,7 +124,7 @@ else if (Repo != null)
         var (b, h) = (baseRef, headRef);
         compare = await Git(path => GitOps.Exists(path) ? GitOps.Compare(path, b, h) : null);
         isBranch = branches.Any(x => x.Name == h) && branches.Any(x => x.Name == b);
-        existing = (await PRs.ListAsync(r.ProjectId, PullRequestState.Open, r.Id)).FirstOrDefault(p => p.SourceBranch == h && p.TargetBranch == b);
+        existing = (await PRs.ListAsync(r.ProjectId, PullRequestState.Open, r.Id)).FirstOrDefault(p => !p.IsCrossFork && p.SourceBranch == h && p.TargetBranch == b);
     }
 
     private void Go(string? @base, string? head)

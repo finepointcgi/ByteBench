@@ -38,7 +38,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     {
         if (!await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return null;
         await using var db = await dbFactory.CreateDbContextAsync();
-        var p = await db.Pipelines.AsNoTracking().Include(x => x.TriggeredBy)
+        var p = await db.Pipelines.AsNoTracking().Include(x => x.TriggeredBy).Include(x => x.ApprovedBy)
             .Include(x => x.Jobs).ThenInclude(j => j.Steps)
             .FirstOrDefaultAsync(x => x.Id == pipelineId && x.RepositoryId == repo.Id);
         if (p == null) return null;

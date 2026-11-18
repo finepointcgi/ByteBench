@@ -58,7 +58,12 @@ public static partial class GitOps
                 using (var src = new LgRepository(from)) head = src.Head.CanonicalName;
                 LgRepository.Init(to, isBare: true);
                 using var r = new LgRepository(to);
-                FetchFrom(r, from, ["+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"], new FetchOptions { TagFetchMode = TagFetchMode.None }, "fork");
+                Dictionary<string, string> refs;
+                using (var src = new LgRepository(from))
+                    refs = src.Refs.Where(x => x.CanonicalName.StartsWith("refs/heads/", StringComparison.Ordinal) || x.CanonicalName.StartsWith("refs/tags/", StringComparison.Ordinal))
+                        .Select(x => (x.CanonicalName, Sha: x.ResolveToDirectReference()?.TargetIdentifier)).Where(x => x.Sha != null)
+                        .ToDictionary(x => x.CanonicalName, x => x.Sha!);
+                CopyRefs(r, from, refs, "fork");
                 r.Refs.UpdateTarget("HEAD", head);
             }
         }
@@ -83,7 +88,7 @@ public static partial class GitOps
         {
             using var r = new LgRepository(intoPath);
             if (r.Refs[toRef]?.ResolveToDirectReference()?.TargetIdentifier == tip) return tip;
-            FetchFrom(r, fromPath, [$"+refs/heads/{branch}:{toRef}"], new FetchOptions { TagFetchMode = TagFetchMode.None }, "fork pull request");
+            CopyRefs(r, fromPath, new Dictionary<string, string> { [toRef] = tip }, "fork pull request");
             return r.Refs[toRef]?.ResolveToDirectReference()?.TargetIdentifier;
         }
     }
@@ -108,8 +113,14 @@ public static partial class GitOps
         lock (LockFor(forkPath))
         {
             using var r = new LgRepository(forkPath);
-            FetchFrom(r, upstreamPath, [$"+refs/heads/*:{UpstreamRefPrefix}*"], new FetchOptions { TagFetchMode = TagFetchMode.None, Prune = true }, "sync fork");
-            var fetched = r.Refs.Count(x => x.CanonicalName.StartsWith(UpstreamRefPrefix, StringComparison.Ordinal));
+            Dictionary<string, string> wanted;
+            using (var src = new LgRepository(upstreamPath))
+                wanted = src.Branches.Where(b => !b.IsRemote && b.Tip != null)
+                    .ToDictionary(b => UpstreamRefPrefix + b.FriendlyName, b => b.Tip.Sha);
+            CopyRefs(r, upstreamPath, wanted, "sync fork");
+            foreach (var stale in r.Refs.Where(x => x.CanonicalName.StartsWith(UpstreamRefPrefix, StringComparison.Ordinal) && !wanted.ContainsKey(x.CanonicalName)).ToList())
+                r.Refs.Remove(stale); // branches deleted upstream
+            var fetched = wanted.Count;
             var up = r.Refs[UpstreamRefPrefix + upstreamBranch]?.ResolveToDirectReference()?.Target as Commit;
             var mine = r.Branches[branch];
             if (up == null) return new ForkSyncResult(ForkSyncState.NoUpstreamBranch, mine?.Tip?.Sha, mine?.Tip?.Sha, 0, 0, fetched);
@@ -129,15 +140,29 @@ public static partial class GitOps
     }
 
     /// <summary>
-    /// Fetches from another repository on disk. LibGit2Sharp only fetches from named remotes, so a temporary one is added
-    /// to the config and removed again (callers hold the repository's lock).
+    /// Points each ref of <paramref name="wanted"/> (ref name → commit SHA in the repository at <paramref name="path"/>)
+    /// at its commit in <paramref name="r"/>, first fetching the commits <paramref name="r"/> doesn't have yet. The refs
+    /// are written here rather than by the fetch, so they're set even when no objects needed fetching. Callers hold the lock.
     /// </summary>
-    private static void FetchFrom(LgRepository r, string path, string[] refspecs, FetchOptions options, string logMessage)
+    private static void CopyRefs(LgRepository r, string path, IReadOnlyDictionary<string, string> wanted, string logMessage)
     {
-        var name = "gitbench-" + Guid.NewGuid().ToString("N")[..12];
-        r.Network.Remotes.Add(name, path, $"+refs/heads/*:refs/{name}/*");
-        try { Commands.Fetch(r, name, refspecs, options, logMessage); }
-        finally { r.Network.Remotes.Remove(name); }
+        var missing = wanted.Values.Distinct().Where(sha => r.ObjectDatabase.Contains(new ObjectId(sha)) == false).ToList();
+        if (missing.Count > 0)
+        {
+            // Fetch the source's branches into a scratch namespace (LibGit2Sharp fetches from named remotes only),
+            // then drop the scratch refs and the remote again.
+            var name = "gitbench-" + Guid.NewGuid().ToString("N")[..12];
+            r.Network.Remotes.Add(name, path, $"+refs/heads/*:refs/{name}/*");
+            try { Commands.Fetch(r, name, [$"+refs/heads/*:refs/{name}/*"], new FetchOptions { TagFetchMode = TagFetchMode.None }, logMessage); }
+            finally
+            {
+                foreach (var x in r.Refs.Where(x => x.CanonicalName.StartsWith($"refs/{name}/", StringComparison.Ordinal)).ToList()) r.Refs.Remove(x);
+                r.Network.Remotes.Remove(name);
+            }
+            if (wanted.Values.FirstOrDefault(sha => !r.ObjectDatabase.Contains(new ObjectId(sha))) is { } lost)
+                throw new InvalidOperationException($"Commit {lost[..7]} could not be fetched.");
+        }
+        foreach (var (name, sha) in wanted) r.Refs.Add(name, new ObjectId(sha), logMessage, allowOverwrite: true);
     }
 
     /// <summary>Runs git with an argument list (never a shell), without the caller's GIT_* environment; throws with stderr on failure.</summary>

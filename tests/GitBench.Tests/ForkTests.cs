@@ -171,6 +171,23 @@ public class ForkTests(TestApp app) : IClassFixture<TestApp>
     }
 
     [Fact]
+    public async Task Cross_fork_PR_works_when_upstream_already_has_the_commits()
+    {
+        // The branch came along with the fork: no objects need fetching, the PR ref must still be written.
+        var (upstream, bobs) = await SetupAsync();
+        var tip = app.Commit(upstream, "feature/shared", "shared.txt", "shared");
+        var fork = await ForkAsync(upstream, bobs);
+        var pr = await CrossForkPrAsync(fork, "feature/shared", upstream);
+        Assert.Equal(tip, GitOps.ResolveSha(PathOf(upstream), pr.SourceRef));
+
+        // Sync records every upstream branch under refs/upstream/*, even ones whose commits the fork already has.
+        await using var s = app.Scope(app.UserId("bob"));
+        var r = await s.Get<ForkService>().SyncAsync(fork, app.UserId("bob"));
+        Assert.Equal(ForkSyncState.UpToDate, r.State);
+        Assert.Equal(tip, GitOps.ResolveSha(PathOf(fork), "refs/upstream/feature/shared"));
+    }
+
+    [Fact]
     public async Task Suggestions_on_a_fork_PR_commit_to_the_fork_only_for_users_who_can_push_there()
     {
         var (upstream, bobs) = await SetupAsync();
