@@ -4,7 +4,7 @@
 @inject SavedFilterService Filters
 @inject ProjectAccess Access
 @inject LiveEvents Live
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
 
 <PageTitle>Saved filters · @project?.Name</PageTitle>
 
@@ -14,43 +14,48 @@
 }
 else if (project != null)
 {
-    <div class="breadcrumbs">
-        <a href="/p/@project.Key/issues">@project.Name</a> / <a href="/p/@project.Key/issues">Issues</a> / Saved filters
+<div class="sf-page">
+    <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-1" />
+    <div class="sf-header">
+        <MudText Typo="Typo.h5" Class="sf-title">Saved filters</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            Your filters and the ones shared with @project.Name. Starred filters appear in the sidebar.
+            To create one, set up the <a href="/p/@project.Key/issues">issue list</a> and use <b>Filters → Save current filter</b>.
+        </MudText>
     </div>
-    <div class="page-header">
-        <div>
-            <h1>Saved filters</h1>
-            <div class="muted">Your filters and the ones shared with @project.Name. Starred filters appear in the sidebar.
-                To create one, set up the <a href="/p/@project.Key/issues">issue list</a> and use <b>Filters → Save current filter</b>.</div>
-        </div>
-    </div>
-    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
 
     @if (filters.Count == 0)
     {
-        <div class="empty">No saved filters yet.</div>
+        <MudPaper Outlined="true" Class="sf-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.FilterList" Size="Size.Large" />
+            <div>No saved filters yet.</div>
+        </MudPaper>
     }
     else
     {
-        <div class="card-panel p-0">
-            <table class="table saved-filters-table mb-0 align-middle">
+        <MudPaper Outlined="true" Class="sf-table-wrap">
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="sf-table">
                 <thead>
-                    <tr><th style="width:36px"></th><th>Name</th><th>Conditions</th><th>Owner</th><th>Visibility</th><th></th></tr>
+                    <tr><th style="width:44px"><span class="sf-sr">Star</span></th><th>Name</th><th>Conditions</th><th>Owner</th><th>Visibility</th><th><span class="sf-sr">Actions</span></th></tr>
                 </thead>
                 <tbody>
                     @foreach (var f in filters)
                     {
                         <tr @key="f.Id">
                             <td>
-                                <button type="button" class="star @(f.IsStarred ? "on" : "")" title="@(f.IsStarred ? "Unstar" : "Star (show in sidebar)")" @onclick="() => Run(() => Filters.SetStarAsync(f.Id, !f.IsStarred))">@(f.IsStarred ? "★" : "☆")</button>
+                                <MudIconButton Icon="@(f.IsStarred ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" Size="Size.Small"
+                                               Color="@(f.IsStarred ? Color.Warning : Color.Default)" title="@(f.IsStarred ? "Unstar" : "Star (show in sidebar)")"
+                                               aria-label="@(f.IsStarred ? $"Unstar {f.Name}" : $"Star {f.Name}")" OnClick="() => Run(() => Filters.SetStarAsync(f.Id, !f.IsStarred))" />
                             </td>
-                            <td>
+                            <td class="sf-name">
                                 @if (renamingId == f.Id)
                                 {
-                                    <div class="d-flex gap-1">
-                                        <input class="form-control form-control-sm" maxlength="100" @bind="renameDraft" @bind:event="oninput" @onkeydown="e => RenameKey(e, f)" />
-                                        <button class="btn btn-primary btn-sm" @onclick="() => Rename(f)">Save</button>
-                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => renamingId = null">Cancel</button>
+                                    <div class="sf-rename">
+                                        <MudTextField T="string" @bind-Value="renameDraft" Immediate="true" MaxLength="100" OnKeyDown="e => RenameKey(e, f)" AutoFocus="true"
+                                                      Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="Filter name" />
+                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="() => Rename(f)">Save</MudButton>
+                                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => renamingId = null">Cancel</MudButton>
                                     </div>
                                 }
                                 else
@@ -58,34 +63,44 @@ else if (project != null)
                                     <a href="@Href(f)"><b>@f.Name</b></a>
                                 }
                             </td>
-                            <td class="small">
-                                @foreach (var c in Describe(f.Query)) { <span class="filter-chip">@c</span> }
-                            </td>
-                            <td class="small">@f.OwnerName@(f.IsMine ? " (you)" : "")</td>
                             <td>
-                                @if (f.IsShared) { <span class="badge text-bg-info">Shared</span> } else { <span class="badge text-bg-light">Private</span> }
+                                <div class="sf-chips">
+                                    @foreach (var c in Describe(f.Query)) { <span class="sf-chip">@c</span> }
+                                </div>
                             </td>
-                            <td class="text-end text-nowrap">
+                            <td class="sf-small">@f.OwnerName@(f.IsMine ? " (you)" : "")</td>
+                            <td>
+                                @if (f.IsShared)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text" Icon="@Icons.Material.Outlined.Group" Class="ma-0">Shared</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.Lock" Class="ma-0">Private</MudChip>
+                                }
+                            </td>
+                            <td class="sf-actions">
                                 @if (f.CanManage)
                                 {
-                                    <button class="btn btn-link btn-sm" @onclick="() => { renamingId = f.Id; renameDraft = f.Name; }">Rename</button>
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" OnClick="() => { renamingId = f.Id; renameDraft = f.Name; }">Rename</MudButton>
                                     @if (f.IsShared)
                                     {
-                                        <button class="btn btn-link btn-sm" @onclick="() => Run(() => Filters.SetSharedAsync(f.Id, false))">Unshare</button>
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" OnClick="() => Run(() => Filters.SetSharedAsync(f.Id, false))">Unshare</MudButton>
                                     }
                                     else if (perms.Role >= ProjectRole.Developer)
                                     {
-                                        <button class="btn btn-link btn-sm" @onclick="() => Run(() => Filters.SetSharedAsync(f.Id, true))">Share</button>
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" OnClick="() => Run(() => Filters.SetSharedAsync(f.Id, true))">Share</MudButton>
                                     }
-                                    <button class="btn btn-link btn-sm text-danger" @onclick="() => Delete(f)">Delete</button>
+                                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Error" OnClick="() => Delete(f)">Delete</MudButton>
                                 }
                             </td>
                         </tr>
                     }
                 </tbody>
-            </table>
-        </div>
+            </MudSimpleTable>
+        </MudPaper>
     }
+</div>
 }
 
 @code {
@@ -95,6 +110,7 @@ else if (project != null)
     private ProjectPermissions perms = ProjectPermissions.None;
     private List<User> users = [];
     private List<SavedFilterView> filters = [];
+    private List<BreadcrumbItem> crumbs = [];
     private bool notFound;
     private string? error, renameDraft;
     private int? renamingId;
@@ -105,6 +121,7 @@ else if (project != null)
         project = await Issues.GetProjectAsync(Key);
         notFound = project == null;
         if (project == null) return;
+        crumbs = [new(project.Name, $"/p/{project.Key}/issues"), new("Issues", $"/p/{project.Key}/issues"), new("Saved filters", null, disabled: true)];
         perms = await Access.GetPermissionsAsync(project.Id);
         users = await Issues.GetUsersAsync();
         await Load();
@@ -147,7 +164,8 @@ else if (project != null)
 
     private async Task Delete(SavedFilterView f)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete the filter “{f.Name}”{(f.IsShared ? " for everyone in the project" : "")}?")) return;
+        if (await Dialogs.ShowMessageBoxAsync("Delete filter", $"Delete the filter “{f.Name}”{(f.IsShared ? " for everyone in the project" : "")}?",
+                yesText: "Delete", cancelText: "Cancel") != true) return;
         await Run(() => Filters.DeleteAsync(f.Id));
     }
 

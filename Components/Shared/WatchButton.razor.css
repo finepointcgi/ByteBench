@@ -1,0 +1,4 @@
+.gb-watch-count {
+    margin-left: 6px; padding: 0 7px; border-radius: 10px; font-size: 12px; line-height: 18px;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary);
+}

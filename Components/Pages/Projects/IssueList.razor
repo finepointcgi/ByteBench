@@ -14,104 +14,117 @@
 }
 else if (project != null)
 {
-    <div class="page-header">
+<div class="il-page">
+    <div class="il-header">
         <div>
-            <h1>Issues</h1>
-            <div class="muted">@project.Name</div>
+            <MudText Typo="Typo.h5" Class="il-title">Issues</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
         </div>
-        <div class="d-flex gap-2 align-items-center">
+        <div class="il-header-actions">
             <SavedFiltersMenu Project="project" Perms="perms" Query="@IssueFilterQuery.ToQueryString(filter)" />
             @if (canCreate)
             {
-                <a class="btn btn-primary" href="/p/@project.Key/issues/new">+ New issue</a>
+                <MudButton Href="@($"/p/{project.Key}/issues/new")" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New issue</MudButton>
             }
         </div>
     </div>
 
-    <div class="tabs">
-        <button class="tab @(filter.Open == true && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(true)">Open <span class="count">@counts.open</span></button>
-        <button class="tab @(filter.Open == false && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(false)">Closed <span class="count">@counts.closed</span></button>
-        <button class="tab @(filter.Open == null && filter.Status == null ? "active" : "")" @onclick="() => SetOpen(null)">All <span class="count">@(counts.open + counts.closed)</span></button>
+    <div class="il-tabs" role="tablist" aria-label="Open or closed">
+        <button type="button" role="tab" aria-selected="@(IsTab(true) ? "true" : "false")" class="il-tab @(IsTab(true) ? "active" : "")" @onclick="() => SetOpen(true)">
+            <MudIcon Icon="@Icons.Material.Outlined.RadioButtonUnchecked" Size="Size.Small" /> Open <span class="il-count">@counts.open</span>
+        </button>
+        <button type="button" role="tab" aria-selected="@(IsTab(false) ? "true" : "false")" class="il-tab @(IsTab(false) ? "active" : "")" @onclick="() => SetOpen(false)">
+            <MudIcon Icon="@Icons.Material.Outlined.CheckCircle" Size="Size.Small" /> Closed <span class="il-count">@counts.closed</span>
+        </button>
+        <button type="button" role="tab" aria-selected="@(IsTab(null) ? "true" : "false")" class="il-tab @(IsTab(null) ? "active" : "")" @onclick="() => SetOpen(null)">
+            All <span class="il-count">@(counts.open + counts.closed)</span>
+        </button>
     </div>
 
-    <div class="filter-bar">
-        <input class="form-control form-control-sm search" placeholder="Search title, description or @project.Key-123…"
-               @bind="filter.Search" @bind:event="oninput" @bind:after="Apply" />
+    <MudPaper Outlined="true" Class="il-filters">
+        <MudTextField T="string" @bind-Value="filter.Search" @bind-Value:after="Apply" Immediate="true" Placeholder="@($"Search title, description or {project.Key}-123…")"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
+                      Clearable="true" Class="il-search" aria-label="Search issues" />
         <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Apply" />
 
-        <select class="form-select form-select-sm" @bind="StatusFilter" @bind:after="Apply">
-            <option value="">Any status</option>
-            @foreach (var s in Enum.GetValues<IssueStatus>()) { <option value="@s">@s.Name()</option> }
-        </select>
-        <select class="form-select form-select-sm" @bind="filter.AssigneeId" @bind:after="Apply">
-            <option value="">Any assignee</option>
-            <option value="0">Unassigned</option>
-            @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
-        </select>
-        <select class="form-select form-select-sm" @bind="filter.LabelId" @bind:after="Apply">
-            <option value="">Any label</option>
-            @foreach (var l in project.Labels) { <option value="@l.Id">@l.Name</option> }
-        </select>
-        <select class="form-select form-select-sm" @bind="filter.MilestoneId" @bind:after="Apply">
-            <option value="">Any milestone</option>
-            <option value="0">No milestone</option>
-            @foreach (var m in project.Milestones) { <option value="@m.Id">@m.Title</option> }
-        </select>
+        <MudSelect T="IssueStatus?" @bind-Value="StatusFilter" @bind-Value:after="Apply" Label="Status" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(s => s?.Name() ?? "")">
+            @foreach (var s in Enum.GetValues<IssueStatus>()) { <MudSelectItem T="IssueStatus?" Value="s">@s.Name()</MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="int?" @bind-Value="filter.AssigneeId" @bind-Value:after="Apply" Label="Assignee" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="AssigneeName">
+            <MudSelectItem T="int?" Value="0">Unassigned</MudSelectItem>
+            @foreach (var u in users) { <MudSelectItem T="int?" Value="u.Id">@u.DisplayName</MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="int?" @bind-Value="filter.LabelId" @bind-Value:after="Apply" Label="Label" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => project.Labels.FirstOrDefault(l => l.Id == id)?.Name ?? "")">
+            @foreach (var l in project.Labels) { <MudSelectItem T="int?" Value="l.Id"><LabelChip Label="l" /></MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="int?" @bind-Value="filter.MilestoneId" @bind-Value:after="Apply" Label="Milestone" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="MilestoneName">
+            <MudSelectItem T="int?" Value="0">No milestone</MudSelectItem>
+            @foreach (var m in project.Milestones) { <MudSelectItem T="int?" Value="m.Id">@m.Title</MudSelectItem> }
+        </MudSelect>
         <IssueSprintFilter ProjectId="project.Id" Filter="filter" OnChanged="Apply" />
-        <select class="form-select form-select-sm" @bind="filter.Type" @bind:after="Apply">
-            <option value="">Any type</option>
-            @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
-        </select>
+        <MudSelect T="IssueType?" @bind-Value="filter.Type" @bind-Value:after="Apply" Label="Type" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(t => t is { } v ? $"{v.Icon()} {v}" : "")">
+            @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem T="IssueType?" Value="t">@t.Icon() @t</MudSelectItem> }
+        </MudSelect>
         <GitBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Apply" />
-        <select class="form-select form-select-sm" @bind="filter.Priority" @bind:after="Apply">
-            <option value="">Any priority</option>
-            @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p</option> }
-        </select>
-        <select class="form-select form-select-sm" @bind="filter.Sort" @bind:after="Apply">
-            <option value="updated">Recently updated</option>
-            <option value="created">Newest</option>
-            <option value="priority">Priority</option>
-            <option value="due">Due date</option>
-            <option value="number">Issue number</option>
-        </select>
+        <MudSelect T="IssuePriority?" @bind-Value="filter.Priority" @bind-Value:after="Apply" Label="Priority" Clearable="true" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(p => p?.ToString() ?? "")">
+            @foreach (var p in Enum.GetValues<IssuePriority>().Reverse())
+            {
+                <MudSelectItem T="IssuePriority?" Value="p"><span class="d-inline-flex align-center gap-2"><PriorityIcon Priority="p" /> @p</span></MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" @bind-Value="filter.Sort" @bind-Value:after="Apply" Label="Sort" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="SortName" AdornmentIcon="@Icons.Material.Filled.Sort">
+            @foreach (var s in SortOptions) { <MudSelectItem T="string" Value="s.Value">@s.Name</MudSelectItem> }
+        </MudSelect>
         @if (IsFiltered)
         {
-            <button class="btn btn-sm btn-link" @onclick="Reset">Clear filters</button>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterListOff" OnClick="Reset" Class="il-clear">Clear filters</MudButton>
         }
-    </div>
+    </MudPaper>
 
     @if (CanBulkEdit && selected.Count > 0)
     {
         <BulkActionBar Project="project" Users="users" Perms="perms" SelectedIds="SelectedOnPage" OnClear="() => selected.Clear()" OnDone="AfterBulk" />
     }
-    <div class="issue-list">
+    <MudPaper Outlined="true" Class="il-list">
         @if (CanBulkEdit && issues.Count > 0)
         {
-            <div class="bulk-header">
-                <input type="checkbox" class="form-check-input" title="Select all on this page" aria-label="Select all on this page"
-                       checked="@(SelectedOnPage.Count == issues.Count)" @onchange="ToggleAll" />
-                <span class="muted small">@(SelectedOnPage.Count > 0 ? $"{SelectedOnPage.Count} of {issues.Count} selected" : $"{issues.Count} issues")</span>
+            <div class="il-bulk-header">
+                <MudCheckBox T="bool" Value="@(SelectedOnPage.Count == issues.Count)" ValueChanged="ToggleAll" Dense="true" Size="Size.Small"
+                             AriaLabel="Select all on this page" title="Select all on this page" />
+                <span class="il-muted">@(SelectedOnPage.Count > 0 ? $"{SelectedOnPage.Count} of {issues.Count} selected" : $"{issues.Count} issues")</span>
             </div>
         }
         @if (issues.Count == 0)
         {
-            <div class="empty">No issues match these filters.</div>
+            <div class="il-empty">
+                <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" />
+                <div>No issues match these filters.</div>
+            </div>
         }
         @foreach (var i in issues)
         {
             @if (CanBulkEdit)
             {
-                <div class="bulk-row @(selected.Contains(i.Id) ? "selected" : "")" @key="i.Id">
-                    <input type="checkbox" class="form-check-input" aria-label="Select @i.Key" checked="@selected.Contains(i.Id)" @onchange="() => Toggle(i.Id)" />
+                <div class="il-row @(selected.Contains(i.Id) ? "selected" : "")" @key="i.Id">
+                    <MudCheckBox T="bool" Value="@selected.Contains(i.Id)" ValueChanged="_ => Toggle(i.Id)" Dense="true" Size="Size.Small"
+                                 AriaLabel="@($"Select {i.Key}")" Class="il-row-check" />
                     <IssueRow Issue="i" />
                 </div>
             }
             else
             {
-                <IssueRow Issue="i" @key="i.Id" />
+                <div class="il-row" @key="i.Id"><IssueRow Issue="i" /></div>
             }
         }
-    </div>
+    </MudPaper>
+</div>
 }
 
 @code {
@@ -128,15 +141,36 @@ else if (project != null)
     private (int open, int closed) counts;
     private readonly HashSet<int> selected = [];
 
+    private static readonly (string Value, string Name)[] SortOptions =
+        [("updated", "Recently updated"), ("created", "Newest"), ("priority", "Priority"), ("due", "Due date"), ("number", "Issue number")];
+
     private bool CanBulkEdit => perms.Can(Permission.EditIssues);
     /// <summary>Selected issues that are still in the current list.</summary>
     private List<int> SelectedOnPage => issues.Where(i => selected.Contains(i.Id)).Select(i => i.Id).ToList();
+
+    private bool IsTab(bool? open) => filter.Open == open && filter.Status == null;
 
     private IssueStatus? StatusFilter
     {
         get => filter.Status;
         set { filter.Status = value; if (value != null) filter.Open = null; }
     }
+
+    private string AssigneeName(int? id) => id switch
+    {
+        null => "",
+        0 => "Unassigned",
+        _ => users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? $"#{id}",
+    };
+
+    private string MilestoneName(int? id) => id switch
+    {
+        null => "",
+        0 => "No milestone",
+        _ => project?.Milestones.FirstOrDefault(m => m.Id == id)?.Title ?? $"#{id}",
+    };
+
+    private static string SortName(string? value) => SortOptions.FirstOrDefault(s => s.Value == value).Name ?? value ?? "";
 
     private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || filter.Status != null || filter.AssigneeId != null
         || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null
@@ -237,9 +271,9 @@ else if (project != null)
         if (!selected.Remove(id)) selected.Add(id);
     }
 
-    private void ToggleAll(ChangeEventArgs e)
+    private void ToggleAll(bool all)
     {
-        if (e.Value is true) foreach (var i in issues) selected.Add(i.Id);
+        if (all) foreach (var i in issues) selected.Add(i.Id);
         else foreach (var i in issues) selected.Remove(i.Id);
     }
 

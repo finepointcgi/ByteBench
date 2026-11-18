@@ -3,67 +3,74 @@
 @inject ProjectAccess Access
 @inject CurrentUser Me
 @inject LiveEvents Live
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
 @implements IDisposable
 
 @if (Issue.Type != IssueType.Subtask && (canEdit || children.Count > 0))
 {
-    <div class="lw-panel">
-        <div class="lw-panel-head">
-            <h2 class="section-title m-0">@(IsEpic ? "Child issues" : "Sub-tasks")</h2>
+    <MudPaper Outlined="true" Class="px-4 py-3 mb-3">
+        <div class="lw-panel">
+            <div class="lw-panel-head">
+                <MudText Typo="Typo.subtitle1" Class="lw-panel-title">@(IsEpic ? "Child issues" : "Sub-tasks")</MudText>
+                @if (hierarchy.Total > 0)
+                {
+                    <span class="lw-muted">@hierarchy.Done/@hierarchy.Total done@(hierarchy.Points > 0 ? $" · {hierarchy.DonePoints}/{hierarchy.Points} pts" : "")</span>
+                    <span class="lw-percent">@hierarchy.Percent%</span>
+                }
+            </div>
             @if (hierarchy.Total > 0)
             {
-                <span class="muted small">@hierarchy.Done/@hierarchy.Total done@(hierarchy.Points > 0 ? $" · {hierarchy.DonePoints}/{hierarchy.Points} pts" : "")</span>
-                <span class="lw-percent">@hierarchy.Percent%</span>
+                <MudProgressLinear Value="hierarchy.Percent" Color="Color.Success" Rounded="true" Size="Size.Small" Class="my-2"
+                                   title="@($"{hierarchy.Done} of {hierarchy.Total} done")" />
             }
-        </div>
-        @if (hierarchy.Total > 0)
-        {
-            <div class="progress-thin" title="@hierarchy.Done of @hierarchy.Total done"><div style="width:@(hierarchy.Percent)%"></div></div>
-        }
-        <ul class="lw-list">
-            @foreach (var c in children)
-            {
-                <li @key="c.Id" class="@(c.Status == IssueStatus.Done ? "lw-done-row" : "")">
-                    <span title="@c.Type">@c.Type.Icon()</span>
-                    <a class="mono small" href="@c.Url">@c.Key</a>
-                    <a class="lw-item-title" href="@c.Url">@c.Title</a>
-                    @if (c.StoryPoints is { } sp) { <span class="points" title="Story points">@sp</span> }
-                    <Avatar User="c.Assignee" Size="20" />
-                    <StatusBadge Status="c.Status" />
-                    @if (canEdit)
-                    {
-                        <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="@(c.Type == IssueType.Subtask ? "Remove sub-task (it becomes a task)" : "Remove from epic")" @onclick="() => Remove(c)">✕</button>
-                    }
-                </li>
-            }
-            @if (children.Count == 0)
-            {
-                <li class="muted small">@(IsEpic ? "No child issues yet." : "No sub-tasks yet.")</li>
-            }
-        </ul>
-        @if (canEdit)
-        {
-            <div class="lw-add">
-                @if (IsEpic)
+            <ul class="lw-list">
+                @foreach (var c in children)
                 {
-                    <select class="form-select form-select-sm lw-type" @bind="newType">
-                        @foreach (var t in HierarchyRules.AllowedChildTypes(IssueType.Epic)) { <option value="@t">@t.Icon() @t</option> }
-                    </select>
+                    <li @key="c.Id" class="@(c.Status == IssueStatus.Done ? "lw-done-row" : "")">
+                        <span title="@c.Type">@c.Type.Icon()</span>
+                        <a class="mono lw-key" href="@c.Url">@c.Key</a>
+                        <a class="lw-item-title" href="@c.Url">@c.Title</a>
+                        @if (c.StoryPoints is { } sp) { <span class="lw-points" title="Story points">@sp</span> }
+                        <Avatar User="c.Assignee" Size="20" />
+                        <StatusBadge Status="c.Status" />
+                        @if (canEdit)
+                        {
+                            var label = c.Type == IssueType.Subtask ? "Remove sub-task (it becomes a task)" : "Remove from epic";
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" title="@label" aria-label="@label"
+                                           Class="lw-remove" OnClick="() => Remove(c)" />
+                        }
+                    </li>
                 }
-                <input class="form-control form-control-sm" placeholder="@(IsEpic ? "New child issue title" : "New sub-task title")" maxlength="200"
-                       @bind="newTitle" @bind:event="oninput" @onkeydown="CreateKey" />
-                <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" disabled="@string.IsNullOrWhiteSpace(newTitle)" @onclick="Create">
-                    @(IsEpic ? "Create" : "Create sub-task")
-                </button>
-            </div>
-            <div class="lw-add">
-                <IssuePicker ProjectId="Issue.ProjectId" Types="HierarchyRules.AllowedChildTypes(Issue.Type)" ExcludeIds="exclude"
-                             Placeholder="@(IsEpic ? "Add existing issue to epic…" : "Move an existing sub-task here…")" OnSelected="AddExisting" />
-            </div>
-        }
-        @if (error != null) { <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">@error</div> }
-    </div>
+                @if (children.Count == 0)
+                {
+                    <li class="lw-muted">@(IsEpic ? "No child issues yet." : "No sub-tasks yet.")</li>
+                }
+            </ul>
+            @if (canEdit)
+            {
+                <div class="lw-add">
+                    @if (IsEpic)
+                    {
+                        <MudSelect T="IssueType" @bind-Value="newType" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="lw-type"
+                                   ToStringFunc="@(t => $"{t.Icon()} {t}")" aria-label="Child issue type">
+                            @foreach (var t in HierarchyRules.AllowedChildTypes(IssueType.Epic)) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
+                        </MudSelect>
+                    }
+                    <MudTextField T="string" @bind-Value="newTitle" Immediate="true" Placeholder="@(IsEpic ? "New child issue title" : "New sub-task title")"
+                                  MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyDown="CreateKey" Class="lw-grow" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(newTitle)" OnClick="Create"
+                               StartIcon="@Icons.Material.Filled.Add" Class="lw-nowrap">
+                        @(IsEpic ? "Create" : "Create sub-task")
+                    </MudButton>
+                </div>
+                <div class="lw-add">
+                    <IssuePicker ProjectId="Issue.ProjectId" Types="HierarchyRules.AllowedChildTypes(Issue.Type)" ExcludeIds="exclude"
+                                 Placeholder="@(IsEpic ? "Add existing issue to epic…" : "Move an existing sub-task here…")" OnSelected="AddExisting" />
+                </div>
+            }
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert> }
+        </div>
+    </MudPaper>
 }
 
 @code {
@@ -134,7 +141,8 @@
     private async Task Remove(IssueRef c)
     {
         if (c.Type == IssueType.Subtask &&
-            !await JS.InvokeAsync<bool>("confirm", $"Remove {c.Key} from {Issue.Key}? A sub-task can't stand alone, so it will become a Task.")) return;
+            await Dialogs.ShowMessageBoxAsync("Remove sub-task", $"Remove {c.Key} from {Issue.Key}? A sub-task can't stand alone, so it will become a Task.",
+                yesText: "Remove", cancelText: "Cancel") != true) return;
         await Run(() => LinkedWork.DetachChildAsync(c.Id, Me.Id));
     }
 }

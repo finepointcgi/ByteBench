@@ -1,10 +1,6 @@
-.ai-toggle { border: 1px solid #d8ccf5; color: var(--accent); background: var(--surface); white-space: nowrap; }
-.ai-toggle.on, .ai-toggle:hover { background: var(--accent-soft); color: var(--accent); }
+/* .ai-search sits in the issue list's wrapping filter bar and takes a full row at the end. */
 .ai-search { flex-basis: 100%; order: 99; }
+.ai-search-row { display: flex; gap: 8px; align-items: center; }
+::deep .mud-input-control { margin-top: 0; }
 .ai-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
-.ai-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); color: var(--accent); border-radius: 12px; padding: 1px 4px 1px 10px; font-size: 12px; }
-.ai-chip button { border: none; background: none; color: var(--accent); font-size: 14px; line-height: 1; padding: 0 4px; border-radius: 8px; }
-.ai-chip button:hover { background: #ddd6fe; }
-.btn-ai { background: var(--accent); color: #fff; border: none; }
-.btn-ai:hover:not(:disabled) { background: #5b21b6; color: #fff; }
-.btn-ai:disabled { background: #b9a5e8; color: #fff; }
+.ai-muted { font-size: 12px; color: var(--mud-palette-text-secondary); }

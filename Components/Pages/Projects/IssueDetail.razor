@@ -2,7 +2,7 @@
 @inject IssueService Issues
 @inject CurrentUser Me
 @inject NavigationManager Nav
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
 @inject NotificationService Notifications
 @inject LiveEvents Live
 @implements IDisposable
@@ -18,119 +18,123 @@
 }
 else if (issue != null && project != null)
 {
-    <div class="breadcrumbs">
-        <a href="/p/@project.Key/issues">@project.Name</a> / <a href="/p/@project.Key/issues">Issues</a> / <span class="mono">@issue.Key</span>
-    </div>
+<div class="id-page">
+    <MudBreadcrumbs Items="Crumbs" Class="px-0 pt-0 pb-1" />
     <GitBench.Components.LinkedWork.ParentBreadcrumb Issue="issue" />
 
-    <div class="issue-header">
+    <div class="id-header">
         @if (editingTitle)
         {
-            <div class="d-flex gap-2 flex-grow-1">
-                <input class="form-control form-control-lg" @bind="titleDraft" @onkeydown="TitleKey" />
-                <button class="btn btn-primary" @onclick="SaveTitle">Save</button>
-                <button class="btn btn-outline-secondary" @onclick="() => editingTitle = false">Cancel</button>
+            <div class="id-title-edit">
+                <MudTextField T="string" @bind-Value="titleDraft" Immediate="true" OnKeyDown="TitleKey" AutoFocus="true" MaxLength="200"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Typo="Typo.h6" aria-label="Issue title" Class="flex-grow-1" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveTitle">Save</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="() => editingTitle = false">Cancel</MudButton>
             </div>
         }
         else
         {
-            <h1>
+            <h1 class="id-title">
                 <span title="@issue.Type">@issue.Type.Icon()</span>
-                @issue.Title <span class="muted mono">@issue.Key</span>
+                @issue.Title <span class="id-key mono">@issue.Key</span>
             </h1>
             @if (CanEdit)
             {
-            <div class="d-flex gap-2">
+            <div class="id-actions">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
-                <button class="btn btn-outline-secondary btn-sm" @onclick="StartEditTitle">Edit title</button>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="StartEditTitle">Edit title</MudButton>
                 @if (issue.Status.IsClosed())
                 {
                     @if (ReopenTarget is { } reopen)
                     {
-                        <button class="btn btn-outline-secondary btn-sm" title="Move to @reopen.Name" @onclick="() => SetWorkflowStatus(reopen.Id)">Reopen</button>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Replay" title="@($"Move to {reopen.Name}")"
+                                   OnClick="() => SetWorkflowStatus(reopen.Id)">Reopen</MudButton>
                     }
                 }
                 else if (CloseTarget is { } close)
                 {
-                    <button class="btn btn-success btn-sm" title="Move to @close.Name" @onclick="() => SetWorkflowStatus(close.Id)">Close issue</button>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CheckCircle"
+                               title="@($"Move to {close.Name}")" OnClick="() => SetWorkflowStatus(close.Id)">Close issue</MudButton>
                 }
             </div>
             }
         }
     </div>
-    @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => error = null" Class="mb-3">@error</MudAlert> }
     <GitBench.Components.LinkedWork.BlockedStatusWarning Issue="issue" />
-    <div class="issue-subhead">
+    <div class="id-subhead">
         <StatusBadge Issue="issue" />
-        <span class="muted">
+        <span class="id-muted">
             <b>@issue.Reporter.DisplayName</b> opened this @Display.Ago(issue.CreatedAt)
             @if (issue.ClosedAt is { } ca) { <span> · closed @Display.Ago(ca)</span> }
         </span>
     </div>
 
-    <div class="detail-grid">
-        <div>
+    <MudGrid Spacing="4">
+        <MudItem xs="12" md="8" lg="9" Class="id-main">
             <GitBench.Components.Ai.AiSummary Issue="issue" />
             <!-- Description -->
-            <div class="comment-card">
-                <div class="comment-head">
+            <MudPaper Outlined="true" Class="id-card">
+                <div class="id-card-head">
                     <Avatar User="issue.Reporter" Size="22" /> <b>@issue.Reporter.DisplayName</b>
-                    <span class="muted small">@Display.Ago(issue.CreatedAt)</span>
+                    <span class="id-muted id-small">@Display.Ago(issue.CreatedAt)</span>
                     @if (!editingDesc && CanEdit)
                     {
-                        <button class="btn btn-link btn-sm ms-auto" @onclick="StartEditDesc">Edit</button>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" Class="ml-auto id-text-btn" OnClick="StartEditDesc">Edit</MudButton>
                     }
                 </div>
-                <div class="comment-body">
+                <div class="id-card-body">
                     @if (editingDesc)
                     {
                         <MarkdownEditor @bind-Value="descDraft" Rows="10" AttachToIssueId="issue.Id" />
                         <div class="mt-2 d-flex gap-2">
-                            <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveDesc">Save</MudButton>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editingDesc = false">Cancel</MudButton>
                         </div>
                     }
                     else if (string.IsNullOrWhiteSpace(issue.Description))
                     {
-                        <span class="muted fst-italic">No description provided.</span>
+                        <span class="id-muted"><i>No description provided.</i></span>
                     }
                     else
                     {
                         <div class="markdown">@Display.Markdown(issue.Description)</div>
                     }
                 </div>
-            </div>
+            </MudPaper>
 
             <GitBench.Components.LinkedWork.ChildIssuesPanel Issue="issue" />
             <GitBench.Components.LinkedWork.LinkedIssuesPanel Issue="issue" />
             <AttachmentsPanel IssueId="issue.Id" Perms="perms" />
 
             <!-- Timeline: comments + activity -->
-            <h2 class="section-title mt-4">Activity</h2>
-            <div class="timeline">
+            <MudText Typo="Typo.subtitle1" Class="id-section-title">Activity</MudText>
+            <div class="id-timeline">
                 @foreach (var entry in Timeline)
                 {
                     if (entry is Comment c)
                     {
-                        <div class="comment-card" @key="(1, c.Id)">
-                            <div class="comment-head">
+                        <MudPaper Outlined="true" Class="id-card" @key="(1, c.Id)">
+                            <div class="id-card-head">
                                 <Avatar User="c.Author" Size="22" /> <b>@c.Author.DisplayName</b>
-                                <span class="muted small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
+                                <span class="id-muted id-small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
                                 @if (CanModerate(c) && editingCommentId != c.Id)
                                 {
-                                    <span class="ms-auto">
-                                        <button class="btn btn-link btn-sm" @onclick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }">Edit</button>
-                                        <button class="btn btn-link btn-sm text-danger" @onclick="() => DeleteComment(c)">Delete</button>
+                                    <span class="ml-auto d-flex">
+                                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" title="Edit comment" aria-label="Edit comment"
+                                                       OnClick="() => { editingCommentId = c.Id; commentEditDraft = c.Body; }" />
+                                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" title="Delete comment" aria-label="Delete comment"
+                                                       OnClick="() => DeleteComment(c)" />
                                     </span>
                                 }
                             </div>
-                            <div class="comment-body">
+                            <div class="id-card-body">
                                 @if (editingCommentId == c.Id)
                                 {
                                     <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" AttachToIssueId="issue.Id" AttachFromComment />
                                     <div class="mt-2 d-flex gap-2">
-                                        <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
-                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
+                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="() => SaveCommentEdit(c)">Save</MudButton>
+                                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editingCommentId = null">Cancel</MudButton>
                                     </div>
                                 }
                                 else
@@ -138,14 +142,14 @@ else if (issue != null && project != null)
                                     <div class="markdown">@Display.Markdown(c.Body)</div>
                                 }
                             </div>
-                        </div>
+                        </MudPaper>
                     }
                     else if (entry is Activity a)
                     {
-                        <div class="activity-line" @key="(2, a.Id)">
+                        <div class="id-activity" @key="(2, a.Id)">
                             <Avatar User="a.Actor" Size="18" />
-                            <b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
-                            <span class="muted">@Display.Ago(a.CreatedAt)</span>
+                            <span><b>@a.Actor.DisplayName</b> <span class="md-inline">@Display.Markdown(a.Text)</span>
+                            <span class="id-muted">@Display.Ago(a.CreatedAt)</span></span>
                         </div>
                     }
                 }
@@ -154,110 +158,110 @@ else if (issue != null && project != null)
             <!-- New comment -->
             @if (perms.Can(Permission.Comment))
             {
-            <div class="comment-card mt-3">
-                <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
-                <div class="comment-body">
+            <MudPaper Outlined="true" Class="id-card mt-3">
+                <div class="id-card-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
+                <div class="id-card-body">
                     <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" AttachToIssueId="issue.Id" AttachFromComment />
-                    <div class="mt-2 d-flex gap-2">
-                        <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
+                    <div class="mt-2 d-flex flex-wrap gap-2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(newComment)" OnClick="AddComment">Comment</MudButton>
                         @if (!issue.Status.IsClosed() && CanEdit && CloseTarget != null)
                         {
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="CommentAndClose">
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CheckCircle" OnClick="CommentAndClose">
                                 @(string.IsNullOrWhiteSpace(newComment) ? "Close issue" : "Comment & close")
-                            </button>
+                            </MudButton>
                         }
                     </div>
                 </div>
-            </div>
+            </MudPaper>
             }
-        </div>
+        </MudItem>
 
         <!-- Sidebar -->
-        <aside class="side-panel">
-            @* Viewers see the fields read-only; the service rejects edits anyway. *@
-            <fieldset disabled="@(!CanEdit)" style="border:0;padding:0;margin:0;min-width:0">
-            <div class="field">
-                <label>Status</label>
-                @* Workflow statuses; moves the project's workflow doesn't allow are disabled. *@
-                <select class="form-select form-select-sm" value="@(workflow.Effective(issue)?.Id)" @onchange="e => SetWorkflowStatus(int.Parse((string)e.Value!))">
-                    @foreach (var s in workflow.Statuses)
-                    {
-                        <option value="@s.Id" disabled="@(!workflow.IsAllowed(workflow.Effective(issue)?.Id, s.Id))">@s.Name</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Assignee</label>
-                <div class="d-flex align-items-center gap-2">
-                    <Avatar User="issue.Assignee" Size="24" />
-                    <select class="form-select form-select-sm" value="@(issue.AssigneeId?.ToString() ?? "")" @onchange="SetAssignee">
-                        <option value="">Unassigned</option>
-                        @foreach (var u in users) { <option value="@u.Id">@u.DisplayName</option> }
-                    </select>
+        <MudItem xs="12" md="4" lg="3">
+            <MudPaper Outlined="true" Class="id-side" aria-label="Issue fields">
+                @* Viewers see the fields read-only (disabled); the service rejects edits anyway. Inputs are re-keyed after a failed
+                   change so they show the issue's real value again. *@
+                <MudStack Spacing="4">
+                    <MudSelect T="int" @key="(nameof(SetWorkflowStatus), fieldsVersion)" Value="@(workflow.Effective(issue)?.Id ?? 0)" ValueChanged="SetWorkflowStatus"
+                               Label="Status" Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               ToStringFunc="@(id => workflow.Statuses.FirstOrDefault(s => s.Id == id)?.Name ?? issue.Status.Name())">
+                        @* Workflow statuses; moves the project's workflow doesn't allow are disabled. *@
+                        @foreach (var s in workflow.Statuses)
+                        {
+                            <MudSelectItem Value="s.Id" Disabled="@(!workflow.IsAllowed(workflow.Effective(issue)?.Id, s.Id))">@s.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <div>
+                        <div class="d-flex align-center gap-2">
+                            <Avatar User="issue.Assignee" Size="24" />
+                            @* 0 stands for "Unassigned". *@
+                            <MudSelect T="int" @key="(nameof(SetAssigneeId), fieldsVersion)" Value="@(issue.AssigneeId ?? 0)" ValueChanged="v => SetAssigneeId(v == 0 ? null : v)"
+                                       Label="Assignee" Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="AssigneeName">
+                                <MudSelectItem Value="0">Unassigned</MudSelectItem>
+                                @foreach (var u in users) { <MudSelectItem Value="u.Id">@u.DisplayName</MudSelectItem> }
+                            </MudSelect>
+                        </div>
+                        @if (issue.AssigneeId != Me.Id && CanEdit)
+                        {
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Class="id-link-btn" OnClick="() => SetAssigneeId(Me.Id)">Assign to me</MudButton>
+                        }
+                    </div>
+                    <MudSelect T="IssuePriority" @key="(nameof(SetPriority), fieldsVersion)" Value="issue.Priority" ValueChanged="SetPriority" Label="Priority"
+                               Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        @foreach (var p in Enum.GetValues<IssuePriority>().Reverse())
+                        {
+                            <MudSelectItem Value="p"><span class="d-inline-flex align-center gap-2"><PriorityIcon Priority="p" /> @p</span></MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="IssueType" @key="(nameof(SetType), fieldsVersion)" Value="issue.Type" ValueChanged="SetType" Label="Type"
+                               Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="@(t => $"{t.Icon()} {t}")">
+                        @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
+                    </MudSelect>
+                    <GitBench.Components.LinkedWork.ParentField Issue="issue" />
+                    @* 0 stands for "None". *@
+                    <MudSelect T="int" @key="(nameof(SetMilestone), fieldsVersion)" Value="@(issue.MilestoneId ?? 0)" ValueChanged="SetMilestone" Label="Milestone"
+                               Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                               ToStringFunc="@(id => id == 0 ? "None" : project.Milestones.FirstOrDefault(m => m.Id == id)?.Title ?? "")">
+                        <MudSelectItem Value="0">None</MudSelectItem>
+                        @foreach (var m in project.Milestones.Where(m => !m.IsClosed || m.Id == issue.MilestoneId)) { <MudSelectItem Value="m.Id">@m.Title</MudSelectItem> }
+                    </MudSelect>
+                    <IssueSprintField Issue="issue" />
+                    <div>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary id-label">Labels</MudText>
+                        <div class="id-labels">
+                            @foreach (var l in project.Labels)
+                            {
+                                var on = issue.Labels.Any(x => x.Id == l.Id);
+                                <MudChip T="string" Size="Size.Small" Class="ma-0" Disabled="@(!CanEdit)" OnClick="() => ToggleLabel(l)" aria-pressed="@(on ? "true" : "false")"
+                                         Variant="@(on ? Variant.Filled : Variant.Outlined)" Icon="@(on ? Icons.Material.Filled.Check : null)"
+                                         Style="@(on ? $"background:{l.Color};color:{Display.TextOn(l.Color)}" : $"border-color:{l.Color};color:var(--mud-palette-text-primary)")">@l.Name</MudChip>
+                            }
+                            @if (project.Labels.Count == 0)
+                            {
+                                <a class="id-small" href="/p/@project.Key/settings">Create labels</a>
+                            }
+                        </div>
+                    </div>
+                    <MudNumericField T="int?" @key="(nameof(SetPoints), fieldsVersion)" Value="issue.StoryPoints" ValueChanged="SetPoints" Label="Story points"
+                                     Min="0" Max="100" Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudDatePicker @key="(nameof(SetDue), fieldsVersion)" Date="issue.DueDate" DateChanged="SetDue" Label="Due date" Disabled="@(!CanEdit)"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DateFormat="yyyy-MM-dd" Editable="true" />
+                </MudStack>
+                <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
+                <div class="id-reporter">
+                    <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName /></div>
+                    <div>Created @issue.CreatedAt.ToLocalTime().ToString("g")</div>
+                    <div>Updated @Display.Ago(issue.UpdatedAt)</div>
                 </div>
-                @if (issue.AssigneeId != Me.Id && CanEdit)
+                @if (perms.Role >= ProjectRole.Maintainer)
                 {
-                    <button class="btn btn-link btn-sm p-0" @onclick="() => SetAssigneeId(Me.Id)">Assign to me</button>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" FullWidth="true" StartIcon="@Icons.Material.Outlined.Delete"
+                               OnClick="Delete" Class="mt-3">Delete issue</MudButton>
                 }
-            </div>
-            <div class="field">
-                <label>Priority</label>
-                <select class="form-select form-select-sm" value="@issue.Priority" @onchange="SetPriority">
-                    @foreach (var p in Enum.GetValues<IssuePriority>().Reverse()) { <option value="@p">@p.Icon() @p</option> }
-                </select>
-            </div>
-            <div class="field">
-                <label>Type</label>
-                <select class="form-select form-select-sm" value="@issue.Type" @onchange="SetType">
-                    @foreach (var t in Enum.GetValues<IssueType>()) { <option value="@t">@t.Icon() @t</option> }
-                </select>
-            </div>
-            <GitBench.Components.LinkedWork.ParentField Issue="issue" />
-            <div class="field">
-                <label>Milestone</label>
-                <select class="form-select form-select-sm" value="@(issue.MilestoneId?.ToString() ?? "")" @onchange="SetMilestone">
-                    <option value="">None</option>
-                    @foreach (var m in project.Milestones.Where(m => !m.IsClosed || m.Id == issue.MilestoneId)) { <option value="@m.Id">@m.Title</option> }
-                </select>
-            </div>
-            <IssueSprintField Issue="issue" />
-            <div class="field">
-                <label>Labels</label>
-                <div class="label-picker">
-                    @foreach (var l in project.Labels)
-                    {
-                        var on = issue.Labels.Any(x => x.Id == l.Id);
-                        <button type="button" class="label-toggle @(on ? "on" : "")" style="--c:@l.Color;--t:@Display.TextOn(l.Color)" @onclick="() => ToggleLabel(l)">@l.Name</button>
-                    }
-                    @if (project.Labels.Count == 0)
-                    {
-                        <a class="small" href="/p/@project.Key/settings">Create labels</a>
-                    }
-                </div>
-            </div>
-            <div class="field">
-                <label>Story points</label>
-                <input type="number" min="0" max="100" class="form-control form-control-sm" value="@issue.StoryPoints" @onchange="SetPoints" />
-            </div>
-            <div class="field">
-                <label>Due date</label>
-                <input type="date" class="form-control form-control-sm" value="@issue.DueDate?.ToString("yyyy-MM-dd")" @onchange="SetDue" />
-            </div>
-            </fieldset>
-            <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
-            <div class="field muted small">
-                Reporter: <Avatar User="issue.Reporter" Size="18" ShowName /><br />
-                Created @issue.CreatedAt.ToLocalTime().ToString("g")<br />
-                Updated @Display.Ago(issue.UpdatedAt)
-            </div>
-            @if (perms.Role >= ProjectRole.Maintainer)
-            {
-                <div class="field">
-                    <button class="btn btn-outline-danger btn-sm w-100" @onclick="Delete">Delete issue</button>
-                </div>
-            }
-        </aside>
-    </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</div>
 }
 
 @code {
@@ -270,6 +274,7 @@ else if (issue != null && project != null)
     private bool notFound;
     private ProjectPermissions perms = ProjectPermissions.None;
     private string? error;
+    private int fieldsVersion; // bumped when a change fails, so the side panel's inputs re-render with the stored values
     private bool CanEdit => perms.Can(Permission.EditIssues);
     private ProjectWorkflow workflow = ProjectWorkflow.Empty;
     private IEnumerable<WorkflowStatus> AllowedTargets => workflow.AllowedFrom(workflow.Effective(issue!));
@@ -279,6 +284,15 @@ else if (issue != null && project != null)
         .OrderBy(s => s.Category == IssueStatus.Todo ? 0 : 1).FirstOrDefault();
     // Authors edit/delete their own comments; Maintainers and above can moderate anyone's.
     private bool CanModerate(Comment c) => (c.AuthorId == Me.Id && perms.Can(Permission.Comment)) || perms.Role >= ProjectRole.Maintainer;
+
+    private List<BreadcrumbItem> Crumbs =>
+    [
+        new(project!.Name, $"/p/{project.Key}/issues"),
+        new("Issues", $"/p/{project.Key}/issues"),
+        new(issue!.Key, null, disabled: true),
+    ];
+
+    private string AssigneeName(int id) => id == 0 ? "Unassigned" : users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "";
 
     private bool editingTitle, editingDesc;
     private string titleDraft = "";
@@ -304,7 +318,7 @@ else if (issue != null && project != null)
     {
         error = null;
         try { await action(); return true; }
-        catch (InvalidOperationException ex) { error = ex.Message; return false; }
+        catch (InvalidOperationException ex) { error = ex.Message; fieldsVersion++; return false; }
     }
 
     private async Task Reload()
@@ -365,7 +379,7 @@ else if (issue != null && project != null)
 
     private async Task SaveTitle()
     {
-        var t = titleDraft.Trim();
+        var t = (titleDraft ?? "").Trim();
         if (t.Length is 0 or > 200) return;
         await Change(i => { if (i.Title == t) return null; var old = i.Title; i.Title = t; return $"changed the title from ~~{old}~~ to **{t}**"; });
         editingTitle = false;
@@ -392,8 +406,6 @@ else if (issue != null && project != null)
         await Reload();
     }
 
-    private Task SetAssignee(ChangeEventArgs e) => SetAssigneeId(int.TryParse(e.Value?.ToString(), out var id) ? id : null);
-
     private Task SetAssigneeId(int? id) => Change(i =>
     {
         if (i.AssigneeId == id) return null;
@@ -402,25 +414,23 @@ else if (issue != null && project != null)
         return u == null ? "removed the assignee" : u.Id == Me.Id ? "self-assigned this issue" : $"assigned to **{u.DisplayName}**";
     });
 
-    private Task SetPriority(ChangeEventArgs e) => Change(i =>
+    private Task SetPriority(IssuePriority p) => Change(i =>
     {
-        var p = Enum.Parse<IssuePriority>(e.Value!.ToString()!);
         if (i.Priority == p) return null;
         i.Priority = p;
         return $"set priority to **{p}**";
     });
 
-    private Task SetType(ChangeEventArgs e) => Change(i =>
+    private Task SetType(IssueType t) => Change(i =>
     {
-        var t = Enum.Parse<IssueType>(e.Value!.ToString()!);
         if (i.Type == t) return null;
         i.Type = t;
         return $"changed type to **{t}**";
     });
 
-    private Task SetMilestone(ChangeEventArgs e) => Change(i =>
+    private Task SetMilestone(int value) => Change(i =>
     {
-        int? id = int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+        int? id = value == 0 ? null : value;
         if (i.MilestoneId == id) return null;
         i.MilestoneId = id;
         var m = project!.Milestones.FirstOrDefault(x => x.Id == id);
@@ -439,18 +449,18 @@ else if (issue != null && project != null)
         return $"added label **{label.Name}**";
     });
 
-    private Task SetPoints(ChangeEventArgs e) => Change(i =>
+    private Task SetPoints(int? value) => Change(i =>
     {
-        int? p = int.TryParse(e.Value?.ToString(), out var v) ? Math.Clamp(v, 0, 100) : null;
+        int? p = value is { } v ? Math.Clamp(v, 0, 100) : null;
         if (i.StoryPoints == p) return null;
         var old = i.StoryPoints;
         i.StoryPoints = p;
         return SprintHistory.EstimateText(old, p);
     });
 
-    private Task SetDue(ChangeEventArgs e) => Change(i =>
+    private Task SetDue(DateTime? value) => Change(i =>
     {
-        DateTime? d = DateTime.TryParse(e.Value?.ToString(), out var v) ? v.Date : null;
+        DateTime? d = value?.Date;
         if (i.DueDate == d) return null;
         i.DueDate = d;
         return d == null ? "removed the due date" : $"set the due date to **{d:MMM d, yyyy}**";
@@ -485,14 +495,15 @@ else if (issue != null && project != null)
 
     private async Task DeleteComment(Comment c)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Delete this comment?")) return;
+        if (await Dialogs.ShowMessageBoxAsync("Delete comment", "Delete this comment?", yesText: "Delete", cancelText: "Cancel") != true) return;
         await Guard(() => Issues.DeleteCommentAsync(c.Id));
         await Reload();
     }
 
     private async Task Delete()
     {
-        if (!await JS.InvokeAsync<bool>("confirm", await LinkedWork.DeleteConfirmTextAsync(issue!.Id, issue.Key))) return;
+        var text = await LinkedWork.DeleteConfirmTextAsync(issue!.Id, issue.Key);
+        if (await Dialogs.ShowMessageBoxAsync($"Delete {issue.Key}?", text, yesText: "Delete issue", cancelText: "Cancel") != true) return;
         if (!await Guard(() => Issues.DeleteIssueAsync(issue.Id))) return;
         Nav.NavigateTo($"/p/{project!.Key}/issues");
     }

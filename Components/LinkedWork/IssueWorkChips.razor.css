@@ -1,0 +1,10 @@
+.lw-chip {
+    display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px;
+    white-space: nowrap; vertical-align: middle;
+    background: var(--mud-palette-action-default-hover); color: var(--mud-palette-text-secondary);
+}
+a.lw-chip:hover { text-decoration: none; background: rgba(var(--mud-palette-primary-rgb), .22); }
+.lw-chip-parent { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(var(--mud-palette-primary-rgb), .12); color: var(--mud-palette-primary); }
+.lw-chip-blocked { background: rgba(var(--mud-palette-error-rgb), .14); color: var(--mud-palette-error); font-weight: 600; }
+.lw-chip-complete { background: rgba(var(--mud-palette-success-rgb), .16); color: var(--mud-palette-success); }
+::deep .lw-chip-icon { font-size: 13px; }

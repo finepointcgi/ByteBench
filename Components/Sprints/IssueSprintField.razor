@@ -4,20 +4,21 @@
 @inject ProjectAccess Access
 @inject LiveEvents Live
 
-<div class="field">
-    <label for="issue-sprint-@Issue.Id">Sprint</label>
-    <select id="issue-sprint-@Issue.Id" class="form-select form-select-sm" value="@(Issue.SprintId?.ToString() ?? "")" @onchange="Change" disabled="@(!canEdit)">
-        <option value="">Backlog (no sprint)</option>
+<div class="sprint-field">
+    @* 0 stands for "Backlog (no sprint)". Keyed so a failed move shows the issue's real sprint again. *@
+    <MudSelect T="int" @key="(Issue.SprintId, attempts)" Value="@(Issue.SprintId ?? 0)" ValueChanged="Change" Label="Sprint" Disabled="@(!canEdit)"
+               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="SprintName" InputId="@($"issue-sprint-{Issue.Id}")">
+        <MudSelectItem Value="0">Backlog (no sprint)</MudSelectItem>
         @foreach (var s in sprints.Where(s => s.State != SprintState.Completed || s.Id == Issue.SprintId))
         {
-            <option value="@s.Id">@s.Name@(s.State == SprintState.Planned ? "" : $" ({s.State.ToString().ToLowerInvariant()})")</option>
+            <MudSelectItem Value="s.Id">@SprintName(s.Id)</MudSelectItem>
         }
-    </select>
+    </MudSelect>
     @if (Issue.SprintId != null)
     {
-        <a class="small" href="/p/@Issue.Project?.Key/backlog#sprint-@Issue.SprintId">View in backlog</a>
+        <a class="sprint-link" href="/p/@Issue.Project?.Key/backlog#sprint-@Issue.SprintId">View in backlog</a>
     }
-    @if (error != null) { <div class="text-danger small mt-1">@error</div> }
+    @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mt-1">@error</MudText> }
 </div>
 
 @code {
@@ -25,9 +26,12 @@
 
     private List<Sprint> sprints = [];
     private bool canEdit;
-    private int loadedFor;
+    private int loadedFor, attempts;
     private string? error;
     private IDisposable? sub;
+
+    private string SprintName(int id) => id == 0 ? "Backlog (no sprint)"
+        : sprints.FirstOrDefault(s => s.Id == id) is { } s ? s.Name + (s.State == SprintState.Planned ? "" : $" ({s.State.ToString().ToLowerInvariant()})") : "";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -46,12 +50,12 @@
         }));
     }
 
-    private async Task Change(ChangeEventArgs e)
+    private async Task Change(int value)
     {
         error = null;
-        int? id = int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+        int? id = value == 0 ? null : value;
         try { await Sprints.MoveIssueAsync(Issue.Id, id, null, reorder: false); }
-        catch (InvalidOperationException ex) { error = ex.Message; }
+        catch (InvalidOperationException ex) { error = ex.Message; attempts++; }
     }
 
     public void Dispose() => sub?.Dispose();

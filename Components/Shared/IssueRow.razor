@@ -1,33 +1,35 @@
-<a class="issue-row @(Issue.Status.IsClosed() ? "closed" : "")" href="/p/@Issue.Project.Key/issues/@Issue.Number">
-    <span class="issue-type" title="@Issue.Type">@Issue.Type.Icon()</span>
-    <div class="issue-main">
-        <div class="issue-title">
-            @Issue.Title
+<a class="gb-issue-row @(Issue.Status.IsClosed() ? "closed" : "")" href="/p/@Issue.Project.Key/issues/@Issue.Number">
+    <span class="gb-ir-type" title="@Issue.Type">@Issue.Type.Icon()</span>
+    <div class="gb-ir-main">
+        <div class="gb-ir-title">
+            <span class="gb-ir-title-text">@Issue.Title</span>
             @foreach (var l in Issue.Labels.OrderBy(l => l.Name))
             {
                 <LabelChip Label="l" />
             }
         </div>
-        <div class="issue-meta">
+        <div class="gb-ir-meta">
             <span class="mono">@Issue.Key</span><GitBench.Components.LinkedWork.IssueWorkChips Issue="Issue" />
-            · opened @Display.Ago(Issue.CreatedAt)
+            <span class="gb-ir-sep">·</span> opened @Display.Ago(Issue.CreatedAt)
             @if (Issue.Milestone is { } m)
             {
-                <span> · 🏁 @m.Title</span>
+                <span class="gb-ir-sep">·</span>
+                <span class="gb-ir-item" title="Milestone"><MudIcon Icon="@Icons.Material.Outlined.Flag" Class="gb-ir-icon" /> @m.Title</span>
             }
             @if (Issue.DueDate is { } d)
             {
-                <span class="@(d.Date < DateTime.Today && !Issue.Status.IsClosed() ? "overdue" : "")"> · 📅 @d.ToString("MMM d")</span>
+                <span class="gb-ir-sep">·</span>
+                <span class="gb-ir-item @(d.Date < DateTime.Today && !Issue.Status.IsClosed() ? "overdue" : "")" title="Due date"><MudIcon Icon="@Icons.Material.Outlined.Event" Class="gb-ir-icon" /> @d.ToString("MMM d")</span>
             }
-            · updated @Display.Ago(Issue.UpdatedAt)
+            <span class="gb-ir-sep">·</span> updated @Display.Ago(Issue.UpdatedAt)
         </div>
     </div>
-    <div class="issue-right">
+    <div class="gb-ir-right">
         <StatusBadge Issue="Issue" />
         <PriorityIcon Priority="Issue.Priority" />
         @if (Issue.StoryPoints is { } sp)
         {
-            <span class="points" title="Story points">@sp</span>
+            <span class="gb-ir-points" title="Story points">@sp</span>
         }
         <Avatar User="Issue.Assignee" />
     </div>

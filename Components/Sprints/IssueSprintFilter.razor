@@ -1,14 +1,14 @@
 @* Issue list filter by sprint (sets IssueFilter.SprintId: null = any, 0 = no sprint). *@
 @inject SprintService Sprints
 
-<select class="form-select form-select-sm" aria-label="Sprint" value="@(Filter.SprintId?.ToString() ?? "")" @onchange="Change">
-    <option value="">Any sprint</option>
-    <option value="0">No sprint (backlog)</option>
+<MudSelect T="int?" Value="Filter.SprintId" ValueChanged="Change" Label="Sprint" Clearable="true" Dense="true"
+           Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="SprintName" aria-label="Sprint">
+    <MudSelectItem T="int?" Value="0">No sprint (backlog)</MudSelectItem>
     @foreach (var s in sprints)
     {
-        <option value="@s.Id">@s.Name@(s.State == SprintState.Active ? " (active)" : s.State == SprintState.Completed ? " (completed)" : "")</option>
+        <MudSelectItem T="int?" Value="s.Id">@SprintName(s.Id)</MudSelectItem>
     }
-</select>
+</MudSelect>
 
 @code {
     [Parameter, EditorRequired] public int ProjectId { get; set; }
@@ -18,6 +18,14 @@
     private List<Sprint> sprints = [];
     private int loadedFor;
 
+    private string SprintName(int? id) => id switch
+    {
+        null => "",
+        0 => "No sprint (backlog)",
+        _ => sprints.FirstOrDefault(s => s.Id == id) is { } s
+            ? s.Name + (s.State == SprintState.Active ? " (active)" : s.State == SprintState.Completed ? " (completed)" : "") : $"#{id}",
+    };
+
     protected override async Task OnParametersSetAsync()
     {
         if (loadedFor == ProjectId) return;
@@ -25,9 +33,9 @@
         sprints = await Sprints.GetSprintsAsync(ProjectId);
     }
 
-    private async Task Change(ChangeEventArgs e)
+    private async Task Change(int? id)
     {
-        Filter.SprintId = int.TryParse(e.Value?.ToString(), out var v) ? v : null;
+        Filter.SprintId = id;
         await OnChanged.InvokeAsync();
     }
 }

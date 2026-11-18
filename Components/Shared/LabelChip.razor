@@ -1,4 +1,5 @@
-<span class="label-chip" style="background:@Label.Color;color:@Display.TextOn(Label.Color)">@Label.Name</span>
+<MudChip T="string" Size="Size.Small" Ripple="false" Class="gb-label-chip my-0 mr-0 ml-1"
+         Style="@($"background:{Label.Color};color:{Display.TextOn(Label.Color)};height:20px;font-size:11.5px;font-weight:500;vertical-align:middle")">@Label.Name</MudChip>
 
 @code {
     [Parameter, EditorRequired] public Label Label { get; set; } = null!;

@@ -1,5 +1,24 @@
-<span class="prio @Priority.Css()" title="Priority: @Priority">@Priority.Icon()</span>
+<MudIcon Icon="@IconFor(Priority)" Title="@($"Priority: {Priority}")" Class="gb-prio"
+         Style="@($"color:{ColorFor(Priority)};font-size:20px;vertical-align:middle")" />
 
 @code {
     [Parameter] public IssuePriority Priority { get; set; }
+
+    private static string IconFor(IssuePriority p) => p switch
+    {
+        IssuePriority.Highest => Icons.Material.Filled.KeyboardDoubleArrowUp,
+        IssuePriority.High => Icons.Material.Filled.KeyboardArrowUp,
+        IssuePriority.Medium => Icons.Material.Filled.DragHandle,
+        IssuePriority.Low => Icons.Material.Filled.KeyboardArrowDown,
+        _ => Icons.Material.Filled.KeyboardDoubleArrowDown,
+    };
+
+    private static string ColorFor(IssuePriority p) => p switch
+    {
+        IssuePriority.Highest => "var(--mud-palette-error)",
+        IssuePriority.High => "#f97316",
+        IssuePriority.Medium => "var(--mud-palette-warning)",
+        IssuePriority.Low => "var(--mud-palette-info)",
+        _ => "#60a5fa",
+    };
 }

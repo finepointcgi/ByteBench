@@ -1,0 +1,13 @@
+/* Dark bar in both themes (it uses the app bar's colours). */
+.bulk-bar {
+    position: sticky; top: 56px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px;
+    padding: 6px 10px 6px 16px; margin-bottom: 10px; border-radius: 8px;
+    background: var(--mud-palette-appbar-background); color: var(--mud-palette-appbar-text);
+    border: 1px solid rgba(var(--mud-palette-primary-rgb), .35); box-shadow: 0 4px 14px rgba(0, 0, 0, .2);
+}
+.bulk-count { margin-right: 8px; white-space: nowrap; }
+
+::deep .bulk-delete { color: #fca5a5; }
+::deep .bulk-clear { opacity: .8; }
+.bulk-end { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.bulk-error { font-size: 12px; color: #fca5a5; }

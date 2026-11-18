@@ -1,9 +1,10 @@
 @* Watch / unwatch toggle for an issue or pull request. The page owns the state and reloads it. *@
-<button type="button" class="btn btn-sm watch-btn @(Watching ? "watching" : "")" @onclick="OnToggle"
-        title="@(Watching ? "You get notifications about this. Click to stop watching." : "Get notifications about comments and changes.")">
-    @(Watching ? "👁 Watching" : "👁 Watch")
-    <span class="count">@Count</span>
-</button>
+<MudButton Size="Size.Small" Variant="Variant.Outlined" Color="@(Watching ? Color.Primary : Color.Default)" OnClick="OnToggle"
+           StartIcon="@(Watching ? Icons.Material.Filled.Visibility : Icons.Material.Outlined.Visibility)" Class="gb-watch-btn"
+           title="@(Watching ? "You get notifications about this. Click to stop watching." : "Get notifications about comments and changes.")">
+    @(Watching ? "Watching" : "Watch")
+    <span class="gb-watch-count">@Count</span>
+</MudButton>
 
 @code {
     [Parameter] public bool Watching { get; set; }

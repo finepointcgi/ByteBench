@@ -3,14 +3,14 @@
 
 @if (ancestors.Count > 0)
 {
-    <div class="lw-crumbs">
+    <nav class="lw-crumbs" aria-label="Parent issues">
         @foreach (var a in ancestors)
         {
             <a href="@a.Url" title="@a.Type: @a.Title"><span>@a.Type.Icon()</span> <span class="mono">@a.Key</span> @a.Title</a>
-            <span class="lw-crumb-sep">›</span>
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Class="lw-crumb-sep" />
         }
         <span class="mono">@Issue.Key</span>
-    </div>
+    </nav>
 }
 
 @code {

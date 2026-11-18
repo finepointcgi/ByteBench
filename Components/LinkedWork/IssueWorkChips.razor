@@ -1,9 +1,9 @@
-@* Parent key, sub-task progress and ⛔ blocked chips for list rows and board cards (data from Issue.Work). *@
+@* Parent key, sub-task progress and blocked chips for list rows and board cards (data from Issue.Work). *@
 @if (Issue.Work is { } w)
 {
     @if (w.Blocked)
     {
-        <span class="lw-chip lw-chip-blocked" title="Blocked by @string.Join(", ", w.BlockedBy)">⛔@(Compact ? "" : " blocked")</span>
+        <span class="lw-chip lw-chip-blocked" title="Blocked by @string.Join(", ", w.BlockedBy)"><MudIcon Icon="@Icons.Material.Filled.Block" Class="lw-chip-icon" />@(Compact ? "" : " blocked")</span>
     }
     @if (w.ParentKey != null)
     {
@@ -19,7 +19,7 @@
     @if (w.ChildTotal > 0)
     {
         <span class="lw-chip @(w.ChildDone == w.ChildTotal ? "lw-chip-complete" : "")"
-              title="@w.ChildDone of @w.ChildTotal @(Issue.Type == IssueType.Epic ? "child issues" : "sub-tasks") done">☑ @w.ChildDone/@w.ChildTotal</span>
+              title="@w.ChildDone of @w.ChildTotal @(Issue.Type == IssueType.Epic ? "child issues" : "sub-tasks") done"><MudIcon Icon="@Icons.Material.Outlined.Checklist" Class="lw-chip-icon" /> @w.ChildDone/@w.ChildTotal</span>
     }
 }
 

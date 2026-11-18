@@ -2,32 +2,40 @@
 @inject AttachmentService Attachments
 @inject IJSRuntime JS
 
+@* wwwroot/js/attachments.js relies on: the .md-editor[data-attach] root, the .md-attach picker, its input[type=file] and the textarea. *@
 <div class="md-editor" data-attach="@(AttachToIssueId != null ? "" : null)">
-    <div class="md-tabs">
-        <button type="button" class="@(preview ? "" : "active")" @onclick="() => preview = false">Write</button>
-        <button type="button" class="@(preview ? "active" : "")" @onclick="() => preview = true">Preview</button>
+    <div class="md-toolbar">
+        <MudTabs Elevation="0" ActivePanelIndex="@(preview ? 1 : 0)" ActivePanelIndexChanged="i => preview = i == 1"
+                 MinimumTabWidth="72px" Class="md-tabbar" TabPanelsClass="d-none" Color="Color.Transparent">
+            <MudTabPanel Text="Write" />
+            <MudTabPanel Text="Preview" />
+        </MudTabs>
         @if (AttachToIssueId != null)
         {
             @* Drop/paste land here too (wwwroot/js/attachments.js hands the files to this input). *@
-            <label class="md-attach ms-2" title="Attach files (or drag & drop / paste them into the text)">
-                📎 Attach
+            <MudButton HtmlTag="label" Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.AttachFile"
+                       Disabled="uploading" Class="md-attach" title="Attach files (or drag & drop / paste them into the text)">
+                Attach
                 <InputFile OnChange="OnFiles" multiple disabled="@uploading" />
-            </label>
-            @if (uploading) { <span class="small muted ms-2"><span class="spinner-border spinner-border-sm"></span> Uploading…</span> }
+            </MudButton>
+            @if (uploading)
+            {
+                <span class="md-uploading"><MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:14px;height:14px" /> Uploading…</span>
+            }
         }
-        <span class="muted small ms-auto">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")</span>
+        <span class="md-hint">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")</span>
     </div>
-    @if (uploadError != null) { <div class="md-attach-error small text-danger">@uploadError</div> }
+    @if (uploadError != null) { <div class="md-attach-error">@uploadError</div> }
     @if (preview)
     {
         <div class="markdown md-preview">
-            @if (string.IsNullOrWhiteSpace(Value)) { <span class="muted">Nothing to preview.</span> }
+            @if (string.IsNullOrWhiteSpace(Value)) { <span class="md-empty">Nothing to preview.</span> }
             else { @Display.Markdown(Value) }
         </div>
     }
     else
     {
-        <textarea class="form-control" rows="@Rows" placeholder="@Placeholder"
+        <textarea class="md-textarea" rows="@Rows" placeholder="@Placeholder"
                   value="@Value" @oninput="OnInput" @ref="textarea"></textarea>
     }
 </div>

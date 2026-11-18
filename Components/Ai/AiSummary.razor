@@ -10,23 +10,24 @@
         <div class="ai-summary-head">
             @if (streaming)
             {
-                <span class="spinner-border spinner-border-sm"></span><b>Summarising…</b>
-                <button type="button" class="btn btn-link btn-sm ms-auto" @onclick="Stop">Stop</button>
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" Style="width:16px;height:16px" /><b>Summarising…</b>
+                <MudButton Variant="Variant.Text" Size="Size.Small" Class="ml-auto ai-text-btn" OnClick="Stop" StartIcon="@Icons.Material.Filled.Stop">Stop</MudButton>
             }
             else if (summary == null)
             {
-                <button type="button" class="btn btn-sm btn-ai" @onclick="Generate">✨ Catch me up</button>
-                <span class="muted small">AI summary of the description, comments and activity.</span>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="Generate">Catch me up</MudButton>
+                <span class="ai-muted">AI summary of the description, comments and activity.</span>
             }
             else
             {
-                <b>✨ Catch me up</b>
-                <span class="ai-badge">AI-generated</span>
-                <span class="muted small" title="@generatedAt?.ToLocalTime().ToString("F")">@(generatedAt is { } g ? Display.Ago(g) : "")</span>
-                @if (stale) { <span class="muted small">· issue updated since</span> }
-                <span class="ms-auto d-flex gap-1">
-                    @if (stale || note != null) { <button type="button" class="btn btn-link btn-sm" @onclick="Generate">Refresh</button> }
-                    <button type="button" class="btn btn-link btn-sm" @onclick="Hide">Hide</button>
+                <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small" />
+                <b>Catch me up</b>
+                <span class="ai-tag">AI-generated</span>
+                <span class="ai-muted" title="@generatedAt?.ToLocalTime().ToString("F")">@(generatedAt is { } g ? Display.Ago(g) : "")</span>
+                @if (stale) { <span class="ai-muted">· issue updated since</span> }
+                <span class="ml-auto d-flex gap-1">
+                    @if (stale || note != null) { <MudButton Variant="Variant.Text" Size="Size.Small" Class="ai-text-btn" OnClick="Generate">Refresh</MudButton> }
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="ai-text-btn" OnClick="Hide">Hide</MudButton>
                 </span>
             }
         </div>
@@ -39,7 +40,7 @@
         {
             <div class="ai-summary-body markdown">@Display.Markdown(summary)</div>
         }
-        @if (note != null) { <div class="ai-summary-note text-danger small">@note</div> }
+        @if (note != null) { <div class="ai-summary-note">@note</div> }
     </div>
 }
 

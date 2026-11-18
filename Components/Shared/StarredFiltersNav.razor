@@ -3,17 +3,20 @@
 @inject LiveEvents Live
 @inject NavigationManager Nav
 
-@* Starred saved filters of the current project, in the sidebar under the project's links. *@
+@* Starred saved filters of the current project, in MainLayout's drawer nav under the project's links. *@
 @if (starred.Count > 0)
 {
     <div class="side-filters">
-        <a class="side-heading side-filters-heading" href="/p/@ProjectKey/filters" title="Manage filters">★ Starred filters</a>
+        <MudDivider Class="my-2 gb-nav-divider" />
+        <a class="gb-nav-heading side-filters-heading" href="/p/@ProjectKey/filters" title="Manage filters">Starred filters</a>
         @foreach (var f in starred)
         {
             var href = $"/p/{ProjectKey}/issues" + (f.Query.Length > 0 ? "?" + f.Query : "");
-            <a class="side-link side-filter @(IsActive(f) ? "active" : "")" href="@href" title="@(f.IsShared ? f.Name + " (shared)" : f.Name)" @key="f.Id">
+            @* NavLink's own matching ignores the query string, so "active" is decided here (ActiveClass is neutralised). *@
+            <MudNavLink Href="@href" Icon="@Icons.Material.Filled.Star" Match="NavLinkMatch.All" ActiveClass="side-filter-match"
+                        Class="@(IsActive(f) ? "side-filter active" : "side-filter")" title="@(f.IsShared ? f.Name + " (shared)" : f.Name)" @key="f.Id">
                 <span class="side-filter-name">@f.Name</span>
-            </a>
+            </MudNavLink>
         }
     </div>
 }

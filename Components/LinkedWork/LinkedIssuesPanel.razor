@@ -8,57 +8,65 @@
 
 @if (canEdit || links.Count > 0)
 {
-    <div class="lw-panel">
-        <div class="lw-panel-head">
-            <h2 class="section-title m-0">Linked issues</h2>
-            @if (OpenBlockers.Any())
-            {
-                <span class="lw-blocked" title="Blocked by @string.Join(", ", OpenBlockers.Select(b => b.Other.Key))">⛔ Blocked</span>
-            }
-        </div>
-        @foreach (var group in links.GroupBy(l => l.Relation))
-        {
-            <div class="lw-group">@LinkedWorkService.Phrase(group.Key)</div>
-            <ul class="lw-list">
-                @foreach (var l in group)
+    <MudPaper Outlined="true" Class="px-4 py-3 mb-3">
+        <div class="lw-panel">
+            <div class="lw-panel-head">
+                <MudText Typo="Typo.subtitle1" Class="lw-panel-title">Linked issues</MudText>
+                @if (OpenBlockers.Any())
                 {
-                    <li @key="l.LinkId" class="@(l.Other.Status == IssueStatus.Done ? "lw-done-row" : "")">
-                        <span title="@l.Other.Type">@l.Other.Type.Icon()</span>
-                        <a class="mono small" href="@l.Other.Url">@l.Other.Key</a>
-                        <a class="lw-item-title" href="@l.Other.Url">@l.Other.Title</a>
-                        <Avatar User="l.Other.Assignee" Size="20" />
-                        <StatusBadge Status="l.Other.Status" />
-                        @if (canEdit)
-                        {
-                            <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="Remove link" @onclick="() => Remove(l)">✕</button>
-                        }
-                    </li>
+                    <span class="lw-blocked" title="Blocked by @string.Join(", ", OpenBlockers.Select(b => b.Other.Key))">
+                        <MudIcon Icon="@Icons.Material.Filled.Block" Class="lw-blocked-icon" /> Blocked
+                    </span>
                 }
-            </ul>
-        }
-        @if (links.Count == 0)
-        {
-            <div class="muted small mb-2">No linked issues.</div>
-        }
-        @if (offerClose != null)
-        {
-            <div class="lw-offer">
-                <span>@Issue.Key duplicates <b>@offerClose</b>. Close it?</span>
-                <button type="button" class="btn btn-sm btn-success" @onclick="CloseAsDuplicate">Close as duplicate</button>
-                <button type="button" class="btn btn-sm btn-link" @onclick="() => offerClose = null">Not now</button>
             </div>
-        }
-        @if (canEdit)
-        {
-            <div class="lw-add">
-                <select class="form-select form-select-sm lw-type" @bind="relation" aria-label="Link type">
-                    @foreach (var r in Enum.GetValues<IssueLinkRelation>()) { <option value="@r">@LinkedWorkService.Phrase(r)</option> }
-                </select>
-                <IssuePicker ExcludeIds="exclude" Placeholder="Link an issue: key or title, any project…" OnSelected="Add" />
-            </div>
-        }
-        @if (error != null) { <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">@error</div> }
-    </div>
+            @foreach (var group in links.GroupBy(l => l.Relation))
+            {
+                <div class="lw-group">@LinkedWorkService.Phrase(group.Key)</div>
+                <ul class="lw-list">
+                    @foreach (var l in group)
+                    {
+                        <li @key="l.LinkId" class="@(l.Other.Status == IssueStatus.Done ? "lw-done-row" : "")">
+                            <span title="@l.Other.Type">@l.Other.Type.Icon()</span>
+                            <a class="mono lw-key" href="@l.Other.Url">@l.Other.Key</a>
+                            <a class="lw-item-title" href="@l.Other.Url">@l.Other.Title</a>
+                            <Avatar User="l.Other.Assignee" Size="20" />
+                            <StatusBadge Status="l.Other.Status" />
+                            @if (canEdit)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" title="Remove link"
+                                               aria-label="@($"Remove link to {l.Other.Key}")" Class="lw-remove" OnClick="() => Remove(l)" />
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (links.Count == 0)
+            {
+                <div class="lw-muted mt-1 mb-2">No linked issues.</div>
+            }
+            @if (offerClose != null)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2" ContentAlignment="HorizontalAlignment.Left">
+                    <div class="lw-offer">
+                        <span>@Issue.Key duplicates <b>@offerClose</b>. Close it?</span>
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" OnClick="CloseAsDuplicate">Close as duplicate</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => offerClose = null">Not now</MudButton>
+                    </div>
+                </MudAlert>
+            }
+            @if (canEdit)
+            {
+                <div class="lw-add">
+                    <MudSelect T="IssueLinkRelation" @bind-Value="relation" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="lw-type"
+                               ToStringFunc="@(r => LinkedWorkService.Phrase(r))" aria-label="Link type">
+                        @foreach (var r in Enum.GetValues<IssueLinkRelation>()) { <MudSelectItem Value="r">@LinkedWorkService.Phrase(r)</MudSelectItem> }
+                    </MudSelect>
+                    <IssuePicker ExcludeIds="exclude" Placeholder="Link an issue: key or title, any project…" OnSelected="Add" />
+                </div>
+            }
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert> }
+        </div>
+    </MudPaper>
 }
 
 @code {
