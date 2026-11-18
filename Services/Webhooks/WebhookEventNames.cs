@@ -15,6 +15,8 @@ public static class WebhookEventNames
     public const string PullRequestCommented = "pull_request.commented";
     /// <summary>Raised by CI pipelines (not by this module) through <see cref="WebhookDispatcher.Enqueue"/>.</summary>
     public const string PipelineCompleted = "pipeline.completed";
+    /// <summary>A deployment waits for approval, starts, finishes, or is rejected or canceled (raised by CI).</summary>
+    public const string DeploymentStatus = "deployment.status";
     // ----- Releases -----
     public const string ReleasePublished = "release.published";
     public const string TagCreated = "tag.created";
@@ -33,6 +35,7 @@ public static class WebhookEventNames
         (PullRequestDeclined, "A pull request is declined"),
         (PullRequestCommented, "Someone comments on a pull request"),
         (PipelineCompleted, "A CI pipeline finishes"),
+        (DeploymentStatus, "A deployment changes status (waiting for approval, running, passed, failed, canceled)"),
         (ReleasePublished, "A release is published"),
         (TagCreated, "A tag is created (in GitBench or by a push)"),
         (TagDeleted, "A tag is deleted (in GitBench or by a push)"),

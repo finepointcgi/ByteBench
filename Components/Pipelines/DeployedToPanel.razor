@@ -1,0 +1,65 @@
+@* Traceability: which environments an issue's commits, a merged pull request or a release tag are deployed to. *@
+@inject DeploymentTraceService Trace
+
+@if (traces == null)
+{
+    @if (ShowEmpty) { <MudText Class="mud-text-secondary" Typo="Typo.caption">Loading…</MudText> }
+}
+else if (traces.Count == 0)
+{
+    @if (ShowEmpty) { <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">@EmptyText</MudText> }
+}
+else
+{
+    <div class="deployed-to">
+        @foreach (var t in traces)
+        {
+            <div class="deployed-item" @key="(t.Repository.Id, t.Environment.Id)">
+                <MudIcon Icon="@Icons.Material.Outlined.Cloud" Size="Size.Small" Color="Color.Success" />
+                <span>
+                    <a href="@PipelineUrls.Environments(t.Repository)"><b>@t.Environment.Name</b></a>
+                    @if (ShowRepo) { <span class="mud-text-secondary"> (@t.Repository.Slug)</span> }
+                    @if (!t.All) { <span class="mud-text-secondary"> · @t.Included of @t.Total commits</span> }
+                    <span class="mud-text-secondary">
+                        · @(t.FirstDeployment is { } f && f.Id != t.Current.Id ? $"since {Display.Ago(f.FinishedAt ?? f.CreatedAt)}" : $"deployed {Display.Ago(t.Current.FinishedAt ?? t.Current.CreatedAt)}")
+                    </span>
+                    · <a href="@PipelineUrls.Detail(t.Repository, t.Current.PipelineId)" class="small">#@t.Current.PipelineId</a>
+                    @if (t.Environment.ExternalUrl != null && t.Environment.StoppedAt == null)
+                    {
+                        <a href="@t.Environment.ExternalUrl" target="_blank" rel="noopener noreferrer" aria-label="@($"Open {t.Environment.Name}")">
+                            <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Style="font-size: 13px; vertical-align: -2px" />
+                        </a>
+                    }
+                </span>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>An issue: commits mentioning its key and merge commits of its merged pull requests, in any repository.</summary>
+    [Parameter] public Issue? Issue { get; set; }
+    /// <summary>A pull request (with Repository loaded): its merge commit.</summary>
+    [Parameter] public PullRequest? PullRequest { get; set; }
+    /// <summary>With <see cref="Tag"/>: where that tag of the repository is deployed.</summary>
+    [Parameter] public Repository? Repo { get; set; }
+    [Parameter] public string? Tag { get; set; }
+    [Parameter] public bool ShowRepo { get; set; }
+    [Parameter] public bool ShowEmpty { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "Not deployed to any environment yet.";
+
+    private List<EnvironmentTrace>? traces;
+    private string? loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = Issue != null ? $"i{Issue.Id}" : PullRequest != null ? $"p{PullRequest.Id}:{PullRequest.MergeCommitSha}" : $"t{Repo?.Id}:{Tag}";
+        if (key == loadedFor) return;
+        loadedFor = key;
+        traces = null;
+        if (Issue != null) traces = await Trace.ForIssueAsync(Issue.ProjectId, Issue.Project.Key, Issue.Number);
+        else if (PullRequest != null) traces = await Trace.ForPullRequestAsync(PullRequest.Repository, PullRequest);
+        else if (Repo != null && Tag != null) traces = await Trace.ForTagAsync(Repo, Tag);
+        else traces = [];
+    }
+}

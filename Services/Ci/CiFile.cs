@@ -81,8 +81,14 @@ public sealed record CiArtifactsDefinition(IReadOnlyList<string> Paths, TimeSpan
 /// <summary><c>cache:</c>. <see cref="Key"/> is a template: literal text plus <c>{{ hashFiles('a', 'b/**') }}</c>.</summary>
 public sealed record CiCacheDefinition(string Key, IReadOnlyList<string> Paths);
 
-/// <summary><c>environment:</c> the job deploys to <see cref="Name"/>.</summary>
-public sealed record CiEnvironmentDefinition(string Name, string? Url);
+/// <summary>
+/// <c>environment:</c> the job deploys to <see cref="Name"/>. <see cref="Action"/> <c>stop</c> makes it a stop job: when it
+/// passes, the environment is marked stopped.
+/// </summary>
+public sealed record CiEnvironmentDefinition(string Name, string? Url, string? Action = null)
+{
+    public bool IsStop => Action == "stop";
+}
 
 /// <summary>The result of parsing: a definition, or a readable error.</summary>
 public sealed record CiParseResult(CiDefinition? Definition, string? Error)
@@ -113,7 +119,7 @@ public sealed record CiParseResult(CiDefinition? Definition, string? Error)
 ///     when: manual                       # waits for someone to click Run
 ///     allow_failure: false               # manual jobs don't block the pipeline unless this is false
 ///     only: [main]                       # or rules: [ { branches: [main], when: manual }, { when: never } ]
-///     environment: { name: production, url: https://example.com }
+///     environment: { name: production, url: https://example.com }   # action: stop for a job that tears it down
 ///     steps: [ { run: ./deploy.sh } ]
 /// </code>
 /// Unknown keys are errors, so typos are caught.
@@ -194,6 +200,7 @@ public static partial class CiFile
     {
         public string? Name { get; set; }
         public string? Url { get; set; }
+        public string? Action { get; set; }
     }
 
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()
@@ -355,7 +362,14 @@ public static partial class CiFile
                 if (url.Length > 500 || !Uri.TryCreate(url, UriKind.Absolute, out var u) || (u.Scheme != "https" && u.Scheme != "http"))
                     return Err($"environment url '{url}' must be an absolute http or https URL.");
             }
-            environment = new CiEnvironmentDefinition(en, url);
+            string? action;
+            switch (job.Environment.Action?.Trim())
+            {
+                case null or "" or "start": action = null; break;
+                case "stop": action = "stop"; break;
+                default: return Err($"environment action '{job.Environment.Action}' is not valid: use start or stop.");
+            }
+            environment = new CiEnvironmentDefinition(en, url, action);
         }
 
         return new Extras(when, rules, artifacts, cache, environment, null);

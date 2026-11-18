@@ -625,12 +625,46 @@ namespace GitBench.Data.Migrations
                     b.Property<int>("RepositoryId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("RequiredApprovals")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTime?>("StoppedAt")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RepositoryId", "Name")
                         .IsUnique();
 
                     b.ToTable("CiEnvironments");
+                });
+
+            modelBuilder.Entity("GitBench.Data.CiEnvironmentApprover", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EnvironmentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("CiEnvironmentApprovers");
                 });
 
             modelBuilder.Entity("GitBench.Data.CiVariable", b =>
@@ -891,10 +925,55 @@ namespace GitBench.Data.Migrations
                     b.ToTable("DashboardHomes");
                 });
 
+            modelBuilder.Entity("GitBench.Data.DeployFreezeWindow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CronEnd")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CronStart")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("DeployFreezeWindows");
+                });
+
             modelBuilder.Entity("GitBench.Data.Deployment", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Action")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("CommitSha")
@@ -911,10 +990,16 @@ namespace GitBench.Data.Migrations
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsRollback")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("JobId")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("PipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RedeployOfId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Ref")
@@ -930,15 +1015,61 @@ namespace GitBench.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CommitSha");
+
                     b.HasIndex("JobId");
 
                     b.HasIndex("PipelineId");
+
+                    b.HasIndex("RedeployOfId");
 
                     b.HasIndex("UserId");
 
                     b.HasIndex("EnvironmentId", "Id");
 
                     b.ToTable("Deployments");
+                });
+
+            modelBuilder.Entity("GitBench.Data.DeploymentApproval", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Approved")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DeploymentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsStale")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("JobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeploymentId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("JobId", "IsStale");
+
+                    b.ToTable("DeploymentApprovals");
                 });
 
             modelBuilder.Entity("GitBench.Data.DirectorySyncRun", b =>
@@ -1755,6 +1886,10 @@ namespace GitBench.Data.Migrations
 
                     b.Property<bool>("AllowFailure")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("EnvironmentAction")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("EnvironmentName")
                         .HasMaxLength(64)
@@ -3691,6 +3826,29 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.CiEnvironmentApprover", b =>
+                {
+                    b.HasOne("GitBench.Data.CiEnvironment", null)
+                        .WithMany("Approvers")
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Group", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Group");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("GitBench.Data.CiVariable", b =>
                 {
                     b.HasOne("GitBench.Data.Project", null)
@@ -3807,6 +3965,20 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.DeployFreezeWindow", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.Deployment", b =>
                 {
                     b.HasOne("GitBench.Data.CiEnvironment", "Environment")
@@ -3827,12 +3999,41 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.Deployment", null)
+                        .WithMany()
+                        .HasForeignKey("RedeployOfId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("GitBench.Data.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Environment");
+
+                    b.Navigation("Job");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GitBench.Data.DeploymentApproval", b =>
+                {
+                    b.HasOne("GitBench.Data.Deployment", null)
+                        .WithMany()
+                        .HasForeignKey("DeploymentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.PipelineJob", "Job")
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Job");
 
@@ -4845,6 +5046,11 @@ namespace GitBench.Data.Migrations
                     b.Navigation("Columns");
 
                     b.Navigation("QuickFilters");
+                });
+
+            modelBuilder.Entity("GitBench.Data.CiEnvironment", b =>
+                {
+                    b.Navigation("Approvers");
                 });
 
             modelBuilder.Entity("GitBench.Data.Dashboard", b =>

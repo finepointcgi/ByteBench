@@ -25,6 +25,8 @@ public static class CiServiceCollectionExtensions
         services.AddSingleton<CiCacheStore>();
         services.AddSingleton<CiDeploymentRecorder>();
         services.AddScoped<CiEnvironmentService>();
+        services.AddScoped<DeployFreezeService>();
+        services.AddScoped<DeploymentTraceService>();
         services.AddScoped<PipelineScheduleService>();
         services.AddHostedService<CiScheduleRunner>();
         services.AddHostedService<CiCleanupService>();

@@ -318,6 +318,13 @@ else if (pr != null)
                             <div class="mt-1"><a class="sha-pill" href="@RepoUrls.Commit(repo, pr.MergeCommitSha)">@pr.MergeCommitSha[..7]</a></div>
                         }
                     </MudAlert>
+                    @if (pr.MergeCommitSha != null)
+                    {
+                        <div class="mt-2">
+                            <span class="gb-section-label">Deployments</span>
+                            <GitBench.Components.Pipelines.DeployedToPanel PullRequest="pr" ShowEmpty="true" EmptyText="The merge commit isn't deployed yet." />
+                        </div>
+                    }
                 }
                 else
                 {

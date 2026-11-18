@@ -349,6 +349,9 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         NotificationKind.IssueLinked => "changed the links of",
         NotificationKind.IssueHierarchyChanged => "changed the parent of",
         NotificationKind.Automation => "notifies you:",
+        NotificationKind.DeploymentApprovalRequested => "asks you to approve a deployment:",
+        NotificationKind.DeploymentApproved => "approved a deployment:",
+        NotificationKind.DeploymentRejected => "rejected a deployment:",
         _ => "updated",
     };
 

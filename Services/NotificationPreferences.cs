@@ -31,7 +31,7 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
         new(NotificationGroup.WatchedComments, "Comments on watched items", "New comments on issues and pull requests you watch.", NotificationChannel.InApp),
         new(NotificationGroup.WatchedChanges, "Changes to watched items", "Status changes, close and reopen on watched issues; merge, decline and reopen on watched pull requests.", NotificationChannel.InApp),
         new(NotificationGroup.IssueLinks, "Issue links & hierarchy", "Links, parents and sub-tasks of issues you watch change.", NotificationChannel.InApp),
-        new(NotificationGroup.Pipelines, "Pipelines", "A pipeline you triggered fails.", NotificationChannel.InApp),
+        new(NotificationGroup.Pipelines, "Pipelines & deployments", "A pipeline you triggered fails, or a deployment waits for your approval or is approved or rejected.", NotificationChannel.InApp),
     ];
 
     public static NotificationGroup GroupOf(NotificationKind kind) => kind switch
@@ -45,7 +45,8 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
             or NotificationKind.PullRequestMerged or NotificationKind.PullRequestDeclined or NotificationKind.PullRequestReopened
             => NotificationGroup.WatchedChanges,
         NotificationKind.IssueLinked or NotificationKind.IssueHierarchyChanged => NotificationGroup.IssueLinks,
-        NotificationKind.PipelineFailed => NotificationGroup.Pipelines,
+        NotificationKind.PipelineFailed or NotificationKind.DeploymentApprovalRequested or NotificationKind.DeploymentApproved
+            or NotificationKind.DeploymentRejected => NotificationGroup.Pipelines,
         _ => NotificationGroup.WatchedChanges, // a new kind lands somewhere sensible until it gets its own group
     };
 

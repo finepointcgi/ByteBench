@@ -195,11 +195,14 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                         case CiJobAction.WaitForManual:
                             await SetJobManualAsync(job.Id, states[name].NeedsApproval);
                             states[name] = states[name] with { Status = PipelineStatus.Manual };
+                            // A protected environment: record the deployment as waiting for approval and tell the approvers.
+                            if (states[name].NeedsApproval) await deployments.BlockAsync(p, job);
                             changed = true;
                             break;
                         default:
                             var final = action == CiJobAction.Skip ? PipelineStatus.Skipped : PipelineStatus.Canceled;
                             await SetJobAsync(job.Id, final, finished: true, steps: final);
+                            if (states[name].Status == PipelineStatus.Manual) await deployments.CancelWaitingAsync(job.Id);
                             states[name] = states[name] with { Status = final };
                             changed = true;
                             break;

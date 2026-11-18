@@ -40,7 +40,7 @@ else if (Repo != null && pipeline != null)
                 var url = env.Select(j => j.EnvironmentUrl).FirstOrDefault(u => u != null);
                 <div class="ci-meta">
                     <MudIcon Icon="@Icons.Material.Outlined.Cloud" Style="font-size: 14px; vertical-align: -2px" />
-                    Deploys to <a href="@PipelineUrls.Environments(Repo)"><b>@env.Key</b></a>
+                    @(env.All(j => j.IsStopJob) ? "Stops" : "Deploys to") <a href="@PipelineUrls.Environments(Repo)"><b>@env.Key</b></a>
                     @if (url != null) { <span> · <a href="@url" target="_blank" rel="noopener noreferrer">@url</a></span> }
                 </div>
             }
@@ -80,9 +80,13 @@ else if (Repo != null && pipeline != null)
         </MudText>
     }
 
-    @if (p.Status == PipelineStatus.Manual)
+    @if (p.Status == PipelineStatus.Manual && !p.Jobs.Any(j => j.Status == PipelineStatus.Manual && j.RequiresApproval))
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">This pipeline is waiting for a manual job. Run it (▶) to continue.</MudAlert>
+    }
+    @foreach (var job in p.Jobs.Where(j => j.Status == PipelineStatus.Manual && j.RequiresApproval))
+    {
+        <GitBench.Components.Pipelines.DeploymentApprovalBox @key="job.Id" Repo="Repo" Job="job" />
     }
 
     @if (p.Jobs.Count > 0)
@@ -102,7 +106,8 @@ else if (Repo != null && pipeline != null)
                         <div class="ci-job-meta muted small">
                             <span class="mono" title="Image">@job.Image</span>
                             @if (job.Needs.Length > 0) { <div>needs @string.Join(", ", job.NeedsList)</div> }
-                            @if (job.Status == PipelineStatus.Manual) { <div>waiting for someone to run it@(job.RequiresApproval ? $" (a Maintainer: {job.EnvironmentName} is protected)" : "")</div> }
+                            @if (job.Status == PipelineStatus.Manual) { <div>@(job.RequiresApproval ? $"waiting for approval ({job.EnvironmentName} is protected)" : "waiting for someone to run it")</div> }
+                            @if (job.IsStopJob) { <div>stops @job.EnvironmentName</div> }
                         </div>
                         @foreach (var s in job.Steps)
                         {
