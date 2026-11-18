@@ -230,6 +230,71 @@ live.Publish(new IssueChanged(projectId, issueId), new BoardChanged(projectId));
 sub = Live.Subscribe<IssueChanged>(e => e.IssueId == id ? InvokeAsync(ReloadAndRender) : Task.CompletedTask);
 ```
 
+## Email, notification preferences & autocomplete
+
+### Email delivery
+
+Notifications can also go out by email. Code: `Services/Email/`.
+
+- **Senders** (`IEmailSender`): `SmtpEmailSender` (MailKit) or `PickupDirectoryEmailSender`, which writes `.eml` files to `Email:PickupDirectory` (default `./mail-drop`, git-ignored) so nothing leaves the machine. `Email:Sender` picks one (`Pickup` or `Smtp`). It defaults to `Pickup` in Development and `Smtp` elsewhere.
+- **Off by default:** `Email:Enabled` is `false`. To try it locally, run `dotnet run --launch-profile http -- --Email:Enabled=true` and open the files in `mail-drop/` with any mail client.
+- **Queue:** emails go on an in-memory channel (`EmailQueue`) and a background `EmailWorker` sends them, so requests never wait on SMTP. A failed send is retried 3 times (after 2 s, 10 s and 30 s), then logged and dropped. Logs mask addresses (`b***@example.com`).
+- **SMTP:** never put credentials in appsettings. Use user-secrets in development (the project already has a `UserSecretsId`), or environment variables such as `Email__Smtp__Password` in production:
+
+```bash
+dotnet user-secrets set "Email:Enabled" "true"
+dotnet user-secrets set "Email:Sender" "Smtp"
+dotnet user-secrets set "Email:Smtp:Host" "smtp.example.com"
+dotnet user-secrets set "Email:Smtp:Port" "587"
+dotnet user-secrets set "Email:Smtp:User" "gitbench@example.com"
+dotnet user-secrets set "Email:Smtp:Password" "<password>"
+dotnet user-secrets set "Email:From" "GitBench <gitbench@example.com>"
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Email:Enabled` | `false` | Master switch. While it's off, nothing is queued and pending notification emails are dropped, so turning it on doesn't send a backlog |
+| `Email:Sender` | `Pickup` in Development, else `Smtp` | Which sender to use |
+| `Email:From` | `GitBench <gitbench@localhost>` | Sender address |
+| `Email:PickupDirectory` | `mail-drop` | Folder for `.eml` files (relative to the content root) |
+| `Email:DigestMinutes` | `0` | `0` sends each notification right away. `N` sends at most one email per user every N minutes: the first one at once, later ones batched into a digest |
+| `Email:BaseUrl` | (none) | Absolute site URL for links in emails. Falls back to `PublicBaseUrl`, then the URL of the first request |
+| `Email:Smtp:Host` / `Port` / `User` / `Password` / `UseStartTls` | `587`, STARTTLS | SMTP server. With `UseStartTls: false`, port 465 uses implicit TLS and other ports are plain text (local relays only) |
+
+**Content.** Each email is built from the same `Notification` row the bell shows: actor, verb, title and a link to the item. It also includes an excerpt of the comment or description (`Notification.Excerpt`, at most 1000 characters). The HTML part renders the excerpt with the app's safe Markdown pipeline (raw HTML disabled), and the plain-text part quotes the Markdown source. Every other piece of user content is HTML-encoded. Each email links to the preferences page and has a signed one-click unsubscribe link (`/email/unsubscribe?t=…`, valid 90 days, also sent as `List-Unsubscribe` / `List-Unsubscribe-Post` headers), which turns off all notification emails for that user. `NotificationEmailWorker` picks up pending notifications whenever `NotificationsChanged` fires, and also every 30 seconds. It skips anything already read in the app.
+
+**Identity emails.** `IdentityEmailSender` is registered as `IEmailSender<User>`, so Identity's confirmation and password-reset emails use the same queue and sender. The app has no such flow yet, so nothing calls it today.
+
+### Notification preferences
+
+`/account/notifications`, linked from the profile page and the 🔔 dropdown. For each group, choose **In-app + email**, **In-app only** or **Off**:
+
+| Group | Kinds | Default |
+|---|---|---|
+| Assigned to me | Assigned | In-app + email |
+| Mentions | Mentioned | In-app + email |
+| Review requests | ReviewRequested | In-app + email |
+| Pull request reviews | PullRequestReviewed | In-app |
+| Comments on watched items | IssueCommented, PullRequestCommented | In-app |
+| Changes to watched items | issue status/close/reopen, PR merge/decline/reopen | In-app |
+| Issue links & hierarchy | IssueLinked, IssueHierarchyChanged | In-app |
+| Pipelines | PipelineFailed | In-app |
+
+There are no sprint notifications, so sprints have no group. A master switch turns all notification emails off. "Don't notify me about my own actions" is shown and always on, as before. Stored in `NotificationPreferences` (a row only when it differs from the default) and `UserNotificationSettings`; logic in `Services/NotificationPreferences.cs`.
+
+Preferences are applied in `NotificationService.DeliverAsync` (`Services/NotificationService.Delivery.cs`), the single fan-out point every notification passes through (single events, bulk edits and pipelines). If a user qualifies for several kinds in one event (say, mentioned in a comment on an issue they watch) and has turned the first one off, they get the next one.
+
+**Mute.** Watchers get a **🔕 Mute** button next to **Watching** on issues and PRs. A muted watch (`Watch.Muted`) stays a watch but receives no watcher notifications. Direct ones (assigned, mentioned, review requested, reviews of your own PR) still arrive. Unwatching isn't the same thing: GitBench auto-watches you again when you comment, are assigned or review, so an unwatch doesn't stick. A mute does, because auto-watching only adds missing rows. Unwatching clears the mute.
+
+### Autocomplete in the Markdown editor
+
+Typing `@` and a letter in any Markdown editor (issue description, new issue, issue comments, PR description, PR comments and inline diff comments) shows up to 8 people who can view the project. Each row shows the display name, `@username` and avatar colour. People who can view a project are site admins and members, plus everyone if the project is Internal; the `gitbench-ai` bot is never suggested. Typing `#` and a number or text suggests issues by number or title, and a project key like `WEB-` suggests that project's issues. Picking one inserts `@bob ` or `WEB-12 `.
+
+- Keys: ↑/↓ to move, Enter or Tab to pick, Esc to close. The mouse works too.
+- `wwwroot/js/mention-autocomplete.js` is an ES module the editor imports. It places a `position: fixed` dropdown at the caret, using a mirror element to measure the caret position, and builds it with `textContent` only.
+- Lookups are debounced (120 ms) and go to the editor's `[JSInvokable] Suggest` method, which calls `Services/MentionLookup.cs`. That runs as the signed-in user and returns nothing unless they can view the project, including a project named by a typed key.
+- The editor gets the project from its new optional `ProjectId` parameter. Without it, there's no autocomplete.
+
 
 ## AI code review
 

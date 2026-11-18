@@ -41,7 +41,7 @@ else if (issue != null && project != null)
             @if (CanEdit)
             {
             <div class="d-flex gap-2">
-                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
+                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" IssueId="issue.Id" />
                 <button class="btn btn-outline-secondary btn-sm" @onclick="StartEditTitle">Edit title</button>
                 @if (issue.Status.IsClosed())
                 {
@@ -84,7 +84,7 @@ else if (issue != null && project != null)
                 <div class="comment-body">
                     @if (editingDesc)
                     {
-                        <MarkdownEditor @bind-Value="descDraft" Rows="10" AttachToIssueId="issue.Id" />
+                        <MarkdownEditor @bind-Value="descDraft" Rows="10" AttachToIssueId="issue.Id" ProjectId="issue.ProjectId" />
                         <div class="mt-2 d-flex gap-2">
                             <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
                             <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
@@ -127,7 +127,7 @@ else if (issue != null && project != null)
                             <div class="comment-body">
                                 @if (editingCommentId == c.Id)
                                 {
-                                    <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" AttachToIssueId="issue.Id" AttachFromComment />
+                                    <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" AttachToIssueId="issue.Id" ProjectId="issue.ProjectId" AttachFromComment />
                                     <div class="mt-2 d-flex gap-2">
                                         <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
                                         <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
@@ -157,7 +157,7 @@ else if (issue != null && project != null)
             <div class="comment-card mt-3">
                 <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
                 <div class="comment-body">
-                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" AttachToIssueId="issue.Id" AttachFromComment />
+                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" AttachToIssueId="issue.Id" ProjectId="issue.ProjectId" AttachFromComment />
                     <div class="mt-2 d-flex gap-2">
                         <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
                         @if (!issue.Status.IsClosed() && CanEdit && CloseTarget != null)

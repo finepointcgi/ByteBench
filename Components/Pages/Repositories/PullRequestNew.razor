@@ -113,7 +113,7 @@ else if (project != null)
                                     </button>
                                 }
                             </div>
-                            <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" />
+                            <MarkdownEditor @bind-Value="description" Rows="8" Placeholder="What does this change and why?" ProjectId="project.Id" />
                             @if (templatePath != null) { <div class="form-text">Prefilled from <span class="mono">@templatePath</span> on <span class="mono">@TargetOrDefault</span>.</div> }
                         </div>
                         @if (error != null) { <div class="alert alert-danger py-2">@error</div> }

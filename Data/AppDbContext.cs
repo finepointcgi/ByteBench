@@ -51,6 +51,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<WorkflowStatus> WorkflowStatuses => Set<WorkflowStatus>();
     public DbSet<WorkflowTransition> WorkflowTransitions => Set<WorkflowTransition>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    // ----- Email & preferences -----
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<UserNotificationSettings> UserNotificationSettings => Set<UserNotificationSettings>();
+
+    private static void ConfigureEmailAndPreferences(ModelBuilder b)
+    {
+        b.Entity<NotificationPreference>().HasIndex(p => new { p.UserId, p.Group }).IsUnique();
+        b.Entity<NotificationPreference>().HasOne<User>().WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<UserNotificationSettings>().HasOne<User>().WithOne().HasForeignKey<UserNotificationSettings>(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+        // The email worker polls for pending rows.
+        b.Entity<Notification>().HasIndex(n => n.EmailPending).HasFilter("\"EmailPending\" = 1");
+    }
 
     private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
     {
@@ -196,5 +208,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Sprint>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Issue>().HasOne(i => i.Sprint).WithMany().HasForeignKey(i => i.SprintId).OnDelete(DeleteBehavior.SetNull);
         ConfigureWorkflowsAndAudit(b);
+        ConfigureEmailAndPreferences(b);
     }
 }

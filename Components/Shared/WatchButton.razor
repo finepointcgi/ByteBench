@@ -1,12 +1,45 @@
-@* Watch / unwatch toggle for an issue or pull request. The page owns the state and reloads it. *@
-<button type="button" class="btn btn-sm watch-btn @(Watching ? "watching" : "")" @onclick="OnToggle"
-        title="@(Watching ? "You get notifications about this. Click to stop watching." : "Get notifications about comments and changes.")">
-    @(Watching ? "👁 Watching" : "👁 Watch")
-    <span class="count">@Count</span>
-</button>
+@inject NotificationService Notifications
+@inject CurrentUser Me
+@* Watch / unwatch toggle for an issue or pull request. The page owns the watch state and reloads it.
+   With IssueId or PullRequestId set, watchers also get a Mute toggle (state kept here): see Watch.Muted. *@
+<span class="watch-group">
+    <button type="button" class="btn btn-sm watch-btn @(Watching ? "watching" : "")" @onclick="OnToggle"
+            title="@(Watching ? "You get notifications about this. Click to stop watching." : "Get notifications about comments and changes.")">
+        @(Watching ? "👁 Watching" : "👁 Watch")
+        <span class="count">@Count</span>
+    </button>
+    @if (Watching && (IssueId != null || PullRequestId != null))
+    {
+        <button type="button" class="btn btn-sm watch-btn mute-btn @(muted ? "muted" : "")" @onclick="ToggleMute" aria-pressed="@(muted ? "true" : "false")"
+                title="@(muted ? "Muted: you stay a watcher but get no notifications about comments and changes. Click to unmute." : "Mute: stop notifications about comments and changes here, even when you comment again. Mentions and assignments still reach you.")">
+            @(muted ? "🔕 Muted" : "🔕 Mute")
+        </button>
+    }
+</span>
 
 @code {
     [Parameter] public bool Watching { get; set; }
     [Parameter] public int Count { get; set; }
     [Parameter] public EventCallback OnToggle { get; set; }
+    /// <summary>The watched issue (enables Mute).</summary>
+    [Parameter] public int? IssueId { get; set; }
+    /// <summary>The watched pull request (enables Mute).</summary>
+    [Parameter] public int? PullRequestId { get; set; }
+
+    private bool muted;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Unwatching deletes the watch row, mute flag included, so reload whenever the page re-renders us.
+        if (!Me.IsSignedIn || !Watching) { muted = false; return; }
+        if (IssueId is { } i) muted = await Notifications.IsIssueMutedAsync(Me.Id, i);
+        else if (PullRequestId is { } p) muted = await Notifications.IsPullRequestMutedAsync(Me.Id, p);
+    }
+
+    private async Task ToggleMute()
+    {
+        if (IssueId is { } i) await Notifications.SetIssueMutedAsync(Me.Id, i, !muted);
+        else if (PullRequestId is { } p) await Notifications.SetPullRequestMutedAsync(Me.Id, p, !muted);
+        muted = !muted;
+    }
 }

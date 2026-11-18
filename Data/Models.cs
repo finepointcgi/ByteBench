@@ -243,7 +243,7 @@ public enum NotificationKind
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
-public class Notification
+public partial class Notification
 {
     public int Id { get; set; }
     public int UserId { get; set; }
@@ -261,7 +261,7 @@ public class Notification
 }
 
 /// <summary>A user watching exactly one issue or one pull request.</summary>
-public class Watch
+public partial class Watch
 {
     public int Id { get; set; }
     public int UserId { get; set; }
@@ -727,4 +727,52 @@ public class AuditEvent
     public int? ProjectId { get; set; }
     /// <summary>JSON object with event-specific details.</summary>
     public string? Details { get; set; }
+}
+
+// ----- Email & preferences -----
+
+/// <summary>How a user hears about one <see cref="NotificationGroup"/>. A missing row means the group's default.</summary>
+public enum NotificationChannel { Off = 0, InApp = 1, InAppAndEmail = 2 }
+
+/// <summary>The groups on the preferences page. Each <see cref="NotificationKind"/> belongs to exactly one (see <c>NotificationPreferences.GroupOf</c>).</summary>
+public enum NotificationGroup
+{
+    Assigned, Mentioned, WatchedComments, WatchedChanges, ReviewRequested, Reviews, Pipelines, IssueLinks,
+}
+
+/// <summary>A user's choice for one <see cref="NotificationGroup"/>.</summary>
+public class NotificationPreference
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public NotificationGroup Group { get; set; }
+    public NotificationChannel Channel { get; set; }
+}
+
+/// <summary>Per-user email settings: one row per user, created on first save or first email.</summary>
+public class UserNotificationSettings
+{
+    [Key, System.ComponentModel.DataAnnotations.Schema.DatabaseGenerated(System.ComponentModel.DataAnnotations.Schema.DatabaseGeneratedOption.None)]
+    public int UserId { get; set; }
+    /// <summary>Master switch: false means no notification emails at all, whatever the groups say.</summary>
+    public bool EmailEnabled { get; set; } = true;
+    /// <summary>When the last notification email (single or digest) went to this user; drives <c>Email:DigestMinutes</c>.</summary>
+    public DateTime? LastEmailAt { get; set; }
+}
+
+public partial class Notification
+{
+    /// <summary>True while this notification still has to be emailed (immediately, or in the user's next digest).</summary>
+    public bool EmailPending { get; set; }
+    /// <summary>Markdown source of the comment or description behind it (shortened), shown in the email. Never rendered as raw HTML.</summary>
+    [MaxLength(1200)] public string? Excerpt { get; set; }
+}
+
+public partial class Watch
+{
+    /// <summary>
+    /// Muted: the user stays a watcher, so auto-watching on comment, assignment or review doesn't bring the notifications
+    /// back, but gets no watcher notifications. Direct ones (assigned, mentioned, review requested) still arrive.
+    /// </summary>
+    public bool Muted { get; set; }
 }

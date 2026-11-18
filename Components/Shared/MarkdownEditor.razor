@@ -1,8 +1,10 @@
 @using GitBench.Services.Attachments
 @inject AttachmentService Attachments
 @inject IJSRuntime JS
+@inject MentionLookup Lookup
+@implements IAsyncDisposable
 
-<div class="md-editor" data-attach="@(AttachToIssueId != null ? "" : null)">
+<div class="md-editor" data-attach="@(AttachToIssueId != null ? "" : null)" @ref="root">
     <div class="md-tabs">
         <button type="button" class="@(preview ? "" : "active")" @onclick="() => preview = false">Write</button>
         <button type="button" class="@(preview ? "active" : "")" @onclick="() => preview = true">Preview</button>
@@ -15,7 +17,7 @@
             </label>
             @if (uploading) { <span class="small muted ms-2"><span class="spinner-border spinner-border-sm"></span> Uploading…</span> }
         }
-        <span class="muted small ms-auto">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")</span>
+        <span class="muted small ms-auto">Markdown supported@(AttachToIssueId != null ? " · drop or paste files" : "")@(ProjectId != null ? " · @ for people, # for issues" : "")</span>
     </div>
     @if (uploadError != null) { <div class="md-attach-error small text-danger">@uploadError</div> }
     @if (preview)
@@ -48,6 +50,51 @@
     private ElementReference textarea;
 
     private Task OnInput(ChangeEventArgs e) => ValueChanged.InvokeAsync(Value = e.Value?.ToString());
+
+    // ----- Autocomplete (@people, #issues, KEY-12): wwwroot/js/mention-autocomplete.js -----
+
+    /// <summary>The project whose people and issues are suggested. Without it there's no autocomplete.</summary>
+    [Parameter] public int? ProjectId { get; set; }
+
+    private ElementReference root;
+    private IJSObjectReference? acModule;
+    private DotNetObjectReference<MarkdownEditor>? acRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ProjectId == null || acRef != null) return;
+        acRef = DotNetObjectReference.Create(this);
+        try
+        {
+            acModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/mention-autocomplete.js");
+            await acModule.InvokeVoidAsync("attach", root, acRef);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>Called by the JS module (debounced). <paramref name="kind"/> is "user" or "issue"; <paramref name="key"/> a typed project key.</summary>
+    [JSInvokable]
+    public async Task<IReadOnlyList<AutocompleteItem>> Suggest(string kind, string? key, string? query)
+    {
+        if (ProjectId is not { } projectId) return [];
+        return kind == "user" ? await Lookup.UsersAsync(projectId, query) : await Lookup.IssuesAsync(projectId, key, query);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (acModule != null)
+        {
+            try
+            {
+                await acModule.InvokeVoidAsync("detach", root);
+                await acModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
+        acRef?.Dispose();
+    }
 
     public void ShowWrite() => preview = false;
 

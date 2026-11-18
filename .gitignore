@@ -492,3 +492,6 @@ gitbench.db*
 
 # Issue attachments (Attachments:Root)
 /attachments/
+
+# Email pickup folder (Email:PickupDirectory)
+/mail-drop/

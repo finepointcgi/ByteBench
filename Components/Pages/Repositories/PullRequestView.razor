@@ -40,7 +40,7 @@ else if (pr != null)
         {
             <h1>@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></h1>
             <div class="d-flex gap-2">
-                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" />
+                <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" PullRequestId="pr.Id" />
                 @if (CanEditPr && pr.State == PullRequestState.Open)
                 {
                     <button class="btn btn-outline-secondary btn-sm" @onclick="() => { titleDraft = pr.Title; editingTitle = true; }">Edit title</button>
@@ -109,7 +109,7 @@ else if (pr != null)
                     <div class="comment-body">
                         @if (editingDesc)
                         {
-                            <MarkdownEditor @bind-Value="descDraft" Rows="8" />
+                            <MarkdownEditor @bind-Value="descDraft" Rows="8" ProjectId="pr.Repository.ProjectId" />
                             <div class="mt-2 d-flex gap-2">
                                 <button class="btn btn-primary btn-sm" @onclick="SaveDesc">Save</button>
                                 <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingDesc = false">Cancel</button>
@@ -154,7 +154,7 @@ else if (pr != null)
                                 <div class="comment-body">
                                     @if (editingCommentId == c.Id)
                                     {
-                                        <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" />
+                                        <MarkdownEditor @bind-Value="commentEditDraft" Rows="4" ProjectId="pr.Repository.ProjectId" />
                                         <div class="mt-2 d-flex gap-2">
                                             <button class="btn btn-primary btn-sm" @onclick="() => SaveCommentEdit(c)">Save</button>
                                             <button class="btn btn-outline-secondary btn-sm" @onclick="() => editingCommentId = null">Cancel</button>
@@ -183,7 +183,7 @@ else if (pr != null)
                 <div class="comment-card mt-3">
                     <div class="comment-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
                     <div class="comment-body">
-                        <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" />
+                        <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" ProjectId="pr.Repository.ProjectId" />
                         <div class="mt-2">
                             <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newComment)" @onclick="AddComment">Comment</button>
                         </div>

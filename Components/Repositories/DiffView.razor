@@ -93,7 +93,7 @@ else
                                                 @if (composingHere)
                                                 {
                                                     <div class="inline-compose">
-                                                        <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Leave an inline comment…" />
+                                                        <MarkdownEditor @bind-Value="draft" Rows="3" Placeholder="Leave an inline comment…" ProjectId="Repo?.ProjectId" />
                                                         <div class="mt-2 d-flex gap-2">
                                                             <button class="btn btn-primary btn-sm" disabled="@(string.IsNullOrWhiteSpace(draft) || saving)" @onclick="Submit">Comment</button>
                                                             <button class="btn btn-outline-secondary btn-sm" @onclick="() => composing = null">Cancel</button>

@@ -529,6 +529,13 @@ namespace GitBench.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("EmailPending")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Excerpt")
+                        .HasMaxLength(1200)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsRead")
                         .HasColumnType("INTEGER");
 
@@ -555,11 +562,37 @@ namespace GitBench.Data.Migrations
 
                     b.HasIndex("ActorId");
 
+                    b.HasIndex("EmailPending")
+                        .HasFilter("\"EmailPending\" = 1");
+
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("UserId", "IsRead", "CreatedAt");
 
                     b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("GitBench.Data.NotificationPreference", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Group")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Group")
+                        .IsUnique();
+
+                    b.ToTable("NotificationPreferences");
                 });
 
             modelBuilder.Entity("GitBench.Data.PersonalAccessToken", b =>
@@ -1319,6 +1352,22 @@ namespace GitBench.Data.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("GitBench.Data.UserNotificationSettings", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("EmailEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastEmailAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserNotificationSettings");
+                });
+
             modelBuilder.Entity("GitBench.Data.Watch", b =>
                 {
                     b.Property<int>("Id")
@@ -1329,6 +1378,9 @@ namespace GitBench.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Muted")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("PullRequestId")
@@ -1860,6 +1912,15 @@ namespace GitBench.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GitBench.Data.NotificationPreference", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.PersonalAccessToken", b =>
                 {
                     b.HasOne("GitBench.Data.User", "User")
@@ -2102,6 +2163,15 @@ namespace GitBench.Data.Migrations
                     b.HasOne("GitBench.Data.Project", null)
                         .WithMany()
                         .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.UserNotificationSettings", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithOne()
+                        .HasForeignKey("GitBench.Data.UserNotificationSettings", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

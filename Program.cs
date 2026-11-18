@@ -77,6 +77,7 @@ builder.Services.AddScoped<SavedFilterService>();
 builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndown & velocity
 builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
 builder.Services.AddScoped<WorkflowService>();
+GitBench.Services.Email.EmailServiceCollectionExtensions.AddEmail(builder.Services, builder.Configuration, builder.Environment); // email, preferences, autocomplete
 
 var app = builder.Build();
 
@@ -115,6 +116,7 @@ app.MapCiEndpoints();
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 app.MapAuditExport();
+GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
