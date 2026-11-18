@@ -1,5 +1,6 @@
 @page "/p/{Key}/repos/{Slug}"
 @inherits RepoPageBase
+@inject GitBench.Services.Releases.ReleaseService Releases
 
 <PageTitle>@(string.IsNullOrEmpty(Path) ? Repo?.Name : $"{Path} · {Repo?.Name}")</PageTitle>
 
@@ -25,6 +26,12 @@ else if (Repo != null)
             }
         </div>
         <div class="ms-auto d-flex gap-2">
+            @if (latestRelease != null)
+            {
+                <a class="rel-latest-badge" href="@GitBench.Services.Releases.ReleaseUrls.Detail(Repo, latestRelease.Id)" title="Latest release: @latestRelease.Title">
+                    🏷 <span class="muted">Latest</span> <b class="mono">@latestRelease.TagName</b>
+                </a>
+            }
             <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath)">🕘 History</a>
             @if (!IsTag && !Repo.IsArchived && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
             {
@@ -152,6 +159,8 @@ else if (Repo != null)
     private BlobInfo? blob, readme;
     private CommitInfo? lastCommit;
     private bool empty, missing, showSource;
+    private Release? latestRelease;
+    private int? latestFor;
 
     private string CurrentRef => string.IsNullOrEmpty(Ref) ? Repo!.DefaultBranch : Ref;
     private string? CleanPath => string.IsNullOrEmpty(Path?.Trim('/')) ? null : Path.Trim('/');
@@ -182,6 +191,7 @@ else if (Repo != null)
     protected override async Task OnParametersSetAsync()
     {
         if (!await LoadRepoAsync()) return;
+        if (latestFor != Repo!.Id) { latestRelease = await Releases.GetLatestAsync(Repo); latestFor = Repo.Id; }
         var r = CurrentRef;
         var p = CleanPath;
         tree = null; blob = null; readme = null; lastCommit = null; missing = false; showSource = false;

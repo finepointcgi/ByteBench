@@ -1,0 +1,62 @@
+# GitBench with Docker Compose. Start: docker compose up -d   Logs: docker compose logs -f gitbench
+# See "Deploying GitBench" in README.md for every setting.
+#
+# Out of the box GitBench listens on http://localhost:8080 without TLS. Because production cookies are Secure-only,
+# either put the TLS proxy below in front of it (recommended), or for a quick local trial set Security__SecureCookies=false.
+
+services:
+  gitbench:
+    build: .
+    image: gitbench:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # only reachable from this host; the proxy (or an SSH tunnel) exposes it
+    environment:
+      # Absolute URL used in API responses, webhooks and e-mails.
+      PublicBaseUrl: "https://gitbench.example.com"
+      # Behind the proxy below: trust its X-Forwarded-For/-Proto (proxy containers live on the compose network).
+      ReverseProxy__Enabled: "true"
+      ReverseProxy__KnownNetworks__0: "172.16.0.0/12"
+      # First admin: register this account in the UI, then restart once with this set.
+      # Bootstrap__AdminUsers: "your-username"
+      # Quick local trial over plain HTTP only:
+      # Security__SecureCookies: "false"
+      # Security__HttpsRedirection: "false"
+      # CI pipelines (see README "CI in the container"): off unless you give GitBench a Docker daemon.
+      Ci__Enabled: "false"
+      # Ci__Enabled: "true"
+      # Ci__WorkDirectory: "/data/ci"          # must be the same path on the host when using the host's socket
+      # Secrets come from the environment (or an env_file), never from appsettings.json:
+      # Ai__ApiKey: "${GITBENCH_AI_API_KEY}"
+    volumes:
+      - gitbench-db:/data/db
+      - gitbench-repos:/data/repos
+      - gitbench-attachments:/data/attachments
+      - gitbench-keys:/data/keys
+      # CI option A (host daemon; anyone who can push can then control the host, see README):
+      # - /var/run/docker.sock:/var/run/docker.sock
+      # - /data/ci:/data/ci
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # ----- Optional TLS reverse proxy (Caddy gets and renews Let's Encrypt certificates automatically) -----
+  # Point DNS for gitbench.example.com at this host, uncomment, and remove the "ports" mapping above.
+  # caddy:
+  #   image: caddy:2
+  #   restart: unless-stopped
+  #   ports: ["80:80", "443:443"]
+  #   command: caddy reverse-proxy --from gitbench.example.com --to gitbench:8080
+  #   volumes:
+  #     - caddy-data:/data
+  #   depends_on: [gitbench]
+
+volumes:
+  gitbench-db:
+  gitbench-repos:
+  gitbench-attachments:
+  gitbench-keys:
+  # caddy-data:

@@ -75,6 +75,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<CiVariable>().HasOne(v => v.UpdatedBy).WithMany().HasForeignKey(v => v.UpdatedById).OnDelete(DeleteBehavior.SetNull);
     }
 
+    // ----- Releases -----
+    public DbSet<Release> Releases => Set<Release>();
+    public DbSet<ReleaseAsset> ReleaseAssets => Set<ReleaseAsset>();
+
+    private static void ConfigureReleases(ModelBuilder b)
+    {
+        b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.TagName }).IsUnique();
+        b.Entity<Release>().HasIndex(r => new { r.RepositoryId, r.CreatedAt });
+        b.Entity<Release>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Release>().HasOne(r => r.Author).WithMany().HasForeignKey(r => r.AuthorId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ReleaseAsset>().HasIndex(a => a.StoredName).IsUnique();
+        b.Entity<ReleaseAsset>().HasOne(a => a.Release).WithMany(r => r.Assets).HasForeignKey(a => a.ReleaseId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ReleaseAsset>().HasOne(a => a.Uploader).WithMany().HasForeignKey(a => a.UploaderId).OnDelete(DeleteBehavior.Restrict);
+    }
+
     private static void ConfigureWorkflowsAndAudit(ModelBuilder b)
     {
         b.Entity<WorkflowStatus>().HasIndex(s => new { s.ProjectId, s.Order });
@@ -221,5 +236,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureWorkflowsAndAudit(b);
         ConfigureEmailAndPreferences(b);
         ConfigureAdminSecurity(b);
+        ConfigureReleases(b);
     }
 }

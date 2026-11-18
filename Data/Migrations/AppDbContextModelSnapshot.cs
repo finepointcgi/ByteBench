@@ -1119,6 +1119,111 @@ namespace GitBench.Data.Migrations
                     b.ToTable("PullRequestReviewers");
                 });
 
+            modelBuilder.Entity("GitBench.Data.Release", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthorId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDraft")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsPrerelease")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TagName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("RepositoryId", "CreatedAt");
+
+                    b.HasIndex("RepositoryId", "TagName")
+                        .IsUnique();
+
+                    b.ToTable("Releases");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ReleaseAsset", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DownloadCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ReleaseId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StoredName")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UploaderId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReleaseId");
+
+                    b.HasIndex("StoredName")
+                        .IsUnique();
+
+                    b.HasIndex("UploaderId");
+
+                    b.ToTable("ReleaseAssets");
+                });
+
             modelBuilder.Entity("GitBench.Data.Repository", b =>
                 {
                     b.Property<int>("Id")
@@ -2172,6 +2277,44 @@ namespace GitBench.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("GitBench.Data.Release", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ReleaseAsset", b =>
+                {
+                    b.HasOne("GitBench.Data.Release", "Release")
+                        .WithMany("Assets")
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "Uploader")
+                        .WithMany()
+                        .HasForeignKey("UploaderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Release");
+
+                    b.Navigation("Uploader");
+                });
+
             modelBuilder.Entity("GitBench.Data.Repository", b =>
                 {
                     b.HasOne("GitBench.Data.Project", "Project")
@@ -2426,6 +2569,11 @@ namespace GitBench.Data.Migrations
                     b.Navigation("Comments");
 
                     b.Navigation("Reviews");
+                });
+
+            modelBuilder.Entity("GitBench.Data.Release", b =>
+                {
+                    b.Navigation("Assets");
                 });
 #pragma warning restore 612, 618
         }

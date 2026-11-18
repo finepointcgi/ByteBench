@@ -1,0 +1,178 @@
+@page "/p/{Key}/repos/{Slug}/tags"
+@using GitBench.Services.Releases
+@inherits RepoPageBase
+@inject ReleaseService Releases
+@inject ProjectAccess Access
+@inject IJSRuntime JS
+
+<PageTitle>Tags · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="tags" />
+
+    <div class="repo-toolbar">
+        @if (perms.Can(Permission.PushCode) && !Repo.IsArchived && branches.Count > 0)
+        {
+            <button class="btn btn-sm btn-primary" @onclick="ToggleCreate">🏷 New tag</button>
+        }
+        <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.List(Repo)">Releases</a>
+        <span class="ms-auto muted small">@(tags?.Count ?? 0) tag@(tags?.Count == 1 ? "" : "s")</span>
+    </div>
+    @if (creating)
+    {
+        <div class="card-panel rel-create">
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <label class="form-label small">Tag name</label>
+                    <input class="form-control form-control-sm mono" placeholder="v1.2.0" @bind="newName" @bind:event="oninput" maxlength="250" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small">From branch or commit</label>
+                    <input class="form-control form-control-sm mono" list="tag-from-branches" @bind="fromRef" @bind:event="oninput" />
+                    <datalist id="tag-from-branches">
+                        @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
+                    </datalist>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <span class="muted small">With a message it's an annotated tag (tagger and date are recorded); without, a lightweight tag.</span>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small">Message (optional)</label>
+                    <textarea class="form-control form-control-sm" rows="2" @bind="newMessage" placeholder="Release 1.2.0"></textarea>
+                </div>
+            </div>
+            <div class="mt-2 d-flex gap-2">
+                <button class="btn btn-sm btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(newName) || string.IsNullOrWhiteSpace(fromRef))" @onclick="Create">Create tag</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => creating = false">Cancel</button>
+            </div>
+        </div>
+    }
+    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+    @if (message != null) { <div class="alert alert-success py-2">@message</div> }
+
+    @if (tags == null)
+    {
+        <div class="muted">Loading…</div>
+    }
+    else if (tags.Count == 0)
+    {
+        <div class="empty">No tags yet. Create one above, or push one: <code>git tag -a v1.0 -m "v1.0" &amp;&amp; git push origin v1.0</code></div>
+    }
+    else
+    {
+        <div class="issue-list">
+            @foreach (var t in tags)
+            {
+                var release = releases.GetValueOrDefault(t.Name);
+                <div class="rel-tag-row" @key="t.Name">
+                    <div class="issue-main">
+                        <div class="issue-title">
+                            <span aria-hidden="true">🏷</span>
+                            <a class="mono" href="@RepoUrls.Source(Repo, t.Name)">@t.Name</a>
+                            @if (t.IsAnnotated) { <span class="count" title="Annotated tag">annotated</span> }
+                            @if (release != null)
+                            {
+                                <a class="rel-pill @(release.IsDraft ? "draft" : release.IsPrerelease ? "pre" : "")" href="@ReleaseUrls.Detail(Repo, release.Id)">
+                                    @(release.IsDraft ? "Draft release" : release.IsPrerelease ? "Pre-release" : "Release")
+                                </a>
+                            }
+                        </div>
+                        <div class="issue-meta">
+                            @if (t.Commit is { } c)
+                            {
+                                <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, c.Sha)">@c.ShortSha</a>
+                                <span>@c.MessageShort</span>
+                            }
+                            @if (t.IsAnnotated)
+                            {
+                                <span> · tagged by <b>@t.TaggerName</b> @(t.TaggedAt is { } at ? Display.Ago(at.UtcDateTime) : "")</span>
+                            }
+                            else if (t.Commit is { } c2)
+                            {
+                                <span> · @Display.Ago(c2.When.UtcDateTime)</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(t.Message))
+                        {
+                            <div class="rel-tag-message">@t.Message</div>
+                        }
+                    </div>
+                    <div class="rel-tag-actions">
+                        <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.Archive(Repo, t.Name, ArchiveFormat.Zip)" download>zip</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="@ReleaseUrls.Archive(Repo, t.Name, ArchiveFormat.TarGz)" download>tar.gz</a>
+                        @if (release == null && perms.Can(Permission.PushCode) && !Repo.IsArchived)
+                        {
+                            <a class="btn btn-sm btn-outline-primary" href="@ReleaseUrls.New(Repo, t.Name)">Create release</a>
+                        }
+                        @if (perms.Can(Permission.DeleteBranch) && !Repo.IsArchived)
+                        {
+                            <button class="btn btn-sm btn-outline-danger" disabled="@(release != null)"
+                                    title="@(release != null ? "Used by a release: delete the release first" : "Delete tag")"
+                                    @onclick="() => Delete(t.Name)">Delete</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<TagInfo>? tags;
+    private List<BranchInfo> branches = [];
+    private Dictionary<string, Release> releases = [];
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private string? newName, fromRef, newMessage, message;
+    private bool creating, busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        tags = await Releases.ListTagsAsync(Repo!);
+        branches = await Git(path => GitOps.Exists(path) ? GitOps.ListBranches(path, Repo!.DefaultBranch) : []);
+        releases = (await Releases.ListAsync(Repo!)).ToDictionary(r => r.TagName);
+        fromRef ??= Repo!.DefaultBranch;
+    }
+
+    private void ToggleCreate() => creating = !creating;
+
+    private async Task Create()
+    {
+        Error = message = null;
+        busy = true;
+        try
+        {
+            var t = await Releases.CreateTagAsync(Repo!, newName!.Trim(), fromRef!.Trim(), newMessage);
+            message = $"Created {(t.IsAnnotated ? "annotated" : "lightweight")} tag '{t.Name}' at {t.Commit?.ShortSha}.";
+            newName = newMessage = null;
+            creating = false;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Delete(string name)
+    {
+        Error = message = null;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete tag '{name}'? Clones that already fetched it keep their copy.")) return;
+        try
+        {
+            await Releases.DeleteTagAsync(Repo!, name);
+            message = $"Deleted tag '{name}'.";
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+}

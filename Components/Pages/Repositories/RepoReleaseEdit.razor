@@ -1,0 +1,184 @@
+@page "/p/{Key}/repos/{Slug}/releases/new"
+@page "/p/{Key}/repos/{Slug}/releases/{Id:int}/edit"
+@using GitBench.Services.Releases
+@inherits RepoPageBase
+@inject ReleaseService Releases
+@inject ProjectAccess Access
+
+<PageTitle>@(Id == null ? "New release" : "Edit release") · @Repo?.Name</PageTitle>
+
+@if (NotFound || (loaded && Id != null && existing == null))
+{
+    <ProjectNotFound Message="This release does not exist." />
+}
+else if (Repo != null && loaded)
+{
+    <RepoHeader Repo="Repo" Active="releases" />
+
+    @if (!perms.Can(Permission.PushCode) || Repo.IsArchived)
+    {
+        <Forbidden Message="@(Repo.IsArchived ? "This repository is archived." : "Creating and editing releases needs the Developer role or higher.")" />
+    }
+    else
+    {
+        <div class="card-panel rel-form">
+            <h2 class="h5 mb-3">@(existing == null ? "New release" : $"Edit release {existing.TagName}")</h2>
+            @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Tag</label>
+                    @if (existing != null)
+                    {
+                        <input class="form-control mono" value="@existing.TagName" disabled />
+                    }
+                    else
+                    {
+                        <input class="form-control mono" list="release-tags" placeholder="v1.0.0" @bind="input.TagName" @bind:event="oninput" maxlength="250" />
+                        <datalist id="release-tags">
+                            @foreach (var t in freeTags) { <option value="@t">@t</option> }
+                        </datalist>
+                        <div class="form-text">
+                            @if (string.IsNullOrWhiteSpace(input.TagName)) { <span>Pick an existing tag or type a new one.</span> }
+                            else if (TagIsNew) { <span>✨ A new tag will be created when you save.</span> }
+                            else if (usedTags.Contains(input.TagName.Trim())) { <span class="text-danger">This tag already has a release.</span> }
+                            else { <span>Existing tag.</span> }
+                        </div>
+                    }
+                </div>
+                @if (existing == null && TagIsNew)
+                {
+                    <div class="col-md-4">
+                        <label class="form-label">Create from</label>
+                        <input class="form-control mono" list="release-branches" @bind="input.Target" @bind:event="oninput" />
+                        <datalist id="release-branches">
+                            @foreach (var b in branches) { <option value="@b.Name">@b.Name</option> }
+                        </datalist>
+                        <div class="form-text">A branch or commit SHA.</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Tag message</label>
+                        <input class="form-control" placeholder="optional (annotated)" @bind="input.TagMessage" />
+                    </div>
+                }
+                <div class="col-12">
+                    <label class="form-label">Title</label>
+                    <input class="form-control" maxlength="200" placeholder="@(string.IsNullOrWhiteSpace(input.TagName) ? "Release title" : input.TagName)" @bind="input.Title" />
+                </div>
+                <div class="col-12">
+                    <div class="d-flex align-items-center mb-1">
+                        <label class="form-label mb-0">Release notes</label>
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" disabled="@(busy || string.IsNullOrWhiteSpace(NotesSource))"
+                                title="Build notes from the commits and merged pull requests since the previous release" @onclick="Generate">
+                            ⚙ Generate notes
+                        </button>
+                    </div>
+                    @if (generatedInfo != null) { <div class="form-text mb-1">@generatedInfo</div> }
+                    <MarkdownEditor @bind-Value="input.Notes" Rows="14" Placeholder="Describe this release (Markdown)" />
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="rel-pre" @bind="input.IsPrerelease" />
+                        <label class="form-check-label" for="rel-pre">This is a pre-release (not production-ready; never shown as the latest release)</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-3 d-flex gap-2">
+                @if (existing == null || existing.IsDraft)
+                {
+                    <button class="btn btn-primary" disabled="@(busy || !CanSave)" @onclick="() => Save(draft: false)">Publish release</button>
+                    <button class="btn btn-outline-secondary" disabled="@(busy || !CanSave)" @onclick="() => Save(draft: true)">Save draft</button>
+                }
+                else
+                {
+                    <button class="btn btn-primary" disabled="@(busy || !CanSave)" @onclick="() => Save(draft: false)">Update release</button>
+                }
+                <a class="btn btn-link" href="@(existing == null ? ReleaseUrls.List(Repo) : ReleaseUrls.Detail(Repo, existing.Id))">Cancel</a>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "tag")] public string? TagQuery { get; set; }
+
+    private ReleaseInput input = new();
+    private Release? existing;
+    private List<BranchInfo> branches = [];
+    private List<string> allTags = [], freeTags = [];
+    private HashSet<string> usedTags = [];
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool loaded, busy;
+    private string? generatedInfo;
+
+    private bool TagIsNew => !string.IsNullOrWhiteSpace(input.TagName) && !allTags.Contains(input.TagName.Trim());
+    private bool CanSave => existing != null || (!string.IsNullOrWhiteSpace(input.TagName) && !usedTags.Contains(input.TagName.Trim())
+                                                 && (!TagIsNew || !string.IsNullOrWhiteSpace(input.Target)));
+    /// <summary>What the notes are generated for: the tag if it exists, else the branch it will be created from.</summary>
+    private string? NotesSource => existing?.TagName ?? (TagIsNew ? input.Target : input.TagName?.Trim());
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        (branches, allTags) = await Git(path => GitOps.Exists(path)
+            ? (GitOps.ListBranches(path, Repo!.DefaultBranch), GitOps.ListTags(path))
+            : (new List<BranchInfo>(), new List<string>()));
+        var releases = await Releases.ListAsync(Repo!);
+        usedTags = releases.Select(r => r.TagName).ToHashSet();
+        freeTags = allTags.Where(t => !usedTags.Contains(t)).ToList();
+
+        if (Id is { } id)
+        {
+            existing = await Releases.GetAsync(Repo!, id);
+            if (existing != null)
+                input = new ReleaseInput
+                {
+                    TagName = existing.TagName, Title = existing.Title, Notes = existing.Notes,
+                    IsPrerelease = existing.IsPrerelease, IsDraft = existing.IsDraft,
+                };
+        }
+        else if (!loaded)
+        {
+            input = new ReleaseInput { TagName = TagQuery ?? "", Target = Repo!.DefaultBranch };
+        }
+        loaded = true;
+    }
+
+    private async Task Generate()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            var notes = await Releases.GenerateNotesAsync(Repo!, NotesSource!, existing?.TagName ?? input.TagName?.Trim());
+            if (!string.IsNullOrWhiteSpace(input.Notes) && input.Notes.Trim() != notes.Markdown.Trim())
+                input.Notes = input.Notes.TrimEnd() + "\n\n" + notes.Markdown;
+            else
+                input.Notes = notes.Markdown;
+            generatedInfo = notes.PreviousTag == null
+                ? $"Generated from all {notes.CommitCount} commit(s) (no earlier release tag found)."
+                : $"Generated from {notes.CommitCount} commit(s) and {notes.PullRequestCount} merged pull request(s) since {notes.PreviousTag}.";
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Save(bool draft)
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            input.IsDraft = draft;
+            var saved = existing == null
+                ? await Releases.CreateAsync(Repo!, input)
+                : await Releases.UpdateAsync(Repo!, existing.Id, input);
+            Nav.NavigateTo(ReleaseUrls.Detail(Repo!, saved.Id));
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+}

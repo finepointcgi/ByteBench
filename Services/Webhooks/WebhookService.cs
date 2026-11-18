@@ -10,7 +10,7 @@ namespace GitBench.Services.Webhooks;
 /// level as repositories, and the payloads only carry data Maintainers can already read.
 /// </summary>
 public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, WebhookDispatcher dispatcher, WebhookSender sender,
-    Audit.AuditLog audit, WebhookSecrets secrets)
+    Audit.AuditLog audit, WebhookSecrets secrets, Hosting.AppRateLimits limits)
 {
     public const Permission RequiredPermission = Permission.ManageRepositories;
     public const int MaxConsecutiveFailures = 20;
@@ -99,7 +99,9 @@ public class WebhookService(IDbContextFactory<AppDbContext> dbFactory, ProjectAc
     public async Task PingAsync(int projectId, int hookId)
     {
         await RequireHookAsync(projectId, hookId);
-        dispatcher.EnqueuePing(hookId, await access.ResolveUserIdAsync());
+        var userId = await access.ResolveUserIdAsync();
+        limits.CheckWebhookPing(userId); // RateLimiting:WebhookPing
+        dispatcher.EnqueuePing(hookId, userId);
     }
 
     public async Task<List<WebhookDelivery>> RecentDeliveriesAsync(int projectId, int hookId, int take = 25)
