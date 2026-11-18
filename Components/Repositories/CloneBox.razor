@@ -6,7 +6,7 @@
 @inject IOptions<SshOptions> SshOptions
 
 @* focusin bubbles from the input, so the whole URL is selected when the field is focused. *@
-<div class="clone-box" onfocusin="if (event.target.select) event.target.select()">
+<div class="clone-box" data-select-on-focus>
     @if (SshEnabled)
     {
         <div class="clone-tabs">

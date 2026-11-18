@@ -4,3 +4,9 @@
 document.addEventListener("keydown", e => {
     if (e.key === "Enter" && e.target instanceof HTMLInputElement && e.target.closest("[data-enter-no-submit]")) e.preventDefault();
 }, true);
+
+// Inputs inside an element marked data-select-on-focus (e.g. the clone URL box) select their text on focus,
+// so the URL can be copied in one go. A file, not an inline handler, so the production CSP allows it.
+document.addEventListener("focusin", e => {
+    if (e.target instanceof HTMLInputElement && e.target.closest("[data-select-on-focus]")) e.target.select();
+});
