@@ -9,49 +9,49 @@
 
 <PageTitle>Two-factor sign-in · GitBench</PageTitle>
 
-<h1 class="auth-title">Two-factor sign-in</h1>
+<MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Two-factor sign-in</MudText>
 
 @if (user == null)
 {
-    <div class="alert alert-warning auth-alert" role="alert">Your sign-in attempt expired. Please sign in again.</div>
-    <p class="auth-footer"><a href="account/login">Back to sign in</a></p>
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="auth-alert mt-3" role="alert">Your sign-in attempt expired. Please sign in again.</MudAlert>
+    <MudText Typo="Typo.body2" Class="auth-footer"><a href="account/login">Back to sign in</a></MudText>
 }
 else if (Mode == "recovery")
 {
-    <p class="muted auth-sub">Lost your authenticator? Enter one of the recovery codes you saved when you turned on two-factor sign-in. Each code works once.</p>
-    @if (error != null) { <div class="alert alert-danger auth-alert" role="alert">@error</div> }
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Lost your authenticator? Enter one of the recovery codes you saved when you turned on two-factor sign-in. Each code works once.</MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">@error</MudAlert> }
 
     <EditForm Model="RecoveryInput" FormName="recovery" OnValidSubmit="UseRecoveryCode" method="post">
         <DataAnnotationsValidator />
-        <div class="mb-3">
-            <label class="form-label" for="rc-code">Recovery code</label>
-            <InputText id="rc-code" class="form-control mono" @bind-Value="RecoveryInput!.Code" autocomplete="off" autofocus />
-            <ValidationMessage For="() => RecoveryInput!.Code" class="text-danger small" />
+        <div class="gb-field">
+            <label class="gb-field-label" for="rc-code">Recovery code</label>
+            <InputText id="rc-code" class="gb-input mono" @bind-Value="RecoveryInput!.Code" autocomplete="off" autofocus />
+            <ValidationMessage For="() => RecoveryInput!.Code" />
         </div>
-        <button type="submit" class="btn btn-primary w-100">Sign in</button>
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Sign in</MudButton>
     </EditForm>
-    <p class="auth-footer muted"><a href="@ModeHref(null)">Use your authenticator app instead</a></p>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer"><a href="@ModeHref(null)">Use your authenticator app instead</a></MudText>
 }
 else
 {
-    <p class="muted auth-sub">Enter the 6-digit code from your authenticator app.</p>
-    @if (error != null) { <div class="alert alert-danger auth-alert" role="alert">@error</div> }
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Enter the 6-digit code from your authenticator app.</MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">@error</MudAlert> }
 
     <EditForm Model="CodeInput" FormName="totp" OnValidSubmit="UseAuthenticatorCode" method="post">
         <DataAnnotationsValidator />
-        <div class="mb-3">
-            <label class="form-label" for="tf-code">Authentication code</label>
-            <InputText id="tf-code" class="form-control mono" @bind-Value="CodeInput!.Code" autocomplete="one-time-code"
+        <div class="gb-field">
+            <label class="gb-field-label" for="tf-code">Authentication code</label>
+            <InputText id="tf-code" class="gb-input mono" @bind-Value="CodeInput!.Code" autocomplete="one-time-code"
                        inputmode="numeric" placeholder="123456" autofocus />
-            <ValidationMessage For="() => CodeInput!.Code" class="text-danger small" />
+            <ValidationMessage For="() => CodeInput!.Code" />
         </div>
-        <div class="form-check mb-3">
-            <InputCheckbox id="tf-remember" class="form-check-input" @bind-Value="CodeInput!.RememberMachine" />
-            <label class="form-check-label" for="tf-remember">Remember this device for 14 days</label>
-        </div>
-        <button type="submit" class="btn btn-primary w-100">Verify</button>
+        <label class="gb-check gb-field" for="tf-remember">
+            <InputCheckbox id="tf-remember" @bind-Value="CodeInput!.RememberMachine" />
+            <span>Remember this device for 14 days</span>
+        </label>
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Verify</MudButton>
     </EditForm>
-    <p class="auth-footer muted">Don't have your device? <a href="@ModeHref("recovery")">Use a recovery code</a></p>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">Don't have your device? <a href="@ModeHref("recovery")">Use a recovery code</a></MudText>
 }
 
 @code {

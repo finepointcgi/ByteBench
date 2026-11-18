@@ -218,6 +218,9 @@ public static class ProductionSetup
         "this.select()",
         "navigator.clipboard.writeText(document.getElementById('new-token').value); this.textContent='Copied';",
         "navigator.clipboard.writeText(document.getElementById('hook-secret').value); this.textContent='Copied';",
+        // Account/Pages/TwoFactorSettings.razor (static SSR): copy recovery codes, confirm regenerating them.
+        "navigator.clipboard.writeText(document.getElementById('recovery-codes').textContent); this.textContent='Copied';",
+        "return confirm('Generate new recovery codes? Your current codes will stop working.');",
     ];
 
     /// <summary><c>/health/live</c> (process up) and <c>/health/ready</c> (database, storage, Docker as "degraded").</summary>

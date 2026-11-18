@@ -1,0 +1,17 @@
+.ua-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 16px; }
+.ua-filters ::deep .ua-search { flex: 0 1 22rem; margin-top: 0; }
+.ua-filter-buttons { display: flex; gap: 8px; }
+
+.user-admin ::deep .ua-table-wrap { overflow-x: auto; }
+.user-admin ::deep .ua-table { font-size: 13px; }
+.ua-user { display: flex; align-items: center; gap: 8px; }
+.ua-small { font-size: 12px; }
+.ua-muted { color: var(--mud-palette-text-secondary); }
+.ua-nowrap { white-space: nowrap; }
+.ua-right { text-align: right; }
+.ua-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; min-width: 220px; }
+.ua-pager { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 12px; }
+
+@media (max-width: 600px) {
+    .ua-filters ::deep .ua-search { flex: 1 1 100%; }
+}
