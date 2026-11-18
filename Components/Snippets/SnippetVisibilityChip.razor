@@ -1,0 +1,15 @@
+@* Visibility of a snippet as a small chip with an icon. *@
+<span class="snippet-vis snippet-vis-@Visibility.ToString().ToLowerInvariant()" title="@GitBench.Services.Snippets.SnippetService.Describe(Visibility)">
+    <MudIcon Icon="@Icon" Size="Size.Small" /> @Visibility
+</span>
+
+@code {
+    [Parameter, EditorRequired] public SnippetVisibility Visibility { get; set; }
+
+    private string Icon => Visibility switch
+    {
+        SnippetVisibility.Private => Icons.Material.Outlined.Lock,
+        SnippetVisibility.Project => Icons.Material.Outlined.Shield,
+        _ => Icons.Material.Outlined.Public,
+    };
+}

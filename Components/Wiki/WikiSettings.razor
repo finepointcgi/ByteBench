@@ -1,0 +1,37 @@
+@* Project setting: the wiki on/off. Self-contained so the Settings page only renders it (Owners: ManageProjectSettings). *@
+@using GitBench.Services.Wiki
+@inject WikiService Wikis
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Wiki</MudText>
+    <MudSwitch T="bool" Value="enabled" ValueChanged="Toggle" Color="Color.Primary" Label="Enable the project wiki" />
+    <MudText Typo="Typo.caption" HtmlTag="p" Class="mud-text-secondary mt-1">
+        Viewers read the wiki, Developers and above edit it. It's a git repository: clone it as
+        <span class="mono">@Project.Key/wiki.git</span>. Turning it off hides the pages, the git remote and search results; nothing is deleted.
+    </MudText>
+    <MudButton Href="@WikiPaths.Url(Project.Key, null)" Variant="Variant.Outlined" Size="Size.Small" Class="mt-2"
+               StartIcon="@Icons.Material.Outlined.MenuBook" Disabled="!enabled">Open the wiki</MudButton>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+
+    private bool enabled;
+
+    protected override void OnParametersSet() => enabled = Project.WikiEnabled;
+
+    private async Task Toggle(bool on)
+    {
+        try
+        {
+            await Wikis.SetEnabledAsync(Project.Id, on);
+            enabled = Project.WikiEnabled = on;
+            Snackbar.Add(on ? "Wiki turned on." : "Wiki turned off.", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

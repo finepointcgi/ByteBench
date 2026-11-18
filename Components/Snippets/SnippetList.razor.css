@@ -1,0 +1,6 @@
+.snippet-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; }
+.snippet-row:last-child { border-bottom: none; }
+.snippet-row:hover { background: var(--mud-palette-action-default-hover); }
+.snippet-row-main { flex: 1; min-width: 0; }
+.snippet-row-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.snippet-row-files { display: flex; align-items: center; gap: 4px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

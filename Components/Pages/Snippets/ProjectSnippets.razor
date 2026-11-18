@@ -1,0 +1,45 @@
+@page "/p/{Key}/snippets"
+@using GitBench.Services.Snippets
+@using GitBench.Components.Snippets
+@inject SnippetService Snippets
+@inject IssueService Issues
+@inject ProjectAccess Access
+
+<PageTitle>Snippets · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Snippets</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Code and notes shared with everyone who can view @project.Name.</MudText>
+        </div>
+        @if (perms.Can(Permission.EditIssues))
+        {
+            <MudButton Href="@($"/snippets/new?project={project.Key}")" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New snippet</MudButton>
+        }
+    </div>
+    <SnippetList Items="items" ShowProject="false" EmptyText="This project has no snippets yet." />
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<SnippetSummary>? items;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        items = await Snippets.ListForProjectAsync(project.Id);
+    }
+}

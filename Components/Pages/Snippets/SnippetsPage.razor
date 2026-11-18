@@ -1,0 +1,36 @@
+@page "/snippets"
+@page "/snippets/explore"
+@using GitBench.Services.Snippets
+@using GitBench.Components.Snippets
+@using GitBench.Components.Repositories
+@inject SnippetService Snippets
+@inject NavigationManager Nav
+
+<PageTitle>Snippets · GitBench</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Snippets</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Share bits of code, config and notes. Project snippets live in each project's Snippets page.</MudText>
+    </div>
+    <MudButton Href="/snippets/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New snippet</MudButton>
+</div>
+
+<nav class="gb-tabs mb-3" aria-label="Snippet lists">
+    <TabLink Active="@(!explore)" Href="/snippets" Icon="@Icons.Material.Outlined.Person">Yours</TabLink>
+    <TabLink Active="explore" Href="/snippets/explore" Icon="@Icons.Material.Outlined.TravelExplore">Explore</TabLink>
+</nav>
+
+<SnippetList Items="items" EmptyText="@(explore ? "Nobody has shared a snippet with you yet." : "You haven't created any snippets yet.")" />
+
+@code {
+    private List<SnippetSummary>? items;
+    private bool explore;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        explore = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/').EndsWith("explore", StringComparison.Ordinal);
+        items = null;
+        items = explore ? await Snippets.ExploreAsync() : await Snippets.ListMineAsync();
+    }
+}

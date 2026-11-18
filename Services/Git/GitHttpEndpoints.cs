@@ -107,9 +107,9 @@ public static class GitHttpEndpoints
         var access = ctx.RequestServices.GetRequiredService<GitBench.Services.ProjectAccess>();
         access.ActAs(user.Id); // push listeners run in this scope as the pushing user
         var role = await access.GetRoleAsync(found.ProjectId, user.Id);
-        if (role is null) { await NotFound(ctx); return; }
+        if (role is null || (found.IsWiki && !found.WikiEnabled)) { await NotFound(ctx); return; }
         var writing = service == ReceivePack;
-        if (writing && !GitBench.Services.ProjectAccess.RoleHas(role.Value, GitBench.Services.Permission.PushCode))
+        if (writing && !GitBench.Services.ProjectAccess.RoleHas(role.Value, GitRepoLookup.WritePermission(found)))
         {
             logger.LogInformation("Git push to {Key}/{Slug} denied for {User} (role {Role})", found.Key, found.Slug, user.UserName, role);
             await WritePlain(ctx, StatusCodes.Status403Forbidden, $"You don't have permission to push to this repository (requires Developer; you are {role}).");
@@ -150,7 +150,7 @@ public static class GitHttpEndpoints
         // Branch protection: refuse protected ref updates before git sees them (see ProtectedPushGuard).
         Stream? body = null;
         IReadOnlyDictionary<string, string>? extraEnv = null;
-        if (isPush)
+        if (isPush && !found.IsWiki) // wikis have no branch protection
         {
             var guard = await ProtectedPushGuard.InspectAsync(ctx, logger, found.Id, found.ProjectId, user.Id, storage);
             if (guard.Rejected) return;
@@ -165,7 +165,8 @@ public static class GitHttpEndpoints
         if (isPush && !isProbe && exitCode == 0 && ctx.Response.StatusCode == StatusCodes.Status200OK)
         {
             logger.LogInformation("Push to {Key}/{Slug} by {User}", found.Key, found.Slug, user.UserName);
-            await GitRepoLookup.NotifyPushListenersAsync(ctx.RequestServices, logger, found.Id, user.Id);
+            if (found.IsWiki) await GitRepoLookup.AfterWikiPushAsync(ctx.RequestServices, logger, found);
+            else await GitRepoLookup.NotifyPushListenersAsync(ctx.RequestServices, logger, found.Id, user.Id);
         }
         else if (exitCode != 0)
         {

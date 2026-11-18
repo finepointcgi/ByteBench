@@ -1,0 +1,191 @@
+@page "/snippets/{Id:int}"
+@using GitBench.Services.Snippets
+@using GitBench.Components.Snippets
+@using GitBench.Components.Repositories
+@inject SnippetService Snippets
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@(view?.Snippet.Title ?? "Snippet") · Snippets · GitBench</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This snippet does not exist, or you don't have access to it." />
+}
+else if (view != null)
+{
+    var s = view.Snippet;
+    <div class="page-header">
+        <div class="snippet-head">
+            <div class="mud-text-secondary small">
+                <a href="@(s.Project != null ? $"/p/{s.Project.Key}/snippets" : "/snippets")">@(s.Project != null ? $"{s.Project.Key} snippets" : "Snippets")</a>
+                <span> / </span><span class="mono">$@s.Id</span>
+            </div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold d-flex align-center gap-2 flex-wrap">
+                @s.Title <SnippetVisibilityChip Visibility="s.Visibility" />
+            </MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                By <UserLink User="s.Author" /> · created @Display.Ago(s.CreatedAt) · updated @Display.Ago(s.UpdatedAt)
+            </MudText>
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-center">
+            @if (view.Revisions.Count > 1)
+            {
+                <MudSelect T="int" Value="view.Revision.Number" ValueChanged="GoToRevision" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           OuterClass="snippet-rev-select" AnchorOrigin="Origin.BottomLeft" aria-label="Revision">
+                    @foreach (var r in view.Revisions)
+                    {
+                        <MudSelectItem Value="r.Number">Revision @r.Number@(r.Number == s.CurrentRevision ? " (current)" : "") · @Display.Ago(r.CreatedAt)</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Code" OnClick="CopyEmbed">Embed</MudButton>
+            @if (view.CanEdit)
+            {
+                <MudButton Href="@($"/snippets/{s.Id}/edit")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit">Edit</MudButton>
+            }
+            @if (view.CanDelete)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete" OnClick="Delete">Delete</MudButton>
+            }
+        </div>
+    </div>
+
+    @if (!view.IsCurrent)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            You're viewing revision @view.Revision.Number by @view.Revision.Author.DisplayName.
+            <a href="@SnippetService.Url(s.Id)">View the current revision</a>
+        </MudAlert>
+    }
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+    @if (!string.IsNullOrWhiteSpace(s.Description))
+    {
+        <div class="markdown mb-4">@Display.Markdown(s.Description)</div>
+    }
+
+    @foreach (var f in view.Revision.Files)
+    {
+        <MudPaper Outlined="true" Class="snippet-file mb-4" @key="f.Id">
+            <div class="snippet-file-head">
+                <span class="mono gb-bold">@f.FileName</span>
+                <span class="mud-text-secondary small">@f.Content.Split('\n').Length lines</span>
+                <MudSpacer />
+                <MudButton Href="@SnippetService.RawUrl(s.Id, f.FileName, view.IsCurrent ? null : view.Revision.Number)" Target="_blank"
+                           Size="Size.Small" Variant="Variant.Text">Raw</MudButton>
+                <MudButton Href="@(SnippetService.RawUrl(s.Id, f.FileName, view.IsCurrent ? null : view.Revision.Number) + (view.IsCurrent ? "?" : "&") + "download=1")"
+                           Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.Download">Download</MudButton>
+            </div>
+            <div class="snippet-code">
+                <table class="code-table mono" data-hl-lang="@CodeLanguages.ForFile(f.FileName, f.Content.Length)" @key="(f.Id, view.Revision.Number)">
+                    @{ var n = 0; }
+                    @foreach (var line in f.Content.TrimEnd('\n').Split('\n'))
+                    {
+                        n++;
+                        <tr><td class="ln">@n</td><td class="code">@CodeLanguages.Line(line)</td></tr>
+                    }
+                </table>
+            </div>
+        </MudPaper>
+    }
+
+    <MudText Typo="Typo.h6" HtmlTag="h2" Class="mt-6 mb-2">Comments (@view.Comments.Count)</MudText>
+    @foreach (var c in view.Comments)
+    {
+        <MudPaper Outlined="true" Class="pa-3 mb-2" @key="c.Id">
+            <div class="d-flex align-center gap-2 mb-1">
+                <Avatar User="c.Author" Size="22" />
+                <span class="gb-bold">@c.Author.DisplayName</span>
+                <span class="mud-text-secondary small">@Display.Ago(c.CreatedAt)</span>
+                <MudSpacer />
+                @if (view.CanDeleteComment(c))
+                {
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Delete comment" OnClick="() => DeleteComment(c)" />
+                }
+            </div>
+            <div class="markdown">@Display.Markdown(c.Body)</div>
+        </MudPaper>
+    }
+    @if (view.CanComment)
+    {
+        <MarkdownEditor @bind-Value="comment" Rows="4" Placeholder="Leave a comment…" ProjectId="s.ProjectId" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" Disabled="@(string.IsNullOrWhiteSpace(comment) || posting)" OnClick="PostComment">Comment</MudButton>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [SupplyParameterFromQuery(Name = "rev")] public int? Rev { get; set; }
+
+    private SnippetView? view;
+    private bool notFound, posting;
+    private string? comment, error;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        view = await Snippets.GetAsync(Id, Rev);
+        notFound = view == null;
+    }
+
+    private void GoToRevision(int number) =>
+        Nav.NavigateTo(number == view?.Snippet.CurrentRevision ? SnippetService.Url(Id) : $"{SnippetService.Url(Id)}?rev={number}");
+
+    private async Task CopyEmbed()
+    {
+        var url = Nav.ToAbsoluteUri(SnippetService.EmbedUrl(Id)).ToString();
+        var code = $"<iframe src=\"{url}\" width=\"100%\" height=\"400\" frameborder=\"0\"></iframe>";
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", code);
+            Snackbar.Add("Embed code copied. It works on pages served from this GitBench site, for signed-in viewers.", Severity.Normal);
+        }
+        catch (JSException)
+        {
+            Snackbar.Add(code, Severity.Normal);
+        }
+    }
+
+    private async Task Delete()
+    {
+        if (!await Dialogs.ConfirmAsync("Delete snippet", $"Delete \"{view!.Snippet.Title}\" with all its revisions and comments? This can't be undone.")) return;
+        try
+        {
+            var projectKey = view.Snippet.Project?.Key;
+            await Snippets.DeleteAsync(Id);
+            Snackbar.Add("Snippet deleted.", Severity.Success);
+            Nav.NavigateTo(projectKey != null ? $"/p/{projectKey}/snippets" : "/snippets");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task PostComment()
+    {
+        if (string.IsNullOrWhiteSpace(comment)) return;
+        posting = true;
+        error = null;
+        try
+        {
+            await Snippets.AddCommentAsync(Id, comment);
+            comment = "";
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { posting = false; }
+    }
+
+    private async Task DeleteComment(SnippetComment c)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete comment", "Delete this comment?")) return;
+        try
+        {
+            await Snippets.DeleteCommentAsync(Id, c.Id);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

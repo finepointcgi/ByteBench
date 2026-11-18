@@ -91,6 +91,8 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
         slug = string.IsNullOrWhiteSpace(slug) ? Slugify(name) : slug.Trim().ToLowerInvariant();
         if (slug.Length is 0 or > 100 || !SlugRx().IsMatch(slug) || slug.EndsWith(".git"))
             throw new InvalidOperationException("Slug must start with a letter or digit and use only lowercase letters, digits, '.', '_' or '-'.");
+        if (Wiki.WikiService.IsReservedRepositorySlug(slug))
+            throw new InvalidOperationException("Slugs 'wiki' and '….wiki' are reserved for the project wiki.");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var project = await db.Projects.FindAsync(projectId) ?? throw new InvalidOperationException("Project not found.");

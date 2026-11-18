@@ -35,6 +35,8 @@ namespace GitBench.Services.Hosting;
 public static class ProductionSetup
 {
     public const string CspNonceKey = "gitbench.csp-nonce";
+    /// <summary>An <c>HttpContext.Items</c> key: when present, X-Frame-Options is SAMEORIGIN instead of DENY.</summary>
+    public const string AllowSameOriginFramingKey = "gitbench.allow-framing";
 
     // ------------------------------------------------------------------ services
 
@@ -182,7 +184,8 @@ public static class ProductionSetup
             {
                 var h = ctx.Response.Headers;
                 if (!h.ContainsKey("X-Content-Type-Options")) h.XContentTypeOptions = "nosniff";
-                h.XFrameOptions = "DENY";
+                // Embeddable views (snippet embeds) opt in to same-origin framing; they send their own CSP.
+                h.XFrameOptions = ctx.Items.ContainsKey(AllowSameOriginFramingKey) ? "SAMEORIGIN" : "DENY";
                 h["Referrer-Policy"] = "strict-origin-when-cross-origin";
                 h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
                 h["Cross-Origin-Opener-Policy"] = "same-origin";

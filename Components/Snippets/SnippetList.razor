@@ -1,0 +1,44 @@
+@* A list of snippets (title, files, author, where, visibility, updated). *@
+@using GitBench.Services.Snippets
+
+@if (Items == null)
+{
+    <MudText Class="mud-text-secondary">Loading…</MudText>
+}
+else if (Items.Count == 0)
+{
+    <div class="empty">@EmptyText</div>
+}
+else
+{
+    <MudPaper Outlined="true" Class="snippet-list">
+        @foreach (var s in Items)
+        {
+            <a class="snippet-row" href="@s.Url" @key="s.Snippet.Id">
+                <MudIcon Icon="@Icons.Material.Outlined.ContentPaste" Size="Size.Small" Class="mud-text-secondary" />
+                <div class="snippet-row-main">
+                    <div class="snippet-row-title">
+                        <span class="gb-bold">@s.Snippet.Title</span>
+                        <SnippetVisibilityChip Visibility="s.Snippet.Visibility" />
+                    </div>
+                    <div class="mud-text-secondary small">
+                        <span class="mono">$@s.Snippet.Id</span>
+                        · @s.Snippet.Author.DisplayName
+                        @if (s.Snippet.Project != null && ShowProject) { <span> in @s.Snippet.Project.Key</span> }
+                        · updated @Display.Ago(s.Snippet.UpdatedAt)
+                    </div>
+                </div>
+                <div class="snippet-row-files mud-text-secondary small mono" title="@string.Join(", ", s.FileNames)">
+                    <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" />
+                    @(s.FileNames.Count == 1 ? s.FileNames[0] : $"{s.FileNames.Count} files")
+                </div>
+            </a>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<SnippetSummary>? Items { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "No snippets yet.";
+    [Parameter] public bool ShowProject { get; set; } = true;
+}

@@ -1,0 +1,141 @@
+@page "/snippets/new"
+@page "/snippets/{Id:int}/edit"
+@using GitBench.Services.Snippets
+@inject SnippetService Snippets
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(Id == null ? "New snippet" : "Edit snippet") · GitBench</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="@notFoundMessage" />
+}
+else if (loaded)
+{
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">@(Id == null ? "New snippet" : "Edit snippet")</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @(project != null ? $"Project snippet in {project.Name}" : "Personal snippet")
+            </MudText>
+        </div>
+    </div>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+    <MudPaper Outlined="true" Class="pa-4" Style="max-width:1000px">
+        <MudStack Spacing="3">
+            <MudTextField T="string" @bind-Value="title" Label="Title" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" Immediate="true" />
+            <MudTextField T="string" @bind-Value="description" Label="Description (optional, Markdown)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Lines="2" Sizing="InputSizing.Auto" MaxLength="4000" />
+            <MudSelect T="SnippetVisibility" @bind-Value="visibility" Label="Visibility" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       OuterClass="snippet-vis-select" AnchorOrigin="Origin.BottomLeft">
+                @foreach (var v in SnippetService.AllowedVisibilities(project != null))
+                {
+                    <MudSelectItem Value="v">@SnippetService.Describe(v)</MudSelectItem>
+                }
+            </MudSelect>
+
+            @foreach (var (f, i) in files.Select((f, i) => (f, i)))
+            {
+                <div class="snippet-file-edit" @key="f">
+                    <div class="d-flex align-center gap-2 mb-1">
+                        <MudTextField T="string" @bind-Value="f.FileName" Placeholder="@($"snippet{(i == 0 ? "" : (i + 1).ToString())}.txt")"
+                                      Label="File name" Variant="Variant.Outlined" Margin="Margin.Dense" Class="snippet-file-name" Immediate="true" />
+                        @if (files.Count > 1)
+                        {
+                            <MudTooltip Text="Remove file">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="Remove file"
+                                               OnClick="() => files.Remove(f)" />
+                            </MudTooltip>
+                        }
+                    </div>
+                    <textarea class="snippet-textarea mono" rows="14" spellcheck="false" placeholder="Paste or write code…"
+                              value="@f.Content" @oninput="e => SetContent(f, e)" aria-label="@($"Content of file {i + 1}")"></textarea>
+                </div>
+            }
+            <div>
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddFile"
+                           Disabled="@(files.Count >= SnippetService.MaxFiles)">Add another file</MudButton>
+            </div>
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="@(saving || string.IsNullOrWhiteSpace(title))">
+                    @(Id == null ? "Create snippet" : "Save changes")
+                </MudButton>
+                <MudButton Variant="Variant.Text" Href="@(Id is { } id ? SnippetService.Url(id) : project != null ? $"/p/{project.Key}/snippets" : "/snippets")">Cancel</MudButton>
+            </div>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "project")] public string? ProjectKey { get; set; }
+
+    private sealed class FileDraft
+    {
+        public string FileName { get; set; } = "";
+        public string Content { get; set; } = "";
+    }
+
+    private Project? project;
+    private string title = "";
+    private string? description;
+    private SnippetVisibility visibility = SnippetVisibility.Private;
+    private List<FileDraft> files = [new()];
+    private bool loaded, notFound, saving;
+    private string notFoundMessage = "This snippet does not exist, or you can't edit it.";
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        loaded = notFound = false;
+        error = null;
+        if (Id is { } id)
+        {
+            var view = await Snippets.GetAsync(id);
+            if (view == null || !view.CanEdit) { notFound = true; return; }
+            project = view.Snippet.Project;
+            title = view.Snippet.Title;
+            description = view.Snippet.Description;
+            visibility = view.Snippet.Visibility;
+            files = view.Revision.Files.Select(f => new FileDraft { FileName = f.FileName, Content = f.Content }).ToList();
+        }
+        else if (!string.IsNullOrEmpty(ProjectKey))
+        {
+            project = await Issues.GetProjectAsync(ProjectKey);
+            if (project == null || !await Access.CanAsync(project.Id, Permission.EditIssues))
+            {
+                notFound = true;
+                notFoundMessage = "This project does not exist, or you can't create snippets in it (Developer or above).";
+                return;
+            }
+            visibility = SnippetVisibility.Project;
+        }
+        loaded = true;
+    }
+
+    private static void SetContent(FileDraft f, ChangeEventArgs e) => f.Content = e.Value?.ToString() ?? "";
+
+    private void AddFile()
+    {
+        if (files.Count < SnippetService.MaxFiles) files.Add(new FileDraft());
+    }
+
+    private async Task Save()
+    {
+        saving = true;
+        error = null;
+        try
+        {
+            var input = new SnippetInput(title, description, visibility, files.Select(f => new SnippetFileInput(f.FileName, f.Content)).ToList());
+            var s = Id is { } id ? await Snippets.UpdateAsync(id, input) : await Snippets.CreateAsync(input, project?.Id);
+            Snackbar.Add(Id == null ? "Snippet created." : "Snippet saved.", Severity.Success);
+            Nav.NavigateTo(SnippetService.Url(s.Id));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+}

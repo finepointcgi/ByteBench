@@ -1,0 +1,84 @@
+@* The wiki's page tree: folders (collapsible <details>) and pages, the current page highlighted. Recursive. *@
+@using GitBench.Services.Wiki
+
+<ul class="wiki-tree">
+    @foreach (var node in Nodes)
+    {
+        <li @key="node.Path">
+            @if (node.Children.Count > 0)
+            {
+                <details open="@(Current?.StartsWith(node.Path + "/", StringComparison.OrdinalIgnoreCase) == true || Depth == 0)">
+                    <summary>
+                        @if (node.IsPage)
+                        {
+                            <a href="@WikiPaths.Url(ProjectKey, node.Path)" class="@(IsCurrent(node) ? "current" : null)">@node.Title</a>
+                        }
+                        else
+                        {
+                            <span class="wiki-folder">@node.Title</span>
+                        }
+                    </summary>
+                    <WikiTree ProjectKey="@ProjectKey" Nodes="node.Children" Current="@Current" Depth="Depth + 1" />
+                </details>
+            }
+            else
+            {
+                <a href="@WikiPaths.Url(ProjectKey, node.Path)" class="@(IsCurrent(node) ? "current" : null)">@node.Title</a>
+            }
+        </li>
+    }
+</ul>
+
+@code {
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<Node> Nodes { get; set; } = [];
+    [Parameter] public string? Current { get; set; }
+    [Parameter] public int Depth { get; set; }
+
+    private bool IsCurrent(Node n) => n.IsPage && string.Equals(n.Path, Current, StringComparison.OrdinalIgnoreCase);
+
+    public sealed record Node(string Path, string Title, bool IsPage, List<Node> Children);
+
+    /// <summary>Builds the tree from page paths (the home page first, then folders, then pages, by name). The sidebar page is left out.</summary>
+    public static List<Node> Build(IEnumerable<WikiPageEntry> pages)
+    {
+        var root = new List<Node>();
+        foreach (var p in pages.Where(p => !p.Path.Equals(WikiPaths.Sidebar, StringComparison.OrdinalIgnoreCase)))
+        {
+            var parts = p.Path.Split('/');
+            var level = root;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var path = string.Join('/', parts.Take(i + 1));
+                var last = i == parts.Length - 1;
+                var node = level.FirstOrDefault(n => n.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+                if (node == null)
+                {
+                    node = new Node(path, last ? p.Title : parts[i].Replace('-', ' '), last, []);
+                    level.Add(node);
+                }
+                else if (last && !node.IsPage)
+                {
+                    level[level.IndexOf(node)] = node = node with { IsPage = true, Title = p.Title };
+                }
+                level = node.Children;
+            }
+        }
+        Sort(root);
+        return root;
+    }
+
+    private static void Sort(List<Node> nodes)
+    {
+        nodes.Sort((a, b) =>
+        {
+            var ha = a.Path.Equals(WikiPaths.Home, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            var hb = b.Path.Equals(WikiPaths.Home, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            if (ha != hb) return ha - hb;
+            var fa = a.Children.Count > 0 ? 0 : 1;
+            var fb = b.Children.Count > 0 ? 0 : 1;
+            return fa != fb ? fa - fb : string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase);
+        });
+        foreach (var n in nodes) Sort(n.Children);
+    }
+}

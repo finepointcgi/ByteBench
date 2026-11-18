@@ -24,6 +24,7 @@
             <TabLink Active="@(Current == SearchType.PullRequests)" Href="@Url(SearchType.PullRequests)" Icon="@Icons.Material.Outlined.MergeType" Count="results?.PullRequestCount">Pull requests</TabLink>
             <TabLink Active="@(Current == SearchType.Projects)" Href="@Url(SearchType.Projects)" Icon="@Icons.Material.Outlined.Folder" Count="results?.ProjectCount">Projects</TabLink>
             <TabLink Active="@(Current == SearchType.Users)" Href="@Url(SearchType.Users)" Icon="@Icons.Material.Outlined.Person" Count="results?.UserCount">Users</TabLink>
+            <TabLink Active="@(Current == SearchType.Wiki)" Href="@Url(SearchType.Wiki)" Icon="@Icons.Material.Outlined.MenuBook" Count="results?.WikiCount">Wiki</TabLink>
             <TabLink Active="@(Current == SearchType.Code)" Href="@Url(SearchType.Code)" Icon="@Icons.Material.Outlined.Code">Code</TabLink>
         </nav>
 
@@ -122,6 +123,20 @@
                         }
                     </SearchSection>
                 }
+                @if ((all || Current == SearchType.Wiki) && results.Wiki.Count > 0)
+                {
+                    <SearchSection Title="Wiki" Count="results.WikiCount" More="@(all && results.WikiCount > take ? Url(SearchType.Wiki) : null)">
+                        @foreach (var w in results.Wiki.Take(take))
+                        {
+                            <a class="sr-row" href="@w.Url">
+                                <MudIcon Icon="@Icons.Material.Outlined.Article" Size="Size.Small" />
+                                <span class="sr-title gb-bold">@w.Title</span>
+                                <span class="mud-text-secondary mono">@w.ProjectKey/@w.Path</span>
+                                @if (w.Excerpt != null) { <span class="mud-text-secondary sr-excerpt">@w.Excerpt</span> }
+                            </a>
+                        }
+                    </SearchSection>
+                }
                 @if (!all && NoneOfType)
                 {
                     <div class="empty">No @Label(Current!.Value) match “@Q”.</div>
@@ -132,7 +147,7 @@
     else
     {
         <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Search issues (by key, title or description), pull requests, projects and people. Type an issue key such as <span class="mono">WEB-12</span> to jump straight to it.
+            Search issues (by key, title or description), pull requests, projects, people and wiki pages. Type an issue key such as <span class="mono">WEB-12</span> to jump straight to it.
             Press <kbd>/</kbd> anywhere to focus the search box in the top bar.
         </MudText>
     }
@@ -155,6 +170,7 @@
         "projects" or "project" => SearchType.Projects,
         "users" or "user" => SearchType.Users,
         "code" => SearchType.Code,
+        "wiki" => SearchType.Wiki,
         _ => null,
     };
 
@@ -167,6 +183,7 @@
         SearchType.PullRequests => results!.PullRequests.Count == 0,
         SearchType.Projects => results!.Projects.Count == 0,
         SearchType.Users => results!.Users.Count == 0,
+        SearchType.Wiki => results!.Wiki.Count == 0,
         _ => false,
     };
 
