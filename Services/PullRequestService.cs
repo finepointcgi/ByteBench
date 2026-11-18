@@ -19,6 +19,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .Include(p => p.Author).Include(p => p.Reviews).ThenInclude(r => r.User)
+            .Include(p => p.SourceRepository).ThenInclude(r => r!.Project)
             .Where(p => p.Repository.ProjectId == projectId);
         if (state is { } s) q = q.Where(p => p.State == s);
         if (repositoryId is { } rid) q = q.Where(p => p.RepositoryId == rid);
@@ -58,6 +59,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
             .Include(p => p.Comments).ThenInclude(c => c.Author)
             .Include(p => p.Reviews).ThenInclude(r => r.User)
             .Include(p => p.Activities).ThenInclude(a => a.Actor)
+            .Include(p => p.SourceRepository).ThenInclude(r => r!.Project)
             .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Repository.Project.Key == key && p.Repository.Slug == s && p.Number == number);
     }
@@ -70,11 +72,11 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
     {
         if (pr.State != PullRequestState.Open && pr.SourceCommitSha != null && pr.TargetCommitSha != null)
             return GitOps.Compare(path, pr.TargetCommitSha, pr.SourceCommitSha);
-        return GitOps.Compare(path, pr.TargetBranch, pr.SourceBranch);
+        return GitOps.Compare(path, pr.TargetBranch, pr.SourceRef);
     });
 
     public Task<MergeStatus> CheckMergeAsync(PullRequest pr) =>
-        repos.Git(pr.Repository, path => GitOps.CheckMerge(path, pr.SourceBranch, pr.TargetBranch));
+        repos.Git(pr.Repository, path => GitOps.CheckMerge(path, pr.SourceRef, pr.TargetBranch));
 
     /// <summary>Issues of the PR's project referenced by its title, source branch or commit messages.</summary>
     public async Task<List<Issue>> GetLinkedIssuesAsync(PullRequest pr, IEnumerable<CommitInfo>? commits = null)
@@ -112,7 +114,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
 
         await using var db = await dbFactory.CreateDbContextAsync();
         await using var tx = await db.Database.BeginTransactionAsync();
-        if (await db.PullRequests.AnyAsync(p => p.RepositoryId == repo.Id && p.State == PullRequestState.Open
+        if (await db.PullRequests.AnyAsync(p => p.RepositoryId == repo.Id && p.State == PullRequestState.Open && !p.IsCrossFork
                                                 && p.SourceBranch == source && p.TargetBranch == target))
             throw new InvalidOperationException($"There is already an open pull request from '{source}' into '{target}'.");
 
@@ -167,6 +169,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be merged.");
         RepositorySettingsService.EnsureNotArchived(pr.Repository);
+        if (deleteSourceBranch && pr.IsCrossFork) throw new InvalidOperationException("The source branch is in a fork, so it can't be deleted from here.");
         if (!MergeStrategySettings.Allowed(pr.Repository).HasFlag(MergeStrategySettings.Flag(request.Strategy)))
             throw new InvalidOperationException($"This repository doesn't allow {MergeStrategySettings.Label(request.Strategy).ToLowerInvariant()} merges.");
         // Branch protection: approvals, change requests and required checks (throws with the reasons when blocked).
@@ -229,7 +232,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be declined.");
         // Snapshot the tips so the diff stays viewable even if a branch is deleted later.
         (pr.SourceCommitSha, pr.TargetCommitSha) = await repos.Git(pr.Repository, path =>
-            (GitOps.ResolveSha(path, pr.SourceBranch), GitOps.ResolveSha(path, pr.TargetBranch)));
+            (GitOps.ResolveSha(path, pr.SourceRef), GitOps.ResolveSha(path, pr.TargetBranch)));
         pr.State = PullRequestState.Declined;
         pr.ClosedAt = DateTime.UtcNow;
         Log(db, pr, actorId, "declined this pull request");
@@ -245,10 +248,14 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Declined) throw new InvalidOperationException("Only declined pull requests can be reopened.");
+        // A fork PR's head is fetched from the fork again (refused if the fork or its branch is gone).
+        if (pr.IsCrossFork && (await RefreshForkHeadAsync(pr)).Head == null)
+            throw new InvalidOperationException("The fork or its source branch no longer exists.");
         var ok = await repos.Git(pr.Repository, path =>
-            GitOps.BranchExists(path, pr.SourceBranch) && GitOps.BranchExists(path, pr.TargetBranch));
+            GitOps.BranchExists(path, pr.SourceRef) && GitOps.BranchExists(path, pr.TargetBranch));
         if (!ok) throw new InvalidOperationException("The source or target branch no longer exists.");
         if (await db.PullRequests.AnyAsync(p => p.Id != prId && p.RepositoryId == pr.RepositoryId && p.State == PullRequestState.Open
+                                                && p.IsCrossFork == pr.IsCrossFork && p.SourceRepositoryId == pr.SourceRepositoryId
                                                 && p.SourceBranch == pr.SourceBranch && p.TargetBranch == pr.TargetBranch))
             throw new InvalidOperationException("Another open pull request already covers these branches.");
         pr.State = PullRequestState.Open;
@@ -267,7 +274,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
     public async Task<PullRequestComment> AddCommentAsync(int prId, int authorId, string body, string? filePath = null, int? line = null, int? oldLine = null,
         int? parentId = null, int? startLine = null)
     {
-        await access.RequireForPullRequestAsync(prId, Permission.Comment, authorId);
+        await RequireCommentOnPrAsync(prId, authorId);
         if (string.IsNullOrWhiteSpace(body)) throw new InvalidOperationException("Comment can't be empty.");
         await using var db = await dbFactory.CreateDbContextAsync();
         var c = new PullRequestComment
@@ -314,7 +321,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be reviewed.");
 
         // The verdict applies to the current head; branch protection can ignore approvals of older heads.
-        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceBranch));
+        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceRef));
         var existing = pr.Reviews.FirstOrDefault(r => r.UserId == userId);
         if (existing?.State == state && (state == null || existing?.CommitSha == head)) return;
         string text;
@@ -343,6 +350,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var authorId = await db.PullRequests.Where(p => p.Id == prId).Select(p => (int?)p.AuthorId).FirstOrDefaultAsync();
+        if (authorId == actorId && await IsForkAuthorAsync(prId, actorId)) return;
         await access.RequireForPullRequestAsync(prId,
             authorId == actorId ? Permission.CreatePullRequest : Permission.MergePullRequest, actorId);
     }
@@ -351,7 +359,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var prId = await db.PullRequestComments.Where(c => c.Id == commentId).Select(c => (int?)c.PullRequestId).FirstOrDefaultAsync();
-        await access.RequireForPullRequestAsync(prId ?? 0, Permission.Comment, actorId);
+        await RequireCommentOnPrAsync(prId ?? 0, actorId);
     }
 
     private static void Log(AppDbContext db, PullRequest pr, int actorId, string text, DateTime? at = null)

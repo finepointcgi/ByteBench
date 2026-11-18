@@ -126,7 +126,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             Pipeline? p;
             await using (var db = await dbFactory.CreateDbContextAsync(stoppingToken))
             {
-                var started = await db.Pipelines.Where(x => x.Id == id && x.Status == PipelineStatus.Queued)
+                var started = await db.Pipelines.Where(x => x.Id == id && x.Status == PipelineStatus.Queued && !x.AwaitingApproval)
                     .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Running)
                         .SetProperty(x => x.StartedAt, DateTime.UtcNow), stoppingToken);
                 if (started == 0) return; // canceled while queued, or already handled
@@ -147,7 +147,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             // CI secret variables (decrypted once per pipeline; protected ones only for protected branches).
             CiResolvedVariables variables;
             using (var scope = scopes.CreateScope())
-                variables = await scope.ServiceProvider.GetRequiredService<CiVariableService>().ResolveAsync(p.Repository.ProjectId, p.RepositoryId, p.Ref);
+                variables = await scope.ServiceProvider.GetRequiredService<CiVariableService>().ResolveAsync(p.Repository.ProjectId, p.RepositoryId, p.Ref, p.IsForkPullRequest);
             var status = p.Jobs.ToDictionary(j => j.Name, j => PipelineStatus.Queued);
             var pending = p.Jobs.OrderBy(j => j.Order).ToList();
             var runningJobs = new Dictionary<Task<PipelineStatus>, PipelineJob>();

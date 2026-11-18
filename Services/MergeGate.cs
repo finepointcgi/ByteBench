@@ -53,7 +53,7 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
         if (!all.IsProtected)
             return new MergeGateResult([.. checks, .. external], draftBlockers, all, false);
 
-        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceBranch));
+        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceRef));
         var approvers = pr.Reviews.Where(r => r.State == ReviewState.Approved && r.UserId != pr.AuthorId).ToList();
         // A null CommitSha is a verdict from before heads were recorded: treated as current, never auto-dismissed.
         var freshApprovers = approvers.Where(r => r.CommitSha == null || r.CommitSha == head).ToList();

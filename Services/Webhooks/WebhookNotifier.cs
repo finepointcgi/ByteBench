@@ -57,6 +57,7 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
         if (projectId is not { } pid || !await AnyListenerAsync(db, pid, eventName)) return;
         var pr = await db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project)
             .Include(p => p.Author).Include(p => p.MergedBy).Include(p => p.Reviews).ThenInclude(r => r.User)
+            .Include(p => p.SourceRepository).ThenInclude(r => r!.Project)
             .AsSplitQuery().FirstAsync(p => p.Id == prId);
         var dto = Dto.PullRequest(pr, baseUrl.Value);
         var repo = Dto.Repository(pr.Repository, baseUrl.Value);

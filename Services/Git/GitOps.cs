@@ -137,10 +137,11 @@ public static partial class GitOps
         return result.OrderByDescending(b => b.IsDefault).ThenByDescending(b => b.Tip?.When).ToList();
     }
 
+    /// <summary>True if the branch exists (or, for a fork PR's <c>refs/pull/{n}/head</c>, that ref; see <see cref="SourceTip"/>).</summary>
     public static bool BranchExists(string path, string name)
     {
         using var r = new LgRepository(path);
-        return r.Branches[name] != null;
+        return SourceTip(r, name) != null;
     }
 
     /// <summary>Resolves a branch, tag or commit-ish to a full SHA, or null.</summary>
@@ -327,7 +328,7 @@ public static partial class GitOps
     public static MergeStatus CheckMerge(string path, string source, string target)
     {
         using var r = new LgRepository(path);
-        var s = r.Branches[source]?.Tip;
+        var s = SourceTip(r, source)?.Tip;
         var t = r.Branches[target]?.Tip;
         if (s == null || t == null)
             return new MergeStatus(MergeCheck.MissingBranch, false, [], $"Branch '{(s == null ? source : target)}' no longer exists.");
@@ -350,7 +351,7 @@ public static partial class GitOps
         lock (LockFor(path))
         {
             using var r = new LgRepository(path);
-            var sb = r.Branches[source];
+            var sb = SourceTip(r, source);
             var tb = r.Branches[target];
             if (sb?.Tip == null || tb?.Tip == null)
                 return Fail($"Branch '{(sb?.Tip == null ? source : target)}' no longer exists.");

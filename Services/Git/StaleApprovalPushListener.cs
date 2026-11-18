@@ -26,7 +26,7 @@ public class StaleApprovalPushListener(IDbContextFactory<AppDbContext> dbFactory
         {
             var p = BranchProtectionService.ApplicableTo(rules, pr.TargetBranch, isAdmin: false);
             if (!p.DismissStaleApprovals) continue;
-            var head = await Task.Run(() => GitOps.ResolveSha(path, pr.SourceBranch), ct);
+            var head = await Task.Run(() => GitOps.ResolveSha(path, pr.SourceRef), ct);
             if (head == null) continue;
             var stale = pr.Reviews.Where(r => r.State == ReviewState.Approved && r.CommitSha != null && r.CommitSha != head).ToList();
             if (stale.Count == 0) continue;

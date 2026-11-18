@@ -133,10 +133,21 @@ public static class RepoEndpoints
     {
         var repo = await RequireRepoAsync(repos, key, slug);
         var body = await ApiResults.ReadBodyAsync<CreatePullRequestRequest>(http.Request);
-        await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest);
         if (string.IsNullOrWhiteSpace(body.SourceBranch) || string.IsNullOrWhiteSpace(body.TargetBranch))
             throw ApiException.Unprocessable("sourceBranch and targetBranch are required.");
-        var pr = await prs.CreateAsync(repo, body.Title ?? "", body.Description, body.SourceBranch, body.TargetBranch, caller.Id, draft: body.Draft);
+        PullRequest pr;
+        if (!string.IsNullOrWhiteSpace(body.SourceRepository))
+        {
+            // Cross-fork: sourceRepository is "KEY/slug" of a fork in this repository's network (see ForkEndpoints).
+            var source = await ForkEndpoints.RequireRepoPathAsync(repos, body.SourceRepository);
+            pr = await http.RequestServices.GetRequiredService<GitBench.Services.Forks.ForkService>().CreatePullRequestAsync(
+                source, body.SourceBranch, repo, body.TargetBranch, body.Title ?? "", body.Description, caller.Id, body.Draft);
+        }
+        else
+        {
+            await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest);
+            pr = await prs.CreateAsync(repo, body.Title ?? "", body.Description, body.SourceBranch, body.TargetBranch, caller.Id, draft: body.Draft);
+        }
         var baseUrl = url.For(http.Request);
         var dto = Dto.PullRequest(await RequirePullRequestAsync(prs, key, slug, pr.Number), baseUrl);
         return TypedResults.Created($"{baseUrl}/api/v1/projects/{repo.Project.Key}/repos/{repo.Slug}/pull-requests/{pr.Number}", dto);

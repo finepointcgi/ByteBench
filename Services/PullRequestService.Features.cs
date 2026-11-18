@@ -160,7 +160,7 @@ public partial class PullRequestService
         c.StartLine = startLine == c.Line ? null : startLine;
 
         var pr = await db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project).FirstAsync(p => p.Id == c.PullRequestId);
-        var rev = pr.State == PullRequestState.Open ? pr.SourceBranch : pr.SourceCommitSha;
+        var rev = pr.State == PullRequestState.Open ? pr.SourceRef : pr.SourceCommitSha;
         if (rev == null) return;
         (c.CommitSha, c.LineText) = await repos.Git(pr.Repository, path =>
         {
@@ -178,10 +178,13 @@ public partial class PullRequestService
     public async Task<bool> CanApplySuggestionsAsync(PullRequest pr, int userId)
     {
         if (pr.State != PullRequestState.Open || pr.Repository.IsArchived) return false;
-        if (!await access.CanAsync(pr.Repository.ProjectId, Permission.PushCode, userId)) return false;
+        // A fork PR's suggestions are committed to the fork, so they need push rights there (not in the target).
+        var pushTo = pr.IsCrossFork ? await SourceRepositoryOfAsync(pr) : pr.Repository;
+        if (pushTo == null || pushTo.IsArchived) return false;
+        if (!await access.CanAsync(pushTo.ProjectId, Permission.PushCode, userId)) return false;
         try
         {
-            await protection.EnsureAllowedAsync(pr.Repository, pr.SourceBranch, RefChangeKind.Update, userId);
+            await protection.EnsureAllowedAsync(pushTo, pr.SourceBranch, RefChangeKind.Update, userId);
             return true;
         }
         catch (BranchProtectedException) { return false; }
@@ -195,14 +198,20 @@ public partial class PullRequestService
     /// </summary>
     public async Task<string> ApplySuggestionsAsync(int prId, User actor, IReadOnlyCollection<int> commentIds)
     {
-        await access.RequireForPullRequestAsync(prId, Permission.PushCode, actor.Id);
+        await access.RequireForPullRequestAsync(prId, Permission.ViewProject, actor.Id);
         if (commentIds.Count == 0) throw new InvalidOperationException("Choose at least one suggestion to apply.");
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Suggestions can only be applied to open pull requests.");
         RepositorySettingsService.EnsureNotArchived(pr.Repository);
-        await protection.EnsureAllowedAsync(pr.Repository, pr.SourceBranch, RefChangeKind.Update, actor.Id);
+        // The commit goes to the branch's own repository: the fork for a fork PR (push rights needed there, not here).
+        var pushTo = pr.IsCrossFork
+            ? await SourceRepositoryOfAsync(pr) ?? throw new InvalidOperationException("The fork this pull request comes from was deleted, so suggestions can't be applied.")
+            : pr.Repository;
+        await access.RequireAsync(pushTo.ProjectId, Permission.PushCode, actor.Id);
+        RepositorySettingsService.EnsureNotArchived(pushTo);
+        await protection.EnsureAllowedAsync(pushTo, pr.SourceBranch, RefChangeKind.Update, actor.Id);
 
         var ids = commentIds.Distinct().ToList();
         var comments = await db.PullRequestComments.Include(c => c.Author)
@@ -227,11 +236,14 @@ public partial class PullRequestService
         if (trailers.Count > 0) message += "\n\n" + string.Join("\n", trailers);
 
         var me = RepositoryService.IdentityOf(actor);
-        var (before, sha) = await repos.Git(pr.Repository, path =>
+        var (before, sha) = await repos.Git(pushTo, path =>
         {
             var tip = GitOps.ResolveSha(path, pr.SourceBranch);
+            if (pr.IsCrossFork && tip != GitOps.ResolveSha(repos.PathOf(pr.Repository), pr.SourceRef))
+                throw new InvalidOperationException("The fork's branch moved since this pull request was last updated. Reload and try again.");
             return (tip, GitOps.ApplyLineEdits(path, pr.SourceBranch, edits, message, me, me, tip));
         });
+        if (pr.IsCrossFork) await RefreshForkHeadAsync(pr);
 
         var now = DateTime.UtcNow;
         var rootIds = comments.Select(c => c.ParentId ?? c.Id).ToHashSet();
@@ -244,8 +256,9 @@ public partial class PullRequestService
         }
         Log(db, pr, actor.Id, $"applied {(comments.Count == 1 ? "a suggestion" : comments.Count + " suggestions")} in commit `{sha[..7]}`");
         await db.SaveChangesAsync();
-        await pushEvents.SendAsync(pr.RepositoryId, [Webhooks.WebhookPushEvents.Branch(pr.SourceBranch, before, sha)], actor.Id);
+        await pushEvents.SendAsync(pushTo.Id, [Webhooks.WebhookPushEvents.Branch(pr.SourceBranch, before, sha)], actor.Id);
         await notifications.OnPullRequestCommentChangedAsync(prId);
+        if (pr.IsCrossFork) await webhooks.PullRequestUpdatedAsync(prId, actor.Id, "synchronize");
         return sha;
     }
 
@@ -293,17 +306,25 @@ public partial class PullRequestService
                     .Where(t => !message.Contains(t, StringComparison.OrdinalIgnoreCase)).ToList();
                 trailers.Add("Merge-Strategy: squash");
                 message += "\n\n" + string.Join("\n", trailers);
-                return await repos.Git(pr.Repository, path => GitOps.Squash(path, pr.SourceBranch, pr.TargetBranch, message, authorId, who));
+                return await repos.Git(pr.Repository, path => GitOps.Squash(path, pr.SourceRef, pr.TargetBranch, message, authorId, who));
             }
             case MergeStrategy.Rebase:
-                return await repos.Git(pr.Repository, path => GitOps.Rebase(path, pr.SourceBranch, pr.TargetBranch, who));
+                return await repos.Git(pr.Repository, path => GitOps.Rebase(path, pr.SourceRef, pr.TargetBranch, who));
             default:
             {
-                var message = $"Merge pull request #{pr.Number} from {pr.SourceBranch} into {pr.TargetBranch}\n\n{pr.Title}\n\nMerge-Strategy: merge";
+                var from = pr.IsCrossFork ? await ForkSourceLabelAsync(pr) : pr.SourceBranch;
+                var message = $"Merge pull request #{pr.Number} from {from} into {pr.TargetBranch}\n\n{pr.Title}\n\nMerge-Strategy: merge";
                 return await repos.Git(pr.Repository, path =>
-                    GitOps.Merge(path, pr.SourceBranch, pr.TargetBranch, message, who, request.AllowFastForward));
+                    GitOps.Merge(path, pr.SourceRef, pr.TargetBranch, message, who, request.AllowFastForward));
             }
         }
+    }
+
+    /// <summary>"KEY/slug:branch" of a fork PR's source (looked up now), or "unknown repository:branch".</summary>
+    private async Task<string> ForkSourceLabelAsync(PullRequest pr)
+    {
+        var source = await SourceRepositoryOfAsync(pr);
+        return source == null ? $"unknown repository:{pr.SourceBranch}" : $"{source.Project.Key}/{source.Slug}:{pr.SourceBranch}";
     }
 
     private static string MergedActivity(MergeStrategy strategy, MergeOutcome outcome)

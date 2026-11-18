@@ -470,10 +470,11 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         db.Issues.AsNoTracking().Include(i => i.Project).FirstOrDefaultAsync(i => i.Id == issueId);
 
     private static Task<PullRequest?> LoadPrAsync(AppDbContext db, int prId) =>
-        db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project).FirstOrDefaultAsync(p => p.Id == prId);
+        db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project)
+            .Include(p => p.SourceRepository).ThenInclude(r => r!.Project).FirstOrDefaultAsync(p => p.Id == prId);
 
     private static string IssueTitle(Issue i) => $"{i.Project.Key}-{i.Number} {i.Title}";
     private static string IssueUrl(Issue i) => $"/p/{i.Project.Key}/issues/{i.Number}";
-    private static string PrTitle(PullRequest p) => $"{p.Repository.Slug}#{p.Number} {p.Title}";
+    private static string PrTitle(PullRequest p) => $"{p.Repository.Slug}#{p.Number} {p.Title}" + (p.IsCrossFork ? $" (from {p.SourceLabel})" : "");
     private static string PrUrl(PullRequest p) => $"/p/{p.Repository.Project.Key}/repos/{p.Repository.Slug}/pull-requests/{p.Number}";
 }

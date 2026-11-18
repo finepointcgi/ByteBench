@@ -74,7 +74,8 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         if (moved.Count == 0) return;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var openPrs = await db.PullRequests.Where(p => p.RepositoryId == repositoryId && p.State == PullRequestState.Open)
+        // Fork PRs' heads aren't branches of this repository (their pipelines start in OnPullRequestChangedAsync).
+        var openPrs = await db.PullRequests.Where(p => p.RepositoryId == repositoryId && p.State == PullRequestState.Open && !p.IsCrossFork)
             .Select(p => new { p.Id, p.SourceBranch }).ToListAsync(ct);
 
         foreach (var (branch, sha) in moved)
@@ -116,21 +117,25 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         if (pr.State != PullRequestState.Open) return;
 
         var path = storage.PathFor(pr.Repository.Project.Key, pr.Repository.Slug);
-        if (await Task.Run(() => GitOps.BranchExists(path, pr.SourceBranch) ? GitOps.ResolveSha(path, pr.SourceBranch) : null, ct) is not { } head) return;
-        if (await AttachToExistingAsync(pr.RepositoryId, pr.SourceBranch, head, pr.Id, ct)) return;
+        // A fork PR's head is refs/pull/{n}/head: its pipeline gets no CI variables and waits for a Maintainer's approval.
+        var source = pr.SourceRef;
+        if (await Task.Run(() => GitOps.BranchExists(path, source) ? GitOps.ResolveSha(path, source) : null, ct) is not { } head) return;
+        if (await AttachToExistingAsync(pr.RepositoryId, source, head, pr.Id, ct)) return;
 
         var def = await LoadDefinitionAsync(pr.Repository, head);
         if (def == null || def.Definition is { On.PullRequests: false }) return;
-        await CreateAsync(pr.Repository, pr.SourceBranch, head, PipelineTrigger.PullRequest, pr.AuthorId, pr.Id, def, dedupe: true, ct);
+        await CreateAsync(pr.Repository, source, head, PipelineTrigger.PullRequest, pr.AuthorId, pr.Id, def, dedupe: true, ct, forkPullRequest: pr.IsCrossFork);
     }
 
     /// <summary>
     /// Creates a pipeline for <paramref name="sha"/> on <paramref name="branch"/>: Queued (and enqueued) when the file
     /// is valid, Error with the parse message otherwise. With <paramref name="dedupe"/>, nothing is created if the
     /// commit already has a pipeline on that branch (the PR link is added to it instead). Returns the new id, or null.
+    /// A <paramref name="forkPullRequest"/> pipeline never gets CI variables and, unless <paramref name="approvedById"/> is
+    /// given, waits (Queued, not enqueued) until a Maintainer approves it (<see cref="PipelineService.ApproveAsync"/>).
     /// </summary>
     public async Task<int?> CreateAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? userId,
-        int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default)
+        int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default, bool forkPullRequest = false, int? approvedById = null)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var commit = await Task.Run(() => GitOps.GetCommit(path, sha), ct);
@@ -145,6 +150,8 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
             {
                 RepositoryId = repo.Id, Ref = branch, CommitSha = sha, PullRequestId = pullRequestId, Trigger = trigger,
                 TriggeredById = userId, CommitMessage = Truncate(commit?.MessageShort, 200), CreatedAt = DateTime.UtcNow,
+                IsForkPullRequest = forkPullRequest, AwaitingApproval = forkPullRequest && approvedById == null,
+                ApprovedById = forkPullRequest ? approvedById : null, ApprovedAt = forkPullRequest && approvedById != null ? DateTime.UtcNow : null,
             };
             if (def.Definition is { } d)
             {
@@ -174,7 +181,7 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         log.LogInformation("Pipeline {Id} created for {Key}/{Slug} {Branch} @ {Sha} ({Trigger}): {Status}",
             p.Id, repo.Project.Key, repo.Slug, branch, sha[..7], trigger, p.Status);
         live.Publish(new PipelineChanged(p.Id, repo.Id));
-        if (p.Status == PipelineStatus.Queued) queue.Enqueue(p.Id);
+        if (p.Status == PipelineStatus.Queued && !p.AwaitingApproval) queue.Enqueue(p.Id);
         else await CiRunner.NotifyFailedAsync(scopes, p, log);
         return p.Id;
     }

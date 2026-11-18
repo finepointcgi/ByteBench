@@ -58,7 +58,7 @@ public record PullRequestDto(int Id, int Number, string Repository, string Title
     string SourceBranch, string TargetBranch, PullRequestState State, UserDto Author, UserDto? MergedBy,
     string? MergeCommitSha, IReadOnlyList<ReviewDto> Reviews,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? ClosedAt, string WebUrl,
-    bool IsDraft = false, MergeStrategy? MergeStrategy = null);
+    bool IsDraft = false, MergeStrategy? MergeStrategy = null, bool IsCrossFork = false, string? SourceRepository = null);
 
 public record PullRequestCommentDto(int Id, string Body, UserDto Author, string? Path, int? Line, int? OldLine,
     DateTimeOffset CreatedAt, DateTimeOffset? EditedAt,
@@ -82,7 +82,9 @@ public partial record UpdateIssueRequest(string? Title = null, string? Descripti
 
 public record AddCommentRequest(string Body);
 
-public record CreatePullRequestRequest(string Title, string SourceBranch, string TargetBranch, string? Description = null, bool Draft = false);
+/// <param name="SourceRepository">"KEY/slug" of a fork holding <see cref="SourceBranch"/> (a cross-fork PR); null: this repository.</param>
+public record CreatePullRequestRequest(string Title, string SourceBranch, string TargetBranch, string? Description = null, bool Draft = false,
+    string? SourceRepository = null);
 
 /// <param name="Strategy">"merge", "squash" or "rebase" (default: the repository's default strategy).</param>
 /// <param name="CommitMessage">Squash only: the commit message (default: title, number and commit list).</param>
@@ -159,7 +161,8 @@ public static class Dto
         p.Id, p.Number, p.Repository.Slug, p.Title, p.Description, p.SourceBranch, p.TargetBranch, p.State,
         User(p.Author), UserOrNull(p.MergedBy), p.MergeCommitSha,
         p.Reviews.OrderBy(r => r.CreatedAt).Select(r => new ReviewDto(User(r.User), r.State, Utc(r.CreatedAt))).ToList(),
-        Utc(p.CreatedAt), Utc(p.UpdatedAt), Utc(p.ClosedAt), baseUrl + RepoUrls.PullRequest(p), p.IsDraft, p.MergeStrategy);
+        Utc(p.CreatedAt), Utc(p.UpdatedAt), Utc(p.ClosedAt), baseUrl + RepoUrls.PullRequest(p), p.IsDraft, p.MergeStrategy,
+        p.IsCrossFork, !p.IsCrossFork ? null : p.SourceRepository?.Project is { } sp ? $"{sp.Key}/{p.SourceRepository.Slug}" : p.SourceRepositoryId == null ? "unknown repository" : null);
 
     public static PullRequestCommentDto PullRequestComment(PullRequestComment c) =>
         new(c.Id, c.Body, User(c.Author), c.FilePath, c.Line, c.OldLine, Utc(c.CreatedAt), Utc(c.EditedAt),

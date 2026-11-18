@@ -114,10 +114,13 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
     /// <summary>
     /// The decrypted variables for a pipeline on <paramref name="branch"/> of the repository (internal: no permission
     /// check). Protected variables are left out unless the branch is protected; for pull request pipelines the branch
-    /// is the source branch, so an unprotected source branch never sees them.
+    /// is the source branch, so an unprotected source branch never sees them. A pipeline of a pull request from a fork
+    /// (<paramref name="forkPullRequest"/>) gets none at all, protected or not: its code comes from outside the project.
     /// </summary>
-    public async Task<CiResolvedVariables> ResolveAsync(int projectId, int repositoryId, string branch)
+    public async Task<CiResolvedVariables> ResolveAsync(int projectId, int repositoryId, string branch, bool forkPullRequest = false)
     {
+        if (forkPullRequest)
+            return new(new Dictionary<string, string>(), ["[gitbench] This pipeline runs code from a fork's pull request: no CI variables are exposed to it."]);
         await using var db = await dbFactory.CreateDbContextAsync();
         var rows = await db.CiVariables.AsNoTracking()
             .Where(v => v.ProjectId == projectId && (v.RepositoryId == null || v.RepositoryId == repositoryId))

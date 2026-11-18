@@ -57,7 +57,7 @@ public class AiReviewService(
             log.LogInformation("AI review of PR {Id} not queued: automatic review is off for {Key}", pr.Id, pr.Repository.Project.Key);
             return null;
         }
-        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceBranch));
+        var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceRef));
         if (head == null) return null;
 
         if (await db.AiReviews.AnyAsync(r => r.PullRequestId == pr.Id && (r.Status == AiReviewStatus.Queued || r.Status == AiReviewStatus.Running), ct))

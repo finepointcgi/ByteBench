@@ -813,6 +813,15 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ApprovedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AwaitingApproval")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("CommitMessage")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
@@ -830,6 +839,9 @@ namespace GitBench.Data.Migrations
 
                     b.Property<DateTime?>("FinishedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsForkPullRequest")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("PullRequestId")
                         .HasColumnType("INTEGER");
@@ -855,6 +867,8 @@ namespace GitBench.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApprovedById");
 
                     b.HasIndex("PullRequestId");
 
@@ -1084,6 +1098,9 @@ namespace GitBench.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsCrossFork")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsDraft")
                         .HasColumnType("INTEGER");
 
@@ -1111,6 +1128,9 @@ namespace GitBench.Data.Migrations
                     b.Property<string>("SourceCommitSha")
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("SourceRepositoryId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("State")
                         .HasColumnType("INTEGER");
@@ -1140,6 +1160,8 @@ namespace GitBench.Data.Migrations
 
                     b.HasIndex("RepositoryId", "Number")
                         .IsUnique();
+
+                    b.HasIndex("SourceRepositoryId", "State");
 
                     b.ToTable("PullRequests");
                 });
@@ -1481,6 +1503,9 @@ namespace GitBench.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("ForkedFromId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsArchived")
                         .HasColumnType("INTEGER");
 
@@ -1498,6 +1523,8 @@ namespace GitBench.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ForkedFromId");
 
                     b.HasIndex("ProjectId", "Slug")
                         .IsUnique();
@@ -2456,6 +2483,11 @@ namespace GitBench.Data.Migrations
 
             modelBuilder.Entity("GitBench.Data.Pipeline", b =>
                 {
+                    b.HasOne("GitBench.Data.User", "ApprovedBy")
+                        .WithMany()
+                        .HasForeignKey("ApprovedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("GitBench.Data.PullRequest", null)
                         .WithMany()
                         .HasForeignKey("PullRequestId")
@@ -2471,6 +2503,8 @@ namespace GitBench.Data.Migrations
                         .WithMany()
                         .HasForeignKey("TriggeredById")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ApprovedBy");
 
                     b.Navigation("Repository");
 
@@ -2573,11 +2607,18 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.Repository", "SourceRepository")
+                        .WithMany()
+                        .HasForeignKey("SourceRepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Author");
 
                     b.Navigation("MergedBy");
 
                     b.Navigation("Repository");
+
+                    b.Navigation("SourceRepository");
                 });
 
             modelBuilder.Entity("GitBench.Data.PullRequestActivity", b =>
@@ -2730,11 +2771,18 @@ namespace GitBench.Data.Migrations
 
             modelBuilder.Entity("GitBench.Data.Repository", b =>
                 {
+                    b.HasOne("GitBench.Data.Repository", "ForkedFrom")
+                        .WithMany()
+                        .HasForeignKey("ForkedFromId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("GitBench.Data.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("ForkedFrom");
 
                     b.Navigation("Project");
                 });

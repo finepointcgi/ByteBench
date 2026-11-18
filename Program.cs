@@ -99,6 +99,10 @@ builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
 builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
 builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
 builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
+// ----- Forks & cross-fork pull requests -----
+builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
+builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
+builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

@@ -302,6 +302,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureGroups(b);
         ConfigurePrFeatures(b);
         ConfigureSsh(b);
+        ConfigureForks(b);
+    }
+
+    // ----- Forks -----
+    private static void ConfigureForks(ModelBuilder b)
+    {
+        // Deleting an upstream leaves its forks working (they are independent clones), just no longer linked.
+        b.Entity<Repository>().HasOne(r => r.ForkedFrom).WithMany().HasForeignKey(r => r.ForkedFromId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Repository>().HasIndex(r => r.ForkedFromId);
+        // Deleting a fork leaves its PRs open, with an unknown source (refs/pull/{n}/head keeps the commits).
+        b.Entity<PullRequest>().HasOne(p => p.SourceRepository).WithMany().HasForeignKey(p => p.SourceRepositoryId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<PullRequest>().HasIndex(p => new { p.SourceRepositoryId, p.State });
+        b.Entity<Pipeline>().HasOne(p => p.ApprovedBy).WithMany().HasForeignKey(p => p.ApprovedById).OnDelete(DeleteBehavior.SetNull);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
