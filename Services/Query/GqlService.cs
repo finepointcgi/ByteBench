@@ -62,11 +62,14 @@ public sealed class GqlService(IDbContextFactory<AppDbContext> dbFactory, Projec
         return await q.Select(i => i.Id).Take(max).ToListAsync();
     }
 
-    /// <summary>True if the issue is visible to the user and matches the query (ORDER BY is ignored).</summary>
-    public async Task<bool> MatchesAsync(int issueId, string gql, int? userId = null)
+    /// <summary>
+    /// True if the issue is visible to the user and matches the query (ORDER BY is ignored). With <paramref name="scope"/>,
+    /// names resolve only in those projects (automation evaluates a rule's query within the rule's project).
+    /// </summary>
+    public async Task<bool> MatchesAsync(int issueId, string gql, int? userId = null, IReadOnlyCollection<int>? scope = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var q = await ApplyAsync(db, db.Issues.Where(i => i.Id == issueId), gql, null, userId, order: false);
+        var q = await ApplyAsync(db, db.Issues.Where(i => i.Id == issueId), gql, scope, userId, order: false);
         return await q.AnyAsync();
     }
 
@@ -191,7 +194,15 @@ public sealed class GqlService(IDbContextFactory<AppDbContext> dbFactory, Projec
         switch (expect)
         {
             case Expect.Field:
-                items.AddRange(fields.Fields.Where(f => Prefix(f, partial)).Select(f => new GqlSuggestion(GqlLexer.Quote(f.Name), f.Name, f.Description, "field")));
+                if (fields.TryParameterizedPrefix(partial, out var family, out var argument))
+                {
+                    await using var db = await dbFactory.CreateDbContextAsync();
+                    items.AddRange(await family.SuggestArgumentsAsync(await ContextAsync(db, scope, userId), argument));
+                    break;
+                }
+                items.AddRange(fields.Fields.Where(f => Prefix(f, partial)).Select(f => f is IParameterizedQueryField
+                    ? new GqlSuggestion(f.Name + "[", f.Name + "[…]", f.Description, "field")
+                    : new GqlSuggestion(GqlLexer.Quote(f.Name), f.Name, f.Description, "field")));
                 if (partial.Length > 0) Keywords(("NOT", "negates the next condition"));
                 break;
             case Expect.Operator:

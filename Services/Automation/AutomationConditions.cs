@@ -23,6 +23,8 @@ public interface IAutomationCondition
     IReadOnlyList<ConditionOperator> Operators { get; }
     ConditionValueKind ValueKind { get; }
     Task<bool> EvaluateAsync(AutomationContext ctx, ConditionDef condition, CancellationToken ct);
+    /// <summary>Checks the value when the rule is saved: null if it is fine, else why not. Most conditions need no check.</summary>
+    string? ValidateValue(string? value) => null;
 }
 
 /// <summary>Base for conditions on a field of the current issue.</summary>
@@ -37,6 +39,8 @@ public abstract class IssueCondition : IAutomationCondition
         ctx.Issue is { } issue ? EvaluateAsync(ctx, issue, condition.Operator, condition.Value?.Trim(), ct) : Task.FromResult(false);
 
     protected abstract Task<bool> EvaluateAsync(AutomationContext ctx, Issue issue, string op, string? value, CancellationToken ct);
+
+    public virtual string? ValidateValue(string? value) => null;
 
     protected static readonly IReadOnlyList<ConditionOperator> IsIsNot = [new("is", "is"), new("isNot", "is not")];
 
@@ -196,6 +200,61 @@ public sealed class SubtasksDoneCondition(IDbContextFactory<AppDbContext> dbFact
     }
 }
 
+/// <summary>
+/// The issue matches a GQL query (<see cref="Query.GqlService.MatchesAsync(int, string, int?, IReadOnlyCollection{int}?)"/>), evaluated
+/// as the rule runs: as its author (<c>currentUser()</c> is the author, and only what they can view matches) or as the
+/// automation bot with system access. Either way names resolve only in the rule's project, so a query can't reach others.
+/// A query that fails (an unknown status, a deleted user…) counts as not matching.
+/// </summary>
+public sealed class GqlCondition(IServiceScopeFactory scopes, Query.GqlFieldRegistry fields, ILogger<GqlCondition> log) : IssueCondition
+{
+    public override string Field => "gql";
+    public override string Label => "Matches GQL query";
+    public override IReadOnlyList<ConditionOperator> Operators { get; } = [new("matches", "matches"), new("notMatches", "doesn't match")];
+    public override ConditionValueKind ValueKind => ConditionValueKind.Text;
+
+    protected override async Task<bool> EvaluateAsync(AutomationContext ctx, Issue issue, string op, string? value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value) || op is not ("matches" or "notMatches")) return false;
+        await using var scope = scopes.CreateAsyncScope();
+        var access = scope.ServiceProvider.GetRequiredService<ProjectAccess>();
+        if (ctx.Rule.RunAs == AutomationRunAs.RuleAuthor) access.ActAs(ctx.ActorId);
+        else access.ActAsSystem(ctx.ActorId);
+        bool match;
+        try { match = await scope.ServiceProvider.GetRequiredService<Query.GqlService>().MatchesAsync(issue.Id, value, ctx.ActorId, [ctx.Project.Id]); }
+        catch (Query.GqlException ex)
+        {
+            log.LogInformation("Automation rule {Rule}: GQL condition failed: {Reason}", ctx.Rule.Id, ex.Message);
+            return false;
+        }
+        return op == "matches" ? match : !match;
+    }
+
+    /// <summary>Syntax and field names are checked on save; values (statuses, users…) are resolved when the rule runs.</summary>
+    public override string? ValidateValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        try
+        {
+            var query = Query.GqlParser.Parse(value);
+            if (query.OrderBy.Count > 0) return "GQL condition: ORDER BY has no effect in a condition; remove it.";
+            foreach (var clause in Clauses(query.Where))
+                if (fields.Find(clause.Field) == null) return $"GQL condition: unknown field '{clause.Field}'.";
+            return null;
+        }
+        catch (Query.GqlException ex) { return "GQL condition: " + ex.Message; }
+    }
+
+    private static IEnumerable<Query.GqlClause> Clauses(Query.GqlNode? node) => node switch
+    {
+        Query.GqlAnd a => Clauses(a.Left).Concat(Clauses(a.Right)),
+        Query.GqlOr o => Clauses(o.Left).Concat(Clauses(o.Right)),
+        Query.GqlNot n => Clauses(n.Inner),
+        Query.GqlClause c => [c],
+        _ => [],
+    };
+}
+
 /// <summary>The registered conditions, by <see cref="IAutomationCondition.Field"/>.</summary>
 public sealed class AutomationConditions(IEnumerable<IAutomationCondition> all)
 {
@@ -222,6 +281,6 @@ public sealed class AutomationConditions(IEnumerable<IAutomationCondition> all)
         if (Find(c.Field) is not { } impl) return $"Unknown condition \"{c.Field}\".";
         if (impl.Operators.FirstOrDefault(o => o.Key == c.Operator) is not { } op) return $"{impl.Label}: pick an operator.";
         if (op.NeedsValue && string.IsNullOrWhiteSpace(c.Value)) return $"{impl.Label} {op.Label}: pick a value.";
-        return null;
+        return op.NeedsValue ? impl.ValidateValue(c.Value) : null;
     }
 }

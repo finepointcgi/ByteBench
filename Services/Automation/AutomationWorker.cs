@@ -84,6 +84,7 @@ public static class AutomationServiceCollectionExtensions
         services.AddSingleton<IAutomationCondition, TitleCondition>();
         services.AddSingleton<IAutomationCondition, LinkedPullRequestCondition>();
         services.AddSingleton<IAutomationCondition, SubtasksDoneCondition>();
+        services.AddSingleton<IAutomationCondition, GqlCondition>();
         return services;
     }
 }

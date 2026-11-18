@@ -393,7 +393,6 @@ internal sealed class LabelsField : QueryField
 internal sealed class MilestoneField : QueryField
 {
     public override string Name => "milestone";
-    public override IReadOnlyList<string> Aliases => ["fixVersion"];
     public override string Description => "Milestone title";
     public override IReadOnlyCollection<GqlOperator> Operators => [.. GqlOperators.Equality, .. GqlOperators.Empty];
     public override IReadOnlyList<LambdaExpression> SortKeys => Sort(i => i.Milestone!.Title);

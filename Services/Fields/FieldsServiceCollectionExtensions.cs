@@ -9,6 +9,8 @@ public static class FieldsServiceCollectionExtensions
         services.AddScoped<ComponentVersionService>();
         services.AddScoped<IssueTemplateService>();
         services.AddScoped<TimeTrackingService>();
+        // GQL: component, fixVersion, affectsVersion, estimates, timeSpent and cf[key].
+        services.AddSingleton<Query.IQueryFieldProvider, IssueFieldQueryFields>();
         return services;
     }
 }

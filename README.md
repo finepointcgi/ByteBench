@@ -1186,16 +1186,34 @@ sort    := field [ASC | DESC]
 | `priority` | `= != in < > <= >=` | Lowest … Highest |
 | `assignee`, `reporter`, `watcher` | `= != in`, `is` (not reporter) | username, email, display name or `currentUser()` |
 | `labels` (`label`) | `= != in is` | label names (`=` means "has the label") |
-| `milestone` (`fixVersion`) | `= != in is` | title |
+| `milestone` | `= != in is` | title |
+| `component` (`components`) | `= != in is` | component name or id |
+| `fixVersion` (`fixVersions`), `affectsVersion` (`affectsVersions`, `affectedVersion`) | `= != in is` | version name or id |
 | `sprint` | `= != in is` | name, id, `openSprints()` (active), `futureSprints()`, `closedSprints()` |
 | `parent` | `= != in is` | issue key |
 | `epic` (`epicLink`) | `= != in is` | epic key: its children and their sub-tasks |
 | `created`, `updated`, `resolved` (`closed`), `due` (`dueDate`) | `= != < > <= >=`, `is` (resolved, due) | see dates |
 | `storyPoints` (`points`, `"story points"`) | `= != in < > <= >= is` | whole numbers |
+| `originalEstimate`, `remainingEstimate` | `= != < > <= >= is` | durations: `2h`, `30m`, `"1d 4h"`, `1w` (a bare number is hours; a day is the project's hours per day) |
+| `timeSpent` | `= != < > <= >= is` | duration; the total of the work logs (`0` / `is EMPTY` when nothing is logged) |
+| `cf[key]` | by the field's type (below) | a custom field by its key, e.g. `cf[severity] = Major` |
+
+**Custom fields** are named by key in brackets, `cf[severity]` (also quoted, `"cf[severity]"`), so they never collide with built-in fields. The key is looked up in the projects being searched (keys are unique per project, so one key may cover a field in several projects); an unknown key, or one only used in projects you can't view, is the same error: *No project searched has a custom field 'key'*. Operators by type:
+
+| Type | Operators | Values |
+|---|---|---|
+| Text, long text, URL | `~ !~ = != is` | text (`~` every word, `=` exact, case-insensitive) |
+| Number | `= != < > <= >= is` | numbers (`7.5`) |
+| Date | `= != < > <= >= is` | dates as for `created` (`2026-01-31`, `-7d`, `startOfMonth()`) |
+| Single and multi select | `= != in is` | options (a multi select matches when it has the option) |
+| User | `= != in is` | username, email or `currentUser()` |
+| Checkbox | `= !=` | `true` / `false` (an unset checkbox is false) |
+
+`!=`, `not in` and `is EMPTY` on a custom field match issues of the projects that have the field. Custom fields can't be used in `ORDER BY`. Autocomplete lists keys after `cf[` and suggests options, users and `true`/`false`.
 
 **Dates** are UTC: `2026-01-31` (as a whole day: `=` matches that day, `<=` includes it), `"2026-01-31 14:30"`, relative offsets from now (`-7d`, `-2w`, `+1M`, `-1w2d`; units `y M w d h m`) and functions `now()`, `startOfDay()`, `endOfDay()`, `startOfWeek()` (Monday), `endOfWeek()`, `startOfMonth()`, `endOfMonth()`, `startOfYear()`, `endOfYear()`, each with an optional offset (`startOfWeek(-1w)`). The `endOf…` functions are the start of the next period.
 
-**Sorting:** `ORDER BY` any field except `text`, `comment`, `labels`, `watcher`, `parent` and `epic`; the default is `updated DESC`, and issue id breaks ties so pages are stable.
+**Sorting:** `ORDER BY` any field except `text`, `comment`, `labels`, `watcher`, `parent`, `epic`, `component`, the versions, `timeSpent` and `cf[…]`; the default is `updated DESC`, and issue id breaks ties so pages are stable.
 
 **Saved filters** store GQL as `gql=<query>` in their query string (the list's URL is `/p/WEB/issues?gql=…`), so older query-string filters keep working and the Filters menu, stars and sidebar handle both. **Manage filters** shows the query of a GQL filter.
 
@@ -1203,8 +1221,8 @@ sort    := field [ASC | DESC]
 
 **For other code** (`Services/Query/`):
 
-- `GqlService.ApplyAsync(db, source, gql, scope?, userId?)` filters and orders any `IQueryable<Issue>` of your context; `SearchAsync`/`SearchIdsAsync` run a query; `MatchesAsync(issueId or issue, gql, userId?)` evaluates it against one issue (automation rules); `ValidateAsync` returns the `GqlException` (with `Position`, `Length`, `Reason`) or null; `FromFilterAsync` converts a basic `IssueFilter`.
-- **New fields:** implement `IQueryField` (usually by deriving from `QueryField`, which has helpers for dates, users and EF-parameterized comparisons via `Gx`) and return it from an `IQueryFieldProvider` registered with `services.AddSingleton<IQueryFieldProvider, MyFields>()`. `GqlFieldRegistry` merges all providers (a duplicate name or alias is a startup error); autocomplete and the editor's field list pick new fields up automatically.
+- `GqlService.ApplyAsync(db, source, gql, scope?, userId?)` filters and orders any `IQueryable<Issue>` of your context; `SearchAsync`/`SearchIdsAsync` run a query; `MatchesAsync(issueId or issue, gql, userId?, scope?)` evaluates it against one issue (the automation GQL condition); `ValidateAsync` returns the `GqlException` (with `Position`, `Length`, `Reason`) or null; `FromFilterAsync` converts a basic `IssueFilter`.
+- **New fields:** implement `IQueryField` (usually by deriving from `QueryField`, which has helpers for dates, users and EF-parameterized comparisons via `Gx`) and return it from an `IQueryFieldProvider` registered with `services.AddSingleton<IQueryFieldProvider, MyFields>()`. `GqlFieldRegistry` merges all providers (a duplicate name or alias is a startup error); autocomplete and the editor's field list pick new fields up automatically. A family of fields whose names are only known at query time implements `IParameterizedQueryField` and is written `name[argument]` (as `cf[key]`, in `Services/Fields/IssueFieldQueryFields.cs`).
 
 ### CSV export
 
@@ -1221,7 +1239,7 @@ sort    := field [ASC | DESC]
 
 Each issue gets the activity "imported from CSV", and the import is audited as `issue.imported` (file name, count, first and last key). Imports don't send notifications or webhooks; open lists and boards refresh live.
 
-Code: `Services/Query/` (`GqlSyntax.cs` tokenizer/AST/parser, `GqlFieldModel.cs` field interfaces and helpers, `BuiltInQueryFields.cs`, `GqlService.cs`, `Csv.cs`, `CsvImportService.cs`, `QuerySetup.cs`), `Api/GqlSearchEndpoints.cs`, `Components/Query/{GqlEditor,CsvExportDialog}.razor`, `Components/Pages/IssueSearchPage.razor`, `Components/Pages/Projects/ImportCsv.razor`, `wwwroot/js/gql-editor.js`. No schema changes. Tests: `GqlTests.cs`, `CsvTests.cs`.
+Code: `Services/Query/` (`GqlSyntax.cs` tokenizer/AST/parser, `GqlFieldModel.cs` field interfaces and helpers, `BuiltInQueryFields.cs`, `GqlService.cs`, `Csv.cs`, `CsvImportService.cs`, `QuerySetup.cs`), `Services/Fields/IssueFieldQueryFields.cs` (components, versions, time tracking and custom fields), `Api/GqlSearchEndpoints.cs`, `Components/Query/{GqlEditor,CsvExportDialog}.razor`, `Components/Pages/IssueSearchPage.razor`, `Components/Pages/Projects/ImportCsv.razor`, `wwwroot/js/gql-editor.js`. No schema changes. Tests: `GqlTests.cs`, `GqlFieldsTests.cs`, `CsvTests.cs`.
 
 ## Workflows & audit log
 
@@ -1270,7 +1288,7 @@ Each project has its own **workflow**: an ordered list of statuses (name, colour
 Jira-style rules: **when** a trigger fires, **if** the conditions hold, **then** the actions run in order. Maintainers and Owners manage a project's rules at **Settings → Automation** (`/p/{KEY}/settings/automation`). Group Maintainers+ manage group rules at `/g/{path}/-/automation`, and those rules run in every project of the group and its subgroups. A project's page lists the group rules that apply to it, read-only.
 
 - **Triggers:** issue created; issue transitioned (optionally from and/or to a status); field changed (assignee, priority, labels, sprint); comment added; pull request opened, merged or declined; pipeline failed or passed; **scheduled** (daily at a time, weekly on a day, or every N hours; times are UTC); **manual** (developers run it from the **Automation ▾** menu on an issue's page). Pull request and pipeline triggers run on every issue of the project whose key is in the PR title or source branch (pipelines: the branch and its PR), like the smart-commit links. Without linked issues they run once with no issue, so only notifications and webhooks act. A scheduled rule runs on each open issue that meets its conditions (up to 100), or once without an issue.
-- **Conditions** (all or any): issue type, priority (is, is not, at least, at most), status, status category, labels contain or don't contain, assignee (is, is not, empty, not empty, is the person who triggered the rule), title contains, linked pull request (exists, an open one exists, none) and sub-tasks (all done, not all done). Each condition is a structured `field / operator / value` matcher implementing `IAutomationCondition`. A new kind is one class plus one `AddSingleton<IAutomationCondition, …>` line in `AddAutomation`, and the editor picks it up.
+- **Conditions** (all or any): issue type, priority (is, is not, at least, at most), status, status category, labels contain or don't contain, assignee (is, is not, empty, not empty, is the person who triggered the rule), title contains, linked pull request (exists, an open one exists, none), sub-tasks (all done, not all done) and **matches GQL query** (matches, doesn't match; e.g. `labels = urgent AND cf[severity] in (Major, Critical)`). The GQL condition runs as the rule does: as its author (`currentUser()` is the author, and only issues they can view match) or as the bot with system access, in both cases with names resolved only in the rule's project. The query's syntax and field names are checked when the rule is saved; a query that fails when the rule runs (an unknown status, say) counts as not matching. Each condition is a structured `field / operator / value` matcher implementing `IAutomationCondition`. A new kind is one class plus one `AddSingleton<IAutomationCondition, …>` line in `AddAutomation`, and the editor picks it up.
 - **Actions:** transition the issue (by status name, through `IssueService`, so the workflow's transitions apply); assign (a user, the reporter, the person who triggered the rule, round-robin among the project's developers, or unassign); set priority; add or remove a label; add a comment; create a sub-task; link to another issue; transition the parent when all its children are done; send a notification (a user, the assignee, the reporter, the watchers or the person who triggered the rule); send a webhook. Text fields accept **smart values** such as `{{issue.key}}`, `{{issue.title}}`, `{{issue.status}}`, `{{issue.assignee}}`, `{{issue.parent.key}}`, `{{initiator.name}}`, `{{pr.title}}`, `{{pr.url}}`, `{{pipeline.status}}`, `{{comment.body}}` and `{{rule.name}}` (the editor lists them all). Unknown names render as nothing.
 - **Templates:** "When a PR is merged → move linked issues to Done", "When all sub-tasks are done → close the parent", "Auto-assign new bugs round-robin" and "Comment when a pipeline fails".
 - **Run as:** by default the **GitBench Automation** bot (`gitbench-automation`, created on first use like the AI bot: no password, locked out, not assignable or mentionable). The bot runs through `ProjectAccess.ActAsSystem(botId)` and stays inside the rule's project: it only links issues of that project and only assigns users who can view it. Alternatively a rule runs as its **author** (whoever last saved it), with their permissions at run time, so a demoted author's rule fails. Activity, comments, notifications, webhooks and live updates show the actor like any other change.
@@ -1338,6 +1356,7 @@ Code: `Services/Fields/` (`CustomFieldRules` pure validation/parsing, `CustomFie
 - **Components** (name, description, lead, default assignee) and **versions** (name, description, start and release dates, released flag) are multi-valued on issues: components, fix versions and affects versions, with pickers on the issue page and the new-issue form. A new issue with no assignee gets its first component's default assignee. A version whose name matches a published release tag (`1.0` or `v1.0`) in one of the project's repositories links to that release.
 - **Versions page** (`/p/{KEY}/versions`, sidebar): unreleased versions first, each with the done/total progress of its fix-version issues, story points, time logged and remaining, the linked release and the issue list; Maintainers create, edit, release and delete versions there.
 - **Issue list:** filters for component, fix version, affects version (each also "none") and one custom field (`cf=key:value`; `key:` = no value), plus a **columns** menu (custom fields, components, fix versions, time spent, remaining). They are `IssueFilter` properties (`componentId`, `fixVersionId`, `affectsVersionId`, `cf`, `columns`), so URLs and saved filters keep them.
+- **GQL:** `component`, `fixVersion`, `affectsVersion`, `originalEstimate`, `remainingEstimate`, `timeSpent` and `cf[key]` (see [GQL](#gitbench-query-language-gql)).
 - **Issue templates:** name, issue type, title prefix, Markdown body and default labels. The new-issue form has a **Template** picker (`?template=t{id}` preselects one). Markdown files in `.gitbench/issue_templates/*.md` on the default branch of the project's first repository are offered too, with optional front matter (`name`, `title`, `labels`, `type`).
 - **Time tracking:** an original and a remaining estimate per issue, entered like `2h 30m`, `1d`, `1.5h` or `1w` (a day is the project's hours per day, default 8; a week is 5 days; a bare number is hours). Work logs (time, date, comment) are added from the issue's **Work log** panel by Developers+; the remaining estimate goes down by the time logged (and back up when a log is deleted). A log can be edited by its author and deleted by its author or a Maintainer+. The issue sidebar shows a progress bar (logged vs logged + remaining) and warns when over the original estimate. Backlog sprint headers show the time logged on their issues; the Versions page shows it per version.
 - **Timesheets:** `/timesheet` (sidebar **My timesheet**) shows your work logs by week (a grid of issues × days plus the entries); `/p/{KEY}/timesheet` shows hours per person for the last eight weeks and the selected week by day.

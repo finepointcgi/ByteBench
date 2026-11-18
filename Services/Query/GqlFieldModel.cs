@@ -54,8 +54,21 @@ public interface IQueryFieldProvider
     IEnumerable<IQueryField> GetFields();
 }
 
+/// <summary>
+/// A family of fields named <c>name[argument]</c>, e.g. <c>cf[severity]</c> for custom fields: one registered field stands
+/// for any number of fields whose names are only known at query time (so they can't collide with built-in names). The
+/// tokenizer reads <c>cf[severity]</c> as one word, and <see cref="GqlFieldRegistry.Find"/> binds it.
+/// </summary>
+public interface IParameterizedQueryField : IQueryField
+{
+    /// <summary>The field for <c>Name[argument]</c>, or null if <paramref name="argument"/> can't name one.</summary>
+    IQueryField? Bind(string argument);
+    /// <summary>Field suggestions (<see cref="GqlSuggestion.Insert"/> is the whole <c>name[argument]</c>) for arguments starting with <paramref name="prefix"/>.</summary>
+    Task<IReadOnlyList<GqlSuggestion>> SuggestArgumentsAsync(GqlContext ctx, string prefix);
+}
+
 /// <summary>All registered fields by name and alias (case-insensitive). A name used twice is a startup error.</summary>
-public sealed class GqlFieldRegistry
+public sealed partial class GqlFieldRegistry
 {
     private readonly Dictionary<string, IQueryField> byName = new(StringComparer.OrdinalIgnoreCase);
 
@@ -74,7 +87,33 @@ public sealed class GqlFieldRegistry
 
     public IReadOnlyList<IQueryField> Fields { get; }
 
-    public IQueryField? Find(string name) => byName.GetValueOrDefault(name.Trim());
+    /// <summary>The field called <paramref name="name"/>, or a bound <see cref="IParameterizedQueryField"/> for <c>name[argument]</c>.</summary>
+    public IQueryField? Find(string name)
+    {
+        name = name.Trim();
+        if (byName.TryGetValue(name, out var field)) return field;
+        var m = Bracketed().Match(name);
+        return m.Success && byName.GetValueOrDefault(m.Groups[1].Value) is IParameterizedQueryField p ? p.Bind(m.Groups[2].Value.Trim()) : null;
+    }
+
+    /// <summary>For autocomplete: <c>cf[sev</c> → the <c>cf</c> field and the argument typed so far (<c>sev</c>).</summary>
+    public bool TryParameterizedPrefix(string partial, out IParameterizedQueryField field, out string argumentPrefix)
+    {
+        var m = OpenBracket().Match(partial);
+        if (m.Success && byName.GetValueOrDefault(m.Groups[1].Value) is IParameterizedQueryField p)
+        {
+            (field, argumentPrefix) = (p, m.Groups[2].Value.Trim());
+            return true;
+        }
+        (field, argumentPrefix) = (null!, "");
+        return false;
+    }
+
+    [GeneratedRegex(@"^([A-Za-z][A-Za-z0-9_]*)\[([^\[\]]*)\]$")]
+    private static partial Regex Bracketed();
+
+    [GeneratedRegex(@"^([A-Za-z][A-Za-z0-9_]*)\[([^\[\]]*)$")]
+    private static partial Regex OpenBracket();
 }
 
 /// <summary>Base class with value helpers for fields. Override <see cref="BuildAsync"/> and optionally <see cref="SuggestValuesAsync"/>.</summary>
