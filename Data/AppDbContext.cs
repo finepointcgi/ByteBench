@@ -349,6 +349,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Pipeline>().HasOne(p => p.ApprovedBy).WithMany().HasForeignKey(p => p.ApprovedById).OnDelete(DeleteBehavior.SetNull);
     }
 
+        ConfigureSsoLdap(b);
+    }
+
+    // ----- SSO & LDAP -----
+    public DbSet<ExternalGroupMembership> ExternalGroupMemberships => Set<ExternalGroupMembership>();
+    public DbSet<DirectorySyncRun> DirectorySyncRuns => Set<DirectorySyncRun>();
+
+    private static void ConfigureSsoLdap(ModelBuilder b)
+    {
+        b.Entity<ExternalGroupMembership>().HasIndex(m => new { m.UserId, m.GroupId, m.Source }).IsUnique();
+        b.Entity<ExternalGroupMembership>().HasIndex(m => m.GroupId);
+        b.Entity<ExternalGroupMembership>().HasOne<User>().WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ExternalGroupMembership>().HasOne<Group>().WithMany().HasForeignKey(m => m.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<DirectorySyncRun>().HasIndex(r => new { r.Source, r.StartedAt });
+    }
+
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
     private static void ConfigurePrFeatures(ModelBuilder b)
     {

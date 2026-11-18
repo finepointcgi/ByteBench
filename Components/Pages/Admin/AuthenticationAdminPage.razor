@@ -1,0 +1,192 @@
+@page "/admin/authentication"
+@using GitBench.Services.Sso
+@using GitBench.Services.Sso.Ldap
+@using GitBench.Components.Repositories
+@using Microsoft.Extensions.Options
+@inject CurrentUser Me
+@inject ProjectAccess Access
+@inject SsoSettings Sso
+@inject IOptionsMonitor<LdapOptions> LdapConfig
+@inject LdapAuthService Ldap
+@inject LdapSyncJob SyncJob
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Authentication · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can see the sign-in configuration." />
+}
+else
+{
+    var ldap = LdapConfig.CurrentValue;
+    <div class="auth-admin">
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">Authentication</MudText>
+                <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                    Single sign-on and LDAP, as configured under <code>Authentication:*</code> (read-only: change the configuration and restart).
+                    Secrets are never shown. Sign-ins are in the <MudLink Href="/admin/audit" Typo="Typo.body2">audit log</MudLink> as <code>auth.*</code>.
+                </MudText>
+            </div>
+        </div>
+
+        <MudPaper Outlined="true" Class="pa-4 mb-4">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-2">Single sign-on providers</MudText>
+            @foreach (var e in Sso.Errors)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@e (this provider is not loaded)</MudAlert>
+            }
+            @if (Sso.Providers.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">No providers are configured (<code>Authentication:Oidc:Providers</code>).</MudText>
+            }
+            else
+            {
+                <div class="aa-table-wrap">
+                    <MudSimpleTable Dense="true" Elevation="0" Outlined="true" Class="aa-table">
+                        <thead>
+                            <tr><th>Provider</th><th>Type</th><th>Authority</th><th>Client</th><th>Callback URL</th><th>Accounts</th><th>Mappings</th><th>2FA</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in Sso.Providers)
+                            {
+                                <tr @key="p.Name">
+                                    <td>
+                                        <div class="d-flex align-center gap-2">
+                                            <MudIcon Icon="@GitBench.Components.Account.SsoProviderButton.IconFor(p.Icon)" Size="Size.Small" />
+                                            <div><div>@p.Title</div><div class="mud-text-secondary mono aa-small">@p.Name</div></div>
+                                        </div>
+                                    </td>
+                                    <td>@(p.Type == SsoProviderType.GitHub ? "GitHub (OAuth)" : p.Type == SsoProviderType.Oidc ? "OIDC" : p.Type + " (OIDC)")</td>
+                                    <td class="mono aa-small">@p.Authority</td>
+                                    <td class="aa-small">
+                                        <div class="mono">@p.ClientId</div>
+                                        <div class="mud-text-secondary">Secret: @(p.HasSecret ? "set" : "none (public client)")</div>
+                                        <div class="mud-text-secondary">Scopes: @string.Join(" ", p.Scopes ?? [])</div>
+                                    </td>
+                                    <td class="mono aa-small">@CallbackUrl(p)</td>
+                                    <td class="aa-small">
+                                        <div>@(p.AutoCreateUsers ? "Created on first sign-in" : "Existing accounts only")</div>
+                                        <div class="mud-text-secondary">@(p.LinkByVerifiedEmail ? "Links verified emails" : "Links from profile only")@(p.TrustEmailVerified ? "; trusts emails" : "")</div>
+                                        @if (p.AllowedEmailDomains.Count > 0) { <div class="mud-text-secondary">Domains: @string.Join(", ", p.AllowedEmailDomains)</div> }
+                                    </td>
+                                    <td class="aa-small">
+                                        @if (p.AdminGroups.Count > 0) { <div>Admins: <span class="mono">@string.Join(", ", p.AdminGroups)</span></div> }
+                                        @foreach (var m in p.GroupMappings) { <div><span class="mono">@m.ExternalGroup</span> → @m.Group (@m.Role)</div> }
+                                        @if (p.AdminGroups.Count == 0 && p.GroupMappings.Count == 0) { <span class="mud-text-secondary">None</span> }
+                                    </td>
+                                    <td class="aa-small">@(p.TwoFactor == SsoTwoFactorPolicy.TrustIdp ? "Trusts the provider's MFA" : "GitBench 2FA")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            }
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-4">
+            <div class="d-flex align-center flex-wrap gap-2 mb-2">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="flex-grow-1">LDAP / Active Directory</MudText>
+                @if (Ldap.Enabled)
+                {
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.NetworkCheck" OnClick="TestConnection" Disabled="busy">Test connection</MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Sync" OnClick="SyncNow" Disabled="busy">Sync now</MudButton>
+                }
+            </div>
+            @if (!Ldap.Enabled)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">LDAP is off (<code>Authentication:Ldap:Enabled</code> and <code>Server</code>).</MudText>
+            }
+            else
+            {
+                @if (testResult is { } t)
+                {
+                    <MudAlert Severity="@(t.Ok ? Severity.Success : Severity.Error)" Dense="true" Class="mb-3">@t.Message</MudAlert>
+                }
+                <MudSimpleTable Dense="true" Elevation="0" Outlined="true" Class="aa-table aa-kv">
+                    <tbody>
+                        <tr><th>Server</th><td class="mono">@ldap.Server:@ldap.EffectivePort (@ldap.Security@(ldap.IgnoreCertificateErrors ? ", certificate errors ignored" : ""))</td></tr>
+                        <tr><th>Service account</th><td><span class="mono">@(ldap.BindDn.Length > 0 ? ldap.BindDn : "anonymous")</span> <span class="mud-text-secondary">· password @(ldap.HasBindPassword ? "set" : "not set")</span></td></tr>
+                        <tr><th>User search</th><td class="mono">@ldap.UserSearchBase · @ldap.UserFilter</td></tr>
+                        <tr><th>Attributes</th><td class="mono">username @ldap.Attributes.UserName · email @ldap.Attributes.Email · name @ldap.Attributes.DisplayName · groups @(ldap.Attributes.MemberOf.Length > 0 ? ldap.Attributes.MemberOf : "(group search)")</td></tr>
+                        @if (ldap.GroupSearchBase.Length > 0)
+                        {
+                            <tr><th>Group search</th><td class="mono">@ldap.GroupSearchBase · @ldap.GroupFilter</td></tr>
+                        }
+                        <tr><th>Admin group</th><td class="mono">@(ldap.AdminGroupDn.Length > 0 ? ldap.AdminGroupDn : "none")</td></tr>
+                        <tr><th>Group mappings</th><td>
+                            @if (ldap.GroupMappings.Count == 0) { <span class="mud-text-secondary">None</span> }
+                            @foreach (var m in ldap.GroupMappings) { <div><span class="mono">@m.GroupDn</span> → @m.Group (@m.Role)</div> }
+                        </td></tr>
+                        <tr><th>Accounts</th><td>@(ldap.AutoCreateUsers ? "Created on first sign-in" : "Existing directory accounts only")</td></tr>
+                        <tr><th>Git over HTTP</th><td>@(ldap.AllowGitPassword ? "LDAP password allowed (not for accounts with 2FA)" : "Personal access tokens only")</td></tr>
+                        <tr><th>Periodic sync</th><td>@(ldap.Sync.IntervalMinutes > 0 ? $"Every {ldap.Sync.IntervalMinutes} minutes" : "Off")@(ldap.Sync.DeactivateMissingUsers ? "; deactivates users missing from the directory" : "")</td></tr>
+                        <tr><th>Last sync</th><td>
+                            @if (lastSync == null) { <span class="mud-text-secondary">Never</span> }
+                            else
+                            {
+                                <div>
+                                    <MudChip T="string" Size="Size.Small" Color="@(lastSync.Succeeded ? Color.Success : Color.Error)" Class="ma-0 mr-2">@(lastSync.Succeeded ? "Succeeded" : "Failed")</MudChip>
+                                    <span title="@(lastSync.StartedAt.ToString("yyyy-MM-dd HH:mm:ss") + " UTC")">@Display.Ago(lastSync.StartedAt)</span>
+                                    <span class="mud-text-secondary">(@lastSync.Trigger)</span>
+                                </div>
+                                <div class="mud-text-secondary">@lastSync.UsersChecked checked · @lastSync.UsersUpdated updated · @lastSync.UsersDeactivated deactivated</div>
+                                @if (lastSync.Error != null) { <div class="mud-error-text">@lastSync.Error</div> }
+                            }
+                        </td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudPaper>
+    </div>
+}
+
+@code {
+    private DirectorySyncRun? lastSync;
+    private (bool Ok, string Message)? testResult;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin == true) lastSync = await Ldap.LastSyncAsync();
+    }
+
+    private string CallbackUrl(SsoProviderOptions p) => Nav.BaseUri.TrimEnd('/') + p.CallbackPath;
+
+    /// <summary>Re-checked on every action: the page may have been open since the user stopped being an admin.</summary>
+    private async Task<bool> StillAdminAsync()
+    {
+        if (await Access.ResolveUserIdAsync() is { } me && await Access.IsAdminAsync(me)) return true;
+        Snackbar.Add("Only site administrators can do this.", Severity.Error);
+        return false;
+    }
+
+    private async Task TestConnection()
+    {
+        if (!await StillAdminAsync()) return;
+        busy = true;
+        try { testResult = await Ldap.TestConnectionAsync(); }
+        finally { busy = false; }
+    }
+
+    private async Task SyncNow()
+    {
+        if (!await StillAdminAsync()) return;
+        var warn = LdapConfig.CurrentValue.Sync.DeactivateMissingUsers ? " Accounts missing from the directory will be deactivated." : "";
+        if (!await Dialogs.ConfirmAsync("Sync with LDAP", "Re-read every directory account now: names, emails, admin and group memberships." + warn, "Sync")) return;
+        busy = true;
+        try
+        {
+            var run = await SyncJob.RunNowAsync("manual", Me.User!.Id);
+            if (run == null) Snackbar.Add("A sync is already running.", Severity.Info);
+            else if (run.Succeeded) Snackbar.Add($"Synced {run.UsersChecked} directory accounts ({run.UsersUpdated} updated, {run.UsersDeactivated} deactivated).", Severity.Success);
+            else Snackbar.Add("The sync failed: " + run.Error, Severity.Error);
+            lastSync = await Ldap.LastSyncAsync();
+        }
+        finally { busy = false; }
+    }
+}

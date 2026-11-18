@@ -7,6 +7,8 @@
 @inject NavigationManager Nav
 @inject AccessTokenService Tokens
 @inject GitBench.Services.Audit.AuditLog Audit
+@inject GitBench.Services.Sso.SsoService Sso
+@inject GitBench.Services.Sso.Ldap.LdapAuthService Ldap
 
 <PageTitle>Your profile · GitBench</PageTitle>
 
@@ -65,8 +67,64 @@
         <MudText Typo="Typo.body2">Choose what reaches you in the app and by email on the <MudLink Href="/account/notifications">notification preferences</MudLink> page.</MudText>
     </section>
 
+    @if (Sso.Settings.Providers.Count > 0 || isDirectoryUser)
+    {
+        <section class="profile-section" id="connected-accounts">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Connected accounts</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Sign in to GitBench with another account. Connecting one needs you to sign in with it once.</MudText>
+            <StatusMessage Success="@ssoSuccess" Errors="ssoErrors" />
+            @if (isDirectoryUser)
+            {
+                <div class="d-flex align-center gap-2 mb-2">
+                    <MudIcon Icon="@Icons.Material.Outlined.AccountTree" Size="Size.Small" />
+                    <MudText Typo="Typo.body2"><b>@Ldap.Options.DisplayName</b> (directory account)</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">Connected</MudChip>
+                </div>
+            }
+            @if (connected.Count > 0)
+            {
+                <form method="post" @formname="unlink-sso" @onsubmit="Unlink">
+                    <AntiforgeryToken />
+                    @foreach (var c in connected)
+                    {
+                        <div class="d-flex align-center gap-2 mb-2 flex-wrap">
+                            <MudIcon Icon="@SsoProviderButton.IconFor(c.Provider.Icon)" Size="Size.Small" />
+                            <MudText Typo="Typo.body2" Class="flex-grow-1"><b>@c.Provider.Title</b></MudText>
+                            @if (c.Linked)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">Connected</MudChip>
+                                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                           name="UnlinkProvider" value="@c.Provider.Name">Disconnect</MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Href="@($"account/sso/{c.Provider.Name}/link?t={Uri.EscapeDataString(linkToken!)}")" Variant="Variant.Outlined" Size="Size.Small" data-enhance-nav="false">Connect</MudButton>
+                            }
+                        </div>
+                    }
+                </form>
+            }
+        </section>
+    }
+
     <section class="profile-section">
-        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Change password</MudText>
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">@(hasPassword ? "Change password" : "Password")</MudText>
+        @if (!hasPassword)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @if (isDirectoryUser)
+                {
+                    <span>Your password is managed by <b>@Ldap.Options.DisplayName</b>; change it there.</span>
+                }
+                else
+                {
+                    <span>Your account has no GitBench password: you sign in with a connected account.</span>
+                }
+                For git over HTTP, use a <a href="account/profile#tokens">personal access token</a> as the password@(isDirectoryUser && Ldap.Options.AllowGitPassword ? " (or your directory password, if two-factor sign-in is off)" : "").
+            </MudText>
+        }
+        else
+        {
         <StatusMessage Success="@passwordSuccess" Errors="passwordErrors" />
 
         <EditForm Model="PasswordInput" FormName="password" OnValidSubmit="ChangePassword" method="post">
@@ -88,6 +146,7 @@
             </div>
             <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Change password</MudButton>
         </EditForm>
+        }
     </section>
 
     <section class="profile-section" id="two-factor">
@@ -242,6 +301,19 @@
     private int? RevokeTokenId { get; set; }
 
     private List<PersonalAccessToken> tokens = [];
+
+    // ----- Connected accounts (SSO) -----
+    private bool hasPassword = true, isDirectoryUser;
+    private List<GitBench.Services.Sso.ConnectedAccount> connected = [];
+    private string? linkToken, ssoSuccess;
+    private readonly List<string> ssoErrors = [];
+
+    [SupplyParameterFromForm(FormName = "unlink-sso")]
+    private string? UnlinkProvider { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sso")] private string? SsoResult { get; set; }
+    [SupplyParameterFromQuery(Name = "sso_error")] private string? SsoError { get; set; }
+    [SupplyParameterFromQuery(Name = "provider")] private string? SsoProvider { get; set; }
     private string? newToken, tokenSuccess;
     private readonly List<string> tokenErrors = [];
 
@@ -260,6 +332,31 @@
         PasswordInput ??= new();
         TokenInput ??= new() { ReadRepository = true };
         tokens = await Tokens.ListAsync(user.Id);
+        await LoadConnectedAsync();
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            var title = Sso.Settings.Find(SsoProvider)?.Title ?? "the provider";
+            if (SsoResult == "linked") ssoSuccess = $"{title} is now connected. You can sign in with it.";
+            if (SsoError != null) ssoErrors.Add(GitBench.Services.Sso.SsoErrors.Message(SsoError, title));
+        }
+    }
+
+    private async Task LoadConnectedAsync()
+    {
+        hasPassword = await Users.HasPasswordAsync(user!);
+        isDirectoryUser = await Ldap.IsDirectoryUserAsync(user!);
+        connected = await Sso.ConnectedAsync(user!);
+        linkToken = Sso.CreateLinkToken(user!.Id);
+    }
+
+    private async Task Unlink()
+    {
+        if (user is null || UnlinkProvider is not { } provider) return;
+        var error = await Sso.UnlinkAsync(user.Id, provider);
+        var title = Sso.Settings.Find(provider)?.Title ?? provider;
+        if (error != null) ssoErrors.Add(GitBench.Services.Sso.SsoErrors.Message(error, title));
+        else ssoSuccess = $"{title} was disconnected.";
+        await LoadConnectedAsync();
     }
 
     // ----- Personal access tokens -----

@@ -42,7 +42,7 @@ public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServic
             }).ToListAsync();
         var ids = rows.Select(r => r.Id).ToList();
         // Last sign-in comes from the audit log (auth.sign_in), so it's as old as the log's retention allows.
-        var lastSignIn = await db.AuditEvents.Where(e => e.Action == "auth.sign_in" && e.ActorId != null && ids.Contains(e.ActorId.Value))
+        var lastSignIn = await db.AuditEvents.Where(e => (e.Action == "auth.sign_in" || e.Action == "auth.sso_sign_in") && e.ActorId != null && ids.Contains(e.ActorId.Value))
             .GroupBy(e => e.ActorId!.Value).Select(g => new { Id = g.Key, At = g.Max(e => e.CreatedAt) })
             .ToDictionaryAsync(x => x.Id, x => x.At);
         return new(rows.Select(r => new AdminUserRow(r.Id, r.UserName ?? "", r.DisplayName, r.Email, r.Color, r.IsAdmin, r.LockoutEnd,

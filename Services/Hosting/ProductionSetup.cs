@@ -175,6 +175,8 @@ public static class ProductionSetup
         var reportOnly = config.GetValue("Security:ContentSecurityPolicyReportOnly", false);
         var hashes = string.Join(' ', InlineHandlers.Concat(config.GetSection("Security:CspInlineHandlers").Get<string[]>() ?? [])
             .Select(h => $"'sha256-{Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(h)))}'"));
+        // SSO providers' origins: a form whose response redirects to the provider needs them (the sign-in buttons are links).
+        var formAction = string.Join(' ', new[] { "'self'" }.Concat(app.Services.GetService<Sso.SsoSettings>()?.FormActionOrigins() ?? []));
 
         app.Use((ctx, next) =>
         {
@@ -201,7 +203,8 @@ public static class ProductionSetup
                               "style-src 'self' 'unsafe-inline'; " +
                               "img-src 'self' data: blob:; font-src 'self' data:; " +
                               $"connect-src 'self' ws://{host} wss://{host}; " +
-                              "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+                              "object-src 'none'; base-uri 'self'; " +
+                              $"form-action {formAction}; frame-ancestors 'none'";
                     if (reportOnly) h["Content-Security-Policy-Report-Only"] = csp;
                     else h.ContentSecurityPolicy = csp;
                 }
