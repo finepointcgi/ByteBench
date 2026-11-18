@@ -24,7 +24,7 @@ public static class PipelineUrls
 /// </summary>
 public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbContextFactory<AppDbContext> dbFactory,
     RepoStorage storage, LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options,
-    ILogger<CiRunner> log) : BackgroundService
+    Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, ILogger<CiRunner> log) : BackgroundService
 {
     private SemaphoreSlim jobSlots = null!;
     private readonly List<Task> active = [];
@@ -365,6 +365,34 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         Publish(p);
         log.LogInformation("Pipeline {Id} ({Key}/{Slug} {Ref}) finished: {Status}", id, p.Repository.Project.Key, p.Repository.Slug, p.Ref, status);
         if (status is PipelineStatus.Failed or PipelineStatus.Error) await NotifyFailedAsync(p);
+        RaiseWebhook(p);
+    }
+
+    /// <summary>Sends the <c>pipeline.completed</c> webhook event for a finished pipeline.</summary>
+    private void RaiseWebhook(Pipeline p)
+    {
+        try
+        {
+            webhooks.Enqueue(p.Repository.ProjectId, Webhooks.WebhookEventNames.PipelineCompleted, new
+            {
+                pipeline = new
+                {
+                    id = p.Id,
+                    status = p.Status.ToString().ToLowerInvariant(),
+                    @ref = p.Ref,
+                    commitSha = p.CommitSha,
+                    pullRequestId = p.PullRequestId,
+                    trigger = p.Trigger.ToString().ToLowerInvariant(),
+                    error = p.Error,
+                    createdAt = p.CreatedAt,
+                    startedAt = p.StartedAt,
+                    finishedAt = p.FinishedAt,
+                    url = baseUrl.Value + PipelineUrls.Detail(p.Repository, p.Id),
+                },
+                repository = new { id = p.Repository.Id, slug = p.Repository.Slug, name = p.Repository.Name },
+            }, p.TriggeredById);
+        }
+        catch (Exception ex) { log.LogWarning(ex, "Could not raise pipeline.completed webhook for pipeline {Id}", p.Id); }
     }
 
     /// <summary>Tells whoever triggered <paramref name="p"/> that it failed (also used for pipelines created in Error).</summary>
