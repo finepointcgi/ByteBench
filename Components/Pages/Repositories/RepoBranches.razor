@@ -4,6 +4,7 @@
 @inject IJSRuntime JS
 @inject ProjectAccess Access
 @inject BranchProtectionService Protection
+@inject PipelineService Pipelines
 
 <PageTitle>Branches · @Repo?.Name</PageTitle>
 
@@ -38,6 +39,10 @@ else if (Repo != null)
             <div class="branch-row" @key="b.Name">
                 <div class="issue-main">
                     <div class="issue-title">
+                        @if (ciStatus.GetValueOrDefault(b.Name) is { } ci)
+                        {
+                            <PipelineStatusIcon Status="ci.Status" Href="@PipelineUrls.Detail(Repo, ci.Id)" Title="@($"Pipeline #{ci.Id}")" />
+                        }
                         <a class="mono" href="@RepoUrls.Source(Repo, b.Name)">@b.Name</a>
                         @if (b.IsDefault) { <span class="count">default</span> }
                         @if (protectionRules.Where(r => BranchPatterns.Matches(r.Pattern, b.Name)).Select(r => r.Pattern).ToList() is { Count: > 0 } by)
@@ -88,6 +93,7 @@ else if (Repo != null)
     private List<BranchDivergence> branches = [];
     private List<PullRequest> openPrs = [];
     private List<BranchProtectionRule> protectionRules = [];
+    private Dictionary<string, PipelineBadgeInfo> ciStatus = [];
     private string? newName, fromRef, message;
     private ProjectPermissions perms = ProjectPermissions.None;
 
@@ -103,6 +109,7 @@ else if (Repo != null)
         branches = await Git(path => GitOps.ListBranchesWithDivergence(path, Repo!.DefaultBranch));
         openPrs = await PRs.ListAsync(Repo!.ProjectId, PullRequestState.Open, Repo.Id);
         protectionRules = await Protection.ListAsync(Repo.Id);
+        ciStatus = await Pipelines.LatestForBranchesAsync(Repo, branches.Where(b => b.Tip != null).Select(b => (b.Name, b.Tip!.Sha)));
         if (fromRef == null || branches.All(b => b.Name != fromRef)) fromRef = Repo.DefaultBranch;
     }
 

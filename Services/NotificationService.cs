@@ -345,8 +345,27 @@ public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, Live
         NotificationKind.PullRequestDeclined => "declined",
         NotificationKind.PullRequestReopened => "reopened",
         NotificationKind.ReviewRequested => "requested your review on",
+        NotificationKind.PipelineFailed => "reports a failed pipeline:",
         _ => "updated",
     };
+
+    // =====================================================================
+    // Pipelines
+    // =====================================================================
+
+    /// <summary>Tells the user who triggered a pipeline that it failed (a system notification, so no actor).</summary>
+    public async Task OnPipelineFailedAsync(int projectId, int userId, string title, string url)
+    {
+        if ((await FilterRecipientsAsync(projectId, [userId])).Count == 0) return;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        db.Notifications.Add(new Notification
+        {
+            UserId = userId, ProjectId = projectId, ActorId = null, Kind = NotificationKind.PipelineFailed,
+            Title = title.Length > 200 ? title[..199] + "…" : title, Url = url, CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        live.Publish(new NotificationsChanged(userId));
+    }
 
     // =====================================================================
     // Startup

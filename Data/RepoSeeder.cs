@@ -44,6 +44,7 @@ public static class RepoSeeder
         GitOps.CommitFiles(path, "main", new Dictionary<string, string?>
         {
             [".github/workflows/ci.yml"] = CiYml,
+            [".gitbench-ci.yml"] = GitBenchCiYml,
         }, "WEB-1: Add CI workflow\n\nRuns lint, type-check and tests on every push and pull request.", Id("alice"), Ago(17.2));
 
         GitOps.CommitFiles(path, "main", new Dictionary<string, string?>
@@ -138,6 +139,30 @@ public static class RepoSeeder
     }
 
     // ----- file contents -----
+
+    /// <summary>Sample GitBench pipeline (see README "CI pipelines"): small alpine jobs that only echo.</summary>
+    private const string GitBenchCiYml = """
+        # GitBench CI pipeline: runs on every push and pull request.
+        image: alpine:3.20
+
+        jobs:
+          lint:
+            steps:
+              - name: Lint
+                run: echo "Linting $GITBENCH_REF at $GITBENCH_COMMIT_SHA" && ls
+          build:
+            steps:
+              - name: Build
+                run: |
+                  echo "Building web-app"
+                  mkdir -p dist && echo "<html></html>" > dist/index.html
+          test:
+            needs: [build]
+            steps:
+              - name: Test
+                run: test -f package.json && echo "All tests passed"
+
+        """;
 
     private const string Readme = """
         # web-app

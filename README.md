@@ -271,6 +271,68 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 **Assigned reviewers.** Pick reviewers on the New PR page (project members with ReviewPullRequest) or with **Edit reviewers** in the PR sidebar (the author or a Maintainer+). The sidebar shows each one as Pending, Approved or Changes requested. Added reviewers get a "requested your review on" notification and start watching the PR. The PR list's **Review requested** button (`?filter=review-requested`) shows open PRs waiting for your verdict.
 
 **PR templates.** The New PR description is prefilled from the target branch's `.gitbench/pull_request_template.md`, falling back to `PULL_REQUEST_TEMPLATE.md`, then `.github/pull_request_template.md`.
+## CI pipelines
+
+Each repository can run a CI pipeline from a `.gitbench-ci.yml` file at its root. Jobs run in **Docker** containers on the GitBench server.
+
+```yaml
+image: alpine:3.20          # default image for jobs (alpine:3.20 if omitted)
+on:                         # optional; default: every push and every pull request
+  branches: [main, "feature/*"]   # `*` matches within one path segment, `**` across segments
+  pull_requests: true
+jobs:
+  build:
+    image: mcr.microsoft.com/dotnet/sdk:10.0   # optional per-job override
+    steps:
+      - name: Build
+        run: dotnet build
+  test:
+    needs: [build]          # optional; jobs without needs run in parallel
+    steps: [ { name: Test, run: ./test.sh } ]
+```
+
+- **Format.** `jobs` is required. Each job has `steps` (each with `run` and an optional `name`), plus optional `image` and `needs`. Job names use letters, digits, `_`, `.` and `-`. Limits: 20 jobs, 50 steps per job, 64 KB per file. Unknown keys, missing `run`, unknown or circular `needs` and invalid image names are errors: the pipeline is created in the **Error** state with a readable message, such as `invalid YAML at line 4, column 5: Property 'stepz' not found`.
+- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass is skipped. Jobs don't share files, so a later job can't see what an earlier job built. Steps can read `CI`, `GITBENCH_PIPELINE_ID`, `GITBENCH_JOB`, `GITBENCH_REF`, `GITBENCH_COMMIT_SHA` and `GITBENCH_REPOSITORY`.
+- **Triggers.**
+  - A push runs a pipeline for each branch it created or moved, if the branch matches `on.branches` or is the source of an open PR. Deleted branches are skipped. A merge done in GitBench counts as a push to the target branch.
+  - Opening a PR runs a pipeline for its source head, unless that commit already has one.
+  - A commit runs at most once per branch automatically.
+  - **Run pipeline** (Pipelines tab) runs any branch's tip and ignores the filters. **Re-run** runs the same commit again. Both need PushCode (Developer or higher), as does **Cancel**.
+  - Pushes are noticed by `CiPushListener`. PR events reach `CiPullRequestWatcher` through `LiveEvents`.
+  - Push listeners aren't told which refs moved, so GitBench remembers each repository's branch tips, starting from a snapshot taken at startup. A branch created in the UI is picked up by the next push.
+- **Statuses.** A pipeline is Queued, Running, Passed, Failed, Canceled or Error. Jobs and steps can also be Skipped. Icons (✓ ✗ ● spinner ⊘) appear on the commit list, the branch list and the PR header.
+- **Logs.** stdout and stderr stream into the database about once a second, and the pipeline page tails them live. Each step's log is capped at about 1 MB, with a note when it's truncated. The page shows the last 200 KB. **Raw log** opens the full text.
+- **Pages.** `/p/{KEY}/repos/{slug}/pipelines` lists pipelines. `/p/{KEY}/repos/{slug}/pipelines/{id}` shows jobs, steps and logs, with Cancel and Re-run buttons. Everything needs ViewProject.
+- **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head: Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.gitbench-ci.yml`.
+- **Notifications.** When a pipeline fails or errors, the person who triggered it gets a notification.
+- **Restarts.** Pipelines that were running when the server stopped are marked Error. Queued ones run again. This instance's leftover containers and workspaces are removed.
+- **Docker missing.** If the docker CLI can't reach a daemon, pipelines end in Error with "Docker is not available on the server".
+
+**Configuration** (`appsettings.json`, section `Ci`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Enabled` | `true` | Turns off every trigger and the Run button |
+| `MaxConcurrentJobs` | `2` | Jobs that run at once, across all pipelines |
+| `JobTimeoutMinutes` | `20` | A job's container is killed after this |
+| `Network` | `bridge` | `docker run --network`. Use `none` to block network access |
+| `Memory` / `Cpus` | `2g` / `2` | `--memory` / `--cpus` per container. Empty means no limit |
+| `PidsLimit` | `1024` | `--pids-limit` |
+| `DockerExecutable` | `docker` | Path of the docker CLI |
+| `WorkDirectory` | `{temp}/gitbench-ci/{instance}` | Where workspaces are exported. Docker must be able to mount it |
+
+### Security model
+
+**Pipelines run arbitrary code from the repository on the server host, inside Docker.** Anyone who can push (Developer or higher) can run any command in any image they choose. Treat PushCode as "can run code on the CI host".
+
+- The docker CLI is always started with an argument list, never a shell command line, and image names are validated so they can't be read as flags.
+- Containers never get the Docker socket, host environment variables or any GitBench secret. They get only the `GITBENCH_*` variables above.
+- Containers run with `--security-opt no-new-privileges`, memory, CPU and PID limits, a per-job timeout, and `--rm`.
+- Only the exported workspace is mounted. Symlinks in the repository are created after every regular file, so nothing is written through them. Submodules aren't fetched.
+- Containers still have network access by default (`bridge`). They run as the image's user, often root inside the container, and Docker isolation is not a hard security boundary. On a shared or exposed server, use `Network: none`, rootless Docker or a separate CI host, and let only trusted people push.
+
+Code: `Services/Ci/` (`CiFile` parser, `CiTriggerService`, `CiRunner` worker, `CiDocker`, `PipelineService`, `PipelineMergeCheck`) and `Components/Pages/Pipelines/`. The seeded `WEB/web-app` repository has a sample `.gitbench-ci.yml`.
+
 
 ## Next steps
 

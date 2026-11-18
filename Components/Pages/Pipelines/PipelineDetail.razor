@@ -1,0 +1,237 @@
+@page "/p/{Key}/repos/{Slug}/pipelines/{Id:int}"
+@inherits RepoPageBase
+@inject PipelineService Pipelines
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Pipeline #@Id · @Repo?.Name</PageTitle>
+
+@if (NotFound || (Repo != null && loaded && pipeline == null))
+{
+    <ProjectNotFound Message="This pipeline does not exist." />
+}
+else if (Repo != null && pipeline != null)
+{
+    var p = pipeline;
+    <RepoHeader Repo="Repo" Active="pipelines" />
+
+    <div class="ci-head">
+        <div class="ci-head-main">
+            <h2 class="ci-title">
+                <PipelineStatusIcon Status="p.Status" ShowLabel="true" />
+                <span>Pipeline #@p.Id</span>
+            </h2>
+            <div class="issue-meta">
+                <a class="branch-pill mono" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
+                <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, p.CommitSha)" title="@p.CommitSha">@p.CommitSha[..7]</a>
+                @if (p.CommitMessage != null) { <span>@p.CommitMessage</span> }
+                @if (prNumber != null) { <span> · <a href="@RepoUrls.PullRequest(Repo, prNumber.Value)">@Repo.Slug#@prNumber</a></span> }
+            </div>
+            <div class="issue-meta">
+                Triggered by @PipelineFormat.Trigger(p)@if (p.TriggeredBy != null) {<span> (<b>@p.TriggeredBy.DisplayName</b>)</span>}
+                <span>· @Display.Ago(p.CreatedAt)</span>
+                @if (p.StartedAt != null) { <span> · ⏱ @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</span> }
+            </div>
+        </div>
+        @if (perms.Can(Permission.PushCode))
+        {
+            <div class="d-flex gap-2">
+                @if (!p.IsFinished)
+                {
+                    <button class="btn btn-sm btn-outline-danger" disabled="@busy" @onclick="Cancel">Cancel</button>
+                }
+                else if (Pipelines.Enabled)
+                {
+                    <button class="btn btn-sm btn-outline-secondary" disabled="@busy" @onclick="Rerun">↻ Re-run</button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (Error != null) { <div class="alert alert-danger py-2">@Error</div> }
+    @if (p.Error != null) { <div class="alert alert-warning py-2 ci-error">@p.Error</div> }
+
+    @if (p.Jobs.Count > 0)
+    {
+        <div class="ci-grid">
+            <div class="ci-jobs">
+                @foreach (var job in p.Jobs)
+                {
+                    <div class="ci-job" @key="job.Id">
+                        <div class="ci-job-head">
+                            <PipelineStatusIcon Status="job.Status" />
+                            <b>@job.Name</b>
+                            <span class="ms-auto muted small">@PipelineFormat.Duration(job.StartedAt, job.FinishedAt)</span>
+                        </div>
+                        <div class="ci-job-meta muted small">
+                            <span class="mono" title="Image">@job.Image</span>
+                            @if (job.Needs.Length > 0) { <div>needs @string.Join(", ", job.NeedsList)</div> }
+                        </div>
+                        @foreach (var s in job.Steps)
+                        {
+                            <button class="ci-step @(s.Id == SelectedStepId ? "selected" : "")" @key="s.Id" @onclick="() => Select(s.Id)">
+                                <PipelineStatusIcon Status="s.Status" />
+                                <span class="ci-step-name">@s.Name</span>
+                                <span class="ms-auto muted small">@PipelineFormat.Duration(s.StartedAt, s.FinishedAt)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="ci-log-panel">
+                @if (SelectedStep is { } st)
+                {
+                    <div class="ci-log-head">
+                        <PipelineStatusIcon Status="st.Status" ShowLabel="true" />
+                        <b>@st.Name</b>
+                        @if (st.ExitCode != null) { <span class="muted small">exit code @st.ExitCode</span> }
+                        @if (st.StartedAt != null) { <span class="muted small">· @PipelineFormat.Duration(st.StartedAt, st.FinishedAt)</span> }
+                        <a class="ms-auto small" href="@PipelineUrls.RawLog(Repo, p.Id, st.Id)" target="_blank">Raw log</a>
+                    </div>
+                    @if (logTail)
+                    {
+                        <div class="muted small px-2 pt-1">Showing the last @(MaxShown / 1024) KB. Open the raw log for all of it.</div>
+                    }
+                    <pre class="ci-log" @ref="logEl">@(string.IsNullOrEmpty(logText) ? (st.Status == PipelineStatus.Queued ? "Waiting to start…" : st.Status == PipelineStatus.Skipped ? "Skipped: an earlier step or a needed job did not pass." : st.Status == PipelineStatus.Canceled ? "Canceled." : "") : logText)</pre>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private const int MaxShown = 200 * 1024;
+
+    private Pipeline? pipeline;
+    private bool loaded, busy, logTail;
+    private int? prNumber;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private int? chosenStepId;
+    private string? logText;
+    private ElementReference logEl;
+    private IJSObjectReference? module;
+    private IDisposable? sub;
+    private int reloadPending;
+    private bool scrollForce;
+
+    private PipelineStep? SelectedStep => pipeline?.Jobs.SelectMany(j => j.Steps).FirstOrDefault(s => s.Id == SelectedStepId);
+
+    /// <summary>The step the user picked, else the one to follow: running, then failed, then the last one that ran.</summary>
+    private int? SelectedStepId
+    {
+        get
+        {
+            if (pipeline == null) return null;
+            var steps = pipeline.Jobs.SelectMany(j => j.Steps).ToList();
+            if (chosenStepId is { } c && steps.Any(s => s.Id == c)) return c;
+            return (steps.FirstOrDefault(s => s.Status == PipelineStatus.Running)
+                ?? steps.FirstOrDefault(s => s.Status is PipelineStatus.Failed or PipelineStatus.Error or PipelineStatus.Canceled && s.StartedAt != null)
+                ?? steps.LastOrDefault(s => s.StartedAt != null)
+                ?? steps.FirstOrDefault())?.Id;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (pipeline?.Id != Id) { chosenStepId = null; scrollForce = true; }
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            sub = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/ci-log.js");
+        }
+        if (module != null && SelectedStep != null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("init", logEl);
+                await module.InvokeVoidAsync("follow", logEl, scrollForce);
+                scrollForce = false;
+            }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    private async Task OnPipelineChanged(PipelineChanged e)
+    {
+        if (e.PipelineId != Id) return;
+        if (Interlocked.Exchange(ref reloadPending, 1) == 1) return;
+        await Task.Delay(300);
+        Interlocked.Exchange(ref reloadPending, 0);
+        await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
+    private async Task LoadAsync()
+    {
+        pipeline = await Pipelines.GetAsync(Repo!, Id);
+        loaded = true;
+        if (pipeline == null) return;
+        prNumber = await Pipelines.GetPullRequestNumberAsync(pipeline.PullRequestId);
+        await LoadLogAsync();
+    }
+
+    private async Task LoadLogAsync()
+    {
+        logText = null;
+        logTail = false;
+        if (SelectedStepId is not { } stepId) return;
+        var log = await Pipelines.GetLogAsync(Repo!, Id, stepId);
+        var text = log?.Text ?? "";
+        if (text.Length > MaxShown)
+        {
+            var cut = text.IndexOf('\n', text.Length - MaxShown);
+            text = text[(cut < 0 ? text.Length - MaxShown : cut + 1)..];
+            logTail = true;
+        }
+        logText = text;
+    }
+
+    private async Task Select(int stepId)
+    {
+        chosenStepId = stepId;
+        scrollForce = true;
+        await LoadLogAsync();
+    }
+
+    private async Task Cancel()
+    {
+        Error = null;
+        busy = true;
+        try { await Pipelines.CancelAsync(Repo!, Id); await LoadAsync(); }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Rerun()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            var id = await Pipelines.RerunAsync(Repo!, Id);
+            Nav.NavigateTo(PipelineUrls.Detail(Repo!, id));
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        sub?.Dispose();
+        if (module != null)
+        {
+            try { await module.DisposeAsync(); } catch (JSDisconnectedException) { }
+        }
+    }
+}

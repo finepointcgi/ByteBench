@@ -1,4 +1,5 @@
 @* Commits grouped by day, newest first. *@
+@inject PipelineService Pipelines
 @if (Commits.Count == 0)
 {
     <div class="empty">@EmptyText</div>
@@ -22,6 +23,10 @@ else
                         </div>
                     </div>
                     <div class="commit-actions">
+                        @if (pipelines.GetValueOrDefault(c.Sha) is { } ci)
+                        {
+                            <PipelineStatusIcon Status="ci.Status" Href="@PipelineUrls.Detail(Repo, ci.Id)" Title="@($"Pipeline #{ci.Id}")" />
+                        }
                         <a class="sha-pill mono" href="@RepoUrls.Commit(Repo, c.Sha)" title="@c.Sha">@c.ShortSha</a>
                         <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Source(Repo, c.Sha)" title="Browse the repository at this commit">&lt;/&gt;</a>
                     </div>
@@ -36,4 +41,9 @@ else
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
     [Parameter] public IReadOnlyDictionary<string, User>? Users { get; set; }
     [Parameter] public string EmptyText { get; set; } = "No commits.";
+
+    private Dictionary<string, PipelineBadgeInfo> pipelines = [];
+
+    protected override async Task OnParametersSetAsync() =>
+        pipelines = await Pipelines.LatestForCommitsAsync(Repo, Commits.Select(c => c.Sha));
 }

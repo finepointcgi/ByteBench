@@ -1,0 +1,4 @@
+.ci-col-status { width: 96px; flex-shrink: 0; }
+.ci-col-time { width: 110px; flex-shrink: 0; line-height: 1.5; }
+.ci-msg { margin-left: 6px; color: var(--text); }
+.issue-meta a.branch-pill, .issue-meta a.sha-pill { margin-right: 2px; }

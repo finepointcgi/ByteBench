@@ -28,6 +28,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     // ----- Branch protection & reviewers -----
     public DbSet<BranchProtectionRule> BranchProtectionRules => Set<BranchProtectionRule>();
     public DbSet<PullRequestReviewer> PullRequestReviewers => Set<PullRequestReviewer>();
+    // ----- Pipelines -----
+    public DbSet<Pipeline> Pipelines => Set<Pipeline>();
+    public DbSet<PipelineJob> PipelineJobs => Set<PipelineJob>();
+    public DbSet<PipelineStep> PipelineSteps => Set<PipelineStep>();
+    public DbSet<PipelineStepLog> PipelineStepLogs => Set<PipelineStepLog>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -89,5 +94,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequestReviewer>().HasOne<PullRequest>().WithMany().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestReviewer>().HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestReviewer>().HasOne<User>().WithMany().HasForeignKey(r => r.AddedById).OnDelete(DeleteBehavior.SetNull);
+        // ----- Pipelines -----
+        b.Entity<Pipeline>().HasIndex(p => new { p.RepositoryId, p.Id });
+        b.Entity<Pipeline>().HasIndex(p => new { p.RepositoryId, p.CommitSha });
+        b.Entity<Pipeline>().HasIndex(p => p.Status);
+        b.Entity<Pipeline>().HasOne(p => p.Repository).WithMany().HasForeignKey(p => p.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Pipeline>().HasOne(p => p.TriggeredBy).WithMany().HasForeignKey(p => p.TriggeredById).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Pipeline>().HasOne<PullRequest>().WithMany().HasForeignKey(p => p.PullRequestId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<PipelineJob>().HasOne(j => j.Pipeline).WithMany(p => p.Jobs).HasForeignKey(j => j.PipelineId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PipelineStep>().HasOne(s => s.Job).WithMany(j => j.Steps).HasForeignKey(s => s.JobId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PipelineStepLog>().HasKey(l => l.StepId);
+        b.Entity<PipelineStep>().HasOne(s => s.Log).WithOne().HasForeignKey<PipelineStepLog>(l => l.StepId).OnDelete(DeleteBehavior.Cascade);
     }
 }

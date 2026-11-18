@@ -27,11 +27,12 @@
     {
         <a class="tab @(Active == "protection" ? "active" : "")" href="@RepoUrls.BranchProtection(Repo)">🔒 Branch protection</a>
     }
+    <a class="tab @(Active == "pipelines" ? "active" : "")" href="@PipelineUrls.List(Repo)">Pipelines</a>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>One of: source, commits, branches, prs, protection.</summary>
+    /// <summary>One of: source, commits, branches, prs, protection, pipelines.</summary>
     [Parameter] public string Active { get; set; } = "source";
     /// <summary>The ref being viewed, carried across the Source/Commits tabs.</summary>
     [Parameter] public string? Ref { get; set; }
