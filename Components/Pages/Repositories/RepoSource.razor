@@ -1,6 +1,7 @@
 @page "/p/{Key}/repos/{Slug}"
 @inherits RepoPageBase
 @inject GitBench.Services.Releases.ReleaseService Releases
+@inject GitBench.Services.Lfs.LfsStorage Lfs
 
 <PageTitle>@(string.IsNullOrEmpty(Path) ? Repo?.Name : $"{Path} · {Repo?.Name}")</PageTitle>
 
@@ -119,7 +120,23 @@ else if (Repo != null)
                             </MudToggleGroup>
                         }
                     </div>
-                    @if (blob.TooLarge)
+                    @if (lfsPointer != null)
+                    {
+                        <div class="diff-note lfs-note">
+                            <MudIcon Icon="@Icons.Material.Outlined.CloudQueue" Size="Size.Small" />
+                            <span>Stored with Git LFS · @FormatSize(lfsPointer.Size)</span>
+                            @if (lfsAvailable)
+                            {
+                                <MudButton Href="@LfsDownloadUrl" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download"
+                                           rel="nofollow">Download</MudButton>
+                            }
+                            else
+                            {
+                                <span class="muted small">(the object hasn't been uploaded to this repository)</span>
+                            }
+                        </div>
+                    }
+                    else if (blob.TooLarge)
                     {
                         <div class="diff-note">This file is too large to display (@FormatSize(blob.Size); limit 1 MB).</div>
                     }
@@ -165,6 +182,8 @@ else if (Repo != null)
     private List<string> tags = [];
     private List<TreeItem>? tree;
     private BlobInfo? blob, readme;
+    private GitBench.Services.Lfs.LfsPointer? lfsPointer;
+    private bool lfsAvailable;
     private CommitInfo? lastCommit;
     private bool empty, missing, showSource;
     private Release? latestRelease;
@@ -202,7 +221,7 @@ else if (Repo != null)
         if (latestFor != Repo!.Id) { latestRelease = await Releases.GetLatestAsync(Repo); latestFor = Repo.Id; }
         var r = CurrentRef;
         var p = CleanPath;
-        tree = null; blob = null; readme = null; lastCommit = null; missing = false; showSource = false;
+        tree = null; blob = null; readme = null; lastCommit = null; missing = false; showSource = false; lfsPointer = null; lfsAvailable = false;
 
         (branches, tags, var kind, var log) = await Git(path => (
             GitOps.ListBranches(path, Repo!.DefaultBranch),
@@ -225,9 +244,14 @@ else if (Repo != null)
         else if (kind == "blob")
         {
             blob = await Git(path => GitOps.GetBlob(path, r, p!));
+            lfsPointer = GitBench.Services.Lfs.LfsPointer.TryParse(blob?.Text);
+            if (lfsPointer != null) lfsAvailable = await Lfs.RepositoryHasAsync(Repo.Id, lfsPointer.Oid);
         }
         missing = tree == null && blob == null;
     }
+
+    private string LfsDownloadUrl => GitBench.Services.Lfs.LfsEndpoints.ObjectPath(Repo!.Project.Key, Repo.Slug, lfsPointer!.Oid)
+        + "?download=" + Uri.EscapeDataString(blob!.Path.Split('/').Last());
 
     private void SwitchRef(string newRef) => Nav.NavigateTo(RepoUrls.Source(Repo!, newRef, CleanPath));
 

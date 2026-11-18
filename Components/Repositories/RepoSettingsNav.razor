@@ -12,13 +12,17 @@
                          Class="@ItemClass("ci-variables")" aria-current="@(Active == "ci-variables" ? "page" : null)">CI variables</MudListItem>
             <MudListItem T="string" Href="@RepoUrls.DeployKeys(Repo)" Icon="@Icons.Material.Outlined.VpnKey"
                          Class="@ItemClass("deploy-keys")" aria-current="@(Active == "deploy-keys" ? "page" : null)">Deploy keys</MudListItem>
+            <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/tags")" Icon="@Icons.Material.Outlined.Sell"
+                         Class="@ItemClass("tags")" aria-current="@(Active == "tags" ? "page" : null)">Protected tags</MudListItem>
+            <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/mirroring")" Icon="@Icons.Material.Outlined.Sync"
+                         Class="@ItemClass("mirroring")" aria-current="@(Active == "mirroring" ? "page" : null)">Mirroring</MudListItem>
         </MudList>
     </MudPaper>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>The current settings page, "general", "branches", "merge", "ci-variables" or "deploy-keys".</summary>
+    /// <summary>The current settings page, "general", "branches", "merge", "ci-variables", "deploy-keys", "tags" or "mirroring".</summary>
     [Parameter] public string Active { get; set; } = "general";
 
     private string ItemClass(string page) => Active == page ? "settings-nav-item settings-nav-active" : "settings-nav-item";

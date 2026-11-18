@@ -1,0 +1,7 @@
+.mi-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+.mi-row { align-items: flex-start; }
+@media (max-width: 600px) {
+    .mi-row { flex-wrap: wrap; }
+    .gb-row-right { width: 100%; justify-content: flex-end; }
+}

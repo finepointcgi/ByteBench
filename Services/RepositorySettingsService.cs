@@ -11,7 +11,7 @@ namespace GitBench.Services;
 /// </summary>
 public partial class RepositorySettingsService(
     IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ProjectAccess access, ILogger<RepositorySettingsService> logger,
-    Audit.AuditLog audit, Attachments.AttachmentStorage files)
+    Audit.AuditLog audit, Attachments.AttachmentStorage files, Lfs.LfsStorage lfs)
 {
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$")]
     private static partial Regex SlugRx();
@@ -152,6 +152,7 @@ public partial class RepositorySettingsService(
     /// <summary>
     /// Deletes the repository: database first (its pull requests, with their comments, reviews, activity, watches and AI
     /// reviews, cascade; notifications pointing into it are removed), then the bare repo is moved to a trash name and deleted.
+    /// Its Git LFS objects are deleted unless another repository has uploaded the same content.
     /// A failure on disk after the database delete leaves only an unreferenced trash directory behind.
     /// </summary>
     public async Task DeleteAsync(int repoId, string confirmName)
@@ -165,6 +166,7 @@ public partial class RepositorySettingsService(
 
         var urlPrefix = $"/p/{repo.Project.Key}/repos/{repo.Slug}/";
         var assetFiles = await Releases.ReleaseService.StoredNamesAsync(db, repositoryId: repoId); // release assets cascade with the repo
+        var lfsOids = await db.LfsObjects.Where(o => o.RepositoryId == repoId).Select(o => o.Oid).ToListAsync(); // LFS rows cascade too
         await using (var tx = await db.Database.BeginTransactionAsync())
         {
             await db.Notifications.Where(n => n.ProjectId == repo.ProjectId && n.Url.StartsWith(urlPrefix)).ExecuteDeleteAsync();
@@ -173,6 +175,7 @@ public partial class RepositorySettingsService(
             await tx.CommitAsync();
         }
         files.Delete(assetFiles); // rows first, then files
+        await lfs.DeleteUnreferencedAsync(lfsOids); // objects another repository still has stay
         await audit.RecordAsync("repository.deleted", "repository", repoId, repo.ProjectId, new { repo.Slug, repo.Name });
 
         var path = storage.PathFor(repo.Project.Key, repo.Slug);

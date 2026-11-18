@@ -53,3 +53,4 @@ code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; bo
     .last-commit-bar { flex-wrap: wrap; }
     .readme-body { padding: 14px; }
 }
+.lfs-note { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }

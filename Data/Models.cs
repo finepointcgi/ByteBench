@@ -1078,3 +1078,83 @@ public class SshKey
     public bool IsDeployKey => RepositoryId != null;
     public bool IsExpired(DateTime utcNow) => ExpiresAt != null && ExpiresAt <= utcNow;
 }
+
+// ----- Mirroring, tags & LFS -----
+
+/// <summary>
+/// A protected tag rule of a repository (<see cref="GitBench.Services.Git.ProtectedTagService"/>): tags whose name matches
+/// <see cref="Pattern"/> (exact or glob, like branch protection) may only be created by <see cref="CreateRole"/> and above,
+/// and can be blocked from being deleted or moved. Enforced on git push (HTTP and SSH) and in the tag pages and API.
+/// </summary>
+public class ProtectedTagRule
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    /// <summary>A tag name such as <c>v1.0</c>, or a glob such as <c>v*</c> or <c>release/**</c>.</summary>
+    [Required, MaxLength(250)] public string Pattern { get; set; } = "";
+    /// <summary>The lowest role allowed to create (and, if not blocked, delete or move) matching tags: Developer or Maintainer.</summary>
+    public ProjectRole CreateRole { get; set; } = ProjectRole.Maintainer;
+    /// <summary>Nobody can delete a matching tag (by push or in GitBench) while the rule exists.</summary>
+    public bool BlockDeletion { get; set; } = true;
+    /// <summary>Nobody can move a matching tag to another object (a forced tag push) while the rule exists.</summary>
+    public bool BlockUpdate { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public enum MirrorDirection { Pull, Push }
+public enum MirrorSyncStatus { Never, Running, Succeeded, Failed }
+
+/// <summary>
+/// A repository mirror (<see cref="GitBench.Services.Mirroring.MirrorService"/>). A pull mirror (at most one per repository)
+/// fetches branches and tags from <see cref="Url"/> every <see cref="IntervalMinutes"/> and makes the repository read-only
+/// for pushes; a push mirror pushes them to <see cref="Url"/> after every push and on demand. The credentials are encrypted
+/// with Data Protection and never shown again.
+/// </summary>
+public class RepositoryMirror
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    public MirrorDirection Direction { get; set; }
+    /// <summary>An http(s):// or ssh:// URL without credentials.</summary>
+    [Required, MaxLength(2048)] public string Url { get; set; } = "";
+    [MaxLength(200)] public string? Username { get; set; }
+    /// <summary>The password or access token, encrypted (<see cref="GitBench.Services.Mirroring.MirrorCredentials"/>).</summary>
+    [MaxLength(4096)] public string? ProtectedSecret { get; set; }
+    public bool Enabled { get; set; } = true;
+    /// <summary>Pull mirrors: minutes between syncs.</summary>
+    public int IntervalMinutes { get; set; } = 60;
+    /// <summary>Only branches matching a branch protection rule of the repository are mirrored (tags always are).</summary>
+    public bool OnlyProtectedBranches { get; set; }
+    public MirrorSyncStatus LastStatus { get; set; }
+    public DateTime? LastSyncAt { get; set; }
+    public DateTime? LastSuccessAt { get; set; }
+    /// <summary>What the last sync changed ("3 refs updated") or why it failed.</summary>
+    [MaxLength(2000)] public string? LastMessage { get; set; }
+    /// <summary>Pull mirrors: when the background service syncs next (null: as soon as possible).</summary>
+    public DateTime? NextSyncAt { get; set; }
+    public int? CreatedById { get; set; }
+    public User? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// A Git LFS object a repository has (<see cref="GitBench.Services.Lfs.LfsStorage"/>). The bytes are stored once,
+/// content-addressed by <see cref="Oid"/> (SHA-256), and shared by every repository that uploaded them; a repository can
+/// only download the objects it has a row for.
+/// </summary>
+public class LfsObject
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    /// <summary>Lowercase hex SHA-256 of the content.</summary>
+    [Required, MaxLength(64)] public string Oid { get; set; } = "";
+    public long Size { get; set; }
+    public int? UploadedById { get; set; }
+    public User? UploadedBy { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

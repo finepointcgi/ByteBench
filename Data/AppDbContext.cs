@@ -302,6 +302,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureGroups(b);
         ConfigurePrFeatures(b);
         ConfigureSsh(b);
+        ConfigureMirrorTagsLfs(b);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----
@@ -310,5 +311,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PullRequestComment>().HasOne<PullRequestComment>().WithMany().HasForeignKey(c => c.ParentId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PullRequestComment>().HasIndex(c => c.ParentId);
         b.Entity<PullRequestComment>().HasOne(c => c.ResolvedBy).WithMany().HasForeignKey(c => c.ResolvedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
+    // ----- Mirroring, tags & LFS -----
+    public DbSet<ProtectedTagRule> ProtectedTagRules => Set<ProtectedTagRule>();
+    public DbSet<RepositoryMirror> RepositoryMirrors => Set<RepositoryMirror>();
+    public DbSet<LfsObject> LfsObjects => Set<LfsObject>();
+
+    private static void ConfigureMirrorTagsLfs(ModelBuilder b)
+    {
+        b.Entity<ProtectedTagRule>().HasIndex(r => new { r.RepositoryId, r.Pattern }).IsUnique();
+        b.Entity<ProtectedTagRule>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+
+        b.Entity<RepositoryMirror>().HasIndex(m => m.RepositoryId);
+        // At most one pull mirror per repository (Direction 0 = Pull).
+        b.Entity<RepositoryMirror>().HasIndex(m => m.RepositoryId, "IX_RepositoryMirrors_OnePullPerRepository").IsUnique().HasFilter("\"Direction\" = 0");
+        b.Entity<RepositoryMirror>().HasIndex(m => new { m.Direction, m.Enabled, m.NextSyncAt });
+        b.Entity<RepositoryMirror>().HasOne(m => m.Repository).WithMany().HasForeignKey(m => m.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<RepositoryMirror>().HasOne(m => m.CreatedBy).WithMany().HasForeignKey(m => m.CreatedById).OnDelete(DeleteBehavior.SetNull);
+
+        b.Entity<LfsObject>().HasIndex(o => new { o.RepositoryId, o.Oid }).IsUnique();
+        b.Entity<LfsObject>().HasIndex(o => o.Oid);
+        b.Entity<LfsObject>().HasOne(o => o.Repository).WithMany().HasForeignKey(o => o.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<LfsObject>().HasOne(o => o.UploadedBy).WithMany().HasForeignKey(o => o.UploadedById).OnDelete(DeleteBehavior.SetNull);
     }
 }

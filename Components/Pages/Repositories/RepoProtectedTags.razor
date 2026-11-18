@@ -1,0 +1,184 @@
+@page "/p/{Key}/repos/{Slug}/settings/tags"
+@inherits RepoPageBase
+@using GitBench.Services.Releases
+@inject ProtectedTagService TagRules
+@inject ProjectAccess Access
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Protected tags · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage protected tags." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="tags" />
+        <div class="gb-min0">
+            <div class="pt-header">
+                <div class="gb-min0">
+                    <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Sell" /> Protected tags</MudText>
+                    <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                        Rules apply to tags whose name matches the pattern: an exact name such as <code>v1.0.0</code>, or a glob such as
+                        <code>v*</code> or <code>release/**</code>. Only the chosen role and above can create a matching tag, and you can block
+                        deleting or moving it for everyone. They are enforced on git push (HTTP and SSH) and on the
+                        <a href="@ReleaseUrls.Tags(Repo)">tags</a> and releases pages and API. Deploy keys count as Developers.
+                    </MudText>
+                </div>
+                @if (draft == null)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Class="gb-nowrap" OnClick="StartAdd">Add rule</MudButton>
+                }
+            </div>
+
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            @if (draft != null)
+            {
+                <MudPaper Outlined="true" Class="pa-5 mb-4">
+                    <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-3">@(draft.Id == 0 ? "New rule" : "Edit rule")</MudText>
+                    <MudGrid Spacing="3">
+                        <MudItem xs="12" md="6">
+                            <MudTextField T="string" Label="Tag name pattern" Placeholder="v* or v1.0.0" @bind-Value="draft.Pattern" Immediate="true"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" MaxLength="250" />
+                            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">@MatchText(draft.Pattern)</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudSelect T="ProjectRole" Label="Allowed to create" @bind-Value="draft.CreateRole" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem T="ProjectRole" Value="ProjectRole.Maintainer">Maintainers and Owners</MudSelectItem>
+                                <MudSelectItem T="ProjectRole" Value="ProjectRole.Developer">Developers and above</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudCheckBox T="bool" @bind-Value="draft.BlockDeletion" Color="Color.Primary" Dense="true">
+                                <b>Block deletion</b> <span class="mud-text-secondary">(nobody can delete a matching tag, by push or here)</span>
+                            </MudCheckBox>
+                            <MudCheckBox T="bool" @bind-Value="draft.BlockUpdate" Color="Color.Primary" Dense="true">
+                                <b>Block moving</b> <span class="mud-text-secondary">(nobody can point a matching tag at another commit with a forced push)</span>
+                            </MudCheckBox>
+                        </MudItem>
+                    </MudGrid>
+                    <div class="d-flex gap-2 mt-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(string.IsNullOrWhiteSpace(draft.Pattern) || busy)" OnClick="Save">
+                            @(draft.Id == 0 ? "Create rule" : "Save rule")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => draft = null">Cancel</MudButton>
+                    </div>
+                </MudPaper>
+            }
+
+            <div class="gb-rows">
+                @if (rules.Count == 0)
+                {
+                    <div class="empty">No tags are protected yet. Add a rule such as <span class="mono">v*</span> to protect release tags.</div>
+                }
+                @foreach (var r in rules)
+                {
+                    <div class="gb-row pt-row" @key="r.Id">
+                        <MudIcon Icon="@Icons.Material.Outlined.Sell" Size="Size.Small" Class="mud-text-secondary" />
+                        <div class="gb-row-main gb-min0">
+                            <div class="gb-row-title"><span class="mono">@r.Pattern</span></div>
+                            <div class="gb-row-meta">
+                                @string.Join(" · ", Summary(r))
+                                <br /><span>@MatchText(r.Pattern)</span>
+                            </div>
+                        </div>
+                        <div class="gb-row-right">
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => StartEdit(r)">Edit</MudButton>
+                            <MudTooltip Text="Delete rule">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                               aria-label="@($"Delete the rule for {r.Pattern}")" OnClick="() => Delete(r)" />
+                            </MudTooltip>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<ProtectedTagRule> rules = [];
+    private List<string> tagNames = [];
+    private ProtectedTagRule? draft;
+    private bool busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (!perms.Can(Permission.ManageRepositories)) return;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        rules = await TagRules.ListAsync(Repo!.Id);
+        tagNames = await Git(path => GitOps.Exists(path) ? GitOps.ListTags(path) : []);
+    }
+
+    private string MatchText(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern)) return "";
+        var matching = tagNames.Where(t => BranchPatterns.Matches(pattern.Trim(), t)).ToList();
+        return matching.Count == 0 ? "Matches no existing tag."
+            : "Matches " + string.Join(", ", matching.Take(8)) + (matching.Count > 8 ? $" and {matching.Count - 8} more" : "") + ".";
+    }
+
+    private static IEnumerable<string> Summary(ProtectedTagRule r)
+    {
+        yield return r.CreateRole == ProjectRole.Maintainer ? "Maintainers and Owners can create" : "Developers and above can create";
+        if (r.BlockDeletion) yield return "no deletion";
+        if (r.BlockUpdate) yield return "can't be moved";
+    }
+
+    private void StartAdd()
+    {
+        Error = null;
+        draft = new ProtectedTagRule { Pattern = rules.Any(x => x.Pattern == "v*") ? "" : "v*" };
+    }
+
+    private void StartEdit(ProtectedTagRule r)
+    {
+        Error = null;
+        draft = new ProtectedTagRule { Id = r.Id, Pattern = r.Pattern, CreateRole = r.CreateRole, BlockDeletion = r.BlockDeletion, BlockUpdate = r.BlockUpdate };
+    }
+
+    private async Task Save()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            var saved = await TagRules.SaveAsync(Repo!.Id, draft!);
+            Snackbar.Add(draft!.Id == 0 ? $"Protected tags matching '{saved.Pattern}'." : $"Saved the rule for '{saved.Pattern}'.", Severity.Success);
+            draft = null;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Delete(ProtectedTagRule r)
+    {
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Delete rule", $"Stop protecting tags matching '{r.Pattern}'?")) return;
+        try
+        {
+            await TagRules.DeleteAsync(Repo!.Id, r.Id);
+            Snackbar.Add($"Deleted the rule for '{r.Pattern}'.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+    }
+}
