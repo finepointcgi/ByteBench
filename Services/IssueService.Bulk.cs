@@ -10,6 +10,8 @@ namespace GitBench.Services;
 public sealed record BulkIssueChange
 {
     public IssueStatus? Status { get; init; }
+    /// <summary>One of the project's workflow statuses; wins over <see cref="Status"/> if both are set.</summary>
+    public int? WorkflowStatusId { get; init; }
     public IssuePriority? Priority { get; init; }
     public bool SetAssignee { get; init; }
     public int? AssigneeId { get; init; }
@@ -87,6 +89,12 @@ public partial class IssueService
             milestone = await db.Milestones.FindAsync(mid) ?? throw new InvalidOperationException("That milestone doesn't exist.");
             if (projectIds.Any(p => p != milestone.ProjectId)) throw new InvalidOperationException("That milestone belongs to another project.");
         }
+        if (change.WorkflowStatusId is { } wsId)
+        {
+            if (projectIds.Count != 1) throw new InvalidOperationException("Workflow statuses belong to one project. Select issues from a single project.");
+            if ((await WorkflowService.LoadAsync(dbFactory, projectIds[0])).Find(wsId) == null)
+                throw new InvalidOperationException("That status isn't part of this project's workflow.");
+        }
         Label? addLabel = null, removeLabel = null;
         if (change.AddLabelId is { } al)
         {
@@ -109,12 +117,18 @@ public partial class IssueService
                 var before = IssueSnapshot.Of(i);
                 var wasClosed = i.Status.IsClosed();
                 var parts = new List<string>();
-                if (change.Status is { } s && i.Status != s)
+                // Through the project's workflow: a category picks its first status (unless the issue is already in it), and
+                // transitions are enforced. A refusal throws here, before the commit, so the whole batch rolls back.
+                var (fromStatus, fromWorkflow) = (i.Status, i.WorkflowStatusId);
+                var statusChanged = false;
+                if (change.WorkflowStatusId is { } ws) { if (i.WorkflowStatusId != ws) { i.WorkflowStatusId = ws; statusChanged = true; } }
+                else if (change.Status is { } s && i.Status != s) { i.Status = s; statusChanged = true; }
+                if (statusChanged)
                 {
-                    // Through the project's workflow (picks the category's status, enforces transitions; a refusal rolls back the batch).
-                    var (fromStatus, fromWorkflow) = (i.Status, i.WorkflowStatusId);
-                    i.Status = s;
-                    if (await ReconcileStatusAsync(i, fromStatus, fromWorkflow) is { } sc) parts.Add(sc.Describe());
+                    StatusChange? sc;
+                    try { sc = await ReconcileStatusAsync(i, fromStatus, fromWorkflow); }
+                    catch (InvalidOperationException ex) { throw new InvalidOperationException($"{i.Key}: {ex.Message} No issues were changed.", ex); }
+                    if (sc != null) parts.Add(sc.Describe());
                 }
                 if (change.Priority is { } p && i.Priority != p) { i.Priority = p; parts.Add($"set priority to **{p}**"); }
                 if (change.SetAssignee && i.AssigneeId != assignee?.Id)

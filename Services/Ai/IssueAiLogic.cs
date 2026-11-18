@@ -635,6 +635,7 @@ public static class IssueAiLogic
     {
         target.Search = source.Search;
         target.Status = source.Status;
+        target.WorkflowStatusId = source.WorkflowStatusId;
         target.Open = source.Open;
         target.AssigneeId = source.AssigneeId;
         target.LabelId = source.LabelId;
