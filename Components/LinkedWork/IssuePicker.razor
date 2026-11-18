@@ -1,7 +1,8 @@
 @* Search-as-you-type issue picker: type a key (WEB-12), a number or title words, then pick with the mouse or ↑ ↓ Enter. *@
 @inject LinkedWorkService LinkedWork
 
-<div class="lw-picker">
+@* data-enter-no-submit: Enter picks the highlighted item and never submits a surrounding form (wwwroot/js/forms.js). *@
+<div class="lw-picker" data-enter-no-submit>
     <MudAutocomplete @ref="autocomplete" T="IssueRef" Value="selected" ValueChanged="Pick" SearchFunc="Search" ToStringFunc="@(r => r == null ? null : $"{r.Key} {r.Title}")"
                      Placeholder="@Placeholder" Disabled="Disabled" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
                      DebounceInterval="150" MaxItems="null" Strict="false" CoerceText="false" SelectValueOnTab="false"
