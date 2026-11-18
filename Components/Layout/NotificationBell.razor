@@ -4,43 +4,41 @@
 @inject CurrentUser Me
 @inject NavigationManager Nav
 
-<div class="notif-bell">
-    <button type="button" class="notif-bell-btn" @onclick="Toggle" title="Notifications"
-            aria-label="@($"Notifications, {unread} unread")" aria-expanded="@(open ? "true" : "false")">
-        <span aria-hidden="true">🔔</span>
-        @if (unread > 0)
+<div class="gb-notif">
+    <MudBadge Content="@(unread > 99 ? "99+" : unread.ToString())" Visible="@(unread > 0)" Color="Color.Error" Overlap="true" Bordered="true">
+        <MudIconButton Icon="@(unread > 0 ? Icons.Material.Filled.Notifications : Icons.Material.Outlined.Notifications)" Color="Color.Inherit"
+                       OnClick="Toggle" aria-label="@($"Notifications, {unread} unread")" aria-expanded="@(open ? "true" : "false")" />
+    </MudBadge>
+    <MudPopover Open="open" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Class="gb-notif-popover" Paper="true" Elevation="8">
+        <div class="d-flex align-center px-4 py-2">
+            <MudText Typo="Typo.subtitle2">Notifications</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="@(unread == 0)" OnClick="MarkAllRead">Mark all read</MudButton>
+        </div>
+        <MudDivider />
+        @if (latest.Count == 0)
         {
-            <span class="notif-badge">@(unread > 99 ? "99+" : unread.ToString())</span>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">You're all caught up.</MudText>
         }
-    </button>
-    @if (open)
-    {
-        <div class="notif-backdrop" @onclick="() => open = false"></div>
-        <div class="notif-dropdown" role="menu">
-            <div class="notif-dropdown-head">
-                <b>Notifications</b>
-                <button type="button" class="btn btn-link btn-sm ms-auto p-0" disabled="@(unread == 0)" @onclick="MarkAllRead">Mark all read</button>
-            </div>
-            @if (latest.Count == 0)
-            {
-                <div class="notif-empty muted">You're all caught up.</div>
-            }
+        <MudList T="int" Dense="true" Class="py-0">
             @foreach (var n in latest)
             {
-                <a class="notif-item @(n.IsRead ? "" : "unread")" href="@n.Url" @key="n.Id"
-                   @onclick="() => Open(n)" @onclick:preventDefault>
-                    <Avatar User="n.Actor" Size="24" />
-                    <span class="notif-text">
-                        <b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind)
-                        <span class="notif-title">@n.Title</span>
-                        <span class="muted small d-block">@Display.Ago(n.CreatedAt)</span>
-                    </span>
-                    @if (!n.IsRead) { <span class="notif-dot" title="Unread"></span> }
-                </a>
+                <MudListItem T="int" @key="n.Id" OnClick="() => Open(n)" Class="@(n.IsRead ? "" : "gb-notif-unread")">
+                    <div class="d-flex gap-3 align-start">
+                        <Avatar User="n.Actor" Size="24" />
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2"><b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind) <span>@n.Title</span></MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@Display.Ago(n.CreatedAt)</MudText>
+                        </div>
+                        @if (!n.IsRead) { <span class="gb-notif-dot" title="Unread"></span> }
+                    </div>
+                </MudListItem>
             }
-            <a class="notif-all" href="/notifications" @onclick="() => open = false">View all notifications</a>
-        </div>
-    }
+        </MudList>
+        <MudDivider />
+        <MudButton Href="/notifications" FullWidth="true" Variant="Variant.Text" OnClick="() => open = false">View all notifications</MudButton>
+    </MudPopover>
+    <MudOverlay Visible="open" OnClick="() => open = false" AutoClose="true" />
 </div>
 
 @code {

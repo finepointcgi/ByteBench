@@ -1,107 +1,128 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @implements IDisposable
 @inject NavigationManager Nav
 @inject IssueService Issues
 @inject CurrentUser Me
 @inject ProjectAccess Access
+@inject IJSRuntime JS
 
-<div class="app">
-    <header class="topbar">
-        <a class="brand" href="/">
-            <span class="brand-mark">◆</span> GitBench
-        </a>
+<MudThemeProvider @ref="themeProvider" Theme="GitBenchTheme.Theme" @bind-IsDarkMode="isDark" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
 
-        <div class="topbar-search">
-            <select class="form-select form-select-sm" value="@projectKey" @onchange="GoToProject">
-                <option value="">Jump to project…</option>
-                @foreach (var p in projects)
-                {
-                    <option value="@p.Key">@p.Key — @p.Name</option>
-                }
-            </select>
-        </div>
+<MudLayout>
+    <MudAppBar Elevation="0" Dense="true" Class="gb-appbar">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => drawerOpen = !drawerOpen" aria-label="Toggle navigation" />
+        <MudLink Href="/" Class="gb-brand" Underline="Underline.None"><span class="gb-brand-mark">◆</span> GitBench</MudLink>
 
-        <div class="topbar-right">
-            @if (projectKey != null && projectPerms.Can(Permission.EditIssues))
-            {
-                <a class="btn btn-primary btn-sm" href="/p/@projectKey/issues/new">+ New issue</a>
-            }
-            @if (Me.User != null)
-            {
-                <NotificationBell />
-                <div class="user-menu">
+        @if (projects.Count > 0)
+        {
+            <div class="gb-project-switch">
+                <MudSelect T="string" Value="projectKey" ValueChanged="GoToProject" Placeholder="Jump to project…" Dense="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" AnchorOrigin="Origin.BottomLeft" aria-label="Jump to project">
+                    @foreach (var p in projects)
+                    {
+                        <MudSelectItem Value="@p.Key">@p.Key — @p.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+        }
+
+        <MudSpacer />
+
+        @if (projectKey != null && projectPerms.Can(Permission.EditIssues))
+        {
+            <MudButton Href="@($"/p/{projectKey}/issues/new")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Add" Class="mr-2">New issue</MudButton>
+        }
+        <MudTooltip Text="@(isDark ? "Switch to light mode" : "Switch to dark mode")">
+            <MudIconButton Icon="@(isDark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"
+                           OnClick="ToggleDark" aria-label="Toggle dark mode" />
+        </MudTooltip>
+        @if (Me.User != null)
+        {
+            <NotificationBell />
+            <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Account menu">
+                <ActivatorContent>
+                    <span class="gb-user-activator"><Avatar User="Me.User" Size="28" /></span>
+                </ActivatorContent>
+                <ChildContent>
+                    <div class="px-4 py-2">
+                        <MudText Typo="Typo.subtitle2">@Me.User.DisplayName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@@@Me.User.UserName</MudText>
+                    </div>
+                    <MudDivider />
                     @* Profile is static SSR ([ExcludeFromInteractiveRouting]); force a full load from interactive pages. *@
-                    <a class="user-menu-profile" href="account/profile" title="Your profile"
-                       @onclick="OpenProfile" @onclick:preventDefault>
-                        <Avatar User="Me.User" Size="28" ShowName />
-                    </a>
-                    <a class="user-menu-profile small" href="/developers/api" title="REST API and webhooks">API</a>
-                    <form class="user-menu-signout" method="post" action="account/logout">
+                    <MudMenuItem Icon="@Icons.Material.Outlined.Person" OnClick="OpenProfile">Your profile</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.Api" Href="/developers/api">REST API &amp; webhooks</MudMenuItem>
+                    <MudDivider />
+                    <form method="post" action="account/logout" class="gb-signout-form">
                         <AntiforgeryToken />
-                        <button type="submit" class="btn btn-sm btn-signout">Sign out</button>
+                        <button type="submit" class="gb-signout"><MudIcon Icon="@Icons.Material.Outlined.Logout" Size="Size.Small" /> Sign out</button>
                     </form>
-                </div>
-            }
-        </div>
-    </header>
+                </ChildContent>
+            </MudMenu>
+        }
+    </MudAppBar>
 
-    <div class="shell">
-        <nav class="sidebar">
-            <NavLink class="side-link" href="/" Match="NavLinkMatch.All">🏠 Dashboard</NavLink>
-            <NavLink class="side-link" href="/projects/new">➕ New project</NavLink>
+    <MudDrawer @bind-Open="drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive" Class="gb-drawer">
+        <MudNavMenu Dense="true" Class="gb-nav">
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/projects/new" Icon="@Icons.Material.Outlined.AddBox">New project</MudNavLink>
             @if (Me.User?.IsAdmin == true)
             {
-                <NavLink class="side-link" href="/admin/audit">🛡️ Audit log</NavLink>
+                <MudNavLink Href="/admin/audit" Icon="@Icons.Material.Outlined.Policy">Audit log</MudNavLink>
             }
 
             @if (projectKey != null && CurrentProject is { } cp)
             {
-                <div class="side-section">
-                    <div class="side-project">
-                        <span class="proj-avatar">@cp.Key[..1]</span>
-                        <div>
-                            <div class="side-project-name">@cp.Name</div>
-                            <div class="muted small">@cp.Key</div>
-                        </div>
+                <MudDivider Class="my-2 gb-nav-divider" />
+                <div class="gb-nav-project">
+                    <span class="proj-avatar">@cp.Key[..1]</span>
+                    <div class="gb-nav-project-text">
+                        <div class="gb-nav-project-name">@cp.Name</div>
+                        <div class="gb-nav-project-key">@cp.Key</div>
                     </div>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/issues")" Match="NavLinkMatch.All">📋 Issues</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/board")">🗂️ Board</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/epics")">⚡ Epics</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/backlog")">🏃 Backlog</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/reports")">📈 Reports</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/milestones")">🏁 Milestones</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/repos")">📦 Repositories</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/pull-requests")">🔀 Pull requests</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/code-search")">🔍 Code search</NavLink>
-                    <NavLink class="side-link" href="@($"/p/{cp.Key}/members")">👥 Members</NavLink>
-                    @if (projectPerms.ProjectId == cp.Id && projectPerms.Can(Permission.ManageLabelsAndMilestones))
-                    {
-                        <NavLink class="side-link" href="@($"/p/{cp.Key}/settings")">⚙️ Settings</NavLink>
-                    }
-                    <StarredFiltersNav ProjectId="cp.Id" ProjectKey="@cp.Key" />
                 </div>
+                <MudNavLink Href="@($"/p/{cp.Key}/issues")" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.ListAlt">Issues</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/board")" Icon="@Icons.Material.Outlined.ViewKanban">Board</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/epics")" Icon="@Icons.Material.Outlined.Bolt">Epics</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/backlog")" Icon="@Icons.Material.Outlined.DirectionsRun">Backlog</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/reports")" Icon="@Icons.Material.Outlined.Insights">Reports</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/milestones")" Icon="@Icons.Material.Outlined.Flag">Milestones</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/repos")" Icon="@Icons.Material.Outlined.Inventory2">Repositories</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/pull-requests")" Icon="@Icons.Material.Outlined.MergeType">Pull requests</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/code-search")" Icon="@Icons.Material.Outlined.ManageSearch">Code search</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/members")" Icon="@Icons.Material.Outlined.Group">Members</MudNavLink>
+                @if (projectPerms.ProjectId == cp.Id && projectPerms.Can(Permission.ManageLabelsAndMilestones))
+                {
+                    <MudNavLink Href="@($"/p/{cp.Key}/settings")" Icon="@Icons.Material.Outlined.Settings">Settings</MudNavLink>
+                }
+                <StarredFiltersNav ProjectId="cp.Id" ProjectKey="@cp.Key" />
             }
 
-            <div class="side-section">
-                <div class="side-heading">Projects</div>
-                @foreach (var p in projects)
-                {
-                    <NavLink class="side-link" href="@($"/p/{p.Key}/issues")" Match="NavLinkMatch.Prefix">
-                        <span class="proj-avatar sm">@p.Key[..1]</span> @p.Name
-                    </NavLink>
-                }
-            </div>
-        </nav>
+            <MudDivider Class="my-2 gb-nav-divider" />
+            <div class="gb-nav-heading">Projects</div>
+            @foreach (var p in projects)
+            {
+                <MudNavLink Href="@($"/p/{p.Key}/issues")" Match="NavLinkMatch.Prefix">
+                    <span class="proj-avatar sm">@p.Key[..1]</span> @p.Name
+                </MudNavLink>
+            }
+        </MudNavMenu>
+    </MudDrawer>
 
-        <main class="content">
+    <MudMainContent>
+        <div class="gb-content">
             @* Render once the user is loaded, even when signed out, so RedirectToLogin can run. *@
             @if (userLoaded)
             {
                 @Body
             }
-        </main>
-    </div>
-</div>
+        </div>
+    </MudMainContent>
+</MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -114,6 +135,9 @@
     private ProjectPermissions projectPerms = ProjectPermissions.None;
     private string? projectKey;
     private bool userLoaded;
+    private bool drawerOpen = true;
+    private bool isDark;
+    private MudThemeProvider? themeProvider;
 
     private ProjectSummary? CurrentProject => projects.FirstOrDefault(p => p.Key == projectKey);
 
@@ -149,9 +173,29 @@
         projectKey = path.Length >= 2 && path[0] == "p" ? path[1].ToUpperInvariant() : null;
     }
 
-    private void GoToProject(ChangeEventArgs e)
+    private void GoToProject(string? key)
     {
-        if (e.Value is string k && k.Length > 0) Nav.NavigateTo($"/p/{k}/issues");
+        if (!string.IsNullOrEmpty(key)) Nav.NavigateTo($"/p/{key}/issues");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        // Saved choice first, else the OS preference. Interactive renders only (JS isn't available while prerendering).
+        try
+        {
+            var saved = await JS.InvokeAsync<string?>("gitbenchTheme.get");
+            isDark = saved is "dark" || (saved is null && themeProvider != null && await themeProvider.GetSystemDarkModeAsync());
+            StateHasChanged();
+        }
+        catch (InvalidOperationException) { } // static render: no JS interop
+        catch (JSException) { }
+    }
+
+    private async Task ToggleDark()
+    {
+        isDark = !isDark;
+        await JS.InvokeVoidAsync("gitbenchTheme.set", isDark ? "dark" : "light");
     }
 
     private void OpenProfile() => Nav.NavigateTo("account/profile", forceLoad: true);

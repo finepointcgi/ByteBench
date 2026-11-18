@@ -10,12 +10,14 @@ using GitBench.Services.Audit;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using MudBlazor.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddMudServices(); // MudBlazor UI components (dialogs, snackbars, popovers)
 
 builder.Services.AddDbContextFactory<AppDbContext>(o =>
     o.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=gitbench.db"));
