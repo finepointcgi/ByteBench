@@ -4,80 +4,90 @@
 @inject AuditLog Audit
 @inject IssueService Issues
 
-<form class="filter-bar mb-3" style="flex-wrap:wrap" @onsubmit="Search" @onsubmit:preventDefault>
-    <input class="form-control form-control-sm" style="max-width:160px" placeholder="Actor (username)" aria-label="Actor" @bind="actor" />
-    <input class="form-control form-control-sm" style="max-width:200px" placeholder="Action prefix, e.g. member." aria-label="Action prefix"
-           list="audit-actions" @bind="action" />
-    <datalist id="audit-actions">
-        @foreach (var a in Prefixes) { <option value="@a"></option> }
-    </datalist>
+<div class="audit-viewer">
+<form class="audit-filters" @onsubmit="Search" @onsubmit:preventDefault>
+    <MudTextField T="string" @bind-Value="actor" Label="Actor (username)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Immediate="true" Class="audit-f-actor" aria-label="Actor" />
+    <MudAutocomplete T="string" @bind-Value="action" Label="Action prefix" Placeholder="e.g. member." Variant="Variant.Outlined" Margin="Margin.Dense"
+                     SearchFunc="SearchActions" CoerceValue="true" CoerceText="false" ResetValueOnEmptyText="true" MaxItems="50"
+                     Clearable="true" Class="audit-f-action" aria-label="Action prefix" />
     @if (ProjectId == null)
     {
-        <input class="form-control form-control-sm mono" style="max-width:120px" placeholder="Project key" aria-label="Project key" @bind="projectKey" />
+        <MudTextField T="string" @bind-Value="projectKey" Label="Project key" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" Class="audit-f-project" aria-label="Project key" />
     }
-    <label class="small muted">From</label>
-    <input type="date" class="form-control form-control-sm" style="max-width:150px" aria-label="From date (UTC)" @bind="from" />
-    <label class="small muted">to</label>
-    <input type="date" class="form-control form-control-sm" style="max-width:150px" aria-label="To date (UTC)" @bind="to" />
-    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
-    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Reset">Reset</button>
-    <a class="btn btn-outline-secondary btn-sm ms-auto" href="@ExportHref" download>Export CSV</a>
+    @* Wrapped: the picker also hands Class to its inner input, so sizing it directly stretches that input. *@
+    <div class="audit-f-dates">
+        <MudDateRangePicker DateRange="Range" DateRangeChanged="SetRange" Label="Dates (UTC)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                            PlaceholderStart="From" PlaceholderEnd="To" Clearable="true" Editable="true" aria-label="Date range (UTC)" />
+    </div>
+    <div class="audit-f-buttons">
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.FilterList">Filter</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="Reset">Reset</MudButton>
+    </div>
+    <MudSpacer />
+    <MudButton Href="@ExportHref" download Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.FileDownload">Export CSV</MudButton>
 </form>
 
-@if (error != null) { <div class="alert alert-danger py-2">@error</div> }
+@if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
 
 @if (result != null)
 {
-    <div class="small muted mb-2">
+    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-2">
         @if (result.Total == 0) { <span>No events match.</span> }
         else { <span>Showing @(Skip + 1)–@(Skip + result.Events.Count) of @result.Total events (newest first). Times are shown in UTC.</span> }
-    </div>
+    </MudText>
     @if (result.Events.Count > 0)
     {
-        <table class="table table-sm audit-table">
-            <thead>
-                <tr>
-                    <th style="width:150px">Time (UTC)</th><th>Actor</th><th>Action</th><th>Target</th>
-                    @if (ProjectId == null) { <th>Project</th> }
-                    <th>IP</th><th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var e in result.Events)
-                {
-                    var open = expanded.Contains(e.Id);
-                    <tr @key="e.Id">
-                        <td class="mono small" title="@Display.Ago(e.CreatedAt)">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td>@(e.ActorName ?? (e.ActorId is { } aid ? $"user #{aid}" : "system / anonymous"))</td>
-                        <td><code>@e.Action</code></td>
-                        <td class="small">@(e.TargetType == null ? "" : $"{e.TargetType} {e.TargetId}")</td>
-                        @if (ProjectId == null) { <td class="mono small">@(e.ProjectId is { } p ? result.ProjectKeys.GetValueOrDefault(p, $"#{p} (deleted)") : "")</td> }
-                        <td class="mono small">@e.IpAddress</td>
-                        <td class="text-end">
-                            <button type="button" class="btn btn-link btn-sm p-0" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleDetails(e.Id)">
-                                @(open ? "Hide" : "Details")
-                            </button>
-                        </td>
+        <MudPaper Outlined="true" Class="audit-table-wrap">
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="audit-table">
+                <thead>
+                    <tr>
+                        <th style="width:150px">Time (UTC)</th><th>Actor</th><th>Action</th><th>Target</th>
+                        @if (ProjectId == null) { <th>Project</th> }
+                        <th>IP</th><th></th>
                     </tr>
-                    @if (open)
+                </thead>
+                <tbody>
+                    @foreach (var e in result.Events)
                     {
-                        <tr @key="(e.Id, 'd')">
-                            <td colspan="@(ProjectId == null ? 7 : 6)">
-                                <div class="small"><b>User agent:</b> <span class="muted">@(e.UserAgent ?? "unknown")</span></div>
-                                <pre class="audit-details">@Pretty(e.Details)</pre>
+                        var open = expanded.Contains(e.Id);
+                        <tr @key="e.Id">
+                            <td class="mono audit-small audit-nowrap" title="@Display.Ago(e.CreatedAt)">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>@(e.ActorName ?? (e.ActorId is { } aid ? $"user #{aid}" : "system / anonymous"))</td>
+                            <td><code>@e.Action</code></td>
+                            <td class="audit-small">@(e.TargetType == null ? "" : $"{e.TargetType} {e.TargetId}")</td>
+                            @if (ProjectId == null) { <td class="mono audit-small">@(e.ProjectId is { } p ? result.ProjectKeys.GetValueOrDefault(p, $"#{p} (deleted)") : "")</td> }
+                            <td class="mono audit-small">@e.IpAddress</td>
+                            <td class="audit-right">
+                                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" aria-expanded="@(open ? "true" : "false")"
+                                           OnClick="() => ToggleDetails(e.Id)">
+                                    @(open ? "Hide" : "Details")
+                                </MudButton>
                             </td>
                         </tr>
+                        @if (open)
+                        {
+                            <tr @key="(e.Id, 'd')" class="audit-detail-row">
+                                <td colspan="@(ProjectId == null ? 7 : 6)">
+                                    <div class="audit-small"><b>User agent:</b> <span class="audit-muted">@(e.UserAgent ?? "unknown")</span></div>
+                                    <pre class="audit-details mono">@Pretty(e.Details)</pre>
+                                </td>
+                            </tr>
+                        }
                     }
-                }
-            </tbody>
-        </table>
-        <div class="d-flex gap-2 align-items-center">
-            <button class="btn btn-outline-secondary btn-sm" disabled="@(pageNumber <= 1)" @onclick="() => Go(pageNumber - 1)">← Newer</button>
-            <span class="small muted">Page @pageNumber of @Math.Max(1, (result.Total + PageSize - 1) / PageSize)</span>
-            <button class="btn btn-outline-secondary btn-sm" disabled="@(Skip + result.Events.Count >= result.Total)" @onclick="() => Go(pageNumber + 1)">Older →</button>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+        <div class="audit-pager">
+            <MudPagination Count="PageCount" Selected="pageNumber" SelectedChanged="Go" Size="Size.Small" Variant="Variant.Outlined"
+                           ShowFirstButton="true" ShowLastButton="true" MiddleCount="3" BoundaryCount="1" />
+            <MudText Class="mud-text-secondary" Typo="Typo.caption">Page @pageNumber of @PageCount</MudText>
         </div>
     }
 }
+</div>
 
 @code {
     /// <summary>Show only this project's events (null: all events, for site admins).</summary>
@@ -93,6 +103,20 @@
     private readonly HashSet<long> expanded = [];
 
     private int Skip => (pageNumber - 1) * PageSize;
+    private int PageCount => Math.Max(1, ((result?.Total ?? 0) + PageSize - 1) / PageSize);
+
+    private DateRange Range => new(from?.ToDateTime(TimeOnly.MinValue), to?.ToDateTime(TimeOnly.MinValue));
+
+    private void SetRange(DateRange? r)
+    {
+        from = r?.Start is { } s ? DateOnly.FromDateTime(s) : null;
+        to = r?.End is { } e ? DateOnly.FromDateTime(e) : null;
+    }
+
+    private Task<IEnumerable<string>> SearchActions(string? text, CancellationToken _) =>
+        Task.FromResult(string.IsNullOrWhiteSpace(text)
+            ? Prefixes
+            : Prefixes.Where(a => a.Contains(text.Trim(), StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>Recorded action names plus their "area." prefixes, for the action filter's suggestions.</summary>
     private IEnumerable<string> Prefixes => actions.Select(a => a.Split('.')[0] + ".").Distinct().Concat(actions);

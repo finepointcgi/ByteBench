@@ -2,10 +2,12 @@
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject WorkflowService Workflows
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>Workflow · @project?.Name</PageTitle>
 
+<div class="wf-page">
 @if (notFound)
 {
     <ProjectNotFound />
@@ -18,93 +20,107 @@ else if (project != null)
 {
     <div class="page-header">
         <div>
-            <h1>Workflow</h1>
-            <div class="muted">@project.Name</div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Workflow</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
         </div>
-        <a class="btn btn-outline-secondary btn-sm" href="/p/@project.Key/settings">← Settings</a>
+        <MudButton Href="@($"/p/{project.Key}/settings")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Settings</MudButton>
     </div>
-    <p class="muted small" style="max-width:820px">
+    <MudText Typo="Typo.body2" Class="mud-text-secondary wf-narrow mb-4">
         Statuses are the board's columns, in this order. Each belongs to a <b>category</b>: Done-category statuses count as closed,
         and sprints, filters and the API work with categories. Setting only a category (e.g. "Close issue") picks that category's
         first status. The workflow needs at least one Done status and at least one open status.
-    </p>
-    @if (error != null) { <div class="alert alert-danger py-2" style="max-width:820px">@error</div> }
-    @if (message != null) { <div class="alert alert-success py-2" style="max-width:820px">@message</div> }
+    </MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="wf-narrow mb-3">@error</MudAlert> }
 
-    <div class="card-panel mb-4" style="max-width:820px">
-        <h2 class="section-title">Statuses</h2>
-        <table class="table table-sm wf-table mb-2">
-            <thead>
-                <tr><th style="width:70px">Order</th><th style="width:56px">Colour</th><th>Name</th><th style="width:150px">Category</th><th style="width:70px">Issues</th><th style="width:150px"></th></tr>
-            </thead>
-            <tbody>
-                @for (var idx = 0; idx < workflow.Statuses.Count; idx++)
-                {
-                    var s = workflow.Statuses[idx];
-                    var d = drafts[s.Id];
-                    var count = counts.GetValueOrDefault(s.Id);
-                    var first = idx == 0;
-                    var last = idx == workflow.Statuses.Count - 1;
-                    <tr @key="s.Id">
-                        <td>
-                            <button class="btn btn-link btn-sm p-0" title="Move left on the board" disabled="@first" @onclick="() => Move(s, -1)">▲</button>
-                            <button class="btn btn-link btn-sm p-0 ms-1" title="Move right on the board" disabled="@last" @onclick="() => Move(s, 1)">▼</button>
-                        </td>
-                        <td><input type="color" class="form-control form-control-color form-control-sm" aria-label="Colour of @s.Name" @bind="d.Color" /></td>
-                        <td><input class="form-control form-control-sm" aria-label="Name" maxlength="40" @bind="d.Name" @bind:event="oninput" /></td>
-                        <td>
-                            <select class="form-select form-select-sm" aria-label="Category of @s.Name" @bind="d.Category">
-                                @foreach (var c in Enum.GetValues<IssueStatus>()) { <option value="@c">@c.Name()</option> }
-                            </select>
-                        </td>
-                        <td>@count</td>
-                        <td class="text-end">
-                            @if (d.Name.Trim() != s.Name || !d.Color.Equals(s.Color, StringComparison.OrdinalIgnoreCase) || d.Category != s.Category)
-                            {
-                                <button class="btn btn-primary btn-sm" @onclick="() => SaveStatus(s)">Save</button>
-                            }
-                            <button class="btn btn-link btn-sm text-danger" @onclick="() => StartDelete(s, count)">Delete</button>
-                        </td>
-                    </tr>
-                    @if (deleting?.Id == s.Id)
+    <MudPaper Outlined="true" Class="wf-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="wf-title">Statuses</MudText>
+        <div class="wf-scroll">
+            <MudSimpleTable Dense="true" Elevation="0" Class="wf-table">
+                <thead>
+                    <tr><th style="width:80px">Order</th><th style="width:56px">Colour</th><th>Name</th><th style="width:160px">Category</th><th style="width:60px">Issues</th><th style="width:150px"></th></tr>
+                </thead>
+                <tbody>
+                    @for (var idx = 0; idx < workflow.Statuses.Count; idx++)
                     {
-                        <tr @key="(s.Id, 'd')">
-                            <td colspan="6" class="bg-light">
-                                <div class="d-flex align-items-center gap-2 flex-wrap">
-                                    <span><b>@count</b> issue@(count == 1 ? "" : "s") @(count == 1 ? "has" : "have") the status <b>@s.Name</b>. Move @(count == 1 ? "it" : "them") to</span>
-                                    <select class="form-select form-select-sm" style="width:auto" aria-label="Move issues to" @bind="moveTo">
-                                        @foreach (var other in workflow.Statuses.Where(o => o.Id != s.Id)) { <option value="@other.Id">@other.Name</option> }
-                                    </select>
-                                    <button class="btn btn-danger btn-sm" @onclick="() => Delete(s, moveTo)">Move issues &amp; delete</button>
-                                    <button class="btn btn-outline-secondary btn-sm" @onclick="() => deleting = null">Cancel</button>
-                                </div>
+                        var s = workflow.Statuses[idx];
+                        var d = drafts[s.Id];
+                        var count = counts.GetValueOrDefault(s.Id);
+                        var first = idx == 0;
+                        var last = idx == workflow.Statuses.Count - 1;
+                        <tr @key="s.Id">
+                            <td class="nowrap">
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" title="Move left on the board" aria-label="Move left on the board"
+                                               Disabled="@first" OnClick="() => Move(s, -1)" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" title="Move right on the board" aria-label="Move right on the board"
+                                               Disabled="@last" OnClick="() => Move(s, 1)" />
+                            </td>
+                            <td><input type="color" class="color-input" aria-label="Colour of @s.Name" @bind="d.Color" /></td>
+                            <td>
+                                <MudTextField T="string" @bind-Value="d.Name" Immediate="true" MaxLength="40" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              Class="wf-input" aria-label="Name" />
+                            </td>
+                            <td>
+                                <MudSelect T="IssueStatus" @bind-Value="d.Category" Variant="Variant.Outlined" Margin="Margin.Dense" Class="wf-input"
+                                           AnchorOrigin="Origin.BottomLeft" aria-label="@($"Category of {s.Name}")">
+                                    @foreach (var c in Enum.GetValues<IssueStatus>()) { <MudSelectItem Value="c">@c.Name()</MudSelectItem> }
+                                </MudSelect>
+                            </td>
+                            <td>@count</td>
+                            <td class="nowrap right">
+                                @if (d.Name.Trim() != s.Name || !d.Color.Equals(s.Color, StringComparison.OrdinalIgnoreCase) || d.Category != s.Category)
+                                {
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="() => SaveStatus(s)">Save</MudButton>
+                                }
+                                <MudTooltip Text="Delete status">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete {s.Name}")"
+                                                   OnClick="() => StartDelete(s, count)" />
+                                </MudTooltip>
                             </td>
                         </tr>
+                        @if (deleting?.Id == s.Id)
+                        {
+                            <tr @key="(s.Id, 'd')" class="wf-delete-row">
+                                <td colspan="6">
+                                    <div class="wf-delete">
+                                        <span><b>@count</b> issue@(count == 1 ? "" : "s") @(count == 1 ? "has" : "have") the status <b>@s.Name</b>. Move @(count == 1 ? "it" : "them") to</span>
+                                        <MudSelect T="int" @bind-Value="moveTo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="wf-move-to"
+                                                   AnchorOrigin="Origin.BottomLeft" aria-label="Move issues to">
+                                            @foreach (var other in workflow.Statuses.Where(o => o.Id != s.Id)) { <MudSelectItem Value="other.Id">@other.Name</MudSelectItem> }
+                                        </MudSelect>
+                                        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" OnClick="() => Delete(s, moveTo)">Move issues &amp; delete</MudButton>
+                                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => deleting = null">Cancel</MudButton>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
                     }
-                }
-            </tbody>
-        </table>
-        <div class="d-flex gap-2 align-items-center">
-            <input type="color" class="form-control form-control-color form-control-sm" aria-label="New status colour" @bind="newColor" />
-            <input class="form-control form-control-sm" style="max-width:240px" placeholder="New status name" maxlength="40" @bind="newName" @bind:event="oninput" />
-            <select class="form-select form-select-sm" style="width:auto" aria-label="New status category" @bind="newCategory">
-                @foreach (var c in Enum.GetValues<IssueStatus>()) { <option value="@c">@c.Name()</option> }
-            </select>
-            <button class="btn btn-outline-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newName)" @onclick="AddStatus">Add status</button>
+                </tbody>
+            </MudSimpleTable>
         </div>
-    </div>
+        <div class="wf-add">
+            <input type="color" class="color-input" aria-label="New status colour" @bind="newColor" />
+            <MudTextField T="string" Placeholder="New status name" @bind-Value="newName" Immediate="true" MaxLength="40"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="wf-add-name" aria-label="New status name" />
+            <MudSelect T="IssueStatus" @bind-Value="newCategory" Variant="Variant.Outlined" Margin="Margin.Dense" Class="wf-add-cat"
+                       AnchorOrigin="Origin.BottomLeft" aria-label="New status category">
+                @foreach (var c in Enum.GetValues<IssueStatus>()) { <MudSelectItem Value="c">@c.Name()</MudSelectItem> }
+            </MudSelect>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@string.IsNullOrWhiteSpace(newName)" OnClick="AddStatus">Add status</MudButton>
+        </div>
+    </MudPaper>
 
-    <div class="card-panel mb-4" style="max-width:820px">
-        <h2 class="section-title">Transitions</h2>
-        <p class="small muted">
+    <MudPaper Outlined="true" Class="wf-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="wf-title">Transitions</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
             Tick the statuses an issue may move <b>to</b> from each status. A row with nothing ticked allows any move.
             The board and the status picker only offer allowed moves, and the API refuses the others.
-        </p>
-        <div class="table-responsive">
-            <table class="table table-sm table-bordered wf-matrix mb-2">
+        </MudText>
+        <div class="wf-scroll">
+            <MudSimpleTable Dense="true" Bordered="true" Elevation="0" Class="wf-matrix">
                 <thead>
                     <tr>
-                        <th class="small muted">From ↓ / To →</th>
+                        <th class="wf-corner">From ↓ / To →</th>
                         @foreach (var to in workflow.Statuses) { <th class="rot">@to.Name</th> }
                         <th></th>
                     </tr>
@@ -114,28 +130,31 @@ else if (project != null)
                     {
                         var set = matrix[from.Id];
                         <tr @key="from.Id">
-                            <th class="rot"><span class="status-dot" style="background:@from.Color"></span> @from.Name</th>
+                            <th class="rot"><span class="wf-dot" style="background:@from.Color"></span> @from.Name</th>
                             @foreach (var to in workflow.Statuses)
                             {
-                                <td>
-                                    @if (to.Id == from.Id) { <span class="muted">—</span> }
+                                <td class="cell">
+                                    @if (to.Id == from.Id) { <span class="wf-muted">—</span> }
                                     else
                                     {
-                                        <input type="checkbox" class="form-check-input" aria-label="@from.Name to @to.Name" checked="@set.Contains(to.Id)"
-                                               @onchange="e => Toggle(set, to.Id, e.Value is true)" />
+                                        <MudCheckBox T="bool" Value="@set.Contains(to.Id)" ValueChanged="on => Toggle(set, to.Id, on)" Color="Color.Primary"
+                                                     Dense="true" Size="Size.Small" aria-label="@($"{from.Name} to {to.Name}")" />
                                     }
                                 </td>
                             }
-                            <td class="small muted">@(set.Count == 0 ? "any move" : "")</td>
+                            <td class="wf-muted wf-small nowrap">@(set.Count == 0 ? "any move" : "")</td>
                         </tr>
                     }
                 </tbody>
-            </table>
+            </MudSimpleTable>
         </div>
-        <button class="btn btn-primary btn-sm" disabled="@(!matrixDirty)" @onclick="SaveTransitions">Save transitions</button>
-        <button class="btn btn-outline-secondary btn-sm ms-2" @onclick="ClearTransitions">Allow every move</button>
-    </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(!matrixDirty)" OnClick="SaveTransitions">Save transitions</MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ClearTransitions">Allow every move</MudButton>
+        </div>
+    </MudPaper>
 }
+</div>
 
 @code {
     [Parameter] public string Key { get; set; } = "";
@@ -145,7 +164,7 @@ else if (project != null)
     private Project? project;
     private ProjectPermissions perms = ProjectPermissions.None;
     private bool notFound, matrixDirty;
-    private string? error, message;
+    private string? error;
     private ProjectWorkflow workflow = ProjectWorkflow.Empty;
     private Dictionary<int, int> counts = [];
     private Dictionary<int, Draft> drafts = [];
@@ -175,11 +194,11 @@ else if (project != null)
 
     private async Task Run(Func<Task> action, string? success = null)
     {
-        error = message = null;
+        error = null;
         try
         {
             await action();
-            message = success;
+            if (success != null) Snackbar.Add(success, Severity.Success);
         }
         catch (InvalidOperationException ex) { error = ex.Message; }
         await Load();
@@ -202,14 +221,15 @@ else if (project != null)
 
     private async Task StartDelete(WorkflowStatus s, int count)
     {
-        error = message = null;
+        error = null;
         if (count > 0)
         {
             deleting = s;
             moveTo = workflow.Statuses.Where(o => o.Id != s.Id).OrderBy(o => o.Category == s.Category ? 0 : 1).First().Id;
             return;
         }
-        if (await JS.InvokeAsync<bool>("confirm", $"Delete the status \"{s.Name}\"?")) await Delete(s, null);
+        if (await Dialogs.ShowMessageBoxAsync("Delete status?", $"Delete the status \"{s.Name}\"?", yesText: "Delete", cancelText: "Cancel") == true)
+            await Delete(s, null);
     }
 
     private async Task Delete(WorkflowStatus s, int? target)
@@ -218,7 +238,7 @@ else if (project != null)
         await Run(async () => moved = await Workflows.DeleteStatusAsync(project!.Id, s.Id, target));
         if (error == null)
         {
-            message = moved > 0 ? $"Moved {moved} issue{(moved == 1 ? "" : "s")} and deleted \"{s.Name}\"." : $"Deleted \"{s.Name}\".";
+            Snackbar.Add(moved > 0 ? $"Moved {moved} issue{(moved == 1 ? "" : "s")} and deleted \"{s.Name}\"." : $"Deleted \"{s.Name}\".", Severity.Success);
             deleting = null;
         }
     }

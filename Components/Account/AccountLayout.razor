@@ -1,10 +1,13 @@
 @inherits LayoutComponentBase
 
+@* Account pages are static SSR: the theme provider only emits the (light) palette CSS variables. *@
+<MudThemeProvider Theme="GitBenchTheme.Theme" />
+
 <div class="auth-shell">
-    <a class="brand auth-brand" href="/">
-        <span class="brand-mark">◆</span> GitBench
+    <a class="auth-brand" href="/">
+        <span class="auth-brand-mark">◆</span> GitBench
     </a>
-    <div class="auth-card card-panel">
+    <MudPaper Elevation="8" Class="auth-card">
         @Body
-    </div>
+    </MudPaper>
 </div>

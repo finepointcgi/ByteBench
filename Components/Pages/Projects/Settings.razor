@@ -2,10 +2,12 @@
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject NavigationManager Nav
-@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
 <PageTitle>Settings · @project?.Name</PageTitle>
 
+<div class="settings-page">
 @if (notFound)
 {
     <ProjectNotFound />
@@ -16,106 +18,115 @@ else if (project != null && !perms.Can(Permission.ManageLabelsAndMilestones))
 }
 else if (project != null)
 {
-    <div class="page-header"><h1>Project settings</h1></div>
-    @if (error != null) { <div class="alert alert-danger py-2 narrow">@error</div> }
+    <div class="page-header"><MudText Typo="Typo.h5" HtmlTag="h1">Project settings</MudText></div>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="settings-card mb-4">@error</MudAlert> }
 
     @if (perms.Can(Permission.ManageProjectSettings))
     {
-        <div class="card-panel narrow mb-4">
-            <h2 class="section-title">General</h2>
-            <div class="mb-3">
-                <label class="form-label">Name</label>
-                <input class="form-control" @bind="name" />
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Key</label>
-                <input class="form-control mono" value="@project.Key" disabled />
-                <div class="form-text">Keys can't be changed after creation.</div>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Description</label>
-                <textarea class="form-control" rows="3" @bind="description"></textarea>
-            </div>
-            <div class="mb-3">
-                <label class="form-label" for="visibility">Visibility</label>
-                <select id="visibility" class="form-select" @bind="visibility">
-                    <option value="@ProjectVisibility.Private">Private: only members can see it</option>
-                    <option value="@ProjectVisibility.Internal">Internal: every signed-in user can see it (as Viewer)</option>
-                </select>
-            </div>
-            <button class="btn btn-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(name)" @onclick="SaveGeneral">Save</button>
-            @if (saved) { <span class="text-success small ms-2">Saved ✓</span> }
-        </div>
+        <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">General</MudText>
+            <MudStack Spacing="3">
+                <MudTextField T="string" Label="Name" @bind-Value="name" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField T="string" Label="Key" Value="project.Key" Disabled="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Class="settings-mono" HelperText="Keys can't be changed after creation." />
+                <MudTextField T="string" Label="Description" @bind-Value="description" Lines="3" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudSelect T="ProjectVisibility" Label="Visibility" @bind-Value="visibility" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           AnchorOrigin="Origin.BottomLeft" aria-label="Visibility">
+                    <MudSelectItem Value="ProjectVisibility.Private">Private: only members can see it</MudSelectItem>
+                    <MudSelectItem Value="ProjectVisibility.Internal">Internal: every signed-in user can see it (as Viewer)</MudSelectItem>
+                </MudSelect>
+                <div>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(name)"
+                               OnClick="SaveGeneral">Save</MudButton>
+                </div>
+            </MudStack>
+        </MudPaper>
     }
 
-    <div class="card-panel narrow mb-4">
-        <h2 class="section-title">Labels</h2>
-        <div class="label-table">
+    <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Labels</MudText>
+        <div class="label-list">
             @foreach (var l in project.Labels)
             {
-                <div class="label-row" @key="l.Id">
+                <div class="label-line" @key="l.Id">
                     @if (editLabel?.Id == l.Id)
                     {
-                        <input type="color" class="form-control form-control-color" @bind="editLabel.Color" />
-                        <input class="form-control form-control-sm" @bind="editLabel.Name" />
-                        <button class="btn btn-primary btn-sm" @onclick="SaveLabel">Save</button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => editLabel = null">Cancel</button>
+                        <input type="color" class="color-input" aria-label="Label colour" @bind="editLabel.Color" />
+                        <MudTextField T="string" @bind-Value="editLabel.Name" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="label-name-input" aria-label="Label name" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveLabel">Save</MudButton>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => editLabel = null">Cancel</MudButton>
                     }
                     else
                     {
                         <LabelChip Label="l" />
-                        <span class="ms-auto"></span>
-                        <button class="btn btn-link btn-sm" @onclick="() => editLabel = new Label { Id = l.Id, ProjectId = l.ProjectId, Name = l.Name, Color = l.Color }">Edit</button>
-                        <button class="btn btn-link btn-sm text-danger" @onclick="() => DeleteLabel(l)">Delete</button>
+                        <span class="label-spacer"></span>
+                        <MudTooltip Text="Edit">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Edit label {l.Name}")"
+                                           OnClick="() => editLabel = new Label { Id = l.Id, ProjectId = l.ProjectId, Name = l.Name, Color = l.Color }" />
+                        </MudTooltip>
+                        <MudTooltip Text="Delete">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete label {l.Name}")"
+                                           OnClick="() => DeleteLabel(l)" />
+                        </MudTooltip>
                     }
                 </div>
             }
         </div>
-        <div class="label-row mt-2">
-            <input type="color" class="form-control form-control-color" @bind="newLabel.Color" />
-            <input class="form-control form-control-sm" placeholder="New label name" @bind="newLabel.Name" @bind:event="oninput" />
-            <button class="btn btn-outline-primary btn-sm" disabled="@string.IsNullOrWhiteSpace(newLabel.Name)" @onclick="AddLabel">Add label</button>
+        <div class="label-line label-new">
+            <input type="color" class="color-input" aria-label="New label colour" @bind="newLabel.Color" />
+            <MudTextField T="string" Placeholder="New label name" @bind-Value="newLabel.Name" Immediate="true" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Class="label-name-input" aria-label="New label name" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       Disabled="@string.IsNullOrWhiteSpace(newLabel.Name)" OnClick="AddLabel">Add label</MudButton>
         </div>
-        @if (labelError != null) { <div class="text-danger small mt-2">@labelError</div> }
-    </div>
+        @if (labelError != null) { <MudText Typo="Typo.caption" Color="Color.Error" HtmlTag="div" Class="mt-2">@labelError</MudText> }
+    </MudPaper>
 
     <AiReviewSettings Project="project" />
 
     @if (perms.Can(GitBench.Services.Webhooks.WebhookService.RequiredPermission))
     {
-        <div class="card-panel narrow mb-4">
-            <h2 class="section-title">Webhooks</h2>
-            <p class="small muted mb-2">Notify other services about pushes, issues, pull requests and pipelines in this project.</p>
-            <a class="btn btn-outline-primary btn-sm" href="/p/@project.Key/settings/webhooks">Manage webhooks</a>
-        </div>
+        <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Webhooks</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Notify other services about pushes, issues, pull requests and pipelines in this project.</MudText>
+            <MudButton Href="@($"/p/{project.Key}/settings/webhooks")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                       StartIcon="@Icons.Material.Outlined.Webhook">Manage webhooks</MudButton>
+        </MudPaper>
     }
 
     @if (perms.Can(Permission.ManageProjectSettings))
     {
-        <div class="card-panel narrow mb-4">
-            <h2 class="section-title">Workflow &amp; audit log</h2>
-            <p class="small muted mb-2">Customise this project's issue statuses and the moves allowed between them, and see who changed what.</p>
-            <a class="btn btn-outline-primary btn-sm" href="/p/@project.Key/settings/workflow">Edit workflow</a>
-            <a class="btn btn-outline-secondary btn-sm ms-2" href="/p/@project.Key/settings/audit">Audit log</a>
-        </div>
+        <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Workflow &amp; audit log</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Customise this project's issue statuses and the moves allowed between them, and see who changed what.</MudText>
+            <div class="d-flex flex-wrap gap-2">
+                <MudButton Href="@($"/p/{project.Key}/settings/workflow")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.AccountTree">Edit workflow</MudButton>
+                <MudButton Href="@($"/p/{project.Key}/settings/audit")" Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.Policy">Audit log</MudButton>
+            </div>
+        </MudPaper>
     }
 
     @if (perms.Can(Permission.DeleteProject))
     {
-        <div class="card-panel narrow danger-zone">
-            <h2 class="section-title">Danger zone</h2>
-            <p class="small muted">Deleting a project permanently removes all of its issues, comments, labels and milestones.</p>
-            <button class="btn btn-danger btn-sm" @onclick="DeleteProject">Delete project</button>
-        </div>
+        <MudPaper Outlined="true" Class="settings-card danger-card pa-5">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title" Color="Color.Error">Danger zone</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Deleting a project permanently removes all of its issues, comments, labels and milestones.</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DeleteForever"
+                       OnClick="DeleteProject">Delete project</MudButton>
+        </MudPaper>
     }
 }
+</div>
 
 @code {
     [Parameter] public string Key { get; set; } = "";
 
     private Project? project;
     private ProjectPermissions perms = ProjectPermissions.None;
-    private bool notFound, saved;
+    private bool notFound;
     private string name = "";
     private string? description, labelError, error;
     private ProjectVisibility visibility;
@@ -147,7 +158,8 @@ else if (project != null)
 
     private async Task SaveGeneral()
     {
-        saved = await Try(() => Issues.UpdateProjectAsync(project!.Id, name.Trim(), description, visibility));
+        if (await Try(() => Issues.UpdateProjectAsync(project!.Id, name.Trim(), description, visibility)))
+            Snackbar.Add("Project settings saved.", Severity.Success);
     }
 
     private async Task AddLabel()
@@ -182,14 +194,21 @@ else if (project != null)
 
     private async Task DeleteLabel(Label l)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", $"Delete label \"{l.Name}\"? It will be removed from all issues.")) return;
+        var ok = await Dialogs.ShowMessageBoxAsync("Delete label?", $"Delete label \"{l.Name}\"? It will be removed from all issues.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
         if (await Try(() => Issues.DeleteLabelAsync(l.Id))) await Load();
     }
 
     private async Task DeleteProject()
     {
-        var typed = await JS.InvokeAsync<string?>("prompt", $"Type the project key ({project!.Key}) to confirm deletion:");
-        if (typed?.Trim().ToUpper() != project.Key) return;
+        var dialog = await Dialogs.ShowAsync<DeleteProjectDialog>("Delete project", new DialogParameters<DeleteProjectDialog>
+        {
+            { d => d.ProjectKey, project!.Key },
+            { d => d.ProjectName, project.Name },
+        }, new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
         if (await Try(() => Issues.DeleteProjectAsync(project.Id))) Nav.NavigateTo("/");
     }
 }

@@ -1,0 +1,15 @@
+.settings-page ::deep .settings-card { max-width: 720px; }
+.settings-page ::deep .settings-title { font-weight: 600; margin-bottom: 12px; }
+.settings-page ::deep .settings-mono input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.settings-page ::deep .danger-card { border-color: rgba(var(--mud-palette-error-rgb), .45); }
+
+.label-list { display: flex; flex-direction: column; }
+.label-line { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--mud-palette-lines-default); flex-wrap: wrap; }
+.label-new { border-bottom: none; margin-top: 8px; }
+.label-line ::deep .label-chip { margin-left: 0; }
+.label-line ::deep .label-name-input { flex: 0 1 260px; margin-top: 0; }
+.label-spacer { flex: 1; }
+.color-input {
+    width: 40px; height: 36px; padding: 3px; cursor: pointer; flex-shrink: 0;
+    background: var(--mud-palette-surface); border: 1px solid var(--mud-palette-lines-inputs); border-radius: var(--mud-default-borderradius);
+}

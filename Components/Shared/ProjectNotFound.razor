@@ -1,7 +1,8 @@
-<div class="empty">
-    <h2>Not found</h2>
-    <p class="muted">@Message</p>
-    <a class="btn btn-outline-secondary" href="/">Back to dashboard</a>
+<div class="gb-empty-state">
+    <MudIcon Class="mud-text-secondary" Icon="@Icons.Material.Outlined.SearchOff" Size="Size.Large" />
+    <MudText Typo="Typo.h6" HtmlTag="h2">Not found</MudText>
+    <MudText Class="mud-text-secondary" Typo="Typo.body2">@Message</MudText>
+    <MudButton Href="/" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Class="mt-2">Back to dashboard</MudButton>
 </div>
 
 @code {

@@ -1,0 +1,36 @@
+.auth-shell {
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px; padding: 32px 16px;
+    background: radial-gradient(ellipse at top, rgba(var(--mud-palette-primary-rgb), .28) 0%, var(--mud-palette-appbar-background) 60%);
+}
+.auth-brand { color: var(--mud-palette-appbar-text); font-weight: 700; font-size: 22px; display: flex; align-items: center; gap: 6px; }
+.auth-brand:hover { text-decoration: none; }
+.auth-brand-mark { color: #a78bfa; }
+
+.auth-shell ::deep .auth-card { width: 100%; max-width: 420px; padding: 28px; }
+.auth-shell ::deep .auth-card:has(.profile-page) { max-width: 600px; }
+
+/* Shared look for the static-SSR account forms: plain inputs styled like MudBlazor's outlined fields. */
+.auth-shell ::deep .auth-title { margin-bottom: 4px; }
+.auth-shell ::deep .auth-sub { margin-bottom: 20px; }
+.auth-shell ::deep .auth-alert { margin-bottom: 16px; }
+.auth-shell ::deep .auth-footer { margin-top: 18px; text-align: center; }
+
+.auth-shell ::deep .gb-field { margin-bottom: 16px; }
+.auth-shell ::deep .gb-field-label { display: block; font-size: .8125rem; font-weight: 500; color: var(--mud-palette-text-secondary); margin-bottom: 4px; }
+.auth-shell ::deep .gb-input {
+    display: block; width: 100%; box-sizing: border-box; padding: 9px 12px; font: inherit; font-size: .9375rem;
+    color: var(--mud-palette-text-primary); background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-inputs); border-radius: var(--mud-default-borderradius);
+    outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.auth-shell ::deep .gb-input:hover { border-color: var(--mud-palette-text-primary); }
+.auth-shell ::deep .gb-input:focus { border-color: var(--mud-palette-primary); box-shadow: 0 0 0 1px var(--mud-palette-primary); }
+.auth-shell ::deep .gb-input.invalid { border-color: var(--mud-palette-error); }
+.auth-shell ::deep .gb-input[readonly] { background: var(--mud-palette-background); }
+.auth-shell ::deep select.gb-input { cursor: pointer; }
+.auth-shell ::deep .gb-help { font-size: .75rem; color: var(--mud-palette-text-secondary); margin-top: 4px; }
+.auth-shell ::deep .validation-message { color: var(--mud-palette-error); font-size: .75rem; margin-top: 4px; }
+.auth-shell ::deep .gb-check { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0 0 6px; }
+.auth-shell ::deep .gb-check input { accent-color: var(--mud-palette-primary); width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
+.auth-shell ::deep code { font-size: .8125rem; }

@@ -9,40 +9,40 @@
 
 <PageTitle>Sign in · GitBench</PageTitle>
 
-<h1 class="auth-title">Sign in</h1>
-<p class="muted auth-sub">Welcome back. Sign in to continue to GitBench.</p>
+<MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Sign in</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Welcome back. Sign in to continue to GitBench.</MudText>
 
 @if (error != null)
 {
-    <div class="alert alert-danger auth-alert" role="alert">@error</div>
+    <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">@error</MudAlert>
 }
 
 <EditForm Model="Input" FormName="login" OnValidSubmit="LoginUser" method="post">
     <DataAnnotationsValidator />
     @* The form posts back to the current URL, so ?returnUrl= survives the post. *@
 
-    <div class="mb-3">
-        <label class="form-label" for="login-user">Username or email</label>
-        <InputText id="login-user" class="form-control" @bind-Value="Input!.UserNameOrEmail"
+    <div class="gb-field">
+        <label class="gb-field-label" for="login-user">Username or email</label>
+        <InputText id="login-user" class="gb-input" @bind-Value="Input!.UserNameOrEmail"
                    autocomplete="username" autofocus />
-        <ValidationMessage For="() => Input!.UserNameOrEmail" class="text-danger small" />
+        <ValidationMessage For="() => Input!.UserNameOrEmail" />
     </div>
-    <div class="mb-3">
-        <label class="form-label" for="login-password">Password</label>
-        <InputText id="login-password" type="password" class="form-control" @bind-Value="Input!.Password"
+    <div class="gb-field">
+        <label class="gb-field-label" for="login-password">Password</label>
+        <InputText id="login-password" type="password" class="gb-input" @bind-Value="Input!.Password"
                    autocomplete="current-password" />
-        <ValidationMessage For="() => Input!.Password" class="text-danger small" />
+        <ValidationMessage For="() => Input!.Password" />
     </div>
-    <div class="form-check mb-3">
-        <InputCheckbox id="login-remember" class="form-check-input" @bind-Value="Input!.RememberMe" />
-        <label class="form-check-label" for="login-remember">Remember me</label>
-    </div>
-    <button type="submit" class="btn btn-primary w-100">Sign in</button>
+    <label class="gb-check gb-field" for="login-remember">
+        <InputCheckbox id="login-remember" @bind-Value="Input!.RememberMe" />
+        <span>Remember me</span>
+    </label>
+    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Sign in</MudButton>
 </EditForm>
 
-<p class="auth-footer muted">
+<MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">
     New to GitBench? <a href="@RegisterHref">Create an account</a>
-</p>
+</MudText>
 
 @code {
     private string? error;
