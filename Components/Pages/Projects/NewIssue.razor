@@ -21,6 +21,7 @@ else if (project != null)
     <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-2" />
     <MudText Typo="Typo.h5" Class="ni-title mb-4">New issue <span class="ni-muted">in @project.Name</span></MudText>
 
+    <GitBench.Components.Fields.IssueTemplatePicker Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
     <GitBench.Components.Ai.AiIssueDraft Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
     <EditForm Model="issue" OnValidSubmit="Create" FormName="new-issue">
         <DataAnnotationsValidator />
@@ -91,6 +92,7 @@ else if (project != null)
                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
                         <MudDatePicker @bind-Date="issue.DueDate" Label="Due date" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
                                        DateFormat="yyyy-MM-dd" Editable="true" />
+                        <GitBench.Components.Fields.NewIssueFields Project="project" Issue="issue" />
                     </MudStack>
                 </MudPaper>
             </MudItem>

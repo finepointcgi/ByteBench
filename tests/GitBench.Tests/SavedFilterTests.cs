@@ -21,6 +21,11 @@ public class SavedFilterTests(TestApp app) : IClassFixture<TestApp>
         WorkflowStatusId = 13,
         EpicId = 42,
         HideSubtasks = true,
+        ComponentId = 5,
+        FixVersionId = 0, // "no fix version"
+        AffectsVersionId = 9,
+        Cf = "severity:Major & co",
+        Columns = "severity,components,timeSpent",
     };
 
     [Fact]

@@ -1,0 +1,13 @@
+.vr-page { max-width: 1100px; }
+.vr-row { display: flex; align-items: center; gap: 16px; padding: 12px 16px; flex-wrap: wrap; }
+.vr-info { flex: 1 1 260px; min-width: 0; }
+.vr-title { display: flex; align-items: center; gap: 6px; font-weight: 600; flex-wrap: wrap; }
+.vr-sub { font-size: 13px; margin-top: 2px; }
+.vr-release { font-size: 12px; font-weight: 500; }
+.vr-progress { flex: 1 1 260px; }
+.vr-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin-top: 4px; }
+.vr-actions { display: flex; align-items: center; }
+.vr-issues { border-top: 1px solid var(--mud-palette-lines-default); }
+.vr-links { display: flex; gap: 16px; padding: 8px 16px; font-size: 13px; }
+.vr-issue { display: flex; border-top: 1px solid var(--mud-palette-lines-default); }
+.vr-released .vr-title span { color: var(--mud-palette-text-secondary); }

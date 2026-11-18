@@ -1,0 +1,134 @@
+@* Issue detail sidebar: components, fix/affects versions, custom fields and time tracking. Each change is saved at once
+   (and recorded in the activity); the page reloads through IssueChanged, which re-keys this panel's data. *@
+@inject CustomFieldService Fields
+@inject ComponentVersionService ComponentsAndVersions
+@inject TimeTrackingService Time
+@inject ProjectAccess Access
+@inject IssueService Issues
+
+<div class="ifp">
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => error = null" Class="mb-3">@error</MudAlert> }
+    <MudStack Spacing="4">
+        @if (components.Count > 0)
+        {
+            <MudSelect T="int" @key="(nameof(components), version)" MultiSelection="true" SelectedValues="current.Components.Select(c => c.Id).ToList()"
+                       SelectedValuesChanged="v => SetComponents(v)" Label="Components" Disabled="@(!canEdit)" Dense="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Delimiter=", " ToStringFunc="@(id => components.FirstOrDefault(c => c.Component.Id == id)?.Component.Name ?? "")">
+                @foreach (var c in components) { <MudSelectItem T="int" Value="c.Component.Id">@c.Component.Name</MudSelectItem> }
+            </MudSelect>
+        }
+        @if (versions.Count > 0)
+        {
+            <MudSelect T="int" @key="(nameof(VersionLinkKind.Fix), version)" MultiSelection="true" SelectedValues="current.FixVersions.Select(v => v.Id).ToList()"
+                       SelectedValuesChanged="v => SetVersions(VersionLinkKind.Fix, v)" Label="Fix versions" Disabled="@(!canEdit)" Dense="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Delimiter=", " ToStringFunc="VersionName">
+                @foreach (var v in versions.Where(v => !v.IsReleased || current.FixVersions.Any(x => x.Id == v.Id)))
+                {
+                    <MudSelectItem T="int" Value="v.Id">@v.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="int" @key="(nameof(VersionLinkKind.Affects), version)" MultiSelection="true" SelectedValues="current.AffectsVersions.Select(v => v.Id).ToList()"
+                       SelectedValuesChanged="v => SetVersions(VersionLinkKind.Affects, v)" Label="Affects versions" Disabled="@(!canEdit)" Dense="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Delimiter=", " ToStringFunc="VersionName">
+                @foreach (var v in versions) { <MudSelectItem T="int" Value="v.Id">@v.Name</MudSelectItem> }
+            </MudSelect>
+        }
+        @foreach (var fv in values)
+        {
+            <div @key="(fv.Field.Id, version)">
+                <CustomFieldInput Field="fv.Field" Value="fv.Value" Users="users" Disabled="@(!canEdit || !fv.Field.AppliesTo(Issue.Type))"
+                                  ValueChanged="raw => SetField(fv.Field, raw)" />
+            </div>
+        }
+
+        @if (time != null)
+        {
+            <div class="ifp-time" aria-label="Time tracking">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary ifp-label">Time tracking</MudText>
+                <MudProgressLinear Value="time.Percent" Color="@(time.OverEstimate ? Color.Warning : Color.Info)" Rounded="true" Size="Size.Small" Class="my-1"
+                                   aria-label="@($"{time.Percent}% of the estimated work logged")" />
+                <div class="ifp-time-row">
+                    <span>@time.Format(time.SpentMinutes) logged</span>
+                    <span>@(time.RemainingMinutes is { } r ? time.Format(r) + " remaining" : "no estimate")</span>
+                </div>
+                @if (time.OverEstimate)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block">Over the original estimate (@time.Format(time.OriginalMinutes)).</MudText>
+                }
+                <div class="ifp-estimates">
+                    <MudTextField T="string" @key="(nameof(TimeSummary.OriginalMinutes), version)" Value="@Duration.FormatOrNull(time.OriginalMinutes, time.HoursPerDay)"
+                                  ValueChanged="v => SetEstimate(true, v)" Label="Original estimate" Placeholder="e.g. 2d 4h" Disabled="@(!canEdit)"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudTextField T="string" @key="(nameof(TimeSummary.RemainingMinutes), version)" Value="@Duration.FormatOrNull(time.RemainingMinutes, time.HoursPerDay)"
+                                  ValueChanged="v => SetEstimate(false, v)" Label="Remaining" Placeholder="e.g. 6h" Disabled="@(!canEdit)"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">Units: w, d (@time.HoursPerDay h), h, m. <a href="#work-log">Work log</a></MudText>
+            </div>
+        }
+    </MudStack>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private List<ComponentSummary> components = [];
+    private List<ProjectVersion> versions = [];
+    private List<IssueFieldValue> values = [];
+    private (List<ProjectComponent> Components, List<ProjectVersion> FixVersions, List<ProjectVersion> AffectsVersions) current = ([], [], []);
+    private TimeSummary? time;
+    private List<User> users = [];
+    private bool canEdit;
+    private string? error;
+    private int version; // bumped on reload/failure so inputs show stored values again
+    private (int, DateTime, IssueType) loadedFor;
+    private int projectLoaded;
+
+    private string VersionName(int id) => versions.FirstOrDefault(v => v.Id == id)?.Name ?? "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (Issue.Id, Issue.UpdatedAt, Issue.Type);
+        if (loadedFor == key) return;
+        loadedFor = key;
+        if (projectLoaded != Issue.ProjectId)
+        {
+            projectLoaded = Issue.ProjectId;
+            canEdit = (await Access.GetPermissionsAsync(Issue.ProjectId)).Can(Permission.EditIssues);
+            users = await Issues.GetUsersAsync();
+        }
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        components = await ComponentsAndVersions.GetComponentsAsync(Issue.ProjectId);
+        versions = await ComponentsAndVersions.GetVersionListAsync(Issue.ProjectId);
+        current = await ComponentsAndVersions.GetForIssueAsync(Issue.Id);
+        values = await Fields.GetIssueValuesAsync(Issue.Id);
+        time = await Time.GetSummaryAsync(Issue.Id);
+        version++;
+    }
+
+    private async Task Guard(Func<Task> action)
+    {
+        error = null;
+        try { await action(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load(); // the page reloads too (IssueChanged), but show the result here right away
+    }
+
+    private Task SetComponents(IEnumerable<int> ids) => Guard(() => ComponentsAndVersions.SetComponentsAsync(Issue.Id, ids.ToList()));
+
+    private Task SetVersions(VersionLinkKind kind, IEnumerable<int> ids) => Guard(() => ComponentsAndVersions.SetVersionsAsync(Issue.Id, kind, ids.ToList()));
+
+    private Task SetField(CustomField field, object? raw) => Guard(() => Fields.SetValueAsync(Issue.Id, field.Id, raw));
+
+    private Task SetEstimate(bool original, string? text) => Guard(async () =>
+    {
+        int? minutes;
+        try { minutes = Duration.Parse(text, time?.HoursPerDay ?? Duration.DefaultHoursPerDay); }
+        catch (FormatException ex) { throw new InvalidOperationException(ex.Message); }
+        await Time.SetEstimatesAsync(Issue.Id, original, minutes, !original, minutes);
+    });
+}

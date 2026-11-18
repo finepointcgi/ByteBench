@@ -1,0 +1,389 @@
+@page "/p/{Key}/settings/fields"
+@using GitBench.Services.Fields
+@using GitBench.Components.Repositories
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject CustomFieldService FieldService
+@inject ComponentVersionService ComponentsAndVersions
+@inject IssueTemplateService Templates
+@inject TimeTrackingService Time
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Issue fields · @project?.Name</PageTitle>
+
+<div class="fs-page">
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !perms.Can(Permission.ManageLabelsAndMilestones))
+{
+    <Forbidden Message="Only Maintainers and Owners can change this project's issue fields." BackHref="@($"/p/{Key}/issues")" />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Issue fields</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
+        </div>
+        <MudButton Href="@($"/p/{project.Key}/settings")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Settings</MudButton>
+    </div>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => error = null" Class="fs-narrow mb-3">@error</MudAlert> }
+
+    <MudTabs Elevation="0" Outlined="true" Rounded="true" Class="fs-narrow" TabPanelsClass="pa-4" @bind-ActivePanelIndex="tab">
+        <MudTabPanel Text="Custom fields">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Extra fields on this project's issues. They show on the issue page, the new-issue form and as optional list columns,
+                and in the API and webhooks under <code>customFields</code> by key. Required fields must have a value on the issue
+                types they apply to; the default fills them in on new issues.
+            </MudText>
+            @if (fields.Count > 0)
+            {
+                <div class="fs-scroll">
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th style="width:72px"></th><th>Name</th><th>Key</th><th>Type</th><th>Applies to</th><th>Default</th><th>Issues</th><th style="width:96px"></th></tr></thead>
+                    <tbody>
+                    @for (var idx = 0; idx < fields.Count; idx++)
+                    {
+                        var f = fields[idx];
+                        <tr @key="f.Id">
+                            <td class="nowrap">
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" Disabled="@(idx == 0)" aria-label="Move up" OnClick="() => MoveField(f, -1)" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" Disabled="@(idx == fields.Count - 1)" aria-label="Move down" OnClick="() => MoveField(f, 1)" />
+                            </td>
+                            <td><b>@f.Name</b>@if (f.Required) { <span class="fs-req" title="Required"> *</span> }</td>
+                            <td class="mono">@f.Key</td>
+                            <td>@CustomFieldRules.TypeName(f.Type)@if (f.Options.Count > 0) { <div class="mud-text-secondary fs-small">@string.Join(", ", f.Options)</div> }</td>
+                            <td>@(f.IssueTypes.Count == 0 ? "All types" : string.Join(", ", f.IssueTypes))</td>
+                            <td>@(f.DefaultValue ?? "–")</td>
+                            <td>@usage.GetValueOrDefault(f.Id)</td>
+                            <td class="nowrap right">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Edit {f.Name}")" OnClick="() => EditField(f)" />
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete {f.Name}")" OnClick="() => DeleteField(f)" />
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </MudSimpleTable>
+                </div>
+            }
+            else { <MudText Typo="Typo.body2" Class="mud-text-secondary">No custom fields yet.</MudText> }
+
+            @if (fieldDraft != null)
+            {
+                <MudPaper Outlined="true" Class="pa-4 mt-3">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">@(fieldDraft.Id == 0 ? "New field" : $"Edit {fieldDraft.Name}")</MudText>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="fieldDraft.Name" Label="Name" MaxLength="60" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="fieldDraft.Key" Label="Key" MaxLength="40" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                              HelperText="Used by the API, webhooks and filters. Blank: made from the name." Class="mono" /></MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="CustomFieldType" @bind-Value="fieldDraft.Type" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                       ToStringFunc="CustomFieldRules.TypeName">
+                                @foreach (var t in Enum.GetValues<CustomFieldType>()) { <MudSelectItem Value="t">@CustomFieldRules.TypeName(t)</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="IssueType" MultiSelection="true" @bind-SelectedValues="fieldTypes" Label="Applies to" Placeholder="All issue types"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Delimiter=", " HelperText="None selected: every type">
+                                @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        @if (CustomFieldRules.HasOptions(fieldDraft.Type))
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudTextField T="string" @bind-Value="optionsText" Label="Options (one per line)" Lines="4" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                        }
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" @bind-Value="fieldDraft.DefaultValue" Label="Default" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          HelperText="@DefaultHint(fieldDraft.Type)" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="fieldDraft.Description" Label="Description" MaxLength="300" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudCheckBox T="bool" @bind-Value="fieldDraft.Required" Label="Required" Dense="true" /></MudItem>
+                    </MudGrid>
+                    <div class="d-flex gap-2 mt-3">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveField">@(fieldDraft.Id == 0 ? "Create field" : "Save")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => fieldDraft = null">Cancel</MudButton>
+                    </div>
+                </MudPaper>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Class="mt-3"
+                           OnClick="() => EditField(new CustomField { ProjectId = project.Id })">Add field</MudButton>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Components">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Parts of the project. An issue can be in several; a new issue without an assignee gets its first component's default assignee.</MudText>
+            @if (components.Count > 0)
+            {
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>Name</th><th>Lead</th><th>Default assignee</th><th>Issues</th><th style="width:96px"></th></tr></thead>
+                    <tbody>
+                    @foreach (var c in components)
+                    {
+                        <tr @key="c.Component.Id">
+                            <td><b>@c.Component.Name</b>@if (c.Component.Description != null) { <div class="mud-text-secondary fs-small">@c.Component.Description</div> }</td>
+                            <td>@(c.Component.Lead?.DisplayName ?? "–")</td>
+                            <td>@(c.Component.DefaultAssignee?.DisplayName ?? "–")</td>
+                            <td><a href="/p/@project.Key/issues?open=&componentId=@c.Component.Id">@c.OpenIssues open / @c.TotalIssues</a></td>
+                            <td class="nowrap right">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Edit {c.Component.Name}")"
+                                               OnClick="() => componentDraft = new ProjectComponent { Id = c.Component.Id, ProjectId = project.Id, Name = c.Component.Name, Description = c.Component.Description, LeadId = c.Component.LeadId, DefaultAssigneeId = c.Component.DefaultAssigneeId }" />
+                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete {c.Component.Name}")" OnClick="() => DeleteComponent(c)" />
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </MudSimpleTable>
+            }
+            else { <MudText Typo="Typo.body2" Class="mud-text-secondary">No components yet.</MudText> }
+            @if (componentDraft != null)
+            {
+                <MudPaper Outlined="true" Class="pa-4 mt-3">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="componentDraft.Name" Label="Name" MaxLength="60" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="componentDraft.Description" Label="Description" MaxLength="300" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="int" Value="@(componentDraft.LeadId ?? 0)" ValueChanged="v => componentDraft.LeadId = v == 0 ? null : v" Label="Lead"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="UserName">
+                                <MudSelectItem Value="0">None</MudSelectItem>
+                                @foreach (var u in users) { <MudSelectItem Value="u.Id">@u.DisplayName</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="int" Value="@(componentDraft.DefaultAssigneeId ?? 0)" ValueChanged="v => componentDraft.DefaultAssigneeId = v == 0 ? null : v" Label="Default assignee"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="UserName">
+                                <MudSelectItem Value="0">None</MudSelectItem>
+                                @foreach (var u in users) { <MudSelectItem Value="u.Id">@u.DisplayName</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                    <div class="d-flex gap-2 mt-3">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveComponent">@(componentDraft.Id == 0 ? "Create component" : "Save")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => componentDraft = null">Cancel</MudButton>
+                    </div>
+                </MudPaper>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Class="mt-3"
+                           OnClick="() => componentDraft = new ProjectComponent { ProjectId = project.Id }">Add component</MudButton>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Templates">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Offered in the <b>Template</b> picker on the new-issue form. Markdown files in <code>@IssueTemplateService.RepoFolder/</code> on the default
+                branch of the project's first repository are offered too (front matter: <code>name</code>, <code>title</code>, <code>labels</code>, <code>type</code>).
+            </MudText>
+            @foreach (var t in templates)
+            {
+                <div class="fs-template" @key="t.Id">
+                    <span>@t.Type.Icon() <b>@t.Name</b></span>
+                    @if (t.TitlePrefix != null) { <span class="mono fs-small">“@t.TitlePrefix”</span> }
+                    @foreach (var l in project.Labels.Where(l => t.LabelIds.Contains(l.Id))) { <LabelChip Label="l" /> }
+                    <span class="ml-auto nowrap">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="@($"Edit {t.Name}")" OnClick="() => EditTemplate(t)" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="@($"Delete {t.Name}")" OnClick="() => DeleteTemplate(t)" />
+                    </span>
+                </div>
+            }
+            @foreach (var r in repoTemplates)
+            {
+                <div class="fs-template" @key="r.Id">
+                    <span>@r.Type.Icon() <b>@r.Name</b></span> <span class="mud-text-secondary fs-small">from @r.Source</span>
+                </div>
+            }
+            @if (templates.Count == 0 && repoTemplates.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No templates yet.</MudText> }
+            @if (templateDraft != null)
+            {
+                <MudPaper Outlined="true" Class="pa-4 mt-3">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="templateDraft.Name" Label="Name" MaxLength="80" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudSelect T="IssueType" @bind-Value="templateDraft.Type" Label="Issue type" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                                @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="3"><MudTextField T="string" @bind-Value="templateDraft.TitlePrefix" Label="Title prefix" Placeholder="[Bug] " MaxLength="60" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12">
+                            <MudSelect T="int" MultiSelection="true" @bind-SelectedValues="templateLabels" Label="Default labels" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                       Delimiter=", " ToStringFunc="@(id => project.Labels.FirstOrDefault(l => l.Id == id)?.Name ?? "")">
+                                @foreach (var l in project.Labels) { <MudSelectItem Value="l.Id">@l.Name</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12"><MarkdownEditor @bind-Value="templateDraft.Body" Rows="8" ProjectId="project.Id" Placeholder="The description new issues start with" /></MudItem>
+                    </MudGrid>
+                    <div class="d-flex gap-2 mt-3">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveTemplate">@(templateDraft.Id == 0 ? "Create template" : "Save")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => templateDraft = null">Cancel</MudButton>
+                    </div>
+                </MudPaper>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Class="mt-3"
+                           OnClick="() => EditTemplate(new IssueTemplate { ProjectId = project.Id })">Add template</MudButton>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Time tracking">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Estimates and logged time are entered like <code>2h 30m</code>, <code>1d</code> or <code>1w</code>. A day is this many hours and a week is 5 days.
+                Changing it changes how existing times are shown, not how much time they are.
+            </MudText>
+            <div class="d-flex align-center gap-2">
+                <MudNumericField T="int" @bind-Value="hoursPerDay" Label="Hours per day" Min="1" Max="24" Variant="Variant.Outlined" Margin="Margin.Dense" Class="fs-hours" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveHours">Save</MudButton>
+            </div>
+        </MudTabPanel>
+    </MudTabs>
+}
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private string? error;
+    private int tab;
+    private List<User> users = [];
+
+    private List<CustomField> fields = [];
+    private Dictionary<int, int> usage = [];
+    private CustomField? fieldDraft;
+    private string? optionsText;
+    private IReadOnlyCollection<IssueType> fieldTypes = [];
+
+    private List<ComponentSummary> components = [];
+    private ProjectComponent? componentDraft;
+
+    private List<IssueTemplate> templates = [];
+    private List<IssueTemplateChoice> repoTemplates = [];
+    private IssueTemplate? templateDraft;
+    private IReadOnlyCollection<int> templateLabels = [];
+
+    private int hoursPerDay = Duration.DefaultHoursPerDay;
+
+    private string UserName(int id) => id == 0 ? "None" : users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "";
+
+    private static string DefaultHint(CustomFieldType t) => t switch
+    {
+        CustomFieldType.Number => "A number",
+        CustomFieldType.Date => "yyyy-MM-dd",
+        CustomFieldType.SingleSelect => "One of the options",
+        CustomFieldType.MultiSelect => "Options, comma-separated",
+        CustomFieldType.User => "A username",
+        CustomFieldType.Checkbox => "true or false",
+        CustomFieldType.Url => "https://…",
+        _ => "Optional",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        if (!perms.Can(Permission.ManageLabelsAndMilestones)) return;
+        users = await Issues.GetUsersAsync();
+        hoursPerDay = project.HoursPerDay;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        fields = await FieldService.GetFieldsAsync(project!.Id);
+        usage = await FieldService.UsageAsync(project.Id);
+        components = await ComponentsAndVersions.GetComponentsAsync(project.Id);
+        templates = await Templates.GetTemplatesAsync(project.Id);
+        repoTemplates = (await Templates.GetChoicesAsync(project)).Where(c => c.Source != null).ToList();
+    }
+
+    private async Task Run(Func<Task> action, string? success = null)
+    {
+        error = null;
+        try
+        {
+            await action();
+            if (success != null) Snackbar.Add(success, Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    // ----- Custom fields -----
+    private void EditField(CustomField f)
+    {
+        fieldDraft = new CustomField
+        {
+            Id = f.Id, ProjectId = f.ProjectId, Key = f.Key, Name = f.Name, Description = f.Description, Type = f.Type, Required = f.Required,
+            DefaultValue = f.DefaultValue, Options = [.. f.Options], IssueTypes = [.. f.IssueTypes],
+        };
+        optionsText = string.Join("\n", f.Options);
+        fieldTypes = f.IssueTypes.ToList();
+    }
+
+    private Task SaveField() => Run(async () =>
+    {
+        fieldDraft!.Options = (optionsText ?? "").Split('\n').Select(o => o.Trim()).Where(o => o.Length > 0).ToList();
+        fieldDraft.IssueTypes = fieldTypes.ToList();
+        var created = fieldDraft.Id == 0;
+        await FieldService.SaveFieldAsync(fieldDraft);
+        Snackbar.Add(created ? $"Field \"{fieldDraft.Name}\" created." : "Field saved.", Severity.Success);
+        fieldDraft = null;
+    });
+
+    private Task MoveField(CustomField f, int delta) => Run(() => FieldService.MoveFieldAsync(f.Id, delta));
+
+    private async Task DeleteField(CustomField f)
+    {
+        var n = usage.GetValueOrDefault(f.Id);
+        if (!await Dialogs.ConfirmAsync($"Delete {f.Name}?", n == 0 ? "Delete this field?" : $"Delete this field and its values on {n} issue{(n == 1 ? "" : "s")}? This can't be undone.")) return;
+        await Run(() => FieldService.DeleteFieldAsync(f.Id), "Field deleted.");
+    }
+
+    // ----- Components -----
+    private Task SaveComponent() => Run(async () =>
+    {
+        await ComponentsAndVersions.SaveComponentAsync(componentDraft!);
+        componentDraft = null;
+    }, "Component saved.");
+
+    private async Task DeleteComponent(ComponentSummary c)
+    {
+        if (!await Dialogs.ConfirmAsync($"Delete {c.Component.Name}?", $"Delete this component? {c.TotalIssues} issue(s) will no longer be in it.")) return;
+        await Run(() => ComponentsAndVersions.DeleteComponentAsync(c.Component.Id), "Component deleted.");
+    }
+
+    // ----- Templates -----
+    private void EditTemplate(IssueTemplate t)
+    {
+        templateDraft = new IssueTemplate { Id = t.Id, ProjectId = t.ProjectId, Name = t.Name, Type = t.Type, TitlePrefix = t.TitlePrefix, Body = t.Body };
+        templateLabels = t.LabelIds.ToList();
+    }
+
+    private Task SaveTemplate() => Run(async () =>
+    {
+        templateDraft!.LabelIds = templateLabels.ToList();
+        await Templates.SaveAsync(templateDraft);
+        templateDraft = null;
+    }, "Template saved.");
+
+    private async Task DeleteTemplate(IssueTemplate t)
+    {
+        if (!await Dialogs.ConfirmAsync($"Delete {t.Name}?", "Delete this template?")) return;
+        await Run(() => Templates.DeleteAsync(t.Id), "Template deleted.");
+    }
+
+    // ----- Time tracking -----
+    private Task SaveHours() => Run(() => Time.SetHoursPerDayAsync(project!.Id, hoursPerDay), "Hours per day saved.");
+}

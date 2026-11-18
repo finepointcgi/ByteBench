@@ -1,0 +1,127 @@
+@* Issue detail: the work log (who spent how long, when) with "Log work". Authors edit their own entries; authors and
+   Maintainers+ delete them. *@
+@inject TimeTrackingService Time
+@inject ProjectAccess Access
+@inject CurrentUser Me
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="mt-4" Style="overflow:hidden" id="work-log">
+    <div class="wl-head">
+        <MudIcon Icon="@Icons.Material.Outlined.Timer" Size="Size.Small" />
+        <b>Work log</b>
+        <span class="mud-text-secondary wl-total">@(logs.Count == 0 ? "nothing logged" : $"{Duration.Format(logs.Sum(l => l.Minutes), hoursPerDay)} in {logs.Count} {(logs.Count == 1 ? "entry" : "entries")}")</span>
+        @if (perms.Can(Permission.EditIssues) && form == null)
+        {
+            <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Class="ml-auto" OnClick="() => Open(null)">Log work</MudButton>
+        }
+    </div>
+    @if (form != null)
+    {
+        <div class="wl-form">
+            <MudTextField T="string" @bind-Value="form.Spent" Label="Time spent" Placeholder="e.g. 1h 30m" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          AutoFocus="true" Class="wl-spent" HelperText="@($"w, d ({hoursPerDay} h), h, m")" />
+            <MudDatePicker @bind-Date="form.Date" Label="Date" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="yyyy-MM-dd" Editable="true"
+                           MaxDate="DateTime.Today.AddDays(1)" Class="wl-date" />
+            <MudTextField T="string" @bind-Value="form.Comment" Label="What did you work on?" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          MaxLength="TimeTrackingService.MaxCommentLength" Class="wl-comment" />
+            <div class="d-flex gap-2 align-center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Save">@(form.Id == null ? "Log" : "Save")</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => { form = null; error = null; }">Cancel</MudButton>
+            </div>
+        </div>
+        @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block px-4 pb-2">@error</MudText> }
+    }
+    @if (logs.Count > 0)
+    {
+        <ul class="wl-list">
+            @foreach (var l in logs)
+            {
+                var (canEdit, canDelete) = TimeTrackingService.Rights(l, Me.Id, perms);
+                <li @key="l.Id">
+                    <Avatar User="l.User" Size="20" Link />
+                    <span class="wl-who"><UserLink User="l.User" /></span>
+                    <b class="wl-mins">@Duration.Format(l.Minutes, hoursPerDay)</b>
+                    <span class="mud-text-secondary wl-day">@l.Date.ToString("ddd, MMM d")</span>
+                    @if (l.Comment != null) { <span class="wl-text" title="@l.Comment">@l.Comment</span> }
+                    <span class="wl-actions">
+                        @if (canEdit)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" title="Edit" aria-label="Edit work log" OnClick="() => Open(l)" />
+                        }
+                        @if (canDelete)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" title="Delete" aria-label="Delete work log" OnClick="() => Delete(l)" />
+                        }
+                    </span>
+                </li>
+            }
+        </ul>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private sealed class Form
+    {
+        public int? Id;
+        public string? Spent;
+        public DateTime? Date = DateTime.Today;
+        public string? Comment;
+    }
+
+    private List<WorkLog> logs = [];
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private int hoursPerDay = Duration.DefaultHoursPerDay;
+    private Form? form;
+    private string? error;
+    private (int, DateTime) loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == (Issue.Id, Issue.UpdatedAt)) return;
+        if (loadedFor.Item1 != Issue.Id)
+        {
+            perms = await Access.GetPermissionsAsync(Issue.ProjectId);
+            hoursPerDay = await Time.GetHoursPerDayAsync(Issue.ProjectId);
+        }
+        loadedFor = (Issue.Id, Issue.UpdatedAt);
+        logs = await Time.GetWorkLogsAsync(Issue.Id);
+    }
+
+    private void Open(WorkLog? l)
+    {
+        error = null;
+        form = l == null ? new Form() : new Form { Id = l.Id, Spent = Duration.Format(l.Minutes, hoursPerDay), Date = l.Date, Comment = l.Comment };
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        try
+        {
+            int minutes;
+            try { minutes = Duration.Parse(form!.Spent, hoursPerDay) ?? throw new InvalidOperationException("Enter the time spent, e.g. 1h 30m."); }
+            catch (FormatException ex) { throw new InvalidOperationException(ex.Message); }
+            var date = form.Date ?? DateTime.Today;
+            if (form.Id is { } id) await Time.UpdateWorkLogAsync(id, minutes, date, form.Comment);
+            else await Time.AddWorkLogAsync(Issue.Id, minutes, date, form.Comment);
+            Snackbar.Add(form.Id == null ? $"Logged {Duration.Format(minutes, hoursPerDay)}." : "Work log updated.", Severity.Success);
+            form = null;
+            logs = await Time.GetWorkLogsAsync(Issue.Id);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Delete(WorkLog l)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete work log", $"Delete {Duration.Format(l.Minutes, hoursPerDay)} logged by {l.User.DisplayName} on {l.Date:MMM d}?")) return;
+        try
+        {
+            await Time.DeleteWorkLogAsync(l.Id);
+            logs = await Time.GetWorkLogsAsync(Issue.Id);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

@@ -1,0 +1,112 @@
+@page "/p/{Key}/timesheet"
+@using GitBench.Services.Fields
+@using GitBench.Components.Fields
+@inject IssueService Issues
+@inject TimeTrackingService Time
+@inject NavigationManager Nav
+
+<PageTitle>Timesheet · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+<div class="pts-page">
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Timesheet</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name · hours logged per person</MudText>
+        </div>
+        <div class="d-flex align-center gap-1">
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" aria-label="Earlier" OnClick="() => Go(-7)" />
+            <MudText Typo="Typo.subtitle2">Week of @week.ToString("MMM d, yyyy")</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" aria-label="Later" OnClick="() => Go(7)" />
+            @if (week != TimeTrackingService.WeekStart(DateTime.Today))
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => Go(null)">This week</MudButton>
+            }
+        </div>
+    </div>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-1">By person and week</MudText>
+    <MudPaper Outlined="true" Class="pa-2 mb-4">
+        <div class="pts-scroll">
+            <table class="pts">
+                <thead>
+                    <tr>
+                        <th class="pts-first">Person</th>
+                        @foreach (var w in Weeks)
+                        {
+                            <th class="@(w == week ? "current" : "")"><a href="/p/@project.Key/timesheet?week=@w.ToString("yyyy-MM-dd")">@w.ToString("MMM d")</a></th>
+                        }
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var person in report.GroupBy(e => e.UserName).OrderBy(g => g.Key))
+                    {
+                        <tr @key="person.Key">
+                            <td class="pts-first">@person.Key</td>
+                            @foreach (var w in Weeks)
+                            {
+                                var m = person.Where(e => TimeTrackingService.WeekStart(e.Date) == w).Sum(e => e.Minutes);
+                                <td class="@(w == week ? "current" : "")">@(m == 0 ? "" : Duration.Hours(m))</td>
+                            }
+                            <td class="pts-total">@Duration.Hours(person.Sum(e => e.Minutes))</td>
+                        </tr>
+                    }
+                    @if (report.Count == 0) { <tr><td colspan="@(Weeks.Count + 2)" class="mud-text-secondary pts-empty">No work logged in these weeks.</td></tr> }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td class="pts-first">Total</td>
+                        @foreach (var w in Weeks)
+                        {
+                            var m = report.Where(e => TimeTrackingService.WeekStart(e.Date) == w).Sum(e => e.Minutes);
+                            <td>@(m == 0 ? "" : Duration.Hours(m))</td>
+                        }
+                        <td class="pts-total">@Duration.Hours(report.Sum(e => e.Minutes))</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </MudPaper>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-1">Week of @week.ToString("MMM d") by day</MudText>
+    <MudPaper Outlined="true" Class="pa-2">
+        <WeekGrid Entries="WeekEntries" WeekStart="week" ByUser="true" HoursPerDay="project.HoursPerDay" />
+    </MudPaper>
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "week")] public string? WeekParam { get; set; }
+
+    private const int WeekCount = 8;
+    private Project? project;
+    private bool notFound;
+    private DateTime week;
+    private List<TimesheetEntry> report = [];
+
+    /// <summary>The eight weeks ending with the selected one.</summary>
+    private List<DateTime> Weeks => Enumerable.Range(0, WeekCount).Select(i => week.AddDays(-7 * (WeekCount - 1 - i))).ToList();
+    private List<TimesheetEntry> WeekEntries => report.Where(e => e.Date >= week && e.Date < week.AddDays(7)).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        week = TimeTrackingService.WeekStart(DateTime.TryParse(WeekParam, out var d) ? d : DateTime.Today);
+        report = await Time.GetProjectEntriesAsync(project.Id, Weeks[0], week.AddDays(7));
+    }
+
+    private void Go(int? days)
+    {
+        var target = days is { } n ? week.AddDays(n) : TimeTrackingService.WeekStart(DateTime.Today);
+        Nav.NavigateTo($"/p/{project!.Key}/timesheet?week={target:yyyy-MM-dd}");
+    }
+}

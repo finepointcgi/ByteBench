@@ -302,6 +302,45 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureGroups(b);
         ConfigurePrFeatures(b);
         ConfigureSsh(b);
+        ConfigureCustomFieldsTime(b);
+    }
+
+    // ----- Custom fields & time -----
+    public DbSet<CustomField> CustomFields => Set<CustomField>();
+    public DbSet<CustomFieldValue> CustomFieldValues => Set<CustomFieldValue>();
+    public DbSet<ProjectComponent> ProjectComponents => Set<ProjectComponent>();
+    public DbSet<ProjectVersion> ProjectVersions => Set<ProjectVersion>();
+    public DbSet<IssueVersion> IssueVersions => Set<IssueVersion>();
+    public DbSet<IssueTemplate> IssueTemplates => Set<IssueTemplate>();
+    public DbSet<WorkLog> WorkLogs => Set<WorkLog>();
+
+    private static void ConfigureCustomFieldsTime(ModelBuilder b)
+    {
+        b.Entity<CustomField>().HasIndex(f => new { f.ProjectId, f.Key }).IsUnique();
+        b.Entity<CustomField>().HasOne<Project>().WithMany().HasForeignKey(f => f.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CustomFieldValue>().HasIndex(v => new { v.IssueId, v.FieldId });
+        b.Entity<CustomFieldValue>().HasIndex(v => new { v.FieldId, v.TextValue });
+        b.Entity<CustomFieldValue>().HasOne<Issue>().WithMany(i => i.CustomFieldValues).HasForeignKey(v => v.IssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CustomFieldValue>().HasOne(v => v.Field).WithMany().HasForeignKey(v => v.FieldId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<CustomFieldValue>().HasOne(v => v.User).WithMany().HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<ProjectComponent>().HasIndex(c => new { c.ProjectId, c.Name }).IsUnique();
+        b.Entity<ProjectComponent>().HasOne<Project>().WithMany().HasForeignKey(c => c.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ProjectComponent>().HasOne(c => c.Lead).WithMany().HasForeignKey(c => c.LeadId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<ProjectComponent>().HasOne(c => c.DefaultAssignee).WithMany().HasForeignKey(c => c.DefaultAssigneeId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<Issue>().HasMany(i => i.Components).WithMany(c => c.Issues).UsingEntity("IssueComponents");
+        b.Entity<ProjectVersion>().HasIndex(v => new { v.ProjectId, v.Name }).IsUnique();
+        b.Entity<ProjectVersion>().HasOne<Project>().WithMany().HasForeignKey(v => v.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<IssueVersion>().HasKey(v => new { v.IssueId, v.VersionId, v.Kind });
+        b.Entity<IssueVersion>().HasIndex(v => new { v.VersionId, v.Kind });
+        b.Entity<IssueVersion>().HasOne<Issue>().WithMany(i => i.VersionLinks).HasForeignKey(v => v.IssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<IssueVersion>().HasOne(v => v.Version).WithMany().HasForeignKey(v => v.VersionId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<IssueTemplate>().HasIndex(t => t.ProjectId);
+        b.Entity<IssueTemplate>().HasOne<Project>().WithMany().HasForeignKey(t => t.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<WorkLog>().HasIndex(w => new { w.IssueId, w.Date });
+        b.Entity<WorkLog>().HasIndex(w => new { w.UserId, w.Date });
+        b.Entity<WorkLog>().HasOne(w => w.Issue).WithMany().HasForeignKey(w => w.IssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<WorkLog>().HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Project>().Property(p => p.HoursPerDay).HasDefaultValue(8);
     }
 
     // ----- PR features: drafts, comment threads, suggestions, merge strategies -----

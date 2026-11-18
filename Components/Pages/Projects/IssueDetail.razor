@@ -106,6 +106,7 @@ else if (issue != null && project != null)
             <GitBench.Components.LinkedWork.ChildIssuesPanel Issue="issue" />
             <GitBench.Components.LinkedWork.LinkedIssuesPanel Issue="issue" />
             <AttachmentsPanel IssueId="issue.Id" Perms="perms" />
+            <GitBench.Components.Fields.WorkLogPanel Issue="issue" />
 
             <!-- Timeline: comments + activity -->
             <MudText Typo="Typo.subtitle1" Class="id-section-title">Activity</MudText>
@@ -247,6 +248,7 @@ else if (issue != null && project != null)
                     <MudDatePicker @key="(nameof(SetDue), fieldsVersion)" Date="issue.DueDate" DateChanged="SetDue" Label="Due date" Disabled="@(!CanEdit)"
                                    Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DateFormat="yyyy-MM-dd" Editable="true" />
                 </MudStack>
+                <GitBench.Components.Fields.IssueFieldsPanel Issue="issue" />
                 <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
                 <div class="id-reporter">
                     <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName Link /></div>

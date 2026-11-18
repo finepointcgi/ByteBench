@@ -1,0 +1,146 @@
+@* Issue list: component, version and custom field filters (IssueFilter.ComponentId / FixVersionId / AffectsVersionId / Cf)
+   and the optional columns menu (IssueFilter.Columns). Also loads the column values for the listed issues into Data. *@
+@inject CustomFieldService FieldService
+@inject ComponentVersionService ComponentsAndVersions
+@inject TimeTrackingService Time
+@inject IssueService IssueSvc
+
+@if (components.Count > 0)
+{
+    <MudSelect T="int?" Value="Filter.ComponentId" ValueChanged="v => Set(() => Filter.ComponentId = v)" Label="Component" Clearable="true" Dense="true"
+               Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="ComponentName" aria-label="Component">
+        <MudSelectItem T="int?" Value="0">No component</MudSelectItem>
+        @foreach (var c in components) { <MudSelectItem T="int?" Value="c.Component.Id">@c.Component.Name</MudSelectItem> }
+    </MudSelect>
+}
+@if (versions.Count > 0)
+{
+    <MudSelect T="int?" Value="Filter.FixVersionId" ValueChanged="v => Set(() => Filter.FixVersionId = v)" Label="Fix version" Clearable="true" Dense="true"
+               Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => VersionName(id, "No fix version"))" aria-label="Fix version">
+        <MudSelectItem T="int?" Value="0">No fix version</MudSelectItem>
+        @foreach (var v in versions) { <MudSelectItem T="int?" Value="v.Id">@v.Name@(v.IsReleased ? " (released)" : "")</MudSelectItem> }
+    </MudSelect>
+    <MudSelect T="int?" Value="Filter.AffectsVersionId" ValueChanged="v => Set(() => Filter.AffectsVersionId = v)" Label="Affects version" Clearable="true" Dense="true"
+               Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(id => VersionName(id, "No affects version"))" aria-label="Affects version">
+        <MudSelectItem T="int?" Value="0">No affects version</MudSelectItem>
+        @foreach (var v in versions) { <MudSelectItem T="int?" Value="v.Id">@v.Name</MudSelectItem> }
+    </MudSelect>
+}
+@if (fields.Count > 0)
+{
+    <MudSelect T="string" Value="CfKey" ValueChanged="SetCfKey" Label="Custom field" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+               ToStringFunc="@(k => fields.FirstOrDefault(f => f.Key == k)?.Name ?? k ?? "")" aria-label="Custom field filter">
+        @foreach (var f in fields) { <MudSelectItem T="string" Value="f.Key">@f.Name</MudSelectItem> }
+    </MudSelect>
+    @if (fields.FirstOrDefault(f => f.Key == CfKey) is { } cf)
+    {
+        @if (CustomFieldRules.HasOptions(cf.Type) || cf.Type is CustomFieldType.Checkbox or CustomFieldType.User)
+        {
+            <MudSelect T="string" Value="CfValue" ValueChanged="SetCfValue" Label="@($"{cf.Name} is")" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       ToStringFunc="@(v => v == "" ? "(empty)" : cf.Type == CustomFieldType.User ? users.FirstOrDefault(u => u.UserName == v)?.DisplayName ?? v : v)">
+                <MudSelectItem T="string" Value="@("")">(empty)</MudSelectItem>
+                @foreach (var (value, text) in Choices(cf)) { <MudSelectItem T="string" Value="value">@text</MudSelectItem> }
+            </MudSelect>
+        }
+        else
+        {
+            <MudTextField T="string" Value="CfValue" ValueChanged="SetCfValue" Label="@($"{cf.Name} is")" Placeholder="@(cf.Type == CustomFieldType.Date ? "yyyy-MM-dd" : "")"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Empty: no value" />
+        }
+    }
+}
+<MudMenu Icon="@Icons.Material.Outlined.ViewColumn" Dense="true" title="Columns" aria-label="Choose columns" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+    <MudText Typo="Typo.caption" Class="mud-text-secondary px-4 pt-2 d-block">Columns</MudText>
+    @foreach (var col in AvailableColumns)
+    {
+        var on = Filter.ColumnList.Contains(col);
+        <MudMenuItem OnClick="() => ToggleColumn(col)" AutoClose="false" Icon="@(on ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)">@Data.Title(col)</MudMenuItem>
+    }
+</MudMenu>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public IssueFilter Filter { get; set; } = null!;
+    [Parameter, EditorRequired] public List<Issue> Issues { get; set; } = null!;
+    [Parameter, EditorRequired] public IssueColumnData Data { get; set; } = null!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Raised after new column values are in <see cref="Data"/>, so the list re-renders.</summary>
+    [Parameter] public EventCallback OnDataLoaded { get; set; }
+
+    private List<CustomField> fields = [];
+    private List<ComponentSummary> components = [];
+    private List<ProjectVersion> versions = [];
+    private List<User> users = [];
+    private int loadedFor;
+    private List<Issue>? loadedIssues;
+    private string? loadedColumns;
+
+    private string? CfKey => IssueFilter.ParseCf(Filter.Cf)?.Key;
+    private string? CfValue => IssueFilter.ParseCf(Filter.Cf)?.Value;
+
+    private IEnumerable<string> AvailableColumns =>
+        fields.Select(f => f.Key).Concat([IssueColumnData.ComponentsColumn, IssueColumnData.FixVersionsColumn, IssueColumnData.TimeSpentColumn, IssueColumnData.EstimateColumn]);
+
+    private string ComponentName(int? id) => id switch { null => "", 0 => "No component", _ => components.FirstOrDefault(c => c.Component.Id == id)?.Component.Name ?? $"#{id}" };
+
+    private string VersionName(int? id, string none) => id switch { null => "", 0 => none, _ => versions.FirstOrDefault(v => v.Id == id)?.Name ?? $"#{id}" };
+
+    private IEnumerable<(string Value, string Text)> Choices(CustomField f) => f.Type switch
+    {
+        CustomFieldType.Checkbox => [("true", "Yes"), ("false", "No")],
+        CustomFieldType.User => users.Select(u => (u.UserName ?? "", u.DisplayName)),
+        _ => f.Options.Select(o => (o, o)),
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor != Project.Id)
+        {
+            loadedFor = Project.Id;
+            fields = await FieldService.GetFieldsAsync(Project.Id);
+            components = await ComponentsAndVersions.GetComponentsAsync(Project.Id);
+            versions = await ComponentsAndVersions.GetVersionListAsync(Project.Id);
+            users = await IssueSvc.GetUsersAsync();
+            Data.Fields = fields;
+            Data.HoursPerDay = await Time.GetHoursPerDayAsync(Project.Id);
+        }
+        if (ReferenceEquals(loadedIssues, Issues) && loadedColumns == Filter.Columns) return;
+        loadedIssues = Issues;
+        loadedColumns = Filter.Columns;
+        await LoadColumnsAsync();
+        await OnDataLoaded.InvokeAsync();
+    }
+
+    private async Task LoadColumnsAsync()
+    {
+        var cols = Filter.ColumnList.Where(c => AvailableColumns.Contains(c)).ToList();
+        Data.Columns = cols;
+        if (cols.Count == 0 || Issues.Count == 0) return;
+        var ids = Issues.Select(i => i.Id).ToList();
+        if (cols.Any(c => fields.Any(f => f.Key == c)))
+        {
+            Data.Values = await FieldService.GetValuesAsync(ids);
+            Data.UserNames = users.ToDictionary(u => u.Id, u => u.DisplayName);
+        }
+        if (cols.Contains(IssueColumnData.ComponentsColumn) || cols.Contains(IssueColumnData.FixVersionsColumn))
+            (Data.Components, Data.FixVersions) = await ComponentsAndVersions.GetNamesForIssuesAsync(ids);
+        if (cols.Contains(IssueColumnData.TimeSpentColumn)) Data.Spent = await Time.GetSpentAsync(ids);
+    }
+
+    private async Task Set(Action change)
+    {
+        change();
+        await OnChanged.InvokeAsync();
+    }
+
+    private Task SetCfKey(string? key) => Set(() => Filter.Cf = key == null ? null : key + ":" + (fields.First(f => f.Key == key).Type == CustomFieldType.Checkbox ? "true" : ""));
+
+    private Task SetCfValue(string? value) => Set(() => Filter.Cf = CfKey + ":" + (value ?? "").Replace(",", ""));
+
+    private Task ToggleColumn(string col)
+    {
+        var list = Filter.ColumnList.ToList();
+        if (!list.Remove(col)) list.Add(col);
+        return Set(() => Filter.Columns = list.Count == 0 ? null : string.Join(",", list));
+    }
+}

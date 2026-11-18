@@ -1,0 +1,3 @@
+.cf-url { display: flex; align-items: flex-start; gap: 4px; }
+.cf-url ::deep .mud-input-control { flex: 1; min-width: 0; }
+.cf-open { display: inline-flex; padding: 10px 2px; color: var(--mud-palette-primary); }

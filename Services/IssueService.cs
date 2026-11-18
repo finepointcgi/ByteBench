@@ -162,6 +162,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         if (f.Type is { } t) q = q.Where(i => i.Type == t);
         if (f.Priority is { } p) q = q.Where(i => i.Priority == p);
         q = f.ApplyLinkedWork(q);
+        q = f.ApplyFields(q); // components, versions, custom field
         if (f.SprintId is { } sp) q = sp == 0 ? q.Where(i => i.SprintId == null) : q.Where(i => i.SprintId == sp);
 
         q = f.Sort switch
@@ -240,6 +241,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
             issue.SprintId = await db.Issues.Where(i => i.Id == parentId).Select(i => i.SprintId).FirstOrDefaultAsync();
         await ReconcileStatusAsync(issue, null, null); // picks the workflow status (or the category's first one)
         if (issue.Status.IsClosed()) issue.ClosedAt ??= DateTime.UtcNow;
+        await Fields.CustomFieldService.PrepareNewIssueAsync(db, access, issue); // custom fields, components, versions, estimates
 
         db.Issues.Add(issue);
         await db.SaveChangesAsync();
