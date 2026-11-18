@@ -1839,3 +1839,50 @@ public class Deployment
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? FinishedAt { get; set; }
 }
+
+// ----- Web editor -----
+
+/// <summary>What a <see cref="EditorWorkspaceChange"/> does to a file, relative to the workspace's base commit.</summary>
+public enum EditorChangeKind { Added, Modified, Deleted, Renamed }
+
+/// <summary>
+/// One user's uncommitted edits to one branch of a repository in the web editor (Services/Editor). Changes are kept
+/// against <see cref="BaseSha"/>, the branch tip when editing started; committing writes them on top of the branch.
+/// </summary>
+public class EditorWorkspace
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    [Required, MaxLength(250)] public string Branch { get; set; } = "";
+    [Required, MaxLength(40)] public string BaseSha { get; set; } = "";
+    public List<EditorWorkspaceChange> Changes { get; set; } = [];
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// A changed file in an <see cref="EditorWorkspace"/>: added, modified or deleted at <see cref="Path"/>, or renamed from
+/// <see cref="OriginalPath"/> to <see cref="Path"/> (possibly with new content). <see cref="Content"/> is null for a delete.
+/// </summary>
+public class EditorWorkspaceChange
+{
+    public int Id { get; set; }
+    public int WorkspaceId { get; set; }
+    [Required, MaxLength(1000)] public string Path { get; set; } = "";
+    [MaxLength(1000)] public string? OriginalPath { get; set; }
+    public EditorChangeKind Kind { get; set; }
+    public string? Content { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Per-project web editor settings (Maintainer+). No row means the defaults.</summary>
+public class ProjectEditorSettings
+{
+    public int ProjectId { get; set; }
+    /// <summary>The AI assistant, inline actions and completions in the web editor. On by default (when AI is configured).</summary>
+    public bool AiEnabled { get; set; } = true;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}

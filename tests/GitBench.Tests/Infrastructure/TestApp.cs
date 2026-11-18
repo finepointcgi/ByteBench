@@ -5,6 +5,7 @@ using GitBench.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,9 @@ public class TestApp : WebApplicationFactory<Program>
     /// <summary>Extra configuration for a derived fixture (e.g. turning CI back on).</summary>
     protected virtual void AddSettings(IDictionary<string, string?> settings) { }
 
+    /// <summary>Service replacements for a derived fixture (e.g. a fake AI model), applied after Program.cs.</summary>
+    protected virtual void ConfigureServices(IServiceCollection services) { }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         var settings = new Dictionary<string, string?>
@@ -39,6 +43,9 @@ public class TestApp : WebApplicationFactory<Program>
             ["Attachments:Root"] = AttachmentRoot,
             ["Ai:Enabled"] = "false",
             ["Ai:ApiKey"] = "",
+            // The web editor's AI: never the real Claude Code on this machine (WebEditorClaudeCodeTests uses a fake one).
+            ["Ai:Editor:Backend"] = "Api",
+            ["Ai:ClaudeCode:Path"] = Path.Combine(DataRoot, "no-claude-here"),
             ["Ci:Enabled"] = "false",
             ["Ci:WorkDirectory"] = Path.Combine(DataRoot, "ci"),
             ["Ci:ArtifactsRoot"] = Path.Combine(DataRoot, "ci-artifacts"),
@@ -54,6 +61,7 @@ public class TestApp : WebApplicationFactory<Program>
         foreach (var (k, v) in settings) builder.UseSetting(k, v);
         builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(settings));
         builder.ConfigureLogging(l => l.SetMinimumLevel(LogLevel.Warning));
+        builder.ConfigureTestServices(ConfigureServices);
     }
 
     protected override void Dispose(bool disposing)

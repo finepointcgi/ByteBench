@@ -31,6 +31,17 @@ public sealed class PushCapture
 
     public IReadOnlyList<PushedRef> Refs => refs ??= Buffer == null ? [] : Parse(Buffer.ToArray(), Gzipped);
 
+    /// <summary>
+    /// Records ref updates GitBench made itself (a web editor commit), so the push listeners that read this capture see
+    /// them exactly as they would see a git push's.
+    /// </summary>
+    public void SetRefs(IReadOnlyList<PushedRef> updates)
+    {
+        Buffer = new MemoryStream();
+        Gzipped = false;
+        refs = updates;
+    }
+
     /// <summary>Parses pkt-lines "XXXX&lt;old&gt; &lt;new&gt; &lt;ref&gt;[\0caps]\n" up to the first flush packet.</summary>
     public static IReadOnlyList<PushedRef> Parse(byte[] data, bool gzipped)
     {

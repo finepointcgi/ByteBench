@@ -338,6 +338,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureSsoLdap(b);
         ConfigureCustomFieldsTime(b);
         ConfigureCiExtras(b);
+        ConfigureWebEditor(b);
     }
 
     // ----- Forks -----
@@ -522,5 +523,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<AutomationRule>().ToTable(t => t.HasCheckConstraint("CK_AutomationRules_Scope", "(\"ProjectId\" IS NULL) <> (\"GroupId\" IS NULL)"));
         b.Entity<AutomationRun>().HasIndex(r => new { r.RuleId, r.StartedAt });
         b.Entity<AutomationRun>().HasOne(r => r.Rule).WithMany().HasForeignKey(r => r.RuleId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    // ----- Web editor -----
+    public DbSet<EditorWorkspace> EditorWorkspaces => Set<EditorWorkspace>();
+    public DbSet<EditorWorkspaceChange> EditorWorkspaceChanges => Set<EditorWorkspaceChange>();
+    public DbSet<ProjectEditorSettings> ProjectEditorSettings => Set<ProjectEditorSettings>();
+
+    private static void ConfigureWebEditor(ModelBuilder b)
+    {
+        b.Entity<EditorWorkspace>().HasIndex(w => new { w.UserId, w.RepositoryId, w.Branch }).IsUnique();
+        b.Entity<EditorWorkspace>().HasIndex(w => w.RepositoryId);
+        b.Entity<EditorWorkspace>().HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<EditorWorkspace>().HasOne(w => w.Repository).WithMany().HasForeignKey(w => w.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<EditorWorkspaceChange>().HasIndex(c => new { c.WorkspaceId, c.Path }).IsUnique();
+        b.Entity<EditorWorkspaceChange>().HasOne<EditorWorkspace>().WithMany(w => w.Changes).HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ProjectEditorSettings>().HasKey(s => s.ProjectId);
+        b.Entity<ProjectEditorSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
     }
 }
