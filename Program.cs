@@ -113,6 +113,10 @@ GitBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(bu
 GitBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
 builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import
+// ----- Forks & cross-fork pull requests -----
+builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
+builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
+builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme

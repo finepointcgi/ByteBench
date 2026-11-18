@@ -42,7 +42,7 @@ public static partial class GitOps
         lock (LockFor(path))
         {
             using var r = new LgRepository(path);
-            var sb = r.Branches[source];
+            var sb = SourceTip(r, source);
             var tb = r.Branches[target];
             if (sb?.Tip == null || tb?.Tip == null)
                 return Failed($"Branch '{(sb?.Tip == null ? source : target)}' no longer exists.");
@@ -71,7 +71,7 @@ public static partial class GitOps
         lock (LockFor(path))
         {
             using var r = new LgRepository(path);
-            var sb = r.Branches[source];
+            var sb = SourceTip(r, source);
             var tb = r.Branches[target];
             if (sb?.Tip == null || tb?.Tip == null)
                 return Failed($"Branch '{(sb?.Tip == null ? source : target)}' no longer exists.");

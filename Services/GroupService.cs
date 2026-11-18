@@ -193,7 +193,7 @@ public partial class GroupService(IDbContextFactory<AppDbContext> dbFactory, Pro
         var ids = await ProjectIdsAsync(groupId);
         if (ids.Count == 0) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
-        var q = db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project).Include(p => p.Author)
+        var q = db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project).Include(p => p.Author).Include(p => p.SourceRepository).ThenInclude(r => r!.Project)
             .Where(p => ids.Contains(p.Repository.ProjectId));
         if (state is { } s) q = q.Where(p => p.State == s);
         return await q.OrderByDescending(p => p.UpdatedAt).Take(500).ToListAsync();

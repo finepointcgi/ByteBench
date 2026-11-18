@@ -16,7 +16,7 @@ public sealed record PipelinePage(List<Pipeline> Items, int Total, int Page, int
 /// Pipeline reads and actions for the UI (scoped). Reads need ViewProject (otherwise they come back empty);
 /// "Run pipeline", "Re-run" and "Cancel" need PushCode.
 /// </summary>
-public class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, CiTriggerService triggers,
+public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, CiTriggerService triggers,
     CiQueue queue, RepoStorage storage, LiveEvents live)
 {
     public bool Enabled => triggers.Enabled;
@@ -38,7 +38,7 @@ public class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
     {
         if (!await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return null;
         await using var db = await dbFactory.CreateDbContextAsync();
-        var p = await db.Pipelines.AsNoTracking().Include(x => x.TriggeredBy)
+        var p = await db.Pipelines.AsNoTracking().Include(x => x.TriggeredBy).Include(x => x.ApprovedBy)
             .Include(x => x.Jobs).ThenInclude(j => j.Steps)
             .FirstOrDefaultAsync(x => x.Id == pipelineId && x.RepositoryId == repo.Id);
         if (p == null) return null;
@@ -105,6 +105,8 @@ public class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
     {
         await access.RequireAsync(repo.ProjectId, Permission.PushCode);
         EnsureEnabled();
+        // Only real branches: a fork PR's refs/pull/{n}/head runs only as a fork pipeline (no CI variables, approval first).
+        if (branch.StartsWith("refs/", StringComparison.Ordinal)) throw new InvalidOperationException($"Branch '{branch}' does not exist.");
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var sha = await Task.Run(() => GitOps.BranchExists(path, branch) ? GitOps.ResolveSha(path, branch) : null)
             ?? throw new InvalidOperationException($"Branch '{branch}' does not exist.");
@@ -119,7 +121,7 @@ public class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
         await using var db = await dbFactory.CreateDbContextAsync();
         var old = await db.Pipelines.FirstOrDefaultAsync(p => p.Id == pipelineId && p.RepositoryId == repo.Id)
             ?? throw new InvalidOperationException("Pipeline not found.");
-        return await CreateManualAsync(repo, old.Ref, old.CommitSha, PipelineTrigger.Retry, old.PullRequestId);
+        return await CreateManualAsync(repo, old.Ref, old.CommitSha, PipelineTrigger.Retry, old.PullRequestId, old.IsForkPullRequest);
     }
 
     /// <summary>Cancels a queued or running pipeline (running containers are killed). Needs PushCode.</summary>
@@ -147,18 +149,20 @@ public class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
             throw new InvalidOperationException("This pipeline is not running.");
     }
 
-    private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null)
+    private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null, bool forkPullRequest = false)
     {
         var def = await triggers.LoadDefinitionAsync(repo, sha)
             ?? throw new InvalidOperationException($"There is no {CiFile.FileName} at the root of '{branch}' ({sha[..7]}).");
         if (prId == null)
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            prId = await db.PullRequests.Where(p => p.RepositoryId == repo.Id && p.State == PullRequestState.Open && p.SourceBranch == branch)
+            prId = await db.PullRequests.Where(p => p.RepositoryId == repo.Id && p.State == PullRequestState.Open && !p.IsCrossFork && p.SourceBranch == branch)
                 .Select(p => (int?)p.Id).FirstOrDefaultAsync();
         }
         var userId = await access.ResolveUserIdAsync();
-        return await triggers.CreateAsync(repo, branch, sha, trigger, userId, prId, def, dedupe: false)
+        // Re-running a fork PR's pipeline: a Maintainer's re-run counts as their approval; anyone else's waits for one.
+        int? approvedBy = forkPullRequest && await access.CanAsync(repo.ProjectId, Permission.MergePullRequest) ? userId : null;
+        return await triggers.CreateAsync(repo, branch, sha, trigger, userId, prId, def, dedupe: false, forkPullRequest: forkPullRequest, approvedById: approvedBy)
             ?? throw new InvalidOperationException("The pipeline could not be created.");
     }
 

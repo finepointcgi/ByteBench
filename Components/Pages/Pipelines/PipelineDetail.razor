@@ -52,6 +52,23 @@ else if (Repo != null && pipeline != null)
 
     @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
     @if (p.Error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3 ci-error">@p.Error</MudAlert> }
+    @if (p.AwaitingApproval && p.Status == PipelineStatus.Queued)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3" Icon="@Icons.Material.Outlined.CallSplit">
+            This pipeline runs code from a pull request from a fork, so it waits until a Maintainer approves it. It never gets this project's CI variables.
+            @if (perms.Can(Permission.MergePullRequest) && Pipelines.Enabled)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="ml-2" StartIcon="@Icons.Material.Filled.PlayArrow"
+                           Disabled="@busy" OnClick="Approve">Approve and run</MudButton>
+            }
+        </MudAlert>
+    }
+    else if (p.IsForkPullRequest)
+    {
+        <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-3">
+            Pull request from a fork: runs without CI variables.@(p.ApprovedBy != null ? $" Approved by {p.ApprovedBy.DisplayName}." : "")
+        </MudText>
+    }
 
     @if (p.Jobs.Count > 0)
     {
@@ -212,6 +229,15 @@ else if (Repo != null && pipeline != null)
         Error = null;
         busy = true;
         try { await Pipelines.CancelAsync(Repo!, Id); await LoadAsync(); }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Approve()
+    {
+        Error = null;
+        busy = true;
+        try { await Pipelines.ApproveAsync(Repo!, Id); await LoadAsync(); }
         catch (InvalidOperationException ex) { Error = ex.Message; }
         finally { busy = false; }
     }

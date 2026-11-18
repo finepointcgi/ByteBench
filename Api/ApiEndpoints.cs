@@ -90,6 +90,7 @@ public static class ApiEndpoints
         api.MapRoadmapDashboardEndpoints(); // roadmap JSON, issue dates, dashboards
         api.MapWikiSnippetEndpoints(); // wiki pages and snippets
         api.MapGqlSearchEndpoints(); // advanced (GQL) issue search
+        api.MapForkEndpoints(); // forks, sync fork
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

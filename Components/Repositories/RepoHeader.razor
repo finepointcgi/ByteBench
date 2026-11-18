@@ -1,6 +1,10 @@
 @* Breadcrumb, title and tab strip shared by every page of a repository. *@
 @inject ProjectAccess Access
 @inject NavigationManager Nav
+@inject GitBench.Services.Forks.ForkService Forks
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject CurrentUser Me
 <div class="repo-crumbs"><MudBreadcrumbs Items="Crumbs" Class="px-0 pt-0 pb-2" /></div>
 <div class="repo-header">
     <div class="repo-title">
@@ -19,6 +23,17 @@
             {
                 <MudText Class="mud-text-secondary" Typo="Typo.body2">@Repo.Description</MudText>
             }
+            @if (forkInfo.Parent is { } parent)
+            {
+                <MudText Class="mud-text-secondary repo-forked-from" Typo="Typo.body2">
+                    <MudIcon Icon="@Icons.Material.Outlined.CallSplit" Size="Size.Small" />
+                    Forked from <a href="@RepoUrls.Base(parent)">@parent.Project.Key/@parent.Slug</a>
+                </MudText>
+            }
+            else if (forkInfo.ParentHidden)
+            {
+                <MudText Class="mud-text-secondary" Typo="Typo.body2">Forked from a repository you can't see</MudText>
+            }
         </div>
     </div>
     <div class="repo-header-actions">
@@ -27,6 +42,21 @@
                           Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" InputType="InputType.Search"
                           aria-label="Search this repository" Class="repo-search-box" />
         </form>
+        @if (forkInfo.Parent != null && canPush)
+        {
+            <MudTooltip Text="@($"Fast-forward {Repo.DefaultBranch} to the upstream's {forkInfo.Parent.DefaultBranch}")">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Sync" Disabled="@syncing" OnClick="Sync">Sync fork</MudButton>
+            </MudTooltip>
+        }
+        @if (forkInfo.Parent != null && canCreatePr)
+        {
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.MergeType"
+                       Href="@GitBench.Services.Forks.ForkUrls.NewPullRequest(Repo)">PR to upstream</MudButton>
+        }
+        <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+            <MudButton StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="Fork">Fork</MudButton>
+            <MudButton Href="@GitBench.Services.Forks.ForkUrls.List(Repo)" title="Forks of this repository" aria-label="@($"{forkInfo.ForkCount} forks")">@forkInfo.ForkCount</MudButton>
+        </MudButtonGroup>
         @ChildContent
     </div>
 </div>
@@ -59,8 +89,9 @@
     [Parameter] public string? Ref { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private bool canManage;
+    private bool canManage, canPush, canCreatePr, syncing;
     private int? permsFor;
+    private GitBench.Services.Forks.ForkInfo forkInfo = new(null, false, 0);
     private string? query;
 
     private List<BreadcrumbItem> Crumbs =>
@@ -75,6 +106,43 @@
         if (permsFor == Repo.ProjectId) return;
         permsFor = Repo.ProjectId;
         canManage = await Access.CanAsync(Repo.ProjectId, Permission.ManageRepositories);
+        canPush = await Access.CanAsync(Repo.ProjectId, Permission.PushCode);
+        canCreatePr = await Access.CanAsync(Repo.ProjectId, Permission.CreatePullRequest);
+        forkInfo = await Forks.GetInfoAsync(Repo);
+    }
+
+    private async Task Fork()
+    {
+        var dialog = await Dialogs.ShowAsync<ForkDialog>("Fork", new DialogParameters<ForkDialog> { { x => x.Upstream, Repo } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is { Canceled: false, Data: Repository fork })
+        {
+            Snackbar.Add($"Forked into {fork.Project.Key}/{fork.Slug}.", Severity.Success);
+            Nav.NavigateTo(RepoUrls.Base(fork));
+        }
+    }
+
+    private async Task Sync()
+    {
+        syncing = true;
+        try
+        {
+            await Me.EnsureLoadedAsync();
+            var r = await Forks.SyncAsync(Repo, Me.Id);
+            var b = Repo.DefaultBranch;
+            var (text, severity) = r.State switch
+            {
+                ForkSyncState.FastForwarded => ($"Synced: {b} fast-forwarded by {r.Behind} commit{(r.Behind == 1 ? "" : "s")}.", Severity.Success),
+                ForkSyncState.UpToDate => ($"{b} is already up to date with the upstream.", Severity.Info),
+                ForkSyncState.Ahead => ($"{b} is {r.Ahead} commit{(r.Ahead == 1 ? "" : "s")} ahead of the upstream, with nothing new to bring in.", Severity.Info),
+                ForkSyncState.Diverged => ($"{b} has diverged from the upstream ({r.Ahead} ahead, {r.Behind} behind), so it wasn't changed. Merge or rebase locally: the upstream's branches are in refs/upstream/*.", Severity.Warning),
+                _ => ("The upstream has no matching default branch.", Severity.Warning),
+            };
+            Snackbar.Add(text, severity);
+            if (r.State == ForkSyncState.FastForwarded) Nav.Refresh(forceReload: true);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { syncing = false; }
     }
 
     private void Search()

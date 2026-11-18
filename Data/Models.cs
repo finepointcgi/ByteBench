@@ -398,7 +398,7 @@ public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, S
 public enum PipelineTrigger { Push, PullRequest, Manual, Retry }
 
 /// <summary>One CI run of <c>.gitbench-ci.yml</c> at a commit on a branch. Run by <see cref="GitBench.Services.Ci.CiRunner"/>.</summary>
-public class Pipeline
+public partial class Pipeline
 {
     public int Id { get; set; }
     public int RepositoryId { get; set; }
@@ -1489,4 +1489,56 @@ public class SnippetComment
     public User Author { get; set; } = null!;
     [Required, MaxLength(20000)] public string Body { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- Forks -----
+
+/// <summary>
+/// Forks: a repository copied into another (or the same) project, with its own history from then on. See
+/// <see cref="GitBench.Services.Forks.ForkService"/>.
+/// </summary>
+public partial class Repository
+{
+    /// <summary>The repository this one was forked from; null for an original, or once the upstream was deleted.</summary>
+    public int? ForkedFromId { get; set; }
+    public Repository? ForkedFrom { get; set; }
+}
+
+/// <summary>
+/// A pull request from a branch of another repository in the same fork network (<see cref="IsCrossFork"/>). Its source
+/// commits are fetched into the target repository at <see cref="SourceRef"/> (<c>refs/pull/{n}/head</c>), which every
+/// diff, merge check and merge reads, and which a push to the fork moves.
+/// </summary>
+public partial class PullRequest
+{
+    /// <summary>The fork that holds <see cref="SourceBranch"/>. Null for same-repository PRs, and once the fork was deleted.</summary>
+    public int? SourceRepositoryId { get; set; }
+    public Repository? SourceRepository { get; set; }
+    /// <summary>True when the source branch lives in another repository (stays true after the fork is deleted).</summary>
+    public bool IsCrossFork { get; set; }
+
+    /// <summary>The ref in the target repository that holds the PR's head: the source branch, or <c>refs/pull/{n}/head</c> for a fork PR.</summary>
+    public string SourceRef => IsCrossFork ? PullHeadRef(Number) : SourceBranch;
+
+    public static string PullHeadRef(int number) => $"refs/pull/{number}/head";
+
+    /// <summary>
+    /// "KEY/slug:branch" for a fork PR ("unknown repository:branch" once the fork is gone), else the branch. Shows the
+    /// fork only when <see cref="SourceRepository"/> and its Project are loaded.
+    /// </summary>
+    public string SourceLabel => !IsCrossFork ? SourceBranch
+        : SourceRepository?.Project is { } p ? $"{p.Key}/{SourceRepository.Slug}:{SourceBranch}"
+        : SourceRepositoryId == null ? $"unknown repository:{SourceBranch}" : SourceBranch;
+}
+
+/// <summary>Pipelines of pull requests from forks: never given CI variables, and run only after a Maintainer approves them.</summary>
+public partial class Pipeline
+{
+    /// <summary>Runs code from a fork PR: <see cref="GitBench.Services.Ci.CiVariableService"/> gives it no CI variables at all.</summary>
+    public bool IsForkPullRequest { get; set; }
+    /// <summary>Queued but held until a Maintainer clicks "Approve and run" (fork PR pipelines); the runner skips it meanwhile.</summary>
+    public bool AwaitingApproval { get; set; }
+    public int? ApprovedById { get; set; }
+    public User? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
 }

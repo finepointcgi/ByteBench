@@ -37,7 +37,7 @@ else if (Repo != null)
     <div class="gb-rows">
         @foreach (var b in branches)
         {
-            var pr = openPrs.FirstOrDefault(p => p.SourceBranch == b.Name);
+            var pr = openPrs.FirstOrDefault(p => !p.IsCrossFork && p.SourceBranch == b.Name);
             var max = Math.Max(1, branches.Max(x => Math.Max(x.Ahead, x.Behind)));
             <div class="branch-row" @key="b.Name">
                 <div class="gb-row-main">

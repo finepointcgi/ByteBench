@@ -89,7 +89,7 @@ else if (project != null)
                     <div class="gb-row-title">@pr.Title</div>
                     <div class="gb-row-meta">
                         <span class="mono">@pr.Repository.Slug#@pr.Number</span>
-                        · <span class="branch-pill">@pr.SourceBranch</span> → <span class="branch-pill">@pr.TargetBranch</span>
+                        · <span class="branch-pill">@pr.SourceLabel</span> → <span class="branch-pill">@pr.TargetBranch</span>
                         · opened @Display.Ago(pr.CreatedAt) by @pr.Author.DisplayName
                         · updated @Display.Ago(pr.UpdatedAt)
                     </div>

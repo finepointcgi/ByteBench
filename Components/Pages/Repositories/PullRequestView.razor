@@ -61,11 +61,24 @@ else if (pr != null)
             }
         </span>
         <span class="pr-branches">
-            <a class="branch-pill" href="@RepoUrls.Source(repo, pr.SourceBranch)">@pr.SourceBranch</a>
+            @if (!pr.IsCrossFork)
+            {
+                <a class="branch-pill" href="@RepoUrls.Source(repo, pr.SourceBranch)">@pr.SourceBranch</a>
+            }
+            else if (pr.SourceRepository?.Project != null)
+            {
+                <a class="branch-pill" href="@RepoUrls.Source(pr.SourceRepository, pr.SourceBranch)" title="A branch of the fork @pr.SourceRepository.Project.Key/@pr.SourceRepository.Slug">
+                    <MudIcon Icon="@Icons.Material.Outlined.CallSplit" Style="font-size: 13px; vertical-align: -2px" /> @pr.SourceLabel
+                </a>
+            }
+            else
+            {
+                <span class="branch-pill" title="The fork was deleted; the pull request keeps its commits">@pr.SourceLabel</span>
+            }
             <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Style="font-size: 14px" Class="muted" />
             <a class="branch-pill" href="@RepoUrls.Source(repo, pr.TargetBranch)">@pr.TargetBranch</a>
         </span>
-        <PipelineBadge Repo="repo" Branch="@pr.SourceBranch" Sha="@(pr.State == PullRequestState.Open ? null : pr.SourceCommitSha)" />
+        <PipelineBadge Repo="repo" Branch="@pr.SourceRef" Sha="@(pr.State == PullRequestState.Open ? null : pr.SourceCommitSha)" />
         @if (threads.Unresolved > 0)
         {
             <a href="@TabUrl("files")" class="pr-threads-link" title="Inline comment threads that aren't resolved yet">
@@ -110,7 +123,7 @@ else if (pr != null)
                             @foreach (var w in owners.Warnings) { <div class="small">@w</div> }
                         </MudAlert>
                     }
-                    <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="@perms.Can(Permission.Comment)" OnComment="AddInlineComment"
+                    <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="@canComment" OnComment="AddInlineComment"
                               Repo="repo" ViewRef="@changes.HeadSha" Outdated="threads.Outdated"
                               CanResolve="@(root => PullRequestService.CanResolve(pr, root, Me.Id, perms))" OnResolve="ResolveThread"
                               CanApplySuggestions="canApply" OnApplySuggestions="ApplySuggestions" FileOwners="owners.Owners" />
@@ -168,7 +181,7 @@ else if (pr != null)
                                     </span>
                                     @if (c.IsThreadRoot && c.IsResolved) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Class="ma-0">Resolved</MudChip> }
                                     @if (c.IsThreadRoot && threads.Outdated.Contains(c.Id)) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="ma-0">Outdated</MudChip> }
-                                    @if (c.AuthorId == Me.Id && perms.Can(Permission.Comment) && editingCommentId != c.Id)
+                                    @if (c.AuthorId == Me.Id && canComment && editingCommentId != c.Id)
                                     {
                                         <span class="ml-auto d-flex">
                                             <MudTooltip Text="Edit comment">
@@ -209,7 +222,7 @@ else if (pr != null)
                     }
                 </div>
 
-                @if (perms.Can(Permission.Comment))
+                @if (canComment)
                 {
                 <div class="pr-card mt-3">
                     <div class="pr-card-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
@@ -268,7 +281,7 @@ else if (pr != null)
                         <MudTextField T="string" @bind-Value="squashMessage" Label="Commit message" Lines="5" Variant="Variant.Outlined" Margin="Margin.Dense"
                                       Class="mt-2" HelperText="Co-authored-by trailers for the other commit authors are added automatically." />
                     }
-                    <MudCheckBox T="bool" @bind-Value="deleteSource" Disabled="@(!CanMerge || pr.SourceBranch == repo.DefaultBranch)" Size="Size.Small" Dense="true"
+                    <MudCheckBox T="bool" @bind-Value="deleteSource" Disabled="@(!CanMerge || pr.IsCrossFork || pr.SourceBranch == repo.DefaultBranch)" Size="Size.Small" Dense="true"
                                  Color="Color.Primary" Class="mt-1">
                         <span class="small">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
                     </MudCheckBox>
@@ -422,7 +435,9 @@ else if (pr != null)
     private string? loadedFor;
     private ProjectPermissions perms = ProjectPermissions.None;
     // The author (with CreatePullRequest) or a Maintainer+ (MergePullRequest) may edit, decline and reopen.
-    private bool CanEditPr => pr != null && ((pr.AuthorId == Me.Id && perms.Can(Permission.CreatePullRequest)) || perms.Can(Permission.MergePullRequest));
+    private bool CanEditPr => pr != null && ((pr.AuthorId == Me.Id && (perms.Can(Permission.CreatePullRequest) || pr.IsCrossFork)) || perms.Can(Permission.MergePullRequest));
+    // A fork PR's author may comment on it with ViewProject alone (see PullRequestService.Forks.cs).
+    private bool canComment;
 
     private string CurrentTab => Tab is "commits" or "files" ? Tab : "overview";
     private string TabUrl(string? tab) => RepoUrls.PullRequest(pr!) + (tab == null ? "" : "?tab=" + tab);
@@ -480,6 +495,7 @@ else if (pr != null)
         watching = await Notifications.IsWatchingPullRequestAsync(Me.Id, pr.Id);
         watcherCount = await Notifications.CountPullRequestWatchersAsync(pr.Id);
         perms = await Access.GetPermissionsAsync(pr.Repository.ProjectId);
+        canComment = perms.Can(Permission.Comment) || (pr.IsCrossFork && pr.AuthorId == Me.Id);
         gate = pr.State == PullRequestState.Open ? await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id) : null;
         if (full)
         {

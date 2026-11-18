@@ -226,7 +226,7 @@ else if (project != null)
             return (c, c == null || c.Commits.Count == 0 ? null : GitOps.CheckMerge(path, source, target));
         });
         existing = (await PRs.ListAsync(project!.Id, PullRequestState.Open, r.Id))
-            .FirstOrDefault(p => p.SourceBranch == source && p.TargetBranch == target);
+            .FirstOrDefault(p => !p.IsCrossFork && p.SourceBranch == source && p.TargetBranch == target);
 
         // Sensible defaults: single commit → its subject; otherwise a humanised branch name.
         if (compare != null)

@@ -163,11 +163,11 @@ public class AiReviewPushListener(IDbContextFactory<AppDbContext> dbFactory, Rep
         var repo = await db.Repositories.Include(r => r.Project).FirstOrDefaultAsync(r => r.Id == repositoryId, ct);
         if (repo == null || !repo.Project.AiReviewEnabled) return;
         var open = await db.PullRequests.Where(p => p.RepositoryId == repositoryId && p.State == PullRequestState.Open)
-            .Select(p => new { p.Id, p.SourceBranch }).ToListAsync(ct);
+            .Select(p => new { p.Id, p.SourceBranch, p.IsCrossFork, p.Number }).ToListAsync(ct);
         if (open.Count == 0) return;
 
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
-        var tips = await Task.Run(() => open.ToDictionary(p => p.Id, p => GitOps.ResolveSha(path, p.SourceBranch)), ct);
+        var tips = await Task.Run(() => open.ToDictionary(p => p.Id, p => GitOps.ResolveSha(path, p.IsCrossFork ? PullRequest.PullHeadRef(p.Number) : p.SourceBranch)), ct);
         foreach (var p in open)
         {
             if (tips[p.Id] is not { } tip) continue;

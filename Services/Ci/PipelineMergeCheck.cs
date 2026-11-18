@@ -22,14 +22,14 @@ public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoS
 
         var path = storage.PathFor(pr.Repository.Project.Key, pr.Repository.Slug);
         var head = pr.State == PullRequestState.Open || pr.SourceCommitSha == null
-            ? await Task.Run(() => GitOps.BranchExists(path, pr.SourceBranch) ? GitOps.ResolveSha(path, pr.SourceBranch) : null, ct)
+            ? await Task.Run(() => GitOps.BranchExists(path, pr.SourceRef) ? GitOps.ResolveSha(path, pr.SourceRef) : null, ct)
             : pr.SourceCommitSha;
         if (head == null) return [];
         if (await Task.Run(() => GitOps.GetBlob(path, head, CiFile.FileName), ct) == null) return [];
 
         var latest = await db.Pipelines.AsNoTracking()
             .Where(p => p.RepositoryId == pr.RepositoryId && p.CommitSha == head)
-            .OrderByDescending(p => p.Ref == pr.SourceBranch).ThenByDescending(p => p.Id)
+            .OrderByDescending(p => p.Ref == pr.SourceRef).ThenByDescending(p => p.Id)
             .FirstOrDefaultAsync(ct);
         if (latest == null)
             return [new(Name, MergeCheckState.Pending, $"No pipeline has run for {head[..7]} yet.", PipelineUrls.List(pr.Repository))];
@@ -38,6 +38,7 @@ public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoS
         return latest.Status switch
         {
             PipelineStatus.Passed => [new(Name, MergeCheckState.Passed, $"Pipeline #{latest.Id} passed.", url)],
+            PipelineStatus.Queued when latest.AwaitingApproval => [new(Name, MergeCheckState.Pending, $"Pipeline #{latest.Id} is waiting for a Maintainer to approve and run it (pull request from a fork).", url)],
             PipelineStatus.Queued => [new(Name, MergeCheckState.Pending, $"Pipeline #{latest.Id} is queued.", url)],
             PipelineStatus.Running => [new(Name, MergeCheckState.Pending, $"Pipeline #{latest.Id} is running.", url)],
             PipelineStatus.Canceled => [new(Name, MergeCheckState.Failed, $"Pipeline #{latest.Id} was canceled.", url)],

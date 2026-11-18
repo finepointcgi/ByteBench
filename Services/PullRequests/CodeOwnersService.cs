@@ -37,7 +37,7 @@ public class CodeOwnersService(IDbContextFactory<AppDbContext> dbFactory, Reposi
         var paths = changedPaths?.ToList() ?? await repos.Git(pr.Repository, path =>
             pr.State != PullRequestState.Open && pr.SourceCommitSha != null && pr.TargetCommitSha != null
                 ? GitOps.ChangedPaths(path, pr.TargetCommitSha, pr.SourceCommitSha)
-                : GitOps.ChangedPaths(path, pr.TargetBranch, pr.SourceBranch));
+                : GitOps.ChangedPaths(path, pr.TargetBranch, pr.SourceRef));
         return await ForPathsAsync(pr.Repository, rev, paths);
     }
 
