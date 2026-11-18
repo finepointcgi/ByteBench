@@ -34,7 +34,9 @@
         @if (projectKey != null && projectPerms.Can(Permission.EditIssues))
         {
             <MudButton Href="@($"/p/{projectKey}/issues/new")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                       StartIcon="@Icons.Material.Filled.Add" Class="mr-2">New issue</MudButton>
+                       StartIcon="@Icons.Material.Filled.Add" Class="mr-2 d-none d-sm-flex">New issue</MudButton>
+            <MudIconButton Href="@($"/p/{projectKey}/issues/new")" Icon="@Icons.Material.Filled.AddCircle" Color="Color.Inherit"
+                           Class="d-flex d-sm-none" aria-label="New issue" />
         }
         <MudTooltip Text="@(isDark ? "Switch to light mode" : "Switch to dark mode")">
             <MudIconButton Icon="@(isDark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"

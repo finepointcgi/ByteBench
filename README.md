@@ -1,6 +1,6 @@
 # GitBench
 
-A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive Server)**, **.NET 10**, **EF Core** and **SQLite**.
+A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive Server)**, **.NET 10**, **MudBlazor**, **EF Core** and **SQLite**.
 
 ## Run
 
@@ -11,6 +11,16 @@ dotnet run --launch-profile http
 Open http://localhost:5108. On startup, EF Core migrations are applied to `gitbench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded. Delete `gitbench.db*` and `repos/` to reset.
 
 **Schema changes:** edit the model, then `dotnet ef migrations add <Name> -o Data/Migrations` (the `dotnet-ef` tool is pinned in `dotnet-tools.json`; run `dotnet tool restore` once). Migrations apply automatically on the next start.
+
+## UI
+
+The UI uses [MudBlazor](https://mudblazor.com) 9 (no Bootstrap).
+
+- **Theme:** `Components/Layout/GitBenchTheme.cs` holds the light and dark palettes, typography and radii.
+- **Dark mode:** the moon/sun button in the app bar toggles it. The choice is kept in the browser's `localStorage` (`wwwroot/js/theme.js`); until you choose, it follows the OS setting.
+- **Shell:** `MainLayout.razor` is a MudLayout with an app bar (project switcher, New issue, notifications, account menu) and a responsive drawer. It also hosts the Popover, Dialog and Snackbar providers. Confirmations use `IDialogService` and transient messages use `ISnackbar`.
+- **CSS:** component styles live in scoped `.razor.css` files. `wwwroot/app.css` keeps only shared bits, and its `--bg`, `--surface`, `--text`, `--muted`, `--border` and `--accent` variables map onto `--mud-palette-*`, so custom CSS follows the theme.
+- **Account pages** (sign-in, registration, profile) are static SSR, so they post real HTML forms with inputs styled like MudBlazor's (`Components/Account/AccountLayout.razor.css`).
 
 ## Accounts & sign-in
 
@@ -369,7 +379,7 @@ Code is highlighted in the browser with **highlight.js 11.11.1**, vendored in `w
 
 The language comes from the file extension or name (`Services/Code/CodeLanguages.cs`). Unknown types, and files or diffs over 200 KB, stay plain.
 
-Why client-side: highlight.js is maintained, small and covers far more languages than the .NET options (ColorCode covers few languages; TextMateSharp needs native Oniguruma binaries). To stay safe under Blazor's DOM diffing, each code line is rendered as a `MarkupString` (`<span class="hl-line">…</span>`). Blazor tracks the span and replaces it whole when the line changes, and `wwwroot/js/code-tools.js` only rewrites the span's children. A single `MutationObserver` reruns the idempotent highlight pass after every render, so it survives re-renders, enhanced navigation and live updates with no per-component JS interop. Token colours are CSS variables in `wwwroot/css/code-tools.css`. The app has no dark mode yet; adding one only means overriding the `--hl-*` variables.
+Why client-side: highlight.js is maintained, small and covers far more languages than the .NET options (ColorCode covers few languages; TextMateSharp needs native Oniguruma binaries). To stay safe under Blazor's DOM diffing, each code line is rendered as a `MarkupString` (`<span class="hl-line">…</span>`). Blazor tracks the span and replaces it whole when the line changes, and `wwwroot/js/code-tools.js` only rewrites the span's children. A single `MutationObserver` reruns the idempotent highlight pass after every render, so it survives re-renders, enhanced navigation and live updates with no per-component JS interop. Token colours are CSS variables in `wwwroot/css/code-tools.css`, defined as `light-dark()` pairs that follow the MudBlazor theme's colour scheme.
 
 **Line links:** line numbers in the file viewer are links. `#L42` highlights and scrolls to a line, shift-click selects a range (`#L10-L20`), and the URL updates so it can be shared.
 
