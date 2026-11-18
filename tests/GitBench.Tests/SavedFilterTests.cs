@@ -22,6 +22,11 @@ public class SavedFilterTests(TestApp app) : IClassFixture<TestApp>
         EpicId = 42,
         HideSubtasks = true,
         Gql = "status in (\"In Progress\", Done) AND text ~ \"a&b=c\"",
+        ComponentId = 5,
+        FixVersionId = 0, // "no fix version"
+        AffectsVersionId = 9,
+        Cf = "severity:Major & co",
+        Columns = "severity,components,timeSpent",
     };
 
     [Fact]

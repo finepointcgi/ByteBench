@@ -16,7 +16,7 @@ public static class IssueEndpoints
 
         issues.MapGet("/issues", ListIssues).WithName("ListIssues")
             .WithSummary("List issues")
-            .WithDescription("Filters: status (open [default], closed, all, or a category: backlog/todo/inProgress/inReview/done), workflowStatus (a workflow status id from GET /projects/{key}/workflow; without status it matches open and closed issues), assignee (username or 'none'), label (name), milestone (id or 'none'), sprint (id, 'none' or 'active'), q (text or issue key), sort (updated [default], created, priority, due, number).");
+            .WithDescription("Filters: status (open [default], closed, all, or a category: backlog/todo/inProgress/inReview/done), component, fixVersion and affectsVersion (name or 'none'), cf (customFieldKey:value; 'key:' for no value), workflowStatus (a workflow status id from GET /projects/{key}/workflow; without status it matches open and closed issues), assignee (username or 'none'), label (name), milestone (id or 'none'), sprint (id, 'none' or 'active'), q (text or issue key), sort (updated [default], created, priority, due, number).");
         issues.MapGet("/issues/{number:int}", GetIssue).WithName("GetIssue").WithSummary("Get an issue");
         issues.MapPost("/issues", CreateIssue).WithName("CreateIssue").WithSummary("Create an issue")
             .WithJsonBody<CreateIssueRequest>().Produces<IssueDto>(StatusCodes.Status201Created);
@@ -79,6 +79,7 @@ public static class IssueEndpoints
                 : int.TryParse(milestone, out var mid) ? mid : throw ApiException.BadRequest("milestone must be an id or 'none'.");
 
         if (!string.IsNullOrEmpty(sprint)) filter.SprintId = await SprintEndpoints.ResolveSprintFilterAsync(sprints, project.Id, sprint);
+        await FieldEndpoints.ApplyListFiltersAsync(http, dbFactory, project, filter); // component, fixVersion, affectsVersion, cf
 
         var list = await issues.GetIssuesAsync(project.Id, filter);
         // GetIssuesAsync doesn't load reporters; fetch them for this page only.
@@ -91,14 +92,14 @@ public static class IssueEndpoints
             foreach (var i in page) i.Reporter = reporters[i.ReporterId];
         }
         var baseUrl = url.For(http.Request);
-        return page.Select(i => Dto.Issue(i, baseUrl)).ToList();
+        return await FieldEndpoints.EnrichAsync(dbFactory, page.Select(i => Dto.Issue(i, baseUrl)).ToList());
     }
 
-    private static async Task<IssueDto> GetIssue(HttpContext http, IssueService issues, PublicBaseUrl url, string key, int number) =>
-        Dto.Issue(await RequireIssueAsync(issues, key, number), url.For(http.Request));
+    private static async Task<IssueDto> GetIssue(HttpContext http, IssueService issues, PublicBaseUrl url, IDbContextFactory<AppDbContext> dbFactory, string key, int number) =>
+        await FieldEndpoints.EnrichAsync(dbFactory, Dto.Issue(await RequireIssueAsync(issues, key, number), url.For(http.Request)));
 
     private static async Task<IResult> CreateIssue(HttpContext http, IssueService issues, ApiCaller caller, UserManager<User> users,
-        ProjectAccess access, PublicBaseUrl url, WorkflowService workflows, string key)
+        ProjectAccess access, PublicBaseUrl url, WorkflowService workflows, IDbContextFactory<AppDbContext> dbFactory, string key)
     {
         var project = await RequireProjectAsync(issues, key);
         var body = await ApiResults.ReadBodyAsync<CreateIssueRequest>(http.Request);
@@ -123,15 +124,16 @@ public static class IssueEndpoints
         };
         if (issue.Status == IssueStatus.Done) issue.ClosedAt = DateTime.UtcNow;
         var labelIds = ResolveLabels(project, body.Labels).Select(l => l.Id).ToList();
+        await FieldEndpoints.ApplyCreateAsync(dbFactory, project, body, issue); // custom fields, components, versions, estimates
 
         var created = await issues.CreateIssueAsync(project.Id, issue, labelIds, caller.Id);
         var baseUrl = url.For(http.Request);
-        var dto = Dto.Issue(await RequireIssueAsync(issues, project.Key, created.Number), baseUrl);
+        var dto = await FieldEndpoints.EnrichAsync(dbFactory, Dto.Issue(await RequireIssueAsync(issues, project.Key, created.Number), baseUrl));
         return TypedResults.Created($"{baseUrl}/api/v1/projects/{project.Key}/issues/{created.Number}", dto);
     }
 
     private static async Task<IssueDto> UpdateIssue(HttpContext http, IssueService issues, ApiCaller caller, UserManager<User> users,
-        ProjectAccess access, PublicBaseUrl url, WorkflowService workflows, string key, int number)
+        ProjectAccess access, PublicBaseUrl url, WorkflowService workflows, IDbContextFactory<AppDbContext> dbFactory, string key, int number)
     {
         var issue = await RequireIssueAsync(issues, key, number);
         var project = await RequireProjectAsync(issues, key);
@@ -158,6 +160,7 @@ public static class IssueEndpoints
         int? workflowStatusId = Has("workflowStatusId")
             ? await ValidWorkflowStatusAsync(workflows, project, body.WorkflowStatusId ?? throw ApiException.Unprocessable("workflowStatusId can't be null."), body.Status)
             : null;
+        var fieldUpdate = await FieldEndpoints.PrepareUpdateAsync(http.RequestServices, project, node, body); // validated now, applied below
 
         await issues.UpdateIssueAsync(issue.Id, caller.Id, async (i, db) =>
         {
@@ -215,7 +218,8 @@ public static class IssueEndpoints
             }
             return changes.Count == 0 ? null : string.Join(", ", changes);
         });
-        return Dto.Issue(await RequireIssueAsync(issues, key, number), url.For(http.Request));
+        await fieldUpdate.ApplyAsync(issue.Id, caller.Id);
+        return await FieldEndpoints.EnrichAsync(dbFactory, Dto.Issue(await RequireIssueAsync(issues, key, number), url.For(http.Request)));
     }
 
     private static async Task<List<CommentDto>> ListComments(HttpContext http, IssueService issues, string key, int number)

@@ -1,0 +1,19 @@
+@* Issue list: the optional columns (IssueFilter.Columns) for one row, as small labelled cells. *@
+@if (Data.Columns.Count > 0)
+{
+    <div class="ifc">
+        @foreach (var col in Data.Columns)
+        {
+            var text = Data.Cell(Issue, col);
+            <span class="ifc-cell" title="@($"{Data.Title(col)}: {text ?? "—"}")">
+                <span class="ifc-name">@Data.Title(col)</span>
+                <span class="ifc-value @(text == null ? "empty" : "")">@(text ?? "—")</span>
+            </span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+    [Parameter, EditorRequired] public IssueColumnData Data { get; set; } = null!;
+}

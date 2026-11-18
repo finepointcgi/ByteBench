@@ -1,0 +1,95 @@
+@* New issue form: components, versions, custom fields (for the chosen type) and the original estimate. Choices go into
+   Issue.FieldDraft and are applied, validated and defaulted by IssueService.CreateIssueAsync. *@
+@inject CustomFieldService Fields
+@inject ComponentVersionService ComponentsAndVersions
+@inject TimeTrackingService Time
+@inject IssueService Issues
+
+@if (components.Count > 0)
+{
+    <MudSelect T="int" MultiSelection="true" SelectedValues="Draft.ComponentIds" SelectedValuesChanged="v => Draft.ComponentIds = v.ToList()" Label="Components"
+               Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Delimiter=", "
+               ToStringFunc="@(id => components.FirstOrDefault(c => c.Component.Id == id)?.Component.Name ?? "")" HelperText="@ComponentHint">
+        @foreach (var c in components) { <MudSelectItem T="int" Value="c.Component.Id">@c.Component.Name</MudSelectItem> }
+    </MudSelect>
+}
+@if (versions.Count > 0)
+{
+    <MudSelect T="int" MultiSelection="true" SelectedValues="Draft.FixVersionIds" SelectedValuesChanged="v => Draft.FixVersionIds = v.ToList()" Label="Fix versions"
+               Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Delimiter=", " ToStringFunc="VersionName">
+        @foreach (var v in versions.Where(v => !v.IsReleased)) { <MudSelectItem T="int" Value="v.Id">@v.Name</MudSelectItem> }
+    </MudSelect>
+    <MudSelect T="int" MultiSelection="true" SelectedValues="Draft.AffectsVersionIds" SelectedValuesChanged="v => Draft.AffectsVersionIds = v.ToList()" Label="Affects versions"
+               Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Delimiter=", " ToStringFunc="VersionName">
+        @foreach (var v in versions) { <MudSelectItem T="int" Value="v.Id">@v.Name</MudSelectItem> }
+    </MudSelect>
+}
+@foreach (var f in fields.Where(f => f.AppliesTo(Issue.Type)))
+{
+    <CustomFieldInput @key="f.Id" Field="f" Value="Shown(f)" Users="users" ValueChanged="raw => Set(f, raw)" />
+}
+<MudTextField T="string" Value="estimateText" ValueChanged="SetEstimate" Label="Original estimate" Placeholder="e.g. 1d 4h"
+              Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@($"w, d ({hoursPerDay} h), h, m")" Error="@(estimateError != null)" ErrorText="@estimateError" />
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private List<CustomField> fields = [];
+    private List<ComponentSummary> components = [];
+    private List<ProjectVersion> versions = [];
+    private List<User> users = [];
+    private int hoursPerDay = Duration.DefaultHoursPerDay;
+    private string? estimateText, estimateError;
+    private IssueType? lastType;
+
+    private IssueFieldDraft Draft => Issue.FieldDraft ??= new IssueFieldDraft();
+
+    private string VersionName(int id) => versions.FirstOrDefault(v => v.Id == id)?.Name ?? "";
+
+    private string? ComponentHint => Draft.ComponentIds.Select(id => components.FirstOrDefault(c => c.Component.Id == id)?.Component.DefaultAssignee)
+        .FirstOrDefault(u => u != null) is { } u && Issue.AssigneeId == null ? $"Unassigned issues go to {u.DisplayName}." : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        fields = await Fields.GetFieldsAsync(Project.Id);
+        components = await ComponentsAndVersions.GetComponentsAsync(Project.Id);
+        versions = await ComponentsAndVersions.GetVersionListAsync(Project.Id);
+        users = await Issues.GetUsersAsync();
+        hoursPerDay = await Time.GetHoursPerDayAsync(Project.Id);
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Values of fields that don't apply to a newly chosen type would be refused: drop them.
+        if (lastType != null && lastType != Issue.Type)
+            foreach (var f in fields.Where(f => !f.AppliesTo(Issue.Type))) Draft.Values.Remove(f.Id);
+        lastType = Issue.Type;
+    }
+
+    /// <summary>The draft value, or the field's default while the user hasn't touched it.</summary>
+    private FieldValue Shown(CustomField f)
+    {
+        try
+        {
+            var v = CustomFieldRules.Parse(f, Draft.Values.TryGetValue(f.Id, out var raw) ? raw : f.DefaultValue);
+            return v.UserName is { } name ? new FieldValue { UserId = users.FirstOrDefault(u => u.UserName == name)?.Id } : v;
+        }
+        catch (InvalidOperationException) { return FieldValue.Empty; }
+    }
+
+    private void Set(CustomField f, object? raw) => Draft.Values[f.Id] = raw;
+
+    private void SetEstimate(string? text)
+    {
+        estimateText = text;
+        estimateError = null;
+        Draft.Error = null;
+        try { Issue.OriginalEstimateMinutes = Duration.Parse(text, hoursPerDay); }
+        catch (FormatException ex)
+        {
+            Issue.OriginalEstimateMinutes = null;
+            Draft.Error = estimateError = ex.Message;
+        }
+    }
+}

@@ -1584,3 +1584,141 @@ public class DirectorySyncRun
     public int UsersDeactivated { get; set; }
     [MaxLength(1000)] public string? Error { get; set; }
 }
+
+// ----- Custom fields & time -----
+
+/// <summary>The kinds of value a <see cref="CustomField"/> holds. Stored as numbers: append only.</summary>
+public enum CustomFieldType { Text, LongText, Number, Date, SingleSelect, MultiSelect, User, Checkbox, Url }
+
+/// <summary>
+/// A project-defined issue field (Jira-style). Values live in <see cref="CustomFieldValue"/> rows (EAV with typed
+/// columns). Rules and parsing: <see cref="GitBench.Services.Fields.CustomFieldRules"/>.
+/// </summary>
+public class CustomField
+{
+    public const string KeyPattern = "^[a-z][a-z0-9_]{0,39}$";
+
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    /// <summary>Stable identifier used by the API, webhooks and filters (<c>severity</c>). Unique per project.</summary>
+    [Required, MaxLength(40), RegularExpression(KeyPattern, ErrorMessage = "Use lowercase letters, digits and '_', starting with a letter.")]
+    public string Key { get; set; } = "";
+    [Required, MaxLength(60)] public string Name { get; set; } = "";
+    [MaxLength(300)] public string? Description { get; set; }
+    public CustomFieldType Type { get; set; }
+    /// <summary>Issues of the types it applies to must have a value (the default fills it in on create).</summary>
+    public bool Required { get; set; }
+    /// <summary>The default in its text form (an option, a number, yyyy-MM-dd, a username, true/false; options joined with ',').</summary>
+    [MaxLength(2000)] public string? DefaultValue { get; set; }
+    /// <summary>Choices for single and multi select fields (no commas).</summary>
+    public List<string> Options { get; set; } = [];
+    /// <summary>Issue types the field applies to; empty means every type.</summary>
+    public List<IssueType> IssueTypes { get; set; } = [];
+    public int Order { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public bool AppliesTo(IssueType type) => IssueTypes.Count == 0 || IssueTypes.Contains(type);
+}
+
+/// <summary>One value of a custom field on an issue. A multi select field has one row per chosen option.</summary>
+public class CustomFieldValue
+{
+    public int Id { get; set; }
+    public int IssueId { get; set; }
+    public int FieldId { get; set; }
+    public CustomField Field { get; set; } = null!;
+    /// <summary>Text, long text, URL and (single or multi) select options.</summary>
+    public string? TextValue { get; set; }
+    public double? NumberValue { get; set; }
+    public DateTime? DateValue { get; set; }
+    public int? UserId { get; set; }
+    public User? User { get; set; }
+    public bool? BoolValue { get; set; }
+}
+
+/// <summary>A part of the project (Jira-style component). Issues can be in several.</summary>
+public class ProjectComponent
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    [Required, MaxLength(60)] public string Name { get; set; } = "";
+    [MaxLength(300)] public string? Description { get; set; }
+    public int? LeadId { get; set; }
+    public User? Lead { get; set; }
+    /// <summary>New issues in this component get this assignee when they have none.</summary>
+    public int? DefaultAssigneeId { get; set; }
+    public User? DefaultAssignee { get; set; }
+    public List<Issue> Issues { get; set; } = [];
+}
+
+/// <summary>A release version of the project, used as an issue's fix version or affects version.</summary>
+public class ProjectVersion
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    /// <summary>Also matched against release tags (<c>1.2</c> or <c>v1.2</c>) to link the version to its release.</summary>
+    [Required, MaxLength(60)] public string Name { get; set; } = "";
+    [MaxLength(300)] public string? Description { get; set; }
+    public DateTime? StartDate { get; set; }
+    public DateTime? ReleaseDate { get; set; }
+    public bool IsReleased { get; set; }
+    public int Order { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public enum VersionLinkKind { Fix, Affects }
+
+/// <summary>An issue's fix version or affects version.</summary>
+public class IssueVersion
+{
+    public int IssueId { get; set; }
+    public int VersionId { get; set; }
+    public ProjectVersion Version { get; set; } = null!;
+    public VersionLinkKind Kind { get; set; }
+}
+
+/// <summary>A starting point for new issues: type, title prefix, Markdown body and labels.</summary>
+public class IssueTemplate
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    [Required, MaxLength(80)] public string Name { get; set; } = "";
+    public IssueType Type { get; set; } = IssueType.Task;
+    [MaxLength(60)] public string? TitlePrefix { get; set; }
+    public string? Body { get; set; }
+    public List<int> LabelIds { get; set; } = [];
+    public int Order { get; set; }
+}
+
+/// <summary>Time someone spent on an issue.</summary>
+public class WorkLog
+{
+    public int Id { get; set; }
+    public int IssueId { get; set; }
+    public Issue Issue { get; set; } = null!;
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    public int Minutes { get; set; }
+    /// <summary>The day the work was done (date only).</summary>
+    public DateTime Date { get; set; }
+    [MaxLength(1000)] public string? Comment { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
+}
+
+public partial class Issue
+{
+    public int? OriginalEstimateMinutes { get; set; }
+    public int? RemainingEstimateMinutes { get; set; }
+    public List<ProjectComponent> Components { get; set; } = [];
+    public List<IssueVersion> VersionLinks { get; set; } = [];
+    public List<CustomFieldValue> CustomFieldValues { get; set; } = [];
+    /// <summary>Custom field values, components and versions chosen on the new-issue form or in the API; applied by <c>IssueService.CreateIssueAsync</c>.</summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped] public GitBench.Services.Fields.IssueFieldDraft? FieldDraft { get; set; }
+}
+
+public partial class Project
+{
+    /// <summary>Working hours in a day for time tracking ("1d"). A week is 5 days.</summary>
+    [Range(1, 24)] public int HoursPerDay { get; set; } = 8;
+}

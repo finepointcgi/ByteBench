@@ -1,0 +1,62 @@
+@* New issue form: pick a template (project templates and .gitbench/issue_templates/*.md of the first repository). Picking
+   one sets the type, adds its labels, puts its prefix in front of the title and fills the description (unless you've
+   written one). Hidden when the project has no templates. ?template=t{id} preselects one. *@
+@inject IssueTemplateService Templates
+@inject NavigationManager Nav
+
+@if (choices.Count > 0)
+{
+    <div class="itp">
+        <MudSelect T="string" Value="selected" ValueChanged="Apply" Label="Template" Dense="true" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   ToStringFunc="@(id => choices.FirstOrDefault(c => c.Id == id)?.Name ?? "")" AdornmentIcon="@Icons.Material.Outlined.Description"
+                   Class="itp-select" aria-label="Issue template">
+            @foreach (var c in choices)
+            {
+                <MudSelectItem T="string" Value="c.Id">
+                    <span>@c.Type.Icon() @c.Name</span>
+                    @if (c.Source != null) { <span class="mud-text-secondary itp-source"> · @c.Source</span> }
+                </MudSelectItem>
+            }
+        </MudSelect>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+    [Parameter, EditorRequired] public HashSet<int> LabelIds { get; set; } = null!;
+    [Parameter] public EventCallback OnApplied { get; set; }
+
+    private List<IssueTemplateChoice> choices = [];
+    private string? selected;
+    private IssueTemplateChoice? applied;
+
+    protected override async Task OnInitializedAsync()
+    {
+        choices = await Templates.GetChoicesAsync(Project);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("template", out var t) && choices.Any(c => c.Id == t.ToString())) await Apply(t.ToString());
+    }
+
+    private async Task Apply(string? id)
+    {
+        var previous = applied;
+        selected = id;
+        applied = choices.FirstOrDefault(c => c.Id == id);
+        // Undo what the previous template added, as long as the user hasn't changed it.
+        if (previous != null)
+        {
+            if (previous.TitlePrefix is { } oldPrefix && Issue.Title.StartsWith(oldPrefix, StringComparison.Ordinal)) Issue.Title = Issue.Title[oldPrefix.Length..];
+            if (previous.Body != null && Issue.Description == previous.Body) Issue.Description = null;
+            foreach (var l in previous.LabelIds) LabelIds.Remove(l);
+        }
+        if (applied != null)
+        {
+            Issue.Type = applied.Type;
+            if (applied.TitlePrefix is { } prefix && !Issue.Title.StartsWith(prefix, StringComparison.Ordinal)) Issue.Title = prefix + Issue.Title.TrimStart();
+            if (string.IsNullOrWhiteSpace(Issue.Description)) Issue.Description = applied.Body;
+            foreach (var l in applied.LabelIds.Where(l => Project.Labels.Any(x => x.Id == l))) LabelIds.Add(l);
+        }
+        await OnApplied.InvokeAsync();
+    }
+}

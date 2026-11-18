@@ -101,6 +101,7 @@ else if (project != null)
             @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem T="IssueType?" Value="t">@t.Icon() @t</MudSelectItem> }
         </MudSelect>
         <GitBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Apply" />
+        <GitBench.Components.Fields.IssueFieldFilters Project="project" Filter="filter" Issues="issues" Data="columnData" OnChanged="Apply" OnDataLoaded="StateHasChanged" />
         <MudSelect T="IssuePriority?" @bind-Value="filter.Priority" @bind-Value:after="Apply" Label="Priority" Clearable="true" Dense="true"
                    Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(p => p?.ToString() ?? "")">
             @foreach (var p in Enum.GetValues<IssuePriority>().Reverse())
@@ -147,12 +148,12 @@ else if (project != null)
                 <div class="il-row @(selected.Contains(i.Id) ? "selected" : "")" @key="i.Id">
                     <MudCheckBox T="bool" Value="@selected.Contains(i.Id)" ValueChanged="_ => Toggle(i.Id)" Dense="true" Size="Size.Small"
                                  AriaLabel="@($"Select {i.Key}")" Class="il-row-check" />
-                    <IssueRow Issue="i" />
+                    <IssueRow Issue="i" /><GitBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" />
                 </div>
             }
             else
             {
-                <div class="il-row" @key="i.Id"><IssueRow Issue="i" /></div>
+                <div class="il-row" @key="i.Id"><IssueRow Issue="i" /><GitBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" /></div>
             }
         }
     </MudPaper>
@@ -170,6 +171,7 @@ else if (project != null)
     // The whole filter state. It round-trips through the URL query string (IssueFilterQuery), so a filter is
     // addressable and a saved filter is just a stored query string; new IssueFilter properties come along for free.
     private IssueFilter filter = new();
+    private readonly GitBench.Components.Fields.IssueColumnData columnData = new(); // optional columns (IssueFieldFilters loads, IssueFieldCells shows)
     private (int open, int closed) counts;
     private readonly HashSet<int> selected = [];
 
@@ -221,7 +223,7 @@ else if (project != null)
 
     private bool IsFiltered => !string.IsNullOrEmpty(filter.Search) || !NoStatus || filter.AssigneeId != null
         || filter.LabelId != null || filter.MilestoneId != null || filter.Type != null || filter.Priority != null
-        || filter.EpicId != null || filter.HideSubtasks || filter.SprintId != null;
+        || filter.EpicId != null || filter.HideSubtasks || filter.SprintId != null || filter.HasFieldFilters;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -369,7 +371,7 @@ else if (project != null)
 
     private async Task Reset()
     {
-        filter = new() { Sort = filter.Sort };
+        filter = new() { Sort = filter.Sort, Columns = filter.Columns };
         await Apply();
     }
 

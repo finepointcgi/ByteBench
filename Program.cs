@@ -13,6 +13,7 @@ using GitBench.Services.Ssh;
 using GitBench.Services.Automation;
 using GitBench.Services.Query;
 using GitBench.Services.Sso;
+using GitBench.Services.Fields;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -119,6 +120,7 @@ builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search
 builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
 builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
 builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
+builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, time tracking
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -134,6 +136,7 @@ using (var scope = app.Services.CreateScope())
     NotificationService.Initialize(db);
     RepoSeeder.InitializeOps(db, scope.ServiceProvider.GetRequiredService<RepoStorage>());
     SprintSeeder.Initialize(db);
+    FieldsSeeder.Initialize(db); // WEB: custom fields, components, versions, a template and work logs
     WorkflowService.EnsureDefaults(db); // default workflow for projects without one; maps issues to workflow statuses
     scope.ServiceProvider.GetRequiredService<WebhookSecrets>().EncryptLegacy(db); // webhook secrets stored before encryption
 }

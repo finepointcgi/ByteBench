@@ -1,0 +1,71 @@
+@* An editor for one custom field. Raises ValueChanged with the raw input (string, double, DateTime, bool, list of options,
+   user id or null), which CustomFieldRules.Parse understands. Text fields report on blur. *@
+
+@switch (Field.Type)
+{
+    case CustomFieldType.Text:
+        <MudTextField T="string" Value="@Value.Text" ValueChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" MaxLength="CustomFieldRules.MaxText"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description" Clearable="@(!Disabled)" />
+        break;
+    case CustomFieldType.LongText:
+        <MudTextField T="string" Value="@Value.Text" ValueChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" Lines="3" Sizing="InputSizing.Auto" MaxLines="10"
+                      MaxLength="CustomFieldRules.MaxLongText" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description" />
+        break;
+    case CustomFieldType.Url:
+        <div class="cf-url">
+            <MudTextField T="string" Value="@Value.Text" ValueChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" Placeholder="https://…"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description" InputType="InputType.Url" Clearable="@(!Disabled)" />
+            @if (Value.Text is { } href)
+            {
+                <a href="@href" target="_blank" rel="noopener noreferrer nofollow" class="cf-open" title="Open link" aria-label="Open @Field.Name">
+                    <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" />
+                </a>
+            }
+        </div>
+        break;
+    case CustomFieldType.Number:
+        <MudNumericField T="double?" Value="@Value.Number" ValueChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" HideSpinButtons="true"
+                         Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description" Culture="System.Globalization.CultureInfo.InvariantCulture" />
+        break;
+    case CustomFieldType.Date:
+        <MudDatePicker Date="@Value.Date" DateChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" Clearable="true" Editable="true" DateFormat="yyyy-MM-dd"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description" />
+        break;
+    case CustomFieldType.SingleSelect:
+        <MudSelect T="string" Value="@Value.Text" ValueChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" Clearable="@(!Field.Required)" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description">
+            @foreach (var o in Field.Options) { <MudSelectItem T="string" Value="o">@o</MudSelectItem> }
+        </MudSelect>
+        break;
+    case CustomFieldType.MultiSelect:
+        <MudSelect T="string" MultiSelection="true" SelectedValues="Value.Options" SelectedValuesChanged="v => Raise(v.ToList())" Label="@Label" Disabled="Disabled"
+                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description" Delimiter=", ">
+            @foreach (var o in Field.Options) { <MudSelectItem T="string" Value="o">@o</MudSelectItem> }
+        </MudSelect>
+        break;
+    case CustomFieldType.User:
+        @* 0 stands for "None". *@
+        <MudSelect T="int" Value="@(Value.UserId ?? 0)" ValueChanged="v => Raise(v == 0 ? null : v)" Label="@Label" Disabled="Disabled" Dense="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Field.Description"
+                   ToStringFunc="@(id => id == 0 ? "None" : Users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? $"user #{id}")">
+            <MudSelectItem Value="0">None</MudSelectItem>
+            @foreach (var u in Users) { <MudSelectItem Value="u.Id">@u.DisplayName</MudSelectItem> }
+        </MudSelect>
+        break;
+    case CustomFieldType.Checkbox:
+        <MudCheckBox T="bool" Value="@(Value.Bool == true)" ValueChanged="v => Raise(v)" Label="@Label" Disabled="Disabled" Dense="true" Size="Size.Small"
+                     title="@Field.Description" />
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public CustomField Field { get; set; } = null!;
+    [Parameter] public FieldValue Value { get; set; } = FieldValue.Empty;
+    [Parameter] public List<User> Users { get; set; } = [];
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<object?> ValueChanged { get; set; }
+
+    private string Label => Field.Required ? Field.Name + " *" : Field.Name;
+
+    private Task Raise(object? raw) => ValueChanged.InvokeAsync(raw);
+}

@@ -1,0 +1,8 @@
+.fs-page ::deep .fs-narrow { max-width: 1000px; }
+.fs-scroll { overflow-x: auto; }
+.fs-small { font-size: 12px; }
+.fs-req { color: var(--mud-palette-error); font-weight: 600; }
+.nowrap { white-space: nowrap; }
+.right { text-align: right; }
+.fs-template { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--mud-palette-lines-default); }
+.fs-page ::deep .fs-hours { max-width: 160px; margin-top: 0; }

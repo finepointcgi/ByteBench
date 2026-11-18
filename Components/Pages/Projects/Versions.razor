@@ -1,0 +1,193 @@
+@page "/p/{Key}/versions"
+@using GitBench.Services.Fields
+@using GitBench.Components.Repositories
+@implements IDisposable
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject ComponentVersionService ComponentsAndVersions
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject LiveEvents Live
+
+<PageTitle>Versions · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+<div class="vr-page">
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Versions</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
+        </div>
+        @if (canManage && draft == null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => draft = new ProjectVersion { ProjectId = project.Id }">New version</MudButton>
+        }
+    </div>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => error = null" Class="mb-3">@error</MudAlert> }
+
+    @if (draft != null)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="draft.Name" Label="Name" Placeholder="1.2" MaxLength="60" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                      HelperText="A release tagged with this name (or v + name) is linked." /></MudItem>
+                <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="draft.StartDate" Label="Start" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" DateFormat="yyyy-MM-dd" /></MudItem>
+                <MudItem xs="6" sm="2"><MudDatePicker @bind-Date="draft.ReleaseDate" Label="Release date" Variant="Variant.Outlined" Margin="Margin.Dense" Editable="true" Clearable="true" DateFormat="yyyy-MM-dd" /></MudItem>
+                <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="draft.Description" Label="Description" MaxLength="300" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="12"><MudCheckBox T="bool" @bind-Value="draft.IsReleased" Label="Released" Dense="true" /></MudItem>
+            </MudGrid>
+            <div class="d-flex gap-2 mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Save">@(draft.Id == 0 ? "Create version" : "Save")</MudButton>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => draft = null">Cancel</MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (versions.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">No versions yet. Versions group issues by the release that fixes them (fix version) or that has the problem (affects version).</MudText>
+    }
+    <MudStack Spacing="3">
+        @foreach (var vs in versions)
+        {
+            var v = vs.Version;
+            var overdue = !v.IsReleased && v.ReleaseDate < DateTime.Today && vs.Open > 0;
+            <MudPaper Outlined="true" Class="@("vr-card" + (v.IsReleased ? " vr-released" : ""))" @key="v.Id">
+                <div class="vr-row">
+                    <div class="vr-info">
+                        <div class="vr-title">
+                            <MudIcon Icon="@Icons.Material.Outlined.NewReleases" Size="Size.Small" />
+                            <span>@v.Name</span>
+                            @if (v.IsReleased) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">Released</MudChip> }
+                            @if (overdue) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Overdue</MudChip> }
+                            @if (vs.Release is { } r) { <a href="@r.Url" class="vr-release" title="Release @r.TagName">🏷 @r.Title</a> }
+                        </div>
+                        <div class="vr-sub mud-text-secondary">
+                            @if (v.StartDate is { } s) { <span>@s.ToString("MMM d") – </span> }
+                            @(v.ReleaseDate?.ToString("MMM d, yyyy") ?? "No release date")
+                            @if (v.Description != null) { <span> · @v.Description</span> }
+                        </div>
+                    </div>
+                    <div class="vr-progress">
+                        <MudProgressLinear Value="vs.Percent" Color="Color.Success" Rounded="true" Size="Size.Small" aria-label="@($"{vs.Percent}% done")" />
+                        <div class="vr-stats mud-text-secondary">
+                            <span>@vs.Percent% · @vs.Done/@vs.Total done</span>
+                            <span>@vs.DonePoints/@vs.Points pts</span>
+                            @if (vs.TimeSpentMinutes > 0 || vs.RemainingMinutes > 0)
+                            {
+                                <span title="Logged on fix-version issues / remaining estimate of open ones">⏱ @Duration.Format(vs.TimeSpentMinutes, project.HoursPerDay) logged · @Duration.Format(vs.RemainingMinutes, project.HoursPerDay) left</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="vr-actions">
+                        <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => Toggle(v.Id)" EndIcon="@(expanded.Contains(v.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)">Issues</MudButton>
+                        @if (canManage)
+                        {
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="@($"Actions for {v.Name}")" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                                <MudMenuItem OnClick="() => Edit(v)">Edit</MudMenuItem>
+                                <MudMenuItem OnClick="() => SetReleased(v, !v.IsReleased)">@(v.IsReleased ? "Mark unreleased" : "Mark released")</MudMenuItem>
+                                <MudMenuItem OnClick="() => Delete(vs)">Delete</MudMenuItem>
+                            </MudMenu>
+                        }
+                    </div>
+                </div>
+                @if (expanded.Contains(v.Id))
+                {
+                    <div class="vr-issues">
+                        <div class="vr-links">
+                            <a href="/p/@project.Key/issues?open=&fixVersionId=@v.Id">Fix version: @vs.Total issue@(vs.Total == 1 ? "" : "s")</a>
+                            <a href="/p/@project.Key/issues?open=&affectsVersionId=@v.Id">Affects version: @vs.AffectsCount issue@(vs.AffectsCount == 1 ? "" : "s")</a>
+                        </div>
+                        @if (issuesByVersion.GetValueOrDefault(v.Id) is { Count: > 0 } list)
+                        {
+                            foreach (var i in list) { <div class="vr-issue" @key="i.Id"><IssueRow Issue="i" /></div> }
+                        }
+                        else { <div class="mud-text-secondary pa-3">No issues have this fix version.</div> }
+                    </div>
+                }
+            </MudPaper>
+        }
+    </MudStack>
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound, canManage;
+    private string? error;
+    private List<VersionSummary> versions = [];
+    private ProjectVersion? draft;
+    private readonly HashSet<int> expanded = [];
+    private readonly Dictionary<int, List<Issue>> issuesByVersion = [];
+    private IDisposable? sub;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        canManage = (await Access.GetPermissionsAsync(project.Id)).Can(Permission.ManageLabelsAndMilestones);
+        await Load();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<IssueChanged>(e => e.ProjectId != project?.Id ? Task.CompletedTask : InvokeAsync(async () => { await Load(); StateHasChanged(); }));
+    }
+
+    public void Dispose() => sub?.Dispose();
+
+    private async Task Load()
+    {
+        versions = await ComponentsAndVersions.GetVersionsAsync(project!.Id);
+        foreach (var id in expanded) issuesByVersion[id] = await ComponentsAndVersions.GetVersionIssuesAsync(id);
+    }
+
+    private async Task Toggle(int id)
+    {
+        if (!expanded.Remove(id))
+        {
+            expanded.Add(id);
+            issuesByVersion[id] = await ComponentsAndVersions.GetVersionIssuesAsync(id);
+        }
+    }
+
+    private void Edit(ProjectVersion v) => draft = new ProjectVersion
+    {
+        Id = v.Id, ProjectId = v.ProjectId, Name = v.Name, Description = v.Description, StartDate = v.StartDate, ReleaseDate = v.ReleaseDate, IsReleased = v.IsReleased,
+    };
+
+    private async Task Run(Func<Task> action, string success)
+    {
+        error = null;
+        try
+        {
+            await action();
+            Snackbar.Add(success, Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private Task Save() => Run(async () =>
+    {
+        await ComponentsAndVersions.SaveVersionAsync(draft!);
+        draft = null;
+    }, "Version saved.");
+
+    private Task SetReleased(ProjectVersion v, bool released) =>
+        Run(() => ComponentsAndVersions.SetReleasedAsync(v.Id, released), released ? $"{v.Name} marked released." : $"{v.Name} marked unreleased.");
+
+    private async Task Delete(VersionSummary vs)
+    {
+        if (!await Dialogs.ConfirmAsync($"Delete {vs.Version.Name}?", $"Delete this version? It is removed from {vs.Total + vs.AffectsCount} issue link(s).")) return;
+        await Run(() => ComponentsAndVersions.DeleteVersionAsync(vs.Version.Id), "Version deleted.");
+    }
+}
