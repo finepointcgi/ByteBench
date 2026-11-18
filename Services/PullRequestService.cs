@@ -95,6 +95,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         IEnumerable<int>? reviewerIds = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.CreatePullRequest, authorId);
+        await RepositorySettingsService.EnsureNotArchivedAsync(dbFactory, repo.Id);
         title = title.Trim();
         if (title.Length is 0 or > 200) throw new InvalidOperationException("Title is required (max 200 characters).");
         if (source == target) throw new InvalidOperationException("Source and target must be different branches.");
@@ -157,6 +158,7 @@ public class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, Repos
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == prId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be merged.");
+        RepositorySettingsService.EnsureNotArchived(pr.Repository);
         // Branch protection: approvals, change requests and required checks (throws with the reasons when blocked).
         var bypassed = await gate.EnsureCanMergeAsync(prId, actor.Id);
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)

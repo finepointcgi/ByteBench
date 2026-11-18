@@ -1,0 +1,11 @@
+@* Left-hand navigation for /p/{KEY}/repos/{slug}/settings/... pages. Add one link per settings page. *@
+<nav class="settings-nav" aria-label="Repository settings">
+    <a class="@(Active == "general" ? "active" : "")" href="@CodeUrls.Settings(Repo)">General</a>
+    <a class="@(Active == "branches" ? "active" : "")" href="@RepoUrls.BranchProtection(Repo)">Branch protection</a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    /// <summary>The current settings page, "general" or "branches".</summary>
+    [Parameter] public string Active { get; set; } = "general";
+}

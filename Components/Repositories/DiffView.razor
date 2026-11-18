@@ -56,7 +56,7 @@ else
                 }
                 else
                 {
-                    <table class="diff-table">
+                    <table class="diff-table" data-hl-diff data-hl-lang="@HighlightLanguage(f)">
                         @foreach (var h in f.Hunks)
                         {
                             <tr class="diff-hunk"><td class="ln"></td><td class="ln"></td><td class="code mono">@h.Header</td></tr>
@@ -72,7 +72,7 @@ else
                                         {
                                             <button class="diff-comment-btn" title="Comment on this line" @onclick="() => StartComment(f.Path, line)">+</button>
                                         }
-                                        <span class="diff-sign">@(line.Kind switch { DiffLineKind.Added => "+", DiffLineKind.Deleted => "-", _ => " " })</span>@line.Text
+                                        <span class="diff-sign">@(line.Kind switch { DiffLineKind.Added => "+", DiffLineKind.Deleted => "-", _ => " " })</span>@CodeLanguages.Line(line.Text)
                                     </td>
                                 </tr>
                                 @if (lineComments.Count > 0 || composingHere)
@@ -144,6 +144,10 @@ else
         collapsed.Clear();
         foreach (var f in Files.Where(f => f.Hunks.Sum(h => h.Lines.Count) > 800)) collapsed.Add(f.Path);
     }
+
+    /// <summary>The highlight.js language for a file's diff, or null when unknown or over the size limit.</summary>
+    private static string? HighlightLanguage(FileDiff f) =>
+        f.Hunks.Sum(h => h.Lines.Sum(l => (long)l.Text.Length + 1)) > CodeLanguages.MaxHighlightBytes ? null : CodeLanguages.ForPath(f.Path);
 
     private static bool Matches(PullRequestComment c, DiffLine line) =>
         c.Line is { } n ? line.Kind != DiffLineKind.Deleted && line.NewLine == n

@@ -26,7 +26,7 @@ else if (Repo != null)
         </div>
         <div class="ms-auto d-flex gap-2">
             <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.Commits(Repo, Ref, CleanPath)">🕘 History</a>
-            @if (!IsTag && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
+            @if (!IsTag && !Repo.IsArchived && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
             {
                 <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, CurrentRef, Repo.DefaultBranch)">Create pull request</a>
             }
@@ -127,12 +127,13 @@ else if (Repo != null)
                 }
                 else
                 {
-                    <table class="code-table mono">
+                    var lineBase = LineLinkBase;
+                    <table class="code-table mono" data-linkable data-hl-lang="@CodeLanguages.ForFile(blob.Path, blob.Size)" @key="blob.Sha">
                         @{ var n = 0; }
                         @foreach (var line in blob.Lines)
                         {
                             n++;
-                            <tr><td class="ln">@n</td><td class="code">@line</td></tr>
+                            <tr id="L@(n)"><td class="ln"><a class="ln-link" href="@(lineBase)#L@(n)" data-line="@n">@n</a></td><td class="code">@CodeLanguages.Line(line)</td></tr>
                         }
                     </table>
                 }
@@ -157,6 +158,16 @@ else if (Repo != null)
     private string? ParentPath => CleanPath?.Contains('/') == true ? CleanPath[..CleanPath.LastIndexOf('/')] : null;
     private bool IsTag => tags.Contains(CurrentRef);
     private bool IsMarkdown => blob?.Path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) == true;
+    /// <summary>This page's URL without a fragment: line links must be absolute because of &lt;base href="/"&gt;.</summary>
+    private string LineLinkBase
+    {
+        get
+        {
+            var rel = Nav.ToBaseRelativePath(Nav.Uri);
+            var i = rel.IndexOf('#');
+            return "/" + (i >= 0 ? rel[..i] : rel);
+        }
+    }
 
     private IEnumerable<(string Name, string Full)> Crumbs
     {

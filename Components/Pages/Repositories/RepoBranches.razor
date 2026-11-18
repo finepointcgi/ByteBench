@@ -17,7 +17,7 @@ else if (Repo != null)
     <RepoHeader Repo="Repo" Active="branches" />
 
     <div class="repo-toolbar">
-        @if (perms.Can(Permission.PushCode))
+        @if (perms.Can(Permission.PushCode) && !Repo.IsArchived)
         {
         <input class="form-control form-control-sm branch-name-input mono" placeholder="new-branch-name" @bind="newName" @bind:event="oninput" />
         <span class="muted small">from</span>
@@ -75,11 +75,11 @@ else if (Repo != null)
                     {
                         <a href="@RepoUrls.PullRequest(pr)" class="text-nowrap"><PrStateBadge State="pr.State" /> #@pr.Number</a>
                     }
-                    else if (!b.IsDefault && b.Ahead > 0 && perms.Can(Permission.CreatePullRequest))
+                    else if (!b.IsDefault && b.Ahead > 0 && perms.Can(Permission.CreatePullRequest) && !Repo.IsArchived)
                     {
                         <a class="btn btn-sm btn-outline-secondary" href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, b.Name, Repo.DefaultBranch)">Create PR</a>
                     }
-                    @if (!b.IsDefault && perms.Can(Permission.DeleteBranch))
+                    @if (!b.IsDefault && perms.Can(Permission.DeleteBranch) && !Repo.IsArchived)
                     {
                         <button class="btn btn-sm btn-outline-danger" title="Delete branch" @onclick="() => Delete(b.Name)">Delete</button>
                     }

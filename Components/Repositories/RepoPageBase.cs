@@ -10,6 +10,7 @@ public abstract class RepoPageBase : ComponentBase
     [Inject] protected RepositoryService Repos { get; set; } = null!;
     [Inject] protected NavigationManager Nav { get; set; } = null!;
     [Inject] protected CurrentUser Me { get; set; } = null!;
+    [Inject] protected RepositorySettingsService RepoSettings { get; set; } = null!;
 
     [Parameter] public string Key { get; set; } = "";
     [Parameter] public string Slug { get; set; } = "";
@@ -28,6 +29,12 @@ public abstract class RepoPageBase : ComponentBase
         if (loadedFor != id)
         {
             Repo = await Repos.GetRepositoryAsync(Key, Slug);
+            if (Repo == null && await RepoSettings.RedirectUrlAsync(Nav.Uri, Key, Slug) is { } moved)
+            {
+                // Renamed repository: send old URLs to the current slug.
+                Nav.NavigateTo(moved, replace: true);
+                return false;
+            }
             NotFound = Repo == null;
             loadedFor = id;
             if (UsersByEmail.Count == 0) UsersByEmail = await Repos.GetUsersByEmailAsync();

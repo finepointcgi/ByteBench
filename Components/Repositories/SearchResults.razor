@@ -1,0 +1,73 @@
+@* Code search results for one repository: file-name matches, then content matches grouped by file. *@
+@using System.Net
+@using System.Text
+
+@if (Result.Error != null)
+{
+    <div class="empty">@Result.Error</div>
+}
+else
+{
+    @if (Result.FileNames.Count > 0)
+    {
+        <div class="search-names">
+            <div class="muted small px-3 pb-1">Matching file names@(Result.FileNames.Count >= CodeSearchService.MaxFileNameMatches ? $" (first {CodeSearchService.MaxFileNameMatches})" : "")</div>
+            @foreach (var name in Result.FileNames)
+            {
+                <a class="mono" href="@RepoUrls.Source(Result.Repository, Result.Ref, name)">📄 @name</a>
+            }
+        </div>
+    }
+    @foreach (var f in Result.Files)
+    {
+        <div class="search-file" @key="f.Path">
+            <div class="search-file-head">
+                <a class="mono" href="@RepoUrls.Source(Result.Repository, Result.Ref, f.Path)"><b>@f.Path</b></a>
+                <span class="muted ms-auto">@f.MatchCount match@(f.MatchCount == 1 ? "" : "es")</span>
+            </div>
+            @if (f.Snippets.Count == 0)
+            {
+                <div class="diff-note">Matches in this file can't be previewed.</div>
+            }
+            else
+            {
+                <table class="code-table mono">
+                    @for (var i = 0; i < f.Snippets.Count; i++)
+                    {
+                        @if (i > 0)
+                        {
+                            <tr class="search-gap"><td class="ln"></td><td class="code"></td></tr>
+                        }
+                        @foreach (var line in f.Snippets[i])
+                        {
+                            <tr class="@(line.IsMatch ? "search-match" : "search-ctx")">
+                                <td class="ln"><a href="@CodeUrls.Line(Result.Repository, Result.Ref, f.Path, line.Number)">@line.Number</a></td>
+                                <td class="code">@Marked(line)</td>
+                            </tr>
+                        }
+                    }
+                </table>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public RepoSearchResult Result { get; set; } = null!;
+
+    /// <summary>The line with each hit wrapped in &lt;mark&gt;; all text is HTML-encoded.</summary>
+    private static MarkupString Marked(SearchLine line)
+    {
+        var sb = new StringBuilder();
+        var pos = 0;
+        foreach (var (start, length) in line.Hits.OrderBy(h => h.Start))
+        {
+            if (start < pos || start + length > line.Text.Length) continue;
+            sb.Append(WebUtility.HtmlEncode(line.Text[pos..start]));
+            sb.Append("<mark class=\"search-hit\">").Append(WebUtility.HtmlEncode(line.Text.Substring(start, length))).Append("</mark>");
+            pos = start + length;
+        }
+        sb.Append(WebUtility.HtmlEncode(line.Text[pos..]));
+        return new MarkupString(sb.ToString());
+    }
+}

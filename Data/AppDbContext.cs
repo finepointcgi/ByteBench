@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AiReview> AiReviews => Set<AiReview>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
+    public DbSet<RepositoryRedirect> RepositoryRedirects => Set<RepositoryRedirect>();
 
     // ----- Branch protection & reviewers -----
     public DbSet<BranchProtectionRule> BranchProtectionRules => Set<BranchProtectionRule>();
@@ -105,5 +106,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<PipelineStep>().HasOne(s => s.Job).WithMany(j => j.Steps).HasForeignKey(s => s.JobId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<PipelineStepLog>().HasKey(l => l.StepId);
         b.Entity<PipelineStep>().HasOne(s => s.Log).WithOne().HasForeignKey<PipelineStepLog>(l => l.StepId).OnDelete(DeleteBehavior.Cascade);
+        // ----- Code tools -----
+        b.Entity<RepositoryRedirect>().HasIndex(r => new { r.ProjectId, r.OldSlug }).IsUnique();
+        b.Entity<RepositoryRedirect>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
     }
 }

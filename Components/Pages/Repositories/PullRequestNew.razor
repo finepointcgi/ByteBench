@@ -117,7 +117,11 @@ else if (project != null)
                             @if (templatePath != null) { <div class="form-text">Prefilled from <span class="mono">@templatePath</span> on <span class="mono">@TargetOrDefault</span>.</div> }
                         </div>
                         @if (error != null) { <div class="alert alert-danger py-2">@error</div> }
-                        <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(title))" @onclick="Create">Create pull request</button>
+                        @if (repo?.IsArchived == true)
+                        {
+                            <div class="archived-banner">@repo.Name is archived, so pull requests can't be created.</div>
+                        }
+                        <button class="btn btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(title) || repo?.IsArchived == true)" @onclick="Create">Create pull request</button>
                     </div>
                     <aside class="side-panel">
                         <div class="field">

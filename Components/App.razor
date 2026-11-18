@@ -8,6 +8,7 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["css/code-tools.css"]" />
     <link rel="stylesheet" href="@Assets["GitBench.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
@@ -18,6 +19,11 @@
     <Routes @rendermode="PageRenderMode" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["lib/highlightjs/highlight.min.js"]"></script>
+    <script src="@Assets["lib/highlightjs/languages/dockerfile.min.js"]"></script>
+    <script src="@Assets["lib/highlightjs/languages/powershell.min.js"]"></script>
+    <script src="@Assets["lib/highlightjs/languages/fsharp.min.js"]"></script>
+    <script src="@Assets["js/code-tools.js"]"></script>
 </body>
 
 </html>

@@ -13,12 +13,16 @@
 }
 else if (Repo != null && !perms.Can(Permission.ManageRepositories))
 {
-    <RepoHeader Repo="Repo" Active="protection" />
+    <RepoHeader Repo="Repo" Active="settings" />
     <Forbidden Message="Only Maintainers and Owners can manage branch protection." BackHref="@RepoUrls.Branches(Repo)" />
 }
 else if (Repo != null)
 {
-    <RepoHeader Repo="Repo" Active="protection" />
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="branches" />
+        <div class="min-w-0">
 
     <div class="page-header">
         <div>
@@ -113,6 +117,8 @@ else if (Repo != null)
                 </div>
             </div>
         }
+    </div>
+        </div>
     </div>
 }
 
