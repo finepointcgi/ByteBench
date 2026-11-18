@@ -21,6 +21,7 @@ public class SavedFilterTests(TestApp app) : IClassFixture<TestApp>
         WorkflowStatusId = 13,
         EpicId = 42,
         HideSubtasks = true,
+        Gql = "status in (\"In Progress\", Done) AND text ~ \"a&b=c\"",
     };
 
     [Fact]

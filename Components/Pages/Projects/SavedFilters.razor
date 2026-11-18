@@ -176,6 +176,7 @@ else if (project != null)
     private IEnumerable<string> Describe(string query)
     {
         var f = IssueFilterQuery.Parse(query);
+        if (f.Gql != null) { yield return "GQL: " + f.Gql; yield break; } // advanced filters store gql=… instead of the basic fields
         if (f.WorkflowStatusId is { } ws) yield return "status: " + (workflow.Find(ws)?.Name ?? $"#{ws}");
         if (f.Status is { } s) yield return $"status: any {s.Name()}";
         else if (f.WorkflowStatusId == null) yield return f.Open switch { true => "open", false => "closed", null => "open & closed" };

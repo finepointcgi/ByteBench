@@ -1,0 +1,86 @@
+@page "/issues/search"
+@using GitBench.Services.Query
+@inject GqlService Gql
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@implements IDisposable
+
+<PageTitle>Advanced issue search</PageTitle>
+
+@* GQL search across every project the user can view. The query lives in the URL (?gql=…). *@
+<div class="is-page">
+    <div class="is-header">
+        <div>
+            <MudText Typo="Typo.h5" Class="is-title">Advanced issue search</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">GQL across every project you can see</MudText>
+        </div>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.FileDownload" OnClick="ExportCsv" Disabled="@(string.IsNullOrWhiteSpace(query))">Export CSV</MudButton>
+    </div>
+    <MudPaper Outlined="true" Class="pa-3 mb-3">
+        <GitBench.Components.Query.GqlEditor @bind-Value="text" OnRun="Run" Error="error" ErrorQuery="@query" />
+    </MudPaper>
+    @if (query != null && error == null)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+            @total matching issue@(total == 1 ? "" : "s")@(total > issues.Count ? $" (showing the first {issues.Count})" : "")
+        </MudText>
+        <MudPaper Outlined="true" Class="is-list">
+            @if (issues.Count == 0)
+            {
+                <div class="is-empty mud-text-secondary">No issues match this query.</div>
+            }
+            @foreach (var i in issues)
+            {
+                <div class="is-row" @key="i.Id"><IssueRow Issue="i" /></div>
+            }
+        </MudPaper>
+    }
+</div>
+
+@code {
+    private const int PageSize = 200;
+    private string? text, query;
+    private GqlException? error;
+    private List<Issue> issues = [];
+    private int total;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        await LoadFromUrl();
+    }
+
+    private async Task LoadFromUrl()
+    {
+        query = IssueFilterQuery.FromUri(Nav.Uri).Gql;
+        text = query;
+        if (string.IsNullOrWhiteSpace(query)) { query = null; return; }
+        try
+        {
+            var result = await Gql.SearchAsync(query, take: PageSize);
+            (issues, total, error) = (result.Issues, result.Total, null);
+        }
+        catch (GqlException ex) { (issues, total, error) = ([], 0, ex); }
+    }
+
+    private void Run(string q) => Nav.NavigateTo("issues/search?gql=" + Uri.EscapeDataString(q));
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!Nav.ToBaseRelativePath(e.Location).StartsWith("issues/search", StringComparison.OrdinalIgnoreCase)) return;
+        _ = InvokeAsync(async () => { await LoadFromUrl(); StateHasChanged(); });
+    }
+
+    private async Task ExportCsv()
+    {
+        var parameters = new DialogParameters<GitBench.Components.Query.CsvExportDialog>
+        {
+            { x => x.Path, "/issues/export.csv" },
+            { x => x.Query, "gql=" + Uri.EscapeDataString(query ?? "") },
+        };
+        await Dialogs.ShowAsync<GitBench.Components.Query.CsvExportDialog>("Export CSV", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

@@ -10,6 +10,7 @@ using GitBench.Services.Audit;
 using GitBench.Services.Releases;
 using GitBench.Services.Hosting;
 using GitBench.Services.Ssh;
+using GitBench.Services.Query;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -99,6 +100,7 @@ builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
 builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
 builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
 builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
+builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -142,6 +144,7 @@ app.MapCiEndpoints();
 app.MapGitBenchApi();
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 app.MapAuditExport();
+app.MapIssueCsvExport(); // /p/{key}/issues/export.csv, /issues/export.csv
 GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 app.MapReleases();
 app.MapGitBenchHealth(); // /health/live, /health/ready

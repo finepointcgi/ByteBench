@@ -86,6 +86,7 @@ public static class ApiEndpoints
         api.MapReleaseEndpoints();
         api.MapExploreEndpoints(); // search, user profiles, stars
         api.MapGroupEndpoints();
+        api.MapGqlSearchEndpoints(); // advanced (GQL) issue search
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

@@ -1,0 +1,6 @@
+.is-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+::deep .is-title { font-weight: 600; }
+.is-page ::deep .is-list { overflow: hidden; }
+.is-row { border-bottom: 1px solid var(--mud-palette-lines-default); }
+.is-row:last-child { border-bottom: none; }
+.is-empty { padding: 32px 16px; text-align: center; }

@@ -6,6 +6,8 @@
 @inject ProjectAccess Access
 @inject WorkflowService Workflows
 @inject NavigationManager Nav
+@inject GitBench.Services.Query.GqlService Gql
+@inject IDialogService Dialogs
 
 <PageTitle>Issues · @project?.Name</PageTitle>
 
@@ -23,6 +25,13 @@ else if (project != null)
         </div>
         <div class="il-header-actions">
             <SavedFiltersMenu Project="project" Perms="perms" Query="@IssueFilterQuery.ToQueryString(filter)" />
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" AriaLabel="More list actions" Dense="true" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem Icon="@Icons.Material.Outlined.FileDownload" OnClick="ExportCsv">Export CSV…</MudMenuItem>
+                @if (perms.Role >= ProjectRole.Maintainer)
+                {
+                    <MudMenuItem Icon="@Icons.Material.Outlined.FileUpload" Href="@($"/p/{project.Key}/import")">Import CSV…</MudMenuItem>
+                }
+            </MudMenu>
             @if (canCreate)
             {
                 <MudButton Href="@($"/p/{project.Key}/issues/new")" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New issue</MudButton>
@@ -30,6 +39,19 @@ else if (project != null)
         </div>
     </div>
 
+    @if (Advanced)
+    {
+        <MudPaper Outlined="true" Class="il-filters il-advanced">
+            <GitBench.Components.Query.GqlEditor @ref="gqlEditor" @bind-Value="gqlText" OnRun="RunGql" Scope="@([project.Id])" Error="gqlError" ErrorQuery="@filter.Gql" />
+            <div class="il-advanced-actions">
+                <span class="il-muted">@(gqlError == null ? $"{gqlTotal} matching issue{(gqlTotal == 1 ? "" : "s")} in {project.Key}" + (gqlTotal > issues.Count ? $" (showing the first {issues.Count})" : "") : "")</span>
+                <MudButton Variant="Variant.Text" Size="Size.Small" Href="@($"/issues/search?gql={Uri.EscapeDataString(gqlText ?? "")}")">Search all projects</MudButton>
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Tune" OnClick="SwitchToBasic">Switch to basic</MudButton>
+            </div>
+        </MudPaper>
+    }
+    else
+    {
     <div class="il-tabs" role="tablist" aria-label="Open or closed">
         <button type="button" role="tab" aria-selected="@(IsTab(true) ? "true" : "false")" class="il-tab @(IsTab(true) ? "active" : "")" @onclick="() => SetOpen(true)">
             <MudIcon Icon="@Icons.Material.Outlined.RadioButtonUnchecked" Size="Size.Small" /> Open <span class="il-count">@counts.open</span>
@@ -94,7 +116,9 @@ else if (project != null)
         {
             <MudButton Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FilterListOff" OnClick="Reset" Class="il-clear">Clear filters</MudButton>
         }
+        <MudButton Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Code" OnClick="SwitchToAdvanced" Class="il-clear">Advanced</MudButton>
     </MudPaper>
+    }
 
     @if (CanBulkEdit && selected.Count > 0)
     {
@@ -217,8 +241,66 @@ else if (project != null)
     {
         if (project == null) return;
         workflow = await Workflows.GetAsync(project.Id);
-        issues = await Issues.GetIssuesAsync(project.Id, filter);
+        if (Advanced) await LoadGql();
+        else issues = await Issues.GetIssuesAsync(project.Id, filter);
         counts = await Issues.CountAsync(project.Id);
+    }
+
+    // ----- Advanced (GQL) mode: ?gql=… replaces the basic filters; results are limited to this project -----
+    private const int MaxGqlRows = 500;
+    private bool Advanced => filter.Gql != null;
+    private string? gqlText;
+    private GitBench.Services.Query.GqlException? gqlError;
+    private int gqlTotal;
+    private GitBench.Components.Query.GqlEditor? gqlEditor;
+
+    private async Task LoadGql()
+    {
+        gqlText ??= filter.Gql;
+        try
+        {
+            var result = await Gql.SearchAsync(filter.Gql!, [project!.Id], take: MaxGqlRows);
+            (issues, gqlTotal, gqlError) = (result.Issues, result.Total, null);
+        }
+        catch (GitBench.Services.Query.GqlException ex)
+        {
+            (issues, gqlTotal, gqlError) = ([], 0, ex);
+        }
+    }
+
+    private async Task RunGql(string text)
+    {
+        gqlText = text;
+        filter = new IssueFilter { Gql = text };
+        await Apply();
+    }
+
+    private async Task SwitchToAdvanced()
+    {
+        if (project == null) return;
+        gqlText = await Gql.FromFilterAsync(project.Id, filter);
+        await RunGql(gqlText);
+        if (gqlEditor != null) await gqlEditor.FocusAsync();
+    }
+
+    private async Task SwitchToBasic()
+    {
+        gqlText = null;
+        gqlError = null;
+        filter = new IssueFilter();
+        await Apply();
+    }
+
+    private async Task ExportCsv()
+    {
+        if (project == null) return;
+        var parameters = new DialogParameters<GitBench.Components.Query.CsvExportDialog>
+        {
+            { x => x.Path, $"/p/{project.Key}/issues/export.csv" },
+            { x => x.Query, IssueFilterQuery.ToQueryString(filter) },
+        };
+        await Dialogs.ShowAsync<GitBench.Components.Query.CsvExportDialog>("Export CSV", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
     }
 
     /// <summary>The filter changed on this page: reflect it in the URL (without a history entry) and reload.</summary>
@@ -242,6 +324,7 @@ else if (project != null)
         _ = InvokeAsync(async () =>
         {
             filter = parsed;
+            gqlText = parsed.Gql;
             await Load();
             StateHasChanged();
         });
