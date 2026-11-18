@@ -1,0 +1,41 @@
+@* Start and target dates of one roadmap item: the keyboard and touch alternative to dragging a bar. Returns (start, due). *@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Dates · <span class="mono">@IssueKey</span></MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">@IssueTitle</MudText>
+        <MudStack Spacing="3">
+            <MudDatePicker @bind-Date="start" Label="Start date" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                           DateFormat="yyyy-MM-dd" Editable="true" AutoClose="true" />
+            <MudDatePicker @bind-Date="due" Label="Target (due) date" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                           DateFormat="yyyy-MM-dd" Editable="true" AutoClose="true" />
+            @if (Invalid)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">The start date must be on or before the target date.</MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="Invalid" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string IssueKey { get; set; } = "";
+    [Parameter] public string IssueTitle { get; set; } = "";
+    [Parameter] public DateTime? Start { get; set; }
+    [Parameter] public DateTime? Due { get; set; }
+
+    private DateTime? start, due;
+    private bool Invalid => start is { } s && due is { } d && s.Date > d.Date;
+
+    protected override void OnInitialized() => (start, due) = (Start, Due);
+
+    private void Save()
+    {
+        if (!Invalid) MudDialog.Close(DialogResult.Ok((start?.Date, due?.Date)));
+    }
+}

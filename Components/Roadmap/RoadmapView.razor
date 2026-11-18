@@ -1,0 +1,379 @@
+@* Gantt-style epic timeline for one project or a group's projects. Bars: start → target (due) date, filled by child
+   completion. Drag (wwwroot/js/roadmap.js) or click a bar for the dates dialog; "blocks" links are drawn as arrows. *@
+@using GitBench.Services.Roadmap
+@implements IAsyncDisposable
+@inject RoadmapService Roadmap
+@inject GroupService Groups
+@inject CurrentUser Me
+@inject LiveEvents Live
+@inject IJSRuntime JS
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<div class="rm">
+    <div class="rm-toolbar">
+        <MudToggleGroup T="RoadmapZoom" Value="zoom" ValueChanged="SetZoom" Size="Size.Small" Color="Color.Primary" Outlined="true" CheckMark="false" aria-label="Zoom">
+            <MudToggleItem T="RoadmapZoom" Value="RoadmapZoom.Weeks" Text="Weeks" />
+            <MudToggleItem T="RoadmapZoom" Value="RoadmapZoom.Months" Text="Months" />
+            <MudToggleItem T="RoadmapZoom" Value="RoadmapZoom.Quarters" Text="Quarters" />
+        </MudToggleGroup>
+        <MudSelect T="int?" Value="labelId" ValueChanged="SetLabel" Label="Label" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   OuterClass="rm-select" ToStringFunc="@(id => data.Labels.FirstOrDefault(l => l.Id == id)?.Name ?? "")">
+            @foreach (var l in data.Labels) { <MudSelectItem T="int?" Value="l.Id"><LabelChip Label="l" /></MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="int?" Value="assigneeId" ValueChanged="SetAssignee" Label="Assignee" Clearable="true" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   OuterClass="rm-select" ToStringFunc="@(id => id == 0 ? "Unassigned" : data.Assignees.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "")">
+            <MudSelectItem T="int?" Value="0">Unassigned</MudSelectItem>
+            @foreach (var u in data.Assignees) { <MudSelectItem T="int?" Value="u.Id">@u.DisplayName</MudSelectItem> }
+        </MudSelect>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Today" OnClick="ScrollToToday">Today</MudButton>
+        <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="ToggleAll"
+                   StartIcon="@(AllExpanded ? Icons.Material.Outlined.UnfoldLess : Icons.Material.Outlined.UnfoldMore)">@(AllExpanded ? "Collapse all" : "Expand all")</MudButton>
+        <div class="rm-legend" aria-hidden="true">
+            <span><i class="rm-sw rm-sw-today"></i>Today</span>
+            <span><i class="rm-sw rm-sw-sprint"></i>Sprint</span>
+            <span><i class="rm-sw rm-sw-milestone"></i>Milestone</span>
+            <span><i class="rm-sw rm-sw-dep"></i>Blocks</span>
+        </div>
+    </div>
+
+    @if (loaded && data.Epics.Count == 0)
+    {
+        <div class="rm-empty">
+            @if (labelId != null || assigneeId != null) { <text>No epics match these filters.</text> }
+            else { <text>No epics yet. Create an issue with type <b>Epic</b>, give it a start and due date, and it appears here.</text> }
+        </div>
+    }
+    else if (scale != null)
+    {
+        <div class="rm-scroll" @ref="scrollEl" data-px="@F(scale.PxPerDay)">
+            <div class="rm-canvas" style="width:calc(var(--rm-name-w) + @(F(scale.Width))px)">
+                <div class="rm-head">
+                    <div class="rm-name-head">Epic</div>
+                    <div class="rm-ticks" style="width:@(F(scale.Width))px">
+                        @foreach (var t in scale.Ticks())
+                        {
+                            <div class="rm-tick" style="left:@(F(scale.X(t.Date)))px">@t.Label</div>
+                        }
+                        @foreach (var s in data.Sprints)
+                        {
+                            <div class="@("rm-sprint-band" + (s.State == SprintState.Active ? " active" : ""))"
+                                 style="left:@(F(scale.X(s.Start)))px;width:@(F(Math.Max(scale.PxPerDay, scale.X(s.End.AddDays(1)) - scale.X(s.Start))))px"
+                                 title="@($"{s.Name} ({s.ProjectKey}): {s.Start:MMM d} – {s.End:MMM d}")">@s.Name</div>
+                        }
+                        @foreach (var m in data.Milestones)
+                        {
+                            <div class="@("rm-ms-flag" + (m.IsClosed ? " closed" : ""))" style="left:@(F(scale.X(m.Due) + scale.PxPerDay / 2))px"
+                                 title="@($"Milestone {m.Title}: {m.Due:MMM d, yyyy}{(m.IsClosed ? " (closed)" : "")}")">
+                                <MudIcon Icon="@Icons.Material.Filled.Flag" Size="Size.Small" />
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="rm-body">
+                    <div class="rm-layer" style="width:@(F(scale.Width))px;height:@(rows.Count * RowH)px" aria-hidden="true">
+                        @foreach (var s in data.Sprints)
+                        {
+                            <div class="rm-sprint-shade" style="left:@(F(scale.X(s.Start)))px;width:@(F(scale.X(s.End.AddDays(1)) - scale.X(s.Start)))px"></div>
+                        }
+                        @foreach (var t in scale.Ticks())
+                        {
+                            <div class="rm-gridline" style="left:@(F(scale.X(t.Date)))px"></div>
+                        }
+                        @foreach (var m in data.Milestones)
+                        {
+                            <div class="rm-ms-line" style="left:@(F(scale.X(m.Due) + scale.PxPerDay / 2))px"></div>
+                        }
+                        <div class="rm-today" style="left:@(F(scale.X(today) + scale.PxPerDay / 2))px"></div>
+                        @if (arrows.Count > 0)
+                        {
+                            <svg class="rm-deps" width="@(F(scale.Width))" height="@(rows.Count * RowH)">
+                                <defs>
+                                    <marker id="rm-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                        <path d="M0,0 L8,4 L0,8 z" class="rm-arrowhead" />
+                                    </marker>
+                                </defs>
+                                @foreach (var a in arrows)
+                                {
+                                    <path d="@a" class="rm-dep" marker-end="url(#rm-arrow)" />
+                                }
+                            </svg>
+                        }
+                    </div>
+
+                    @foreach (var row in rows)
+                    {
+                        var i = row.Item;
+                        <div class="@("rm-row" + (row.IsChild ? " child" : ""))" @key="(i.Id, row.IsChild)">
+                            <div class="rm-name">
+                                @if (!row.IsChild)
+                                {
+                                    @if (i.Children.Count > 0)
+                                    {
+                                        <button type="button" class="rm-expand" aria-expanded="@(expanded.Contains(i.Id) ? "true" : "false")"
+                                                aria-label="@($"{(expanded.Contains(i.Id) ? "Hide" : "Show")} child issues of {i.Key}")" @onclick="() => Toggle(i.Id)">
+                                            <MudIcon Icon="@(expanded.Contains(i.Id) ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)" Size="Size.Small" />
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="rm-expand-gap"></span>
+                                    }
+                                }
+                                <span class="rm-type" title="@i.Type">@i.Type.Icon()</span>
+                                <a class="mono rm-key" href="@i.Url">@i.Key</a>
+                                <a class="@("rm-title" + (i.IsDone ? " done" : ""))" href="@i.Url" title="@i.Title">@i.Title</a>
+                                <Avatar User="i.Assignee" Size="18" />
+                            </div>
+                            <div class="rm-lane">
+                                @if (Extent(i) is var (s, e))
+                                {
+                                    var partial = i.StartDate == null || i.DueDate == null;
+                                    var cls = "rm-bar" + (row.IsChild ? " child" : "") + (i.IsDone ? " done" : "") + (partial ? " partial" : "")
+                                              + (Overdue(i) ? " overdue" : "");
+                                    var style = $"left:{F(scale.X(s))}px;width:{F(Math.Max(scale.PxPerDay, scale.X(e.AddDays(1)) - scale.X(s)))}px";
+                                    @if (i.CanEdit)
+                                    {
+                                        <button type="button" class="@cls" style="@style" data-id="@i.Id" data-edit title="@BarTitle(i)"
+                                                aria-label="@($"{i.Key} {i.Title}: {DatesText(i)}. Edit dates")" @onclick="() => EditDates(i)">
+                                            <span class="rm-fill" style="width:@(i.Percent)%"></span>
+                                            <span class="rm-h rm-h-s" data-mode="start"></span>
+                                            <span class="rm-bar-text">@(row.IsChild ? i.Status.Name() : $"{i.Percent}%")</span>
+                                            <span class="rm-h rm-h-e" data-mode="end"></span>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <a class="@cls" style="@style" href="@i.Url" title="@BarTitle(i)">
+                                            <span class="rm-fill" style="width:@(i.Percent)%"></span>
+                                            <span class="rm-bar-text">@(row.IsChild ? i.Status.Name() : $"{i.Percent}%")</span>
+                                        </a>
+                                    }
+                                }
+                                else if (i.CanEdit)
+                                {
+                                    <button type="button" class="rm-unscheduled" style="left:@(F(LeftOfView()))px" @onclick="() => EditDates(i)">
+                                        <MudIcon Icon="@Icons.Material.Outlined.EditCalendar" Size="Size.Small" /> Set dates
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="rm-unscheduled ro" style="left:@(F(LeftOfView()))px">No dates</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+            Bars run from the start date to the due (target) date and fill with the share of child issues done. Drag a bar to move it, drag its ends to
+            change one date, or click it (Enter) to edit the dates. Arrows point from an issue to the one it blocks.
+        </MudText>
+    }
+</div>
+
+@code {
+    /// <summary>One project's roadmap.</summary>
+    [Parameter] public int? ProjectId { get; set; }
+    /// <summary>A group's roadmap: every visible project of the group and its subgroups.</summary>
+    [Parameter] public int? GroupId { get; set; }
+
+    private const int RowH = 40;
+
+    private RoadmapData data = RoadmapData.Empty;
+    private List<int> projectIds = [];
+    private RoadmapScale? scale;
+    private RoadmapZoom zoom = RoadmapZoom.Months;
+    private int? labelId, assigneeId;
+    private readonly HashSet<int> expanded = [];
+    private List<Row> rows = [];
+    private List<string> arrows = [];
+    private bool loaded, scrollPending = true;
+    private readonly DateTime today = DateTime.UtcNow.Date;
+    private (int?, int?) loadedFor;
+
+    private sealed record Row(RoadmapItem Item, bool IsChild);
+
+    private ElementReference scrollEl;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<RoadmapView>? selfRef;
+    private IDisposable? liveSubscription;
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == (ProjectId, GroupId) && loaded) return;
+        loadedFor = (ProjectId, GroupId);
+        projectIds = ProjectId is { } p ? [p] : GroupId is { } g ? await Groups.ProjectIdsAsync(g) : [];
+        scrollPending = true;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        data = await Roadmap.GetAsync(projectIds, new RoadmapFilter(labelId, assigneeId));
+        loaded = true;
+        Layout();
+    }
+
+    private void Layout()
+    {
+        var dates = data.AllItems.SelectMany(i => new[] { i.StartDate, i.DueDate }).OfType<DateTime>()
+            .Concat(data.Sprints.Where(s => s.State != SprintState.Completed).SelectMany(s => new[] { s.Start, s.End }))
+            .Concat(data.Milestones.Where(m => !m.IsClosed).Select(m => m.Due));
+        scale = RoadmapScale.For(zoom, dates, today);
+        rows = [];
+        foreach (var e in data.Epics)
+        {
+            rows.Add(new Row(e, false));
+            if (expanded.Contains(e.Id)) rows.AddRange(e.Children.Select(c => new Row(c, true)));
+        }
+        arrows = [];
+        var index = rows.Select((r, k) => (r.Item.Id, k)).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First().k);
+        foreach (var d in data.Dependencies)
+        {
+            if (!index.TryGetValue(d.FromIssueId, out var a) || !index.TryGetValue(d.ToIssueId, out var b)) continue;
+            if (Extent(rows[a].Item) is not var (_, ae) || Extent(rows[b].Item) is not var (bs, _)) continue;
+            double x1 = scale.X(ae.AddDays(1)), y1 = a * RowH + RowH / 2.0, x2 = scale.X(bs), y2 = b * RowH + RowH / 2.0;
+            var bend = Math.Max(24, Math.Abs(x2 - x1) / 2);
+            arrows.Add($"M{F(x1)},{F(y1)} C{F(x1 + bend)},{F(y1)} {F(x2 - bend)},{F(y2)} {F(x2 - 2)},{F(y2)}");
+        }
+    }
+
+    /// <summary>The bar's first and last day, or null when the issue has no dates.</summary>
+    private static (DateTime Start, DateTime End)? Extent(RoadmapItem i) =>
+        (i.StartDate ?? i.DueDate, i.DueDate ?? i.StartDate) is ({ } s, { } e) ? (s.Date, e.Date < s.Date ? s.Date : e.Date) : null;
+
+    private bool Overdue(RoadmapItem i) => !i.IsDone && i.DueDate is { } d && d.Date < today;
+
+    private static string DatesText(RoadmapItem i) =>
+        $"{(i.StartDate is { } s ? s.ToString("MMM d, yyyy") : "no start")} – {(i.DueDate is { } d ? d.ToString("MMM d, yyyy") : "no due date")}";
+
+    private static string BarTitle(RoadmapItem i) =>
+        $"{i.Key} {i.Title}\n{DatesText(i)}\n{i.Status.Name()}" + (i.Total > 0 ? $" · {i.Done}/{i.Total} child issues done ({i.Percent}%)" : "");
+
+    private double LeftOfView() => scale == null ? 0 : Math.Max(0, scale.X(today) - 120);
+
+    private bool AllExpanded => data.Epics.Where(e => e.Children.Count > 0).All(e => expanded.Contains(e.Id)) && data.Epics.Any(e => e.Children.Count > 0);
+
+    private void Toggle(int id)
+    {
+        if (!expanded.Remove(id)) expanded.Add(id);
+        Layout();
+    }
+
+    private void ToggleAll()
+    {
+        if (AllExpanded) expanded.Clear();
+        else expanded.UnionWith(data.Epics.Where(e => e.Children.Count > 0).Select(e => e.Id));
+        Layout();
+    }
+
+    private async Task SetZoom(RoadmapZoom z)
+    {
+        zoom = z;
+        Layout();
+        scrollPending = true;
+        await Task.CompletedTask;
+    }
+
+    private async Task SetLabel(int? v) { labelId = v; await Load(); }
+    private async Task SetAssignee(int? v) { assigneeId = v; await Load(); }
+
+    private async Task ScrollToToday()
+    {
+        if (module != null && scale != null) await module.InvokeVoidAsync("scrollTo", scrollEl, scale.X(today));
+    }
+
+    // ----- Editing -----
+
+    private async Task EditDates(RoadmapItem i)
+    {
+        var parameters = new DialogParameters<RoadmapDatesDialog>
+        {
+            { x => x.IssueKey, i.Key }, { x => x.IssueTitle, i.Title }, { x => x.Start, i.StartDate }, { x => x.Due, i.DueDate },
+        };
+        var dialog = await Dialogs.ShowAsync<RoadmapDatesDialog>("Dates", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is { Canceled: false, Data: ValueTuple<DateTime?, DateTime?> picked })
+            await Save(i, picked.Item1, picked.Item2);
+    }
+
+    /// <summary>Called by roadmap.js when a bar was dragged by <paramref name="days"/> (mode: move, start or end).</summary>
+    [JSInvokable]
+    public Task OnDrag(int issueId, string mode, int days) => InvokeAsync(async () =>
+    {
+        var item = data.AllItems.FirstOrDefault(i => i.Id == issueId);
+        if (item == null || !item.CanEdit) return;
+        var (s, d) = RoadmapService.ApplyDrag(item.StartDate, item.DueDate, mode, days);
+        await Save(item, s, d);
+    });
+
+    private async Task Save(RoadmapItem i, DateTime? start, DateTime? due)
+    {
+        try
+        {
+            await Roadmap.SetDatesAsync(i.Id, start, due, Me.Id);
+            Snackbar.Add($"{i.Key}: {(start is { } s ? s.ToString("MMM d") : "no start")} – {(due is { } d ? d.ToString("MMM d") : "no due date")}", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        await Load();
+        StateHasChanged();
+    }
+
+    // ----- JS and live updates -----
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            liveSubscription = Live.Subscribe(OnLive);
+            selfRef = DotNetObjectReference.Create(this);
+            try { module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/roadmap.js"); }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+        }
+        if (module != null && scale != null && rows.Count > 0)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("attach", scrollEl, selfRef);
+                if (scrollPending)
+                {
+                    scrollPending = false;
+                    await module.InvokeVoidAsync("scrollTo", scrollEl, scale.X(today));
+                }
+            }
+            catch (JSException) { }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    private Task OnLive(LiveEvent e)
+    {
+        var pid = e switch { IssueChanged x => x.ProjectId, BoardChanged x => x.ProjectId, SprintChanged x => x.ProjectId, _ => -1 };
+        return !projectIds.Contains(pid) ? Task.CompletedTask : InvokeAsync(async () => { await Load(); StateHasChanged(); });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        liveSubscription?.Dispose();
+        if (module != null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("detach", scrollEl);
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
+        selfRef?.Dispose();
+    }
+}

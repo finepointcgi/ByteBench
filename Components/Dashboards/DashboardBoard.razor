@@ -1,0 +1,189 @@
+@* A dashboard: header with actions (owner: add gadget, settings, delete; anyone: pin as Home) and a MudGrid of gadgets. *@
+@using GitBench.Services.Dashboards
+@using GitBench.Components.Repositories
+@implements IDisposable
+@inject DashboardService Dashboards
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject LiveEvents Live
+
+@if (view is { } v)
+{
+    var d = v.Dashboard;
+    <div class="db-head">
+        <div class="db-head-text">
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">@d.Name</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @if (!v.CanEdit) { <span>By @d.Owner.DisplayName · </span> }
+                @if (v.SharedWith != null)
+                {
+                    <span>Shared with <a href="@v.SharedUrl">@v.SharedWith</a> (read-only for others)</span>
+                }
+                else { <span>Private</span> }
+                @if (v.IsHome) { <span> · <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" Class="db-inline-icon" /> your Home page</span> }
+                @if (!string.IsNullOrEmpty(d.Description)) { <span> · @d.Description</span> }
+            </MudText>
+        </div>
+        <div class="db-actions">
+            @if (v.CanEdit)
+            {
+                <MudMenu Label="Add gadget" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                         AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" Disabled="@(v.Gadgets.Count >= DashboardService.MaxGadgets)">
+                    @foreach (var k in GadgetKinds.All)
+                    {
+                        <MudMenuItem Icon="@k.Icon" OnClick="() => AddGadget(k)">@k.Name</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Settings" OnClick="EditSettings">Settings</MudButton>
+            }
+            @if (v.IsHome)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.HomeWork" OnClick="() => SetHome(false)">Unpin from Home</MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Home" OnClick="() => SetHome(true)">Use as Home</MudButton>
+            }
+            @if (v.CanEdit)
+            {
+                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" OnClick="Delete" aria-label="Delete dashboard" />
+            }
+        </div>
+    </div>
+
+    @if (v.Gadgets.Count == 0)
+    {
+        <MudPaper Outlined="true" Class="db-empty">
+            This dashboard has no gadgets yet.@if (v.CanEdit) { <text> Use <b>Add gadget</b> to add filter results, charts, a burndown, notes and more.</text> }
+        </MudPaper>
+    }
+    <MudGrid Spacing="4">
+        @for (var k = 0; k < v.Gadgets.Count; k++)
+        {
+            var g = v.Gadgets[k];
+            var index = k;
+            <MudItem xs="12" md="@g.Width" @key="g.Id">
+                <GadgetHost Gadget="g" CanEdit="v.CanEdit" Index="index" Count="v.Gadgets.Count"
+                            OnConfigure="() => Configure(g)" OnRemove="() => Remove(g)" OnMove="delta => Move(g, index + delta)" />
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    [Parameter, EditorRequired] public int DashboardId { get; set; }
+    /// <summary>Raised when the dashboard can't be shown (missing, not visible or deleted elsewhere).</summary>
+    [Parameter] public EventCallback OnMissing { get; set; }
+    /// <summary>Raised after pinning or unpinning it as Home.</summary>
+    [Parameter] public EventCallback OnHomeChanged { get; set; }
+
+    private DashboardView? view;
+    private IDisposable? liveSubscription;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (view?.Dashboard.Id == DashboardId) return;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        view = await Dashboards.GetAsync(DashboardId);
+        if (view == null) await OnMissing.InvokeAsync();
+    }
+
+    private async Task<bool> Try(Func<Task> action, string? success = null)
+    {
+        try
+        {
+            await action();
+            if (success != null) Snackbar.Add(success, Severity.Success);
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return false;
+        }
+        finally { await Load(); }
+    }
+
+    private async Task<GadgetConfigDialog.GadgetSettings?> ShowConfig(GadgetKind kind, string? title, int width, GadgetConfig config)
+    {
+        var parameters = new DialogParameters<GadgetConfigDialog>
+        {
+            { x => x.Kind, kind }, { x => x.Title, title }, { x => x.Width, width }, { x => x.Config, config },
+        };
+        var dialog = await Dialogs.ShowAsync<GadgetConfigDialog>("Gadget", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        return await dialog.Result is { Canceled: false, Data: GadgetConfigDialog.GadgetSettings s } ? s : null;
+    }
+
+    private async Task AddGadget(GadgetKinds.Info kind)
+    {
+        // Gadgets without required settings are added at once; the others ask first.
+        GadgetConfigDialog.GadgetSettings? s = kind.Kind is GadgetKind.AssignedToMe or GadgetKind.ReviewRequests or GadgetKind.ActivityStream or GadgetKind.Projects
+            ? new(null, kind.DefaultWidth, new GadgetConfig())
+            : await ShowConfig(kind.Kind, null, kind.DefaultWidth, new GadgetConfig());
+        if (s == null) return;
+        await Try(() => Dashboards.AddGadgetAsync(DashboardId, kind.Kind, s.Title, s.Width, s.Config), $"Added {kind.Name}.");
+    }
+
+    private async Task Configure(DashboardGadget g)
+    {
+        var s = await ShowConfig(g.Kind, g.Title, g.Width, GadgetConfig.Parse(g.Config));
+        if (s != null) await Try(() => Dashboards.UpdateGadgetAsync(g.Id, s.Title, s.Width, s.Config), "Gadget saved.");
+    }
+
+    private async Task Remove(DashboardGadget g)
+    {
+        if (!await Dialogs.ConfirmAsync("Remove gadget?", $"Remove \"{g.Title ?? GadgetKinds.Of(g.Kind).Name}\" from this dashboard?", "Remove")) return;
+        await Try(() => Dashboards.RemoveGadgetAsync(g.Id), "Gadget removed.");
+    }
+
+    private Task Move(DashboardGadget g, int index) => Try(() => Dashboards.MoveGadgetAsync(g.Id, index));
+
+    private async Task EditSettings()
+    {
+        var d = view!.Dashboard;
+        var parameters = new DialogParameters<DashboardSettingsDialog>
+        {
+            { x => x.Name, d.Name }, { x => x.Description, d.Description }, { x => x.ProjectId, d.SharedProjectId }, { x => x.GroupId, d.SharedGroupId },
+        };
+        var dialog = await Dialogs.ShowAsync<DashboardSettingsDialog>("Dashboard settings", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is not { Canceled: false, Data: DashboardSettingsDialog.DashboardSettings s }) return;
+        await Try(async () =>
+        {
+            await Dashboards.UpdateAsync(DashboardId, s.Name, s.Description);
+            if (s.ProjectId != d.SharedProjectId || s.GroupId != d.SharedGroupId) await Dashboards.ShareAsync(DashboardId, s.ProjectId, s.GroupId);
+        }, "Dashboard saved.");
+    }
+
+    private async Task SetHome(bool pin)
+    {
+        if (await Try(() => Dashboards.SetHomeAsync(pin ? DashboardId : null), pin ? "This dashboard is now your Home page." : "Home shows the default layout again."))
+            await OnHomeChanged.InvokeAsync();
+    }
+
+    private async Task Delete()
+    {
+        if (!await Dialogs.ConfirmAsync("Delete dashboard?", $"Delete \"{view!.Dashboard.Name}\" and its gadgets? This can't be undone.")) return;
+        try
+        {
+            await Dashboards.DeleteAsync(DashboardId);
+            Snackbar.Add("Dashboard deleted.", Severity.Success);
+            Nav.NavigateTo("/dashboards");
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) liveSubscription = Live.Subscribe<DashboardChanged>(e => e.DashboardId != DashboardId ? Task.CompletedTask
+            : InvokeAsync(async () => { await Load(); StateHasChanged(); }));
+    }
+
+    public void Dispose() => liveSubscription?.Dispose();
+}

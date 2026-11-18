@@ -49,6 +49,7 @@ else if (group != null)
         <nav class="gb-tabs" aria-label="Group sections">
             <TabLink Href="@Url("")" Active="@(section == "")" Icon="@Icons.Material.Outlined.AccountTree">Overview</TabLink>
             <TabLink Href="@Url("issues")" Active="@(section == "issues")" Icon="@Icons.Material.Outlined.ListAlt">Issues</TabLink>
+            <TabLink Href="@Url("roadmap")" Active="@(section == "roadmap")" Icon="@Icons.Material.Outlined.Timeline">Roadmap</TabLink>
             <TabLink Href="@Url("pull-requests")" Active="@(section == "pull-requests")" Icon="@Icons.Material.Outlined.MergeType">Pull requests</TabLink>
             <TabLink Href="@Url("labels")" Active="@(section == "labels")" Icon="@Icons.Material.Outlined.Label">Labels &amp; milestones</TabLink>
             <TabLink Href="@Url("members")" Active="@(section == "members")" Icon="@Icons.Material.Outlined.Group">Members</TabLink>
@@ -62,6 +63,7 @@ else if (group != null)
         {
             case "": <GroupOverview Group="group" Perms="perms" /> break;
             case "issues": <GroupIssues Group="group" /> break;
+            case "roadmap": <GitBench.Components.Roadmap.RoadmapView GroupId="group.Id" @key="group.Id" /> break;
             case "pull-requests": <GroupPullRequests Group="group" /> break;
             case "labels": <GroupLabels Group="group" Perms="perms" /> break;
             case "members": <GroupMembers Group="group" Perms="perms" /> break;
@@ -80,11 +82,11 @@ else if (group != null)
     private bool notFound;
     private string section = "";
 
-    private static readonly string[] Sections = ["", "issues", "pull-requests", "labels", "members", "settings"];
+    private static readonly string[] Sections = ["", "issues", "roadmap", "pull-requests", "labels", "members", "settings"];
 
     private string SectionTitle => section switch
     {
-        "issues" => "Issues", "pull-requests" => "Pull requests", "labels" => "Labels & milestones",
+        "issues" => "Issues", "roadmap" => "Roadmap", "pull-requests" => "Pull requests", "labels" => "Labels & milestones",
         "members" => "Members", "settings" => "Settings", _ => "Overview",
     };
 

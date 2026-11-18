@@ -3,14 +3,26 @@
 @inject CurrentUser Me
 @inject LiveEvents Live
 @inject GitBench.Services.Explore.UserActivityService Feed
+@inject GitBench.Services.Dashboards.DashboardService Dashboards
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Dashboard · GitBench</PageTitle>
 
+@if (homeId is { } hid)
+{
+    @* A pinned dashboard replaces the default layout below (Dashboards → Use as Home). *@
+    <GitBench.Components.Dashboards.DashboardBoard DashboardId="hid" @key="hid" OnMissing="ShowDefault" OnHomeChanged="ShowDefault" />
+}
+else
+{
 <div class="dash">
 <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-5">
     <MudText Typo="Typo.h5" Class="dash-title">Welcome back, @Me.User?.DisplayName.Split(' ')[0]</MudText>
-    <MudButton Href="/projects/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New project</MudButton>
+    <div class="d-flex align-center flex-wrap gap-2">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.DashboardCustomize" OnClick="Customize">Customize</MudButton>
+        <MudButton Href="/projects/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New project</MudButton>
+    </div>
 </div>
 
 <MudGrid Spacing="4">
@@ -89,15 +101,33 @@
     </MudItem>
 </MudGrid>
 </div>
+}
 
 @code {
     private List<ProjectSummary> projects = [];
     private List<Issue> mine = [];
     private List<GitBench.Services.Explore.FeedItem> activity = [];
 
+    private int? homeId;
+
     protected override async Task OnInitializedAsync()
     {
+        homeId = (await Dashboards.GetHomeAsync())?.Dashboard.Id;
+        if (homeId == null) await Load();
+    }
+
+    private async Task ShowDefault()
+    {
+        homeId = null;
         await Load();
+    }
+
+    /// <summary>Copies this default layout into a new personal dashboard, pins it as Home and opens it for editing.</summary>
+    private async Task Customize()
+    {
+        var d = await Dashboards.CreateAsync("My dashboard", withDefaultGadgets: true);
+        await Dashboards.SetHomeAsync(d.Id);
+        Nav.NavigateTo($"/dashboards/{d.Id}");
     }
 
     private async Task Load()
@@ -112,7 +142,7 @@
 
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender) liveSubscription = Live.Subscribe<ActivityChanged>(_ => InvokeAsync(async () =>
+        if (firstRender) liveSubscription = Live.Subscribe<ActivityChanged>(_ => homeId != null ? Task.CompletedTask : InvokeAsync(async () =>
         {
             await Load();
             StateHasChanged();

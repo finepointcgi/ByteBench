@@ -1,0 +1,20 @@
+@page "/dashboards/{Id:int}"
+@using GitBench.Components.Dashboards
+
+<PageTitle>Dashboard · GitBench</PageTitle>
+
+@if (missing)
+{
+    <ProjectNotFound Message="This dashboard does not exist or isn't shared with you." />
+}
+else
+{
+    <DashboardBoard DashboardId="Id" @key="Id" OnMissing="() => missing = true" />
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private bool missing;
+
+    protected override void OnParametersSet() => missing = false;
+}
