@@ -62,8 +62,14 @@ public class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, CurrentUse
     /// <summary>Makes <paramref name="userId"/> the acting user for this scope (e.g. in a background job or HTTP endpoint).</summary>
     public void ActAs(int userId) { actAs = userId; system = false; }
 
-    /// <summary>Grants every permission to calls in this scope that don't name a user. For trusted background work only.</summary>
-    public void ActAsSystem() { system = true; actAs = null; }
+    private int? systemActor;
+
+    /// <summary>
+    /// Grants every permission to calls in this scope that don't name a user. For trusted background work only.
+    /// <paramref name="onBehalfOf"/> lets the system also vouch for one service account named explicitly as the actor
+    /// (e.g. the GitBench AI bot posting review comments), without making that account a project member.
+    /// </summary>
+    public void ActAsSystem(int? onBehalfOf = null) { system = true; actAs = null; systemActor = onBehalfOf; }
 
     /// <summary>The lowest role that has <paramref name="p"/>.</summary>
     public static ProjectRole MinimumRole(Permission p) => p switch
@@ -96,7 +102,7 @@ public class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, CurrentUse
         }
     }
 
-    private bool IsSystem(int? userId) => userId == null && system;
+    private bool IsSystem(int? userId) => system && (userId == null || userId == systemActor);
 
     public async Task<bool> IsAdminAsync(int? userId = null)
     {

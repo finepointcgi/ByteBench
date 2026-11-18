@@ -22,7 +22,7 @@
         </div>
 
         <div class="topbar-right">
-            @if (projectKey != null)
+            @if (projectKey != null && projectPerms.Can(Permission.EditIssues))
             {
                 <a class="btn btn-primary btn-sm" href="/p/@projectKey/issues/new">+ New issue</a>
             }

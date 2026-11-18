@@ -7,7 +7,7 @@ namespace GitBench.Services.Git;
 /// Jira-style smart links: after a push, any commit whose message mentions an issue key
 /// (e.g. "WEB-3") gets an activity entry on that issue. Each commit is recorded once per issue.
 /// </summary>
-public class IssueCommitPushListener(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, ILogger<IssueCommitPushListener> log)
+public class IssueCommitPushListener(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, LiveEvents live, ILogger<IssueCommitPushListener> log)
     : IGitPushListener
 {
     private const int ScanLimit = 300;
@@ -46,6 +46,10 @@ public class IssueCommitPushListener(IDbContextFactory<AppDbContext> dbFactory, 
             }
         }
         await db.SaveChangesAsync(ct);
-        if (added > 0) log.LogInformation("Linked {Count} commit reference(s) to issues after push to {Key}/{Slug}", added, key, repo.Slug);
+        if (added > 0)
+        {
+            live.Publish([.. issues.Values.Select(i => (LiveEvent)new IssueChanged(repo.ProjectId, i.Id)), new ActivityChanged()]);
+            log.LogInformation("Linked {Count} commit reference(s) to issues after push to {Key}/{Slug}", added, key, repo.Slug);
+        }
     }
 }

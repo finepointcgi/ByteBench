@@ -273,6 +273,7 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         await using var db = await dbFactory.CreateDbContextAsync();
         await db.Comments.Where(c => c.Id == commentId).ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Body, body).SetProperty(c => c.EditedAt, DateTime.UtcNow));
+        await TouchIssueOfCommentAsync(db, commentId);
         await notifications.OnIssueCommentChangedAsync(await db.Comments.Where(c => c.Id == commentId).Select(c => (int?)c.IssueId).FirstOrDefaultAsync());
     }
 
@@ -283,8 +284,14 @@ public class IssueService(IDbContextFactory<AppDbContext> dbFactory, ProjectAcce
         await using var db = await dbFactory.CreateDbContextAsync();
         var issueId = await db.Comments.Where(c => c.Id == commentId).Select(c => (int?)c.IssueId).FirstOrDefaultAsync();
         await db.Comments.Where(c => c.Id == commentId).ExecuteDeleteAsync();
+        if (issueId != null) await db.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.UpdatedAt, DateTime.UtcNow));
         await notifications.OnIssueCommentChangedAsync(issueId);
     }
+
+    /// <summary>Bumps the parent issue's UpdatedAt so caches keyed on it (e.g. the AI "catch me up" summary) refresh.</summary>
+    private static Task TouchIssueOfCommentAsync(AppDbContext db, int commentId) =>
+        db.Issues.Where(i => db.Comments.Any(c => c.Id == commentId && c.IssueId == i.Id))
+            .ExecuteUpdateAsync(s => s.SetProperty(i => i.UpdatedAt, DateTime.UtcNow));
 
     private async Task RequireCommentModerationAsync(int commentId, string action, int? actorId)
     {

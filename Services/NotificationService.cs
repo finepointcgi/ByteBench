@@ -19,7 +19,7 @@ public record NotificationPage(List<Notification> Items, int Total, int Page, in
 /// publishes. Domain services call one <c>On…Async</c> hook at the end of a mutating method, after saving.
 /// Every recipient list goes through <see cref="FilterRecipientsAsync"/>.
 /// </summary>
-public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, LiveEvents live, ILogger<NotificationService> log)
+public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, LiveEvents live, ProjectAccess access, ILogger<NotificationService> log)
 {
     public const int DropdownSize = 10;
 
@@ -28,13 +28,15 @@ public class NotificationService(IDbContextFactory<AppDbContext> dbFactory, Live
     // =====================================================================
 
     /// <summary>
-    /// The single gate every recipient list passes through. Currently returns everyone (distinct).
-    /// Integration point: restrict to users who can see <paramref name="projectId"/> (permissions service).
+    /// The single gate every recipient list passes through: only users who can view <paramref name="projectId"/>
+    /// are notified (so a mention or watch can't leak a private project to someone outside it).
     /// </summary>
-    public Task<IReadOnlyCollection<int>> FilterRecipientsAsync(int projectId, IEnumerable<int> userIds)
+    public async Task<IReadOnlyCollection<int>> FilterRecipientsAsync(int projectId, IEnumerable<int> userIds)
     {
-        IReadOnlyCollection<int> result = userIds.Distinct().ToList();
-        return Task.FromResult(result);
+        var allowed = new List<int>();
+        foreach (var id in userIds.Distinct())
+            if (await access.CanAsync(projectId, Permission.ViewProject, id)) allowed.Add(id);
+        return allowed;
     }
 
     // =====================================================================

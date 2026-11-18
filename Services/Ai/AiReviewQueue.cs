@@ -111,6 +111,9 @@ public class AiReviewWorker(AiReviewQueue queue, IServiceScopeFactory scopes, ID
             await foreach (var reviewId in work.Reader.ReadAllAsync(stoppingToken))
             {
                 using var scope = scopes.CreateScope();
+                // No signed-in user here: run as trusted system work, vouching only for the bot account as comment author.
+                await using (var botDb = await scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(stoppingToken))
+                    scope.ServiceProvider.GetRequiredService<ProjectAccess>().ActAsSystem(await AiBot.EnsureAsync(botDb, stoppingToken));
                 var svc = scope.ServiceProvider.GetRequiredService<AiReviewService>();
                 try
                 {
