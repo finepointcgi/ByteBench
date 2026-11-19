@@ -1,0 +1,179 @@
+<h1>Environments and deployments</h1>
+<p class="lead">Mark a CI job as a deployment and GitBench records what is running where, who put it there, who approved it, and which issues, pull requests and releases it contains.</p>
+
+<h2 id="overview">How it works</h2>
+<p>Environments are not configured up front. A job with an <code>environment:</code> key in <a href="ci.html"><code>.gitbench-ci.yml</code></a> records a <b>deployment</b> every time it runs (environment, pipeline, job, commit, branch, user, status). The environment is created the first time a job names it, and its URL is refreshed from the file on each run. Environments belong to a <b>repository</b>; the project-wide page gathers all repositories.</p>
+<ul>
+<li><b>Repository page:</b> the repository's <b>Environments</b> tab, <code>/p/{KEY}/repos/{slug}/environments</code>.</li>
+<li><b>Project page:</b> <code>/p/{KEY}/environments</code>, every repository's environments, deployments waiting for approval, and <a href="#freezes">deploy freezes</a>.</li>
+<li>Anyone who can view the project sees them (Viewer).</li>
+</ul>
+
+<h2 id="keyword">The environment keyword</h2>
+<pre><code>jobs:
+  deploy-production:
+    needs: [test]
+    only: [main]
+    when: manual
+    environment:
+      name: production              # required
+      url: https://example.com      # optional, absolute http(s) URL, up to 500 characters
+      action: start                 # start (default) or stop
+    steps:
+      - run: ./deploy.sh
+
+  stop-review:
+    when: manual
+    environment: { name: review/pr-42, action: stop }
+    steps:
+      - run: ./teardown.sh</code></pre>
+<table>
+<tr><th>Field</th><th>Rules</th></tr>
+<tr><td><code>name</code></td><td>Up to 64 characters: letters, digits, spaces, <code>_ . / -</code>, starting with a letter or digit. Names are per repository.</td></tr>
+<tr><td><code>url</code></td><td>Shown as a link on the Environments page and passed to the job as <code>CI_ENVIRONMENT_URL</code>. Non-http(s) URLs are an error.</td></tr>
+<tr><td><code>action</code></td><td><code>start</code> (a normal deployment) or <code>stop</code>. A job with <code>action: stop</code> records a stop deployment; when it passes, the environment is marked <b>stopped</b>. Anything else is an error.</td></tr>
+</table>
+<p>The job sees <code>CI_ENVIRONMENT_NAME</code> and <code>CI_ENVIRONMENT_URL</code>, and its log says "Deploying to environment ...". The environment's <b>current</b> deployment is its last <em>successful</em> start deployment; the <b>latest</b> may be newer and still running or failed.</p>
+<p>There is no dynamic-name templating (<code>$CI_COMMIT_REF_SLUG</code> in <code>name</code> is not expanded), so per-branch review environments need a job per fixed name, or a name you write in the file.</p>
+
+<h2 id="protected">Protected environments and approvals</h2>
+<p>A <b>protected</b> environment gates its deployments. Any job that deploys to it waits in <b>Manual</b> as <b>waiting for approval</b>, regardless of <code>allow_failure</code>, until enough approvers approve. The check happens when the job becomes ready, so a pipeline created before the environment was protected still waits.</p>
+
+<svg viewBox="0 0 700 190" role="img" aria-label="Deployment approval flow: pipeline reaches deploy job, waits for approvals, freeze check, runs or is rejected" style="max-width:100%;height:auto" font-family="system-ui,sans-serif" font-size="13">
+  <defs><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ap)">
+    <path d="M120 60H160"/><path d="M290 60H330"/><path d="M460 60H500"/><path d="M395 90V135H500" stroke-dasharray="4 3"/>
+    <path d="M230 90V135H120" stroke-dasharray="4 3"/>
+  </g>
+  <g stroke="var(--line)" stroke-width="1.5" fill="var(--soft)">
+    <rect x="10" y="35" width="110" height="50" rx="8"/><rect x="160" y="35" width="130" height="50" rx="8" stroke="var(--accent)"/>
+    <rect x="330" y="35" width="130" height="50" rx="8"/><rect x="500" y="35" width="120" height="50" rx="8"/>
+    <rect x="500" y="115" width="120" height="40" rx="8"/><rect x="10" y="115" width="110" height="40" rx="8"/>
+  </g>
+  <g fill="currentColor" text-anchor="middle">
+    <text x="65" y="57">Deploy job</text><text x="65" y="74" font-size="11">reaches env.</text>
+    <text x="225" y="57">Waiting for</text><text x="225" y="74">approval</text>
+    <text x="395" y="57">N distinct</text><text x="395" y="74">approvals?</text>
+    <text x="560" y="57">Runs (as last</text><text x="560" y="74">approver)</text>
+    <text x="560" y="140">Freeze: refused</text>
+    <text x="65" y="140">Rejected: canceled</text>
+  </g>
+  <text x="240" y="125" font-size="11" fill="currentColor">one rejection</text>
+  <text x="402" y="125" font-size="11" fill="currentColor">freeze active</text>
+  <text x="350" y="180" font-size="11" fill="currentColor" text-anchor="middle">Approvers are notified; the author hears the outcome; each step is audited and sent as deployment.status.</text>
+</svg>
+
+<h3 id="who-approves">Who can approve</h3>
+<ul>
+<li>With <b>no approvers listed</b> on the environment, <b>Maintainers and Owners</b> approve.</li>
+<li>With <b>approvers listed</b> (individual users and/or groups), only those people can approve, and they must still be able to push (<b>Developer or higher</b>). A group means every <em>direct</em> member of that group.</li>
+<li><b>Required approvals</b> is 1 to 10 (default 1). Approvals must come from <b>distinct</b> people. Someone who already approved cannot approve again.</li>
+<li>The person who triggered the pipeline is <em>not</em> excluded from approving, so require 2 approvals if you want a second pair of eyes.</li>
+</ul>
+
+<h3 id="setup">Set it up</h3>
+<ol>
+<li>Open the repository's <b>Environments</b> tab. Environments appear after a job has run; to protect one before its first deployment, use <b>Add environment</b> (it is added already protected, if you tick that).</li>
+<li>Toggle <b>Protected</b> (Maintainer or Owner).</li>
+<li>Open <b>Approval rules</b>: set the required count and pick approver users and groups. The card then reads, for example, "2 approvals from Dana Lee, group platform/sre".</li>
+</ol>
+
+<h3 id="approving">Approving or rejecting</h3>
+<p>Waiting deployments appear on the project Environments page ("Waiting for approval") and on the pipeline page, each with an <b>Approve</b> button (and Reject), optional comment, and the approvals so far ("1 of 2"). When the last required approval arrives the job starts, attributed to the last approver. One <b>rejection</b> cancels the job and fails the pipeline; the pipeline's author is told, with your comment. Approvers get a "deployment approval requested" notification when a deployment starts waiting (see <a href="notifications.html">Notifications</a>).</p>
+
+<h3 id="rbac-summary">Permission summary</h3>
+<table>
+<tr><th>Action</th><th>Who</th></tr>
+<tr><td>View environments, deployments, history</td><td>Viewer or higher</td></tr>
+<tr><td>Protect or unprotect, set approval rules, add or delete an environment, manage freezes, mark stopped (when there is no stop job)</td><td>Maintainer or Owner (ManageRepositories)</td></tr>
+<tr><td>Approve, reject, redeploy, roll back a <b>protected</b> environment</td><td>A listed approver (Developer+), or Maintainer/Owner when none are listed</td></tr>
+<tr><td>Run an ordinary manual deploy job, redeploy, Stop</td><td>Developer or higher (PushCode)</td></tr>
+</table>
+
+<h2 id="rollback">Redeploy and rollback</h2>
+<p>Every deployment in an environment's history has a <b>rollback</b> (redeploy) button. It re-runs the original deployment's <em>job</em> in its original pipeline, so it deploys the same commit with the same job definition. Only a deployment that <b>passed</b> can be redeployed.</p>
+<ul>
+<li>The redeploy is recorded as a new deployment flagged as a rollback when it goes back in history ("rollback" in the UI, <code>isRollback</code> in the webhook).</li>
+<li>On a protected environment the requester must be an approver, the request counts as their approval, and more approvals are collected if the rule needs them. A deploy freeze blocks it.</li>
+<li>The job's artifacts and logs are replaced by the new run; the job gets the artifacts that its <code>needs</code> still have, which may have <a href="ci.html#artifacts">expired</a>. Keep artifacts you may need to roll back to.</li>
+<li>Audit event: <code>deployment.redeployed</code>.</li>
+</ul>
+<p>Each deployment row also offers <b>compare</b> (the commits between the previous successful deployment and this one; for a rollback, the commits it removed), and shows the nearest tag, such as <code>v1.4.0</code> or <code>v1.4.0+3</code>.</p>
+
+<h2 id="stop">Stopping an environment</h2>
+<p><b>Stop</b> on an environment runs its stop job (<code>environment: { name: ..., action: stop }</code>) from the pipeline that deployed it. If there is no stop job, a Maintainer can mark the environment stopped. Stopping an environment does not delete its history.</p>
+
+<h2 id="freezes">Deploy freezes</h2>
+<p>A freeze window blocks deployments to <b>protected</b> environments for a period, such as a holiday code freeze. While a window is active, approving, running, redeploying and rolling back such jobs are all refused ("Deployments to protected environments are frozen"). Unprotected environments are not affected.</p>
+<ul>
+<li>Manage windows at the bottom of the project Environments page ("Deploy freezes"), Maintainer or higher.</li>
+<li><b>Date range</b>: a start and/or end (UTC). Either side may be open. Starts inclusive, ends exclusive.</li>
+<li><b>Recurring</b>: two cron expressions, one for when the freeze starts and one for when it ends (5-field, UTC, same syntax as <a href="ci.html#schedules">schedules</a>), for example start <code>0 18 * * fri</code> and end <code>0 6 * * mon</code> for every weekend.</li>
+<li>Add an optional description (up to 200 characters). Audit events: <code>deploy_freeze.created</code>, <code>deploy_freeze.deleted</code>.</li>
+</ul>
+
+<h2 id="traceability">Traceability: what is deployed where</h2>
+<p>GitBench works out which environments contain a piece of work. A commit counts as deployed when the environment's <em>current</em> successful deployment is that commit or a descendant of it. The result, with the first deployment that shipped it and a "N of M commits" count when only some are in, appears as a <b>Deployed to</b> panel:</p>
+<ul>
+<li><b>Issues:</b> in the Development panel of an issue. It looks at commits that mention the issue key (such as <code>WEB-12</code>) and merge commits of merged pull requests whose title or source branch mentions it, across the project's repositories.</li>
+<li><b>Pull requests:</b> on a merged PR, where its merge commit is deployed.</li>
+<li><b>Releases:</b> on a release's page, where its tag is deployed.</li>
+</ul>
+<p>The same data feeds the <a href="reports.html">DORA metrics</a> (set which environment counts as production in the delivery reports settings).</p>
+
+<h2 id="webhook">Webhook: deployment.status</h2>
+<p>Subscribe a <a href="api.html">webhook</a> to <code>deployment.status</code>. It fires each time a deployment changes status. <code>status</code> is one of <code>waiting_for_approval</code>, <code>running</code>, <code>success</code>, <code>failed</code>, <code>canceled</code>.</p>
+<pre><code>{
+  "event": "deployment.status",
+  "deployment": {
+    "id": 31, "status": "waiting_for_approval", "action": "start",
+    "ref": "main", "commitSha": "9f2c1e0...", "isRollback": false, "redeployOfId": null,
+    "pipelineId": 118, "jobId": 402, "jobName": "deploy-production",
+    "createdAt": "2026-11-19T10:02:11Z", "finishedAt": null,
+    "user": { "id": 4, "userName": "dana", "displayName": "Dana Lee" },
+    "url": "https://gitbench.example.com/p/WEB/repos/web-app/pipelines/118"
+  },
+  "environment": { "id": 7, "name": "production", "externalUrl": "https://example.com", "isProtected": true },
+  "repository": { "id": 3, "slug": "web-app", "name": "Web App" }
+}</code></pre>
+<p>The delivery also has the usual envelope fields (project, sender); see the webhooks section of <a href="api.html">REST API and webhooks</a>.</p>
+
+<h2 id="api">API</h2>
+<p>All under <code>/api/v1/projects/{key}</code>. Reads need ViewProject.</p>
+<table>
+<tr><th>Method and path</th><th>Purpose</th></tr>
+<tr><td><code>GET /environments</code></td><td>Environments of every repository in the project</td></tr>
+<tr><td><code>GET /deployments/waiting</code></td><td>Deployments waiting for approval</td></tr>
+<tr><td><code>GET /issues/{number}/deployments</code></td><td>Environments an issue's commits are deployed to</td></tr>
+<tr><td><code>GET /deploy-freezes</code>, <code>POST /deploy-freezes</code>, <code>DELETE /deploy-freezes/{id}</code></td><td>Freeze windows. POST takes <code>description</code>, and either <code>cronStart</code> + <code>cronEnd</code> or <code>startsAt</code> and/or <code>endsAt</code> (Maintainer+)</td></tr>
+<tr><td><code>GET /repos/{slug}/environments</code>, <code>GET .../environments/{id}</code></td><td>List and get environments</td></tr>
+<tr><td><code>PUT /repos/{slug}/environments/{id}/approval-rules</code></td><td>Body <code>{ "requiredApprovals": 2, "userIds": [4], "groupIds": [9], "isProtected": true }</code> (Maintainer+)</td></tr>
+<tr><td><code>POST /repos/{slug}/environments/{id}/stop</code></td><td>Run the stop job, or mark stopped</td></tr>
+<tr><td><code>GET /repos/{slug}/environments/{id}/deployments</code>, <code>GET .../deployments/{id}</code></td><td>History; one deployment with approvals and the commits it shipped</td></tr>
+<tr><td><code>POST /repos/{slug}/deployments/{id}/approve</code>, <code>.../reject</code></td><td>Optional body <code>{ "comment": "..." }</code></td></tr>
+<tr><td><code>POST /repos/{slug}/deployments/{id}/rollback</code></td><td>Redeploy a previous successful deployment (202)</td></tr>
+<tr><td><code>GET /repos/{slug}/deployed?rev=...</code>, <code>.../pull-requests/{n}/deployments</code>, <code>.../releases/{id}/deployments</code></td><td>Traceability</td></tr>
+</table>
+<pre><code>curl -X POST https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/deployments/31/approve \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"comment":"Checked the changelog"}'</code></pre>
+
+<h2 id="audit">Audit events</h2>
+<p><code>environment.created</code>, <code>environment.protected</code>, <code>environment.unprotected</code>, <code>environment.approval_rules_changed</code>, <code>environment.stop_requested</code>, <code>environment.stopped</code>, <code>environment.deleted</code>, <code>deployment.approved</code>, <code>deployment.rejected</code>, <code>deployment.redeployed</code>, <code>deploy_freeze.created</code>, <code>deploy_freeze.deleted</code>. Deleting an environment removes its deployment history but not the pipelines.</p>
+
+<h2 id="example">Complete example</h2>
+<pre><code>jobs:
+  build:
+    steps: [ { run: ./build.sh } ]
+    artifacts: { paths: [dist/], expire_in: 14d }
+  deploy-staging:
+    needs: [build]
+    only: [main]
+    environment: { name: staging, url: "https://staging.example.com" }
+    steps: [ { run: ./deploy.sh staging } ]
+  deploy-production:
+    needs: [deploy-staging]
+    only: [main]
+    environment: { name: production, url: "https://example.com" }   # protect "production" in the UI
+    steps: [ { run: ./deploy.sh production } ]</code></pre>
+<p>Protect <code>production</code>, require 2 approvals from group <code>release-managers</code>, and the <code>deploy-production</code> job will wait for two of them each time. Keep deploy credentials in <a href="ci.html#protected-variables">protected CI variables</a>: environment protection controls <em>who may run</em> the job, while protected variables control which <em>branches</em> may read the secrets.</p>

@@ -1,0 +1,148 @@
+<h1>Package and container registry</h1>
+<p class="lead">Every project has its own private NuGet feed, npm registry and Docker (OCI) registry, with the same sign-in and roles as the rest of GitBench and a ready-made token for CI jobs.</p>
+
+<h2 id="overview">What you get</h2>
+<table>
+<tr><th>Kind</th><th>Address (replace the host and project key)</th></tr>
+<tr><td>NuGet v3 feed</td><td><code>https://gitbench.example.com/packages/WEB/nuget/index.json</code></td></tr>
+<tr><td>npm registry</td><td><code>https://gitbench.example.com/packages/WEB/npm/</code></td></tr>
+<tr><td>Container registry</td><td><code>gitbench.example.com/web/&lt;image&gt;:&lt;tag&gt;</code> (host and port, then the project key in <b>lowercase</b>, then the image name, which may contain more path segments)</td></tr>
+</table>
+<p>The Packages page for a project is at <code>/p/{KEY}/packages</code> (filter by type, search by name, click a package for versions, files, install commands and delete). It shows the exact commands for your server. Each project's registry is separate: a package in <code>WEB</code> is not visible from <code>OPS</code>.</p>
+
+<h2 id="enable">Turn it on or off</h2>
+<p>The registry is <b>on by default</b> for every project. A Maintainer can switch it off under <b>Project settings → Packages &amp; container registry</b> (<code>/p/{KEY}/settings#packages</code>). Turning it off hides the packages and makes every client get "not found"; nothing is deleted.</p>
+
+<h2 id="tokens">Credentials</h2>
+<table>
+<tr><th>Credential</th><th>Use</th></tr>
+<tr><td><b>Personal access token</b> (<code>gbp_...</code>)</td><td>Create one under your profile, <b>Access tokens</b> (<code>/account/profile#tokens</code>). Use it as the password (any user name works for npm and NuGet) or as the NuGet API key. To <b>publish or delete</b> the token needs the <code>write_repository</code> or <code>write_api</code> scope; a read-only token can only download.</td></tr>
+<tr><td><b>CI job token</b> (<code>gbj_...</code>)</td><td>Every CI job gets one as <code>GITBENCH_JOB_TOKEN</code> (also <code>GITBENCH_REGISTRY_PASSWORD</code>). It is valid only while that job runs, counts as a <b>Developer in its own project</b> (so it can publish and pull but not delete), and can <em>read</em> other projects only if the person who triggered the pipeline can view them.</td></tr>
+<tr><td>Registry token (<code>gbr_...</code>)</td><td>What <code>docker login</code> trades your credentials for at <code>/v2/token</code>; valid one hour. You never create it by hand.</td></tr>
+<tr><td>Browser session</td><td>Only for downloading files from the Packages page.</td></tr>
+</table>
+<div class="warn"><b>Account passwords are refused.</b> Registry clients must use a token. There is <b>no anonymous access</b>, even for readable projects: every request must be authenticated.</div>
+
+<h2 id="permissions">Permissions</h2>
+<table>
+<tr><th>Action</th><th>Role</th></tr>
+<tr><td>Pull, restore, install, search</td><td>Viewer (ViewProject)</td></tr>
+<tr><td>Publish a package, push an image</td><td>Developer (PublishPackages)</td></tr>
+<tr><td>Delete a package, version or image tag</td><td>Maintainer (DeletePackages)</td></tr>
+<tr><td>Registry settings and cleanup policy</td><td>Maintainer (DeletePackages)</td></tr>
+</table>
+<p>Projects you can't see, and projects whose registry is off, answer 404, so their existence isn't revealed.</p>
+
+<h2 id="nuget">NuGet</h2>
+<pre><code># one-time setup
+dotnet nuget add source https://gitbench.example.com/packages/WEB/nuget/index.json \
+  --name gitbench-web --username you --password &lt;personal access token&gt; --store-password-in-clear-text
+
+# publish
+dotnet nuget push MyLib.1.2.0.nupkg \
+  --source https://gitbench.example.com/packages/WEB/nuget/index.json \
+  --api-key &lt;personal access token&gt;
+
+# install
+dotnet add package MyLib --version 1.2.0
+
+# delete a version (Maintainer)
+dotnet nuget delete MyLib 1.2.0 --source https://gitbench.example.com/packages/WEB/nuget/index.json --api-key &lt;token&gt; --non-interactive</code></pre>
+<p>Pushing an existing id and version returns <b>409</b>: versions are immutable. Ids may have letters, digits, <code>_</code>, <code>.</code>, <code>-</code> (up to 100 characters). The feed supports restore (flat container, registration, search).</p>
+
+<h2 id="npm">npm</h2>
+<pre><code># point npm (or one scope) at the project registry
+npm config set registry https://gitbench.example.com/packages/WEB/npm/
+npm config set -- '//gitbench.example.com/packages/WEB/npm/:_authToken' "$GITBENCH_TOKEN"
+# or only for a scope
+npm config set @acme:registry https://gitbench.example.com/packages/WEB/npm/
+
+npm publish                 # Developer
+npm install @acme/widgets
+npm dist-tag add @acme/widgets@1.2.0 beta
+npm unpublish @acme/widgets@1.0.0   # Maintainer
+npm deprecate @acme/widgets@1.0.0 "Use 1.2"</code></pre>
+<p>Publishing an existing version fails with 403, as on the public registry. Scoped and unscoped names both work; <code>dist-tags</code>, <code>whoami</code>, <code>ping</code> and search are supported. Setting the whole registry means third-party packages are not proxied: use a scope-only registry if you still install from npmjs.</p>
+
+<h2 id="docker">Docker and container images</h2>
+<pre><code>docker login gitbench.example.com -u you -p "$GITBENCH_TOKEN"
+
+docker tag app:latest gitbench.example.com/web/app:1.4.0
+docker push gitbench.example.com/web/app:1.4.0
+docker pull gitbench.example.com/web/app:1.4.0</code></pre>
+<p>GitBench implements the registry API (<code>/v2/</code>) that <code>docker push</code>/<code>pull</code> use, including chunked uploads, manifest lists, <code>GET /v2/_catalog</code> and tag lists. The registry is served from the same host and port as GitBench, so it needs <b>HTTPS</b> in practice (Docker only allows plain HTTP for <code>localhost</code> or hosts listed as insecure registries). Deleting a tag is done on the package page.</p>
+
+<h2 id="ci">Using the registry from CI jobs</h2>
+<p>Besides the token, each job gets these variables when the site's base URL is known (<code>PublicBaseUrl</code> setting, or learned from the first request):</p>
+<table>
+<tr><th>Variable</th><th>Value</th></tr>
+<tr><td><code>GITBENCH_REGISTRY</code></td><td>Registry host and port, for <code>docker login</code>, e.g. <code>gitbench.example.com</code></td></tr>
+<tr><td><code>GITBENCH_REGISTRY_IMAGE</code></td><td>The project's image prefix, e.g. <code>gitbench.example.com/web</code></td></tr>
+<tr><td><code>GITBENCH_REGISTRY_USER</code></td><td><code>gitbench-ci-token</code> (any name is accepted)</td></tr>
+<tr><td><code>GITBENCH_JOB_TOKEN</code>, <code>GITBENCH_REGISTRY_PASSWORD</code></td><td>The job token (secret, masked in logs)</td></tr>
+<tr><td><code>GITBENCH_NUGET_SOURCE_URL</code></td><td>NuGet index URL</td></tr>
+<tr><td><code>GITBENCH_NPM_REGISTRY_URL</code></td><td>npm registry URL</td></tr>
+</table>
+<h3 id="ci-nuget">Publish a NuGet package from CI</h3>
+<pre><code>jobs:
+  pack-and-push:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    only: [main]
+    steps:
+      - name: Pack and push
+        run: |
+          dotnet pack src/MyLib -c Release -p:Version=1.0.$GITBENCH_PIPELINE_ID -o out
+          dotnet nuget push out/*.nupkg --source "$GITBENCH_NUGET_SOURCE_URL" --api-key "$GITBENCH_JOB_TOKEN"</code></pre>
+<h3 id="ci-npm">Publish an npm package from CI</h3>
+<pre><code>jobs:
+  publish:
+    image: node:22
+    only: [main]
+    steps:
+      - run: |
+          echo "registry=$GITBENCH_NPM_REGISTRY_URL" &gt; .npmrc
+          HOST_PATH="${GITBENCH_NPM_REGISTRY_URL#https:}"
+          echo "$HOST_PATH:_authToken=$GITBENCH_JOB_TOKEN" &gt;&gt; .npmrc
+          npm version 1.0.$GITBENCH_PIPELINE_ID --no-git-tag-version
+          npm publish</code></pre>
+<h3 id="ci-docker">Push an image from CI</h3>
+<p>CI jobs have <b>no Docker daemon and no Docker socket</b>, so <code>docker build</code> and <code>docker push</code> do not work inside a job. Use a daemonless builder such as Kaniko, Buildah or Skopeo (in an image that provides it) and log in with the variables above. A complete example is on the <a href="ci.html#example-docker-push">CI page</a>; adapt it to the tool you use. The job's network (<code>Ci:Network</code>) must reach the registry.</p>
+
+<h2 id="cleanup">Cleanup policy</h2>
+<p>By default every version is kept forever. A Maintainer can enable <b>Cleanup policy: keep only the newest versions</b> in the project settings and choose 1 to 1000 versions (or image tags) per package. The policy runs after every publish and deletes the older ones. npm versions that carry a dist-tag and the image tag <code>latest</code> are always kept.</p>
+
+<h2 id="storage">Storage</h2>
+<table>
+<tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>Packages:Root</code></td><td><code>{ContentRoot}/packages</code></td><td>Where blobs live. Include it in <a href="production.html">backups</a>.</td></tr>
+<tr><td><code>Packages:MaxBlobBytes</code></td><td>5 GB</td><td>Largest single blob (a NuGet package, an npm tarball, one image layer). Bigger uploads are refused with 413.</td></tr>
+</table>
+<p>Blobs are content-addressed (SHA-256) and stored once, shared by every package with the same bytes, such as image layers. Deleting versions removes blobs nobody else references; a daily sweep (first run an hour after startup) removes orphaned blobs and abandoned partial uploads older than a day. Two further limits to know: manifests may be at most 4 MB.</p>
+<p>Site administrators can see usage at <b>Admin → Package registry storage</b> (<code>/admin/packages</code>): bytes on disk, bytes used per project (each distinct blob counted once per project) and the blob size limit.</p>
+
+<h2 id="rate-limits">Rate limits</h2>
+<p>Registry requests (<code>/packages/*</code> and <code>/v2/*</code>) are limited by the <code>RateLimiting</code> settings, counting <em>requests</em>, never bytes. A <code>docker push</code> makes dozens of requests per layer, so the defaults are generous. Over the limit gives HTTP 429 with <code>Retry-After</code>.</p>
+<table>
+<tr><th>Key</th><th>Default</th><th>Applies to</th></tr>
+<tr><td><code>RateLimiting:Registry</code></td><td>3000 per 60 s</td><td>Per credential (a hash of the token; IP when anonymous)</td></tr>
+<tr><td><code>RateLimiting:RegistryIp</code></td><td>6000 per 60 s</td><td>Per client IP across all credentials (a CI farm behind one NAT needs headroom)</td></tr>
+</table>
+<p>Each is a <code>PermitLimit</code> and <code>WindowSeconds</code> pair; <code>RateLimiting:Enabled=false</code> turns all limiting off. See <a href="admin.html">Administration</a>.</p>
+
+<h2 id="events">Webhooks and audit</h2>
+<ul>
+<li>Webhook events <code>package.published</code> and <code>package.deleted</code>, with <code>package: { id, name, type (nuget, npm or container), version, size, url, pipeline_id }</code>. <code>pipeline_id</code> is set when a CI job published it.</li>
+<li>Audit events <code>package.published</code>, <code>package.deleted</code>, <code>package.version_deleted</code> and <code>package.settings_changed</code>. Publishes from a job are attributed to whoever triggered the pipeline.</li>
+</ul>
+<h2 id="api">API</h2>
+<p>There is no separate REST API for managing packages: the NuGet, npm and OCI protocol endpoints above <em>are</em> the API. To list what is in a project from a script, use the client protocols (for example <code>GET /packages/WEB/nuget/v3/flatcontainer/{id}/index.json</code>, <code>GET /packages/WEB/npm/{name}</code> or <code>GET /v2/_catalog</code>).</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<tr><th>Symptom</th><th>Cause</th></tr>
+<tr><td>401 or "Use a personal access token"</td><td>You used your account password. Use a token.</td></tr>
+<tr><td>403 "needs the write_repository or write_api scope"</td><td>The token is read-only. Create one with a write scope.</td></tr>
+<tr><td>404 "Project not found, or its package registry is off"</td><td>Wrong project key, you aren't a member, or a Maintainer turned the registry off.</td></tr>
+<tr><td>409 / 403 on publish</td><td>That version already exists (NuGet 409, npm 403). Bump the version.</td></tr>
+<tr><td><code>docker push</code> fails with an HTTP/TLS error</td><td>The registry shares GitBench's host; put it behind HTTPS (see <a href="production.html">Production setup</a>).</td></tr>
+</table>
