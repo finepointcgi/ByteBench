@@ -174,7 +174,7 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
                     {
                         Name = j.Name, Image = j.Image, Needs = string.Join(",", j.Needs), Order = order++,
                         IsManual = j.When == CiJobWhen.Manual, AllowFailure = j.AllowFailure,
-                        EnvironmentName = j.Environment?.Name, EnvironmentUrl = j.Environment?.Url, ExtrasJson = CiJobExtras.Serialize(j),
+                        EnvironmentName = j.Environment?.Name, EnvironmentUrl = j.Environment?.Url, EnvironmentAction = j.Environment?.Action, ExtrasJson = CiJobExtras.Serialize(j),
                     };
                     var n = 0;
                     foreach (var s in j.Steps) job.Steps.Add(new PipelineStep { Order = n++, Name = s.Name, Run = s.Run });

@@ -1,0 +1,35 @@
+@page "/p/{Key}/environments"
+@inject IssueService Issues
+@inject ProjectAccess Access
+
+<PageTitle>Environments · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This project does not exist." />
+}
+else if (project != null)
+{
+    <div class="mb-3">
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Environments</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            @project.Name · all repositories: what is deployed where, who deployed it, deployments waiting for approval and deploy freezes.
+        </MudText>
+    </div>
+    <GitBench.Components.Pipelines.EnvironmentsView Project="project" Perms="perms" />
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project != null) perms = await Access.GetPermissionsAsync(project.Id);
+    }
+}

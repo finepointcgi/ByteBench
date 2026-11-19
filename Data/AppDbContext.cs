@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Data;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options)
+public partial class AppDbContext(DbContextOptions<AppDbContext> options)
     : IdentityDbContext<User, IdentityRole<int>, int>(options)
 {
     public DbSet<Project> Projects => Set<Project>();
@@ -338,6 +338,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureSsoLdap(b);
         ConfigureCustomFieldsTime(b);
         ConfigureCiExtras(b);
+        ConfigureDeployments(b);
         ConfigureWebEditor(b);
         ConfigurePackages(b);
         ConfigureMergeQueue(b);

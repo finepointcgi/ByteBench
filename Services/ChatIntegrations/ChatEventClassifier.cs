@@ -130,17 +130,18 @@ public static class ChatEventClassifier
                 });
                 break;
             }
-            case WebhookEventNames.DeploymentCompleted:
+            case WebhookEventNames.DeploymentStatus:
             {
                 var d = env["deployment"];
                 var status = S(d, "status");
-                var environment = S(d, "environment");
+                if (status is not ("success" or "failed" or "canceled")) break; // announce finished deployments only
+                var environment = S(env, "environment", "name");
                 var branch = ChatText.ShortRef(S(d, "ref"));
                 var repo = S(env, "repository", "slug");
                 var (verb, color) = status switch
                 {
-                    "passed" => ("deployed", ChatStatus.Good),
-                    "failed" or "error" => ("failed to deploy", ChatStatus.Danger),
+                    "success" => ("deployed", ChatStatus.Good),
+                    "failed" => ("failed to deploy", ChatStatus.Danger),
                     "canceled" => ("canceled deploying", ChatStatus.Warning),
                     _ => ("finished deploying", ChatStatus.Info),
                 };
@@ -156,8 +157,8 @@ public static class ChatEventClassifier
                     Fields =
                     [
                         new("Environment", environment ?? ""), new("Status", Humanize(status)), new("Branch", branch),
-                        new("Commit", ChatText.ShortSha(S(d, "commitSha"))), new("Job", S(d, "job") ?? ""),
-                        new("URL", ChatText.SafeUrl(S(d, "environmentUrl")) ?? ""),
+                        new("Commit", ChatText.ShortSha(S(d, "commitSha"))), new("Job", S(d, "jobName") ?? ""),
+                        new("URL", ChatText.SafeUrl(S(env, "environment", "externalUrl")) ?? ""),
                     ],
                     Branch = branch,
                 });

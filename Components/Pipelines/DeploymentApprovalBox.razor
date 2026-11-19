@@ -1,0 +1,90 @@
+@* A job waiting for deployment approval: the rule, approvals so far (with comments), and Approve / Reject for approvers. *@
+@using GitBench.Components.Repositories
+@inject PipelineService Pipelines
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+@if (gate != null)
+{
+    <MudAlert Severity="@(gate.Freeze != null ? Severity.Warning : Severity.Info)" Dense="true" Class="mb-3" Icon="@Icons.Material.Outlined.HowToReg">
+        <div>
+            <b>@Job.Name</b> deploys to the protected environment <b>@Job.EnvironmentName</b> and is waiting for approval:
+            @gate.Approved of @gate.Required approval@(gate.Required == 1 ? "" : "s")
+            (@(gate.Environment is { } env && env.Approvers.Count > 0 ? "listed approvers" : "Maintainers")).
+        </div>
+        @if (gate.Freeze != null)
+        {
+            <div class="mt-1">Deploy freeze in effect: @DeployFreezeService.Describe(gate.Freeze). Approvals are blocked until it ends.</div>
+        }
+        @foreach (var a in gate.Approvals)
+        {
+            <div class="mt-1 small" @key="a.Id">
+                <MudIcon Icon="@(a.Approved ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Cancel)" Color="@(a.Approved ? Color.Success : Color.Error)" Style="font-size: 14px; vertical-align: -2px" />
+                <b>@a.User.DisplayName</b> @(a.Approved ? "approved" : "rejected") @Display.Ago(a.CreatedAt)@if (a.Comment != null) {<span>: “@a.Comment”</span>}
+            </div>
+        }
+        @if (gate.CanApprove && Pipelines.Enabled)
+        {
+            <div class="d-flex gap-2 mt-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Check" Disabled="@(busy || gate.Freeze != null)"
+                           OnClick="Approve">Approve</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Filled.Close" Disabled="busy"
+                           OnClick="Reject">Reject</MudButton>
+            </div>
+        }
+    </MudAlert>
+}
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter, EditorRequired] public PipelineJob Job { get; set; } = null!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private DeploymentGateInfo? gate;
+    private bool busy;
+    private PipelineJob? loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // The pipeline page reloads its jobs on every live update (approvals publish one), so a new instance means "reload".
+        if (ReferenceEquals(Job, loadedFor)) return;
+        loadedFor = Job;
+        gate = Job.Status == PipelineStatus.Manual ? await Pipelines.GetGateAsync(Repo, Job) : null;
+    }
+
+    private Task<string?> PromptAsync(string title, string button, bool required) =>
+        DeploymentUi.PromptCommentAsync(Dialogs, title, $"Job '{Job.Name}' to {Job.EnvironmentName}.", button, required);
+
+    private async Task Approve()
+    {
+        if (await PromptAsync("Approve deployment", "Approve", false) is not { } comment) return;
+        await Run(async () =>
+        {
+            var started = await Pipelines.ApproveJobAsync(Repo, Job.PipelineId, Job.Id, comment);
+            Snackbar.Add(started ? $"Approved: {Job.Name} is deploying to {Job.EnvironmentName}." : "Approved. More approvals are needed.", Severity.Success);
+        });
+    }
+
+    private async Task Reject()
+    {
+        if (await PromptAsync("Reject deployment", "Reject", true) is not { } comment) return;
+        await Run(async () =>
+        {
+            await Pipelines.RejectJobAsync(Repo, Job.PipelineId, Job.Id, comment);
+            Snackbar.Add($"Rejected the deployment to {Job.EnvironmentName}.", Severity.Info);
+        });
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        busy = true;
+        try
+        {
+            await action();
+            gate = await Pipelines.GetGateAsync(Repo, Job);
+            await OnChanged.InvokeAsync();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+}

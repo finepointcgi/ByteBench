@@ -1,0 +1,425 @@
+@* Environments of a project (every repository) or of one repository: current deployment, version, history with the
+   commits each deployment shipped, approvals waiting, rollback, stop, approval rules and deploy freezes. *@
+@using GitBench.Components.Repositories
+@using GitBench.Services.Git
+@inject CiEnvironmentService EnvironmentsService
+@inject PipelineService Pipelines
+@inject DeployFreezeService Freezes
+@inject LiveEvents Live
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => error = null">@error</MudAlert> }
+
+@if (activeFreeze != null)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3" Icon="@Icons.Material.Outlined.AcUnit">
+        Deploy freeze in effect: @DeployFreezeService.Describe(activeFreeze). Deploys to protected environments can't be approved, run or rolled back.
+    </MudAlert>
+}
+
+@if (waiting.Count > 0)
+{
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mb-1">Waiting for approval</MudText>
+    <div class="gb-rows mb-4">
+        @foreach (var w in waiting)
+        {
+            var d = w.Deployment;
+            <div class="gb-row" @key="d.Id">
+                <MudIcon Icon="@Icons.Material.Outlined.HowToReg" Color="Color.Warning" />
+                <div class="gb-row-main gb-min0">
+                    <div>
+                        <b>@d.Job.Name</b> → <b>@w.Environment.Name</b>
+                        @if (Repo == null) { <span class="mud-text-secondary"> in @w.Repository.Name</span> }
+                        · <a class="sha-pill" href="@RepoUrls.Commit(w.Repository, d.CommitSha)">@d.CommitSha[..7]</a>
+                        <a class="branch-pill" href="@RepoUrls.Source(w.Repository, d.Ref)">@d.Ref</a>
+                    </div>
+                    <div class="gb-row-meta">
+                        @w.Approvals.Count(a => a.Approved) of @w.Required approval@(w.Required == 1 ? "" : "s")
+                        @foreach (var a in w.Approvals) { <span> · @a.User.DisplayName @(a.Approved ? "approved" : "rejected")@(a.Comment != null ? $": “{a.Comment}”" : "")</span> }
+                        · <a href="@PipelineUrls.Detail(w.Repository, d.PipelineId)">pipeline #@d.PipelineId</a>
+                        · requested @Display.Ago(d.CreatedAt)@(d.User != null ? $" by {d.User.DisplayName}" : "")
+                    </div>
+                </div>
+                @if (w.CanApprove && Pipelines.Enabled)
+                {
+                    <div class="gb-row-right d-flex gap-2">
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || activeFreeze != null)" OnClick="() => Approve(w)">Approve</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Disabled="busy" OnClick="() => Reject(w)">Reject</MudButton>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (Repo != null && Perms.Can(Permission.ManageRepositories))
+{
+    <div class="d-flex align-center flex-wrap gap-3 mb-3">
+        <MudTextField T="string" @bind-Value="newName" Placeholder="New environment, e.g. production" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      aria-label="New environment name" MaxLength="64" Style="max-width: 320px" />
+        <MudCheckBox T="bool" @bind-Value="newProtected" Color="Color.Warning" Dense="true">Protected</MudCheckBox>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Disabled="@(string.IsNullOrWhiteSpace(newName) || busy)"
+                   OnClick="Create">Add environment</MudButton>
+        <span class="mud-text-secondary small">Add one ahead of time to protect it before its first deployment.</span>
+    </div>
+}
+
+@if (loaded && groups.All(g => g.Environments.Count == 0))
+{
+    <div class="gb-rows mb-4"><div class="empty">No environments yet. They appear when a job that names one runs.</div></div>
+}
+
+@foreach (var g in groups.Where(g => g.Environments.Count > 0))
+{
+    var repo = g.Repository;
+    @if (Repo == null)
+    {
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mt-2 mb-1">
+            <MudIcon Icon="@Icons.Material.Outlined.Inventory2" Style="font-size: 18px; vertical-align: -3px" />
+            <a href="@PipelineUrls.Environments(repo)">@repo.Name</a>
+        </MudText>
+    }
+    @foreach (var info in g.Environments)
+    {
+        var e = info.Environment;
+        <MudPaper Outlined="true" Class="pa-4 mb-3" @key="e.Id">
+            <div class="d-flex align-center flex-wrap gap-2">
+                <MudIcon Icon="@(info.IsStopped ? Icons.Material.Outlined.CloudOff : Icons.Material.Outlined.Cloud)" />
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold">@e.Name</MudText>
+                @if (e.IsProtected)
+                {
+                    <MudTooltip Text="@DeploymentApprovalRules.Describe(e)">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.Lock" Class="ma-0">
+                            Protected · @DeploymentApprovalRules.Required(e) approval@(DeploymentApprovalRules.Required(e) == 1 ? "" : "s")
+                        </MudChip>
+                    </MudTooltip>
+                }
+                @if (info.IsStopped) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">Stopped @Display.Ago(e.StoppedAt!.Value)</MudChip> }
+                @if (e.ExternalUrl != null && !info.IsStopped) { <a href="@e.ExternalUrl" target="_blank" rel="noopener noreferrer" class="small">@e.ExternalUrl <MudIcon Icon="@Icons.Material.Outlined.OpenInNew" Style="font-size: 13px" /></a> }
+                <div class="ml-auto d-flex align-center gap-2">
+                    @if (Perms.Can(Permission.PushCode) && info.Current != null && !info.IsStopped && Pipelines.Enabled)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Outlined.StopCircle" Disabled="busy" OnClick="() => Stop(repo, info)">Stop</MudButton>
+                    }
+                    @if (Perms.Can(Permission.ManageRepositories))
+                    {
+                        <MudSwitch T="bool" Value="e.IsProtected" ValueChanged="v => SetProtected(repo, e, v)" Color="Color.Warning" Label="Protected" Class="ma-0" />
+                        @if (e.IsProtected)
+                        {
+                            <MudTooltip Text="Approval rules">
+                                <MudIconButton Icon="@Icons.Material.Outlined.HowToReg" Size="Size.Small" aria-label="@($"Approval rules for {e.Name}")" OnClick="() => EditRules(repo, e)" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Delete environment">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Size="Size.Small" aria-label="@($"Delete {e.Name}")" OnClick="() => Delete(repo, e)" />
+                        </MudTooltip>
+                    }
+                </div>
+            </div>
+            <div class="mt-2 small">
+                @if (info.Current is { } cur)
+                {
+                    <span>Current: </span><a class="sha-pill" href="@RepoUrls.Commit(repo, cur.CommitSha)" title="@cur.CommitSha">@cur.CommitSha[..7]</a>
+                    <span> on <a class="branch-pill" href="@RepoUrls.Source(repo, cur.Ref)">@cur.Ref</a></span>
+                    @if (versions.GetValueOrDefault(cur.Id) is { } v) { <span> · <MudIcon Icon="@Icons.Material.Outlined.Sell" Style="font-size: 13px; vertical-align: -2px" /> <span class="mono">@v</span></span> }
+                    <span> · <a href="@PipelineUrls.Detail(repo, cur.PipelineId)">pipeline #@cur.PipelineId · @cur.Job.Name</a></span>
+                    @if (cur.IsRollback) { <span> · <b>rollback</b></span> }
+                    <span class="mud-text-secondary"> · deployed @Display.Ago(cur.FinishedAt ?? cur.CreatedAt)@(cur.User != null ? $" by {cur.User.DisplayName}" : "")</span>
+                }
+                else { <span class="mud-text-secondary">Nothing deployed successfully yet.</span> }
+                @if (info.Latest is { } latest && latest.Id != info.Current?.Id)
+                {
+                    <div class="mt-1">
+                        Latest: <PipelineStatusIcon Status="latest.Status" /> @DeploymentUi.StatusLabel(latest)
+                        · <a class="sha-pill" href="@RepoUrls.Commit(repo, latest.CommitSha)">@latest.CommitSha[..7]</a>
+                        · <a href="@PipelineUrls.Detail(repo, latest.PipelineId)">pipeline #@latest.PipelineId · @latest.Job.Name</a>
+                        <span class="mud-text-secondary"> · @Display.Ago(latest.CreatedAt)@(latest.User != null ? $" by {latest.User.DisplayName}" : "")</span>
+                    </div>
+                }
+            </div>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Class="mt-2 px-0"
+                       StartIcon="@(history.ContainsKey(e.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                       OnClick="() => ToggleHistory(repo, e)">History (@info.Count)</MudButton>
+            @if (history.TryGetValue(e.Id, out var rows))
+            {
+                <div class="gb-rows mt-1">
+                    @foreach (var d in rows)
+                    {
+                        <div class="gb-row" @key="d.Id">
+                            <PipelineStatusIcon Status="d.Status" />
+                            <div class="gb-row-main gb-min0">
+                                <div class="gb-row-meta">
+                                    <span>@DeploymentUi.StatusLabel(d)</span>
+                                    · <a class="sha-pill" href="@RepoUrls.Commit(repo, d.CommitSha)">@d.CommitSha[..7]</a>
+                                    <a class="branch-pill" href="@RepoUrls.Source(repo, d.Ref)">@d.Ref</a>
+                                    @if (d.IsRollback) { <span> · <b>rollback</b></span> }
+                                    else if (d.RedeployOfId != null) { <span> · redeploy</span> }
+                                    · <a href="@PipelineUrls.Detail(repo, d.PipelineId)">#@d.PipelineId @d.Job.Name</a>
+                                    · @Display.Ago(d.CreatedAt)@(d.User != null ? $" by {d.User.DisplayName}" : "")
+                                    @if (d.Action == DeploymentAction.Start && d.Status == PipelineStatus.Passed)
+                                    {
+                                        <span> · </span><button type="button" class="gb-link-button" @onclick="() => ToggleChanges(repo, d)">@(changes.ContainsKey(d.Id) ? "hide changes" : "changes")</button>
+                                    }
+                                </div>
+                                @if (changes.TryGetValue(d.Id, out var ch))
+                                {
+                                    <div class="small mt-1">
+                                        @if (ch.Previous == null) { <div class="mud-text-secondary">First successful deployment: @ch.Commits.Count@(ch.Truncated ? "+" : "") commit@(ch.Commits.Count == 1 ? "" : "s").</div> }
+                                        else if (ch.Commits.Count == 0) { <div class="mud-text-secondary">Same commit as the previous deployment (#@ch.Previous.PipelineId).</div> }
+                                        else
+                                        {
+                                            <div class="mud-text-secondary">
+                                                @(ch.Backwards ? "Rolled back" : "Shipped") @ch.Commits.Count@(ch.Truncated ? "+" : "") commit@(ch.Commits.Count == 1 ? "" : "s")
+                                                @(ch.Backwards ? "deployed" : "since") <a class="sha-pill" href="@RepoUrls.Commit(repo, ch.Previous.CommitSha)">@ch.Previous.CommitSha[..7]</a>
+                                                (<a href="@GitBench.Services.PrUrls.Compare(repo, ch.Backwards ? d.CommitSha : ch.Previous.CommitSha, ch.Backwards ? ch.Previous.CommitSha : d.CommitSha)">compare</a>)
+                                            </div>
+                                        }
+                                        @foreach (var c in ch.Commits)
+                                        {
+                                            <div @key="c.Sha"><a class="sha-pill" href="@RepoUrls.Commit(repo, c.Sha)">@c.ShortSha</a> @c.MessageShort <span class="mud-text-secondary">· @c.AuthorName</span></div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            @if (Pipelines.Enabled && Perms.Can(Permission.PushCode) && d.Status == PipelineStatus.Passed && d.Action == DeploymentAction.Start
+                                 && d.Job.Status is not (PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual))
+                            {
+                                var isCurrent = d.Id == info.Current?.Id;
+                                <div class="gb-row-right">
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@(isCurrent ? Icons.Material.Filled.Replay : Icons.Material.Filled.History)"
+                                               Disabled="@(busy || e.IsProtected && activeFreeze != null)" OnClick="() => Rollback(repo, e, d, isCurrent)">@(isCurrent ? "Redeploy" : "Roll back")</MudButton>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+}
+
+@if (Repo == null)
+{
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mt-4 mb-1">Deploy freezes</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+        While a freeze is active, deploys to protected environments can't be approved, run or rolled back. Recurring freezes use two cron
+        expressions in UTC, e.g. from <span class="mono">0 18 * * 5</span> to <span class="mono">0 8 * * 1</span> for weekends.
+    </MudText>
+    <div class="gb-rows mb-3">
+        @if (freezes.Count == 0) { <div class="empty">No freeze windows.</div> }
+        @foreach (var f in freezes)
+        {
+            <div class="gb-row" @key="f.Id">
+                <MudIcon Icon="@Icons.Material.Outlined.AcUnit" Color="@(DeployFreezeService.IsActive(f, DateTime.UtcNow) ? Color.Warning : Color.Default)" />
+                <div class="gb-row-main">@DeployFreezeService.Describe(f)@(DeployFreezeService.IsActive(f, DateTime.UtcNow) ? " · active now" : "")</div>
+                @if (Perms.Can(Permission.ManageRepositories))
+                {
+                    <div class="gb-row-right">
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="Remove freeze" OnClick="() => DeleteFreeze(f)" />
+                    </div>
+                }
+            </div>
+        }
+    </div>
+    @if (Perms.Can(Permission.ManageRepositories))
+    {
+        <div class="d-flex align-center flex-wrap gap-2 mb-3">
+            <MudTextField T="string" @bind-Value="freezeDescription" Label="Description" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 220px" />
+            <MudSelect T="string" @bind-Value="freezeKind" Label="Kind" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 150px">
+                <MudSelectItem T="string" Value="@("dates")">Date range</MudSelectItem>
+                <MudSelectItem T="string" Value="@("cron")">Recurring</MudSelectItem>
+            </MudSelect>
+            @if (freezeKind == "cron")
+            {
+                <MudTextField T="string" @bind-Value="freezeCronStart" Label="Starts (cron, UTC)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 170px" Class="mono" />
+                <MudTextField T="string" @bind-Value="freezeCronEnd" Label="Ends (cron, UTC)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 170px" Class="mono" />
+            }
+            else
+            {
+                <MudDatePicker @bind-Date="freezeStart" Label="From (UTC)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 170px" />
+                <MudDatePicker @bind-Date="freezeEnd" Label="Until (UTC, exclusive)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 190px" />
+            }
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" Disabled="busy" OnClick="AddFreeze">Add freeze</MudButton>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    /// <summary>Only this repository's environments (and the "add environment" form); null: every repository.</summary>
+    [Parameter] public Repository? Repo { get; set; }
+    [Parameter, EditorRequired] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
+
+    private List<RepoEnvironments> groups = [];
+    private List<WaitingDeployment> waiting = [];
+    private List<DeployFreezeWindow> freezes = [];
+    private DeployFreezeWindow? activeFreeze;
+    private readonly Dictionary<int, List<Deployment>> history = [];
+    private readonly Dictionary<int, DeploymentChanges> changes = [];
+    private readonly Dictionary<int, CommitVersion?> versions = [];
+    private bool busy, loaded;
+    private string? error;
+    private IDisposable? sub;
+    private int reloadPending;
+    private int? loadedFor;
+
+    private string? newName;
+    private bool newProtected = true;
+    private string? freezeDescription, freezeCronStart, freezeCronEnd;
+    private string freezeKind = "dates";
+    private DateTime? freezeStart, freezeEnd;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = Repo?.Id ?? -Project.Id;
+        if (loadedFor == key) return;
+        loadedFor = key;
+        history.Clear();
+        changes.Clear();
+        await LoadAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+    }
+
+    private async Task OnPipelineChanged(PipelineChanged e)
+    {
+        if (Repo != null ? e.RepositoryId != Repo.Id : groups.All(g => g.Repository.Id != e.RepositoryId) && waiting.All(w => w.Repository.Id != e.RepositoryId)) return;
+        if (Interlocked.Exchange(ref reloadPending, 1) == 1) return;
+        await Task.Delay(1000);
+        Interlocked.Exchange(ref reloadPending, 0);
+        await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
+    private async Task LoadAsync()
+    {
+        groups = Repo != null ? [new RepoEnvironments(Repo, await EnvironmentsService.ListAsync(Repo))] : await EnvironmentsService.ListProjectAsync(Project.Id);
+        waiting = await EnvironmentsService.WaitingAsync(Project.Id, Repo?.Id);
+        freezes = await Freezes.ListAsync(Project.Id);
+        activeFreeze = freezes.FirstOrDefault(f => DeployFreezeService.IsActive(f, DateTime.UtcNow));
+        foreach (var g in groups)
+            foreach (var i in g.Environments)
+            {
+                if (i.Current is { } cur && !versions.ContainsKey(cur.Id)) versions[cur.Id] = await EnvironmentsService.VersionAsync(g.Repository, cur.CommitSha);
+                if (history.ContainsKey(i.Environment.Id)) history[i.Environment.Id] = await EnvironmentsService.HistoryAsync(g.Repository, i.Environment.Id);
+            }
+        loaded = true;
+    }
+
+    private async Task Do(Func<Task> action, string? success = null)
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            await action();
+            if (success != null) Snackbar.Add(success, Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private Task Create() => Do(async () =>
+    {
+        var env = await EnvironmentsService.CreateAsync(Repo!, newName ?? "", newProtected);
+        newName = null;
+        Snackbar.Add($"Added the environment {env.Name}.", Severity.Success);
+    });
+
+    private async Task ToggleHistory(Repository repo, CiEnvironment e)
+    {
+        if (!history.Remove(e.Id)) history[e.Id] = await EnvironmentsService.HistoryAsync(repo, e.Id);
+    }
+
+    private async Task ToggleChanges(Repository repo, Deployment d)
+    {
+        if (changes.Remove(d.Id)) return;
+        if (await EnvironmentsService.ChangesAsync(repo, d.Id) is { } c) changes[d.Id] = c;
+    }
+
+    private Task SetProtected(Repository repo, CiEnvironment e, bool value) =>
+        Do(() => EnvironmentsService.SetProtectedAsync(repo, e.Id, value),
+            value ? $"{e.Name} is protected: deploys wait for approval." : $"{e.Name} is no longer protected.");
+
+    private async Task EditRules(Repository repo, CiEnvironment e)
+    {
+        var dialog = await Dialogs.ShowAsync<EnvironmentApprovalDialog>("Approvals", new DialogParameters<EnvironmentApprovalDialog>
+        {
+            { x => x.Environment, e }, { x => x.ProjectId, Project.Id },
+        }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if (await dialog.Result is not { Canceled: false, Data: EnvironmentApprovalDialog.Result r }) return;
+        await Do(() => EnvironmentsService.SetApprovalRulesAsync(repo, e.Id, r.Required, r.UserIds, r.GroupIds), $"Saved the approval rule of {e.Name}.");
+    }
+
+    private async Task Delete(Repository repo, CiEnvironment e)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete environment", $"Delete '{e.Name}' and its deployment history? Pipelines are kept, and the environment comes back the next time a job deploys to it.")) return;
+        history.Remove(e.Id);
+        await Do(() => EnvironmentsService.DeleteAsync(repo, e.Id), $"Deleted the environment {e.Name}.");
+    }
+
+    private async Task Stop(Repository repo, CiEnvironmentInfo info)
+    {
+        var hasJob = await EnvironmentsService.HasStopJobAsync(info);
+        var text = hasJob ? $"Run the stop job of pipeline #{info.Current!.PipelineId} for '{info.Environment.Name}'?"
+            : $"'{info.Environment.Name}' has no stop job (environment action: stop). Mark it stopped?";
+        if (!await Dialogs.ConfirmAsync("Stop environment", text, "Stop")) return;
+        await Do(async () =>
+        {
+            var started = await EnvironmentsService.StopAsync(repo, info.Environment.Id);
+            Snackbar.Add(started ? $"Stopping {info.Environment.Name}." : $"{info.Environment.Name} is marked stopped.", Severity.Success);
+        });
+    }
+
+    private async Task Rollback(Repository repo, CiEnvironment e, Deployment d, bool isCurrent)
+    {
+        var verb = isCurrent ? "Redeploy" : "Roll back";
+        var text = $"{verb} '{e.Name}' to {d.CommitSha[..7]} by running job '{d.Job.Name}' of pipeline #{d.PipelineId} again?"
+                   + (e.IsProtected ? $" This counts as your approval; {DeploymentApprovalRules.Describe(e)} are needed." : "");
+        if (!await Dialogs.ConfirmAsync(verb, text, verb)) return;
+        await Do(async () =>
+        {
+            await EnvironmentsService.RollbackAsync(repo, d.Id);
+            Snackbar.Add($"{(isCurrent ? "Redeploying" : "Rolling back to")} {d.CommitSha[..7]}.", Severity.Success);
+            Nav.NavigateTo(PipelineUrls.Detail(repo, d.PipelineId));
+        });
+    }
+
+    private async Task Approve(WaitingDeployment w)
+    {
+        if (await DeploymentUi.PromptCommentAsync(Dialogs, "Approve deployment", $"{w.Deployment.Job.Name} to {w.Environment.Name} ({w.Deployment.CommitSha[..7]}).", "Approve", false) is not { } comment) return;
+        await Do(async () =>
+        {
+            var started = await Pipelines.ApproveJobAsync(w.Repository, w.Deployment.PipelineId, w.Deployment.JobId, comment);
+            Snackbar.Add(started ? $"Approved: deploying to {w.Environment.Name}." : "Approved. More approvals are needed.", Severity.Success);
+        });
+    }
+
+    private async Task Reject(WaitingDeployment w)
+    {
+        if (await DeploymentUi.PromptCommentAsync(Dialogs, "Reject deployment", $"{w.Deployment.Job.Name} to {w.Environment.Name} ({w.Deployment.CommitSha[..7]}).", "Reject", true) is not { } comment) return;
+        await Do(() => Pipelines.RejectJobAsync(w.Repository, w.Deployment.PipelineId, w.Deployment.JobId, comment), $"Rejected the deployment to {w.Environment.Name}.");
+    }
+
+    private Task AddFreeze() => Do(async () =>
+    {
+        if (freezeKind == "cron") await Freezes.CreateAsync(Project.Id, freezeDescription, freezeCronStart, freezeCronEnd, null, null);
+        else await Freezes.CreateAsync(Project.Id, freezeDescription, null, null, freezeStart, freezeEnd);
+        freezeDescription = freezeCronStart = freezeCronEnd = null;
+        freezeStart = freezeEnd = null;
+    }, "Added the deploy freeze.");
+
+    private async Task DeleteFreeze(DeployFreezeWindow f)
+    {
+        if (!await Dialogs.ConfirmAsync("Remove freeze", $"Remove the deploy freeze {DeployFreezeService.Describe(f)}?", "Remove")) return;
+        await Do(() => Freezes.DeleteAsync(Project.Id, f.Id), "Removed the deploy freeze.");
+    }
+
+    public void Dispose() => sub?.Dispose();
+}

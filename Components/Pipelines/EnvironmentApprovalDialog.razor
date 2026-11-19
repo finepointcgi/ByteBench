@@ -1,0 +1,61 @@
+@* Approval rule of a protected environment: how many approvals, and from which users or groups (none: Maintainers). *@
+@inject MemberService Members
+@inject GroupService Groups
+
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">Approvals for @Environment.Name</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Deploy jobs to this environment wait until this many different approvers approve them. With no users or groups
+            listed, Maintainers and Owners approve. Listed users need at least the Developer role.
+        </MudText>
+        <MudNumericField T="int" @bind-Value="required" Label="Required approvals" Min="1" Max="10" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+        <MudSelect T="int" Label="Approvers (users)" MultiSelection="true" @bind-SelectedValues="users" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   ToStringFunc="@(id => userNames.GetValueOrDefault(id, "?"))" Clearable="true" Class="mb-3">
+            @foreach (var (id, name) in userNames)
+            {
+                <MudSelectItem T="int" Value="id">@name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="int" Label="Approver groups (all direct members)" MultiSelection="true" @bind-SelectedValues="groups" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   ToStringFunc="@(id => groupNames.GetValueOrDefault(id, "?"))" Clearable="true">
+            @foreach (var (id, name) in groupNames)
+            {
+                <MudSelectItem T="int" Value="id">@name</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>What the dialog returns.</summary>
+    public sealed record Result(int Required, List<int> UserIds, List<int> GroupIds);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter, EditorRequired] public CiEnvironment Environment { get; set; } = null!;
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+
+    private int required = 1;
+    private IReadOnlyCollection<int> users = [];
+    private IReadOnlyCollection<int> groups = [];
+    private Dictionary<int, string> userNames = [];
+    private Dictionary<int, string> groupNames = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        required = Math.Max(1, Environment.RequiredApprovals);
+        users = Environment.Approvers.Where(a => a.UserId != null).Select(a => a.UserId!.Value).ToHashSet();
+        groups = Environment.Approvers.Where(a => a.GroupId != null).Select(a => a.GroupId!.Value).ToHashSet();
+        foreach (var m in await Members.GetMembersAsync(ProjectId)) userNames.TryAdd(m.UserId, $"{m.User.DisplayName} (@{m.User.UserName})");
+        foreach (var m in await Groups.GetInheritedProjectMembersAsync(ProjectId)) userNames.TryAdd(m.User.Id, $"{m.User.DisplayName} (@{m.User.UserName})");
+        foreach (var a in Environment.Approvers.Where(a => a.User != null)) userNames.TryAdd(a.User!.Id, a.User.DisplayName);
+        foreach (var g in await Groups.ListAsync()) groupNames[g.Id] = g.FullPath;
+        foreach (var a in Environment.Approvers.Where(a => a.Group != null)) groupNames.TryAdd(a.Group!.Id, a.Group.FullPath);
+    }
+
+    private void Save() => MudDialog.Close(DialogResult.Ok(new Result(required, users.ToList(), groups.ToList())));
+}

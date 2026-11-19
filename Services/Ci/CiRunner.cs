@@ -195,11 +195,14 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                         case CiJobAction.WaitForManual:
                             await SetJobManualAsync(job.Id, states[name].NeedsApproval);
                             states[name] = states[name] with { Status = PipelineStatus.Manual };
+                            // A protected environment: record the deployment as waiting for approval and tell the approvers.
+                            if (states[name].NeedsApproval) await deployments.BlockAsync(p, job);
                             changed = true;
                             break;
                         default:
                             var final = action == CiJobAction.Skip ? PipelineStatus.Skipped : PipelineStatus.Canceled;
                             await SetJobAsync(job.Id, final, finished: true, steps: final);
+                            if (states[name].Status == PipelineStatus.Manual) await deployments.CancelWaitingAsync(job.Id);
                             states[name] = states[name] with { Status = final };
                             changed = true;
                             break;
@@ -666,6 +669,10 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var now = DateTime.UtcNow;
+        // Approved jobs that never got to run: their waiting deployments end too.
+        var unfinished = await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && (j.Status == PipelineStatus.Queued || j.Status == PipelineStatus.Running))
+            .Select(j => j.Id).ToListAsync();
+        foreach (var jobId in unfinished) await deployments.CancelWaitingAsync(jobId);
         await db.PipelineSteps.Where(s => s.Job.PipelineId == pipelineId && (s.Status == PipelineStatus.Queued || s.Status == PipelineStatus.Running))
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, status).SetProperty(x => x.FinishedAt, now));
         await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && (j.Status == PipelineStatus.Queued || j.Status == PipelineStatus.Running))

@@ -28,7 +28,7 @@
                     <span class="ci-node-text">
                         <span class="ci-node-name">@job.Name</span>
                         <span class="ci-node-sub">
-                            @if (job.Status == PipelineStatus.Manual) { <span>@(job.RequiresApproval ? "needs approval" : "manual")</span> }
+                            @if (job.Status == PipelineStatus.Manual) { <span>@(job.RequiresApproval ? "waiting for approval" : "manual")</span> }
                             else if (job.StartedAt != null) { <span>@PipelineFormat.Duration(job.StartedAt, job.FinishedAt)</span> }
                             else if (job.IsManual) { <span>manual</span> }
                             @if (job.AllowFailure && !job.IsManual) { <span> · may fail</span> }
@@ -36,9 +36,9 @@
                         </span>
                     </span>
                 </button>
-                @if (canRun && Enabled && job.Status == PipelineStatus.Manual)
+                @if (canRun && Enabled && job.Status == PipelineStatus.Manual && !job.RequiresApproval)
                 {
-                    <MudTooltip Text="@(job.RequiresApproval ? $"Approve and run (deploys to protected {job.EnvironmentName})" : "Run this job")">
+                    <MudTooltip Text="Run this job">
                         <MudIconButton Icon="@Icons.Material.Filled.PlayArrow" Size="Size.Small" Color="Color.Primary" Disabled="Busy"
                                        aria-label="@($"Run {job.Name}")" OnClick="() => OnPlay.InvokeAsync(job)" />
                     </MudTooltip>

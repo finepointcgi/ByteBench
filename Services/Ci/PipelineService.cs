@@ -18,11 +18,12 @@ public sealed record PipelineArtifactInfo(PipelineArtifact Artifact, string JobN
 /// <summary>
 /// Pipeline reads and actions for the UI (scoped). Reads need ViewProject (otherwise they come back empty);
 /// "Run pipeline", "Re-run", "Cancel", running a manual job, retrying a job and keeping artifacts need PushCode.
-/// Running or retrying a job that deploys to a protected environment needs ManageRepositories (Maintainer+).
+/// Running or retrying a job that deploys to a protected environment goes through deployment approvals
+/// (PipelineService.Approvals.cs): the environment's approvers (Maintainers by default) approve, N of them if required.
 /// </summary>
 public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, CiTriggerService triggers,
     CiQueue queue, RepoStorage storage, LiveEvents live, CiStorage ciStorage, CiArtifactStore artifactStore,
-    CiDeploymentRecorder deployments)
+    CiDeploymentRecorder deployments, Audit.AuditLog audit, NotificationService notifications)
 {
     public bool Enabled => triggers.Enabled;
 
@@ -145,8 +146,10 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         {
             await db.PipelineSteps.Where(s => s.Job.PipelineId == pipelineId && s.Status == PipelineStatus.Queued)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Canceled).SetProperty(x => x.FinishedAt, now));
+            var waiting = await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && j.Status == PipelineStatus.Manual).Select(j => j.Id).ToListAsync();
             await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && (j.Status == PipelineStatus.Queued || j.Status == PipelineStatus.Manual))
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Canceled).SetProperty(x => x.FinishedAt, now));
+            foreach (var jobId in waiting) await deployments.CancelWaitingAsync(jobId);
             live.Publish(new PipelineChanged(pipelineId, repo.Id));
             return;
         }
@@ -166,7 +169,11 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         EnsureEnabled();
         var job = await LoadJobAsync(repo, pipelineId, jobId);
         if (job.Status != PipelineStatus.Manual) throw new InvalidOperationException($"Job '{job.Name}' isn't waiting to be run.");
-        await RequireEnvironmentAccessAsync(repo, job);
+        if (await IsGatedAsync(repo, job))
+        {
+            await ApproveJobAsync(repo, pipelineId, jobId, null);
+            return;
+        }
 
         var me = await access.ResolveUserIdAsync();
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -189,17 +196,23 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         var job = await LoadJobAsync(repo, pipelineId, jobId);
         if (job.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual)
             throw new InvalidOperationException($"Job '{job.Name}' hasn't finished yet.");
-        await RequireEnvironmentAccessAsync(repo, job);
+        // A protected environment: the requester must be an approver, outside a deploy freeze. Their request is their
+        // approval; with more approvals required, the job waits for the others.
+        var gate = await RetryGateAsync(repo, job);
 
         var me = await access.ResolveUserIdAsync();
         await artifactStore.DeleteForJobAsync(jobId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var now = DateTime.UtcNow;
+        var runsNow = gate == null || gate.Value.Required <= 1;
+        DateTime? playedAt = runsNow ? now : null;
+        var playedBy = runsNow ? me : null;
         var n = await db.PipelineJobs.Where(j => j.Id == jobId && j.Status != PipelineStatus.Queued && j.Status != PipelineStatus.Running && j.Status != PipelineStatus.Manual)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued)
                 .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null)
-                .SetProperty(j => j.PlayedById, me).SetProperty(j => j.PlayedAt, now));
+                .SetProperty(j => j.PlayedById, playedBy).SetProperty(j => j.PlayedAt, playedAt));
         if (n == 0) throw new InvalidOperationException($"Job '{job.Name}' hasn't finished yet.");
+        if (gate != null) await RecordRetryApprovalAsync(repo, job, me!.Value, gate.Value.Environment);
         await db.PipelineSteps.Where(s => s.JobId == jobId)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Queued).SetProperty(x => x.ExitCode, (int?)null)
                 .SetProperty(x => x.StartedAt, (DateTime?)null).SetProperty(x => x.FinishedAt, (DateTime?)null));
@@ -209,7 +222,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     }
 
     /// <summary>Wakes the pipeline if it is running here, otherwise queues it again.</summary>
-    private async Task ResumeAsync(Repository repo, int pipelineId)
+    internal async Task ResumeAsync(Repository repo, int pipelineId)
     {
         if (!queue.Wake(pipelineId))
         {
@@ -227,15 +240,6 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         return await db.PipelineJobs.AsNoTracking()
             .FirstOrDefaultAsync(j => j.Id == jobId && j.PipelineId == pipelineId && j.Pipeline.RepositoryId == repo.Id)
             ?? throw new InvalidOperationException("Job not found.");
-    }
-
-    /// <summary>Jobs that deploy to a protected environment can only be run by Maintainers and Owners.</summary>
-    private async Task RequireEnvironmentAccessAsync(Repository repo, PipelineJob job)
-    {
-        var isProtected = job.RequiresApproval
-            || job.EnvironmentName != null && (await deployments.ProtectedNamesAsync(repo.Id)).Contains(job.EnvironmentName);
-        if (isProtected && !await access.CanAsync(repo.ProjectId, Permission.ManageRepositories))
-            throw new ForbiddenException($"Only Maintainers can run jobs that deploy to the protected environment '{job.EnvironmentName}'.");
     }
 
     /// <summary>True if the acting user may run (or retry) <paramref name="job"/>, for showing its buttons.</summary>

@@ -17,6 +17,8 @@ public static class WebhookEventNames
     public const string PipelineCompleted = "pipeline.completed";
     /// <summary>Raised by security scanning (Services/Security) when the default branch gets new findings at or above the repository's notify severity.</summary>
     public const string SecurityNewFindings = "security.new_findings";
+    /// <summary>A deployment waits for approval, starts, finishes, or is rejected or canceled (raised by CI).</summary>
+    public const string DeploymentStatus = "deployment.status";
     // ----- Releases -----
     public const string ReleasePublished = "release.published";
     public const string TagCreated = "tag.created";
@@ -24,8 +26,6 @@ public static class WebhookEventNames
     // ----- Package & container registry -----
     public const string PackagePublished = "package.published";
     public const string PackageDeleted = "package.deleted";
-    /// <summary>A CI job with <c>environment:</c> finished deploying (successfully or not).</summary>
-    public const string DeploymentCompleted = "deployment.completed";
 
     /// <summary>Events a hook can subscribe to, with a short description for the settings page. <c>ping</c> is always sent on request.</summary>
     public static readonly IReadOnlyList<(string Name, string Description)> Subscribable =
@@ -41,12 +41,12 @@ public static class WebhookEventNames
         (PullRequestCommented, "Someone comments on a pull request"),
         (PipelineCompleted, "A CI pipeline finishes"),
         (SecurityNewFindings, "A security scan finds new high-severity issues on the default branch"),
+        (DeploymentStatus, "A deployment changes status (waiting for approval, running, passed, failed, canceled)"),
         (ReleasePublished, "A release is published"),
         (TagCreated, "A tag is created (in GitBench or by a push)"),
         (TagDeleted, "A tag is deleted (in GitBench or by a push)"),
         (PackagePublished, "A package version or container image tag is published"),
         (PackageDeleted, "A package, version or image tag is deleted"),
-        (DeploymentCompleted, "A CI deployment to an environment finishes"),
     ];
 
     public static bool IsSubscribable(string name) => Subscribable.Any(e => e.Name == name);

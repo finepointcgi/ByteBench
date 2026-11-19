@@ -95,6 +95,7 @@ public static class ApiEndpoints
         api.MapMergeQueueEndpoints(); // merge queue: view, enqueue, dequeue, move to front
         api.MapSecurityEndpoints(); // security findings (Night Owl), triage, PR new/fixed
         api.MapServiceDeskEndpoints(); // service desk queue, replies to requesters
+        api.MapEnvironmentEndpoints(); // environments, deployments, approvals, rollback, traceability, deploy freezes
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

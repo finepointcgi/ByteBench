@@ -247,6 +247,8 @@ public enum NotificationKind
 
     /// <summary>New high-severity security findings on a repository's default branch (Services/Security).</summary>
     SecurityFindings,
+
+    DeploymentApprovalRequested, DeploymentApproved, DeploymentRejected,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -1814,19 +1816,19 @@ public class PipelineSchedule
 }
 
 /// <summary>A deployment target of a repository, created when a job first names it in <c>environment:</c>.</summary>
-public class CiEnvironment
+public partial class CiEnvironment
 {
     public int Id { get; set; }
     public int RepositoryId { get; set; }
     [Required, MaxLength(64)] public string Name { get; set; } = "";
     [MaxLength(500)] public string? ExternalUrl { get; set; }
-    /// <summary>Only Maintainers can run jobs that deploy here; such jobs always wait for their approval.</summary>
+    /// <summary>Jobs that deploy here always wait for approval (see <see cref="RequiredApprovals"/> and <see cref="CiEnvironmentApprover"/>).</summary>
     public bool IsProtected { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>One run of a job that targets an environment.</summary>
-public class Deployment
+public partial class Deployment
 {
     public int Id { get; set; }
     public int EnvironmentId { get; set; }
@@ -1838,7 +1840,7 @@ public class Deployment
     [Required, MaxLength(250)] public string Ref { get; set; } = "";
     public int? UserId { get; set; }
     public User? User { get; set; }
-    /// <summary>Running, then Passed, Failed or Canceled.</summary>
+    /// <summary>Manual while it waits for approval, Running, then Passed, Failed or Canceled (also: rejected).</summary>
     public PipelineStatus Status { get; set; } = PipelineStatus.Running;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? FinishedAt { get; set; }

@@ -42,7 +42,7 @@ public static class ChatEvents
         new(PullRequestApproved, "Pull request approved", ChatEventGroup.PullRequests, [WebhookEventNames.PullRequestUpdated]),
         new(PipelineFailed, "Pipeline failed", ChatEventGroup.Pipelines, [WebhookEventNames.PipelineCompleted]),
         new(PipelineFixed, "Pipeline fixed", ChatEventGroup.Pipelines, [WebhookEventNames.PipelineCompleted]),
-        new(Deployment, "Deployment finished", ChatEventGroup.Pipelines, [WebhookEventNames.DeploymentCompleted]),
+        new(Deployment, "Deployment finished", ChatEventGroup.Pipelines, [WebhookEventNames.DeploymentStatus]),
         new(ReleasePublished, "Release published", ChatEventGroup.Releases, [WebhookEventNames.ReleasePublished]),
         new(Mention, "@mentions in issues, pull requests and comments", ChatEventGroup.Mentions,
             [WebhookEventNames.IssueCreated, WebhookEventNames.IssueCommented, WebhookEventNames.PullRequestOpened, WebhookEventNames.PullRequestCommented]),
