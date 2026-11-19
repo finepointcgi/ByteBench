@@ -1,0 +1,2 @@
+.desk-page ::deep .desk-textarea { resize: vertical; min-height: 120px; }
+.desk-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

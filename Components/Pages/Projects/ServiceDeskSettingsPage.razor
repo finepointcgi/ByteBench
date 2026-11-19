@@ -1,0 +1,157 @@
+@page "/p/{Key}/settings/service-desk"
+@using GitBench.Services.ServiceDesk
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject WorkflowService Workflows
+@inject ServiceDeskService Desk
+@inject ISnackbar Snackbar
+
+<PageTitle>Service desk settings · @project?.Name</PageTitle>
+
+<div class="sd-page">
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && perms.Role < ProjectRole.Maintainer)
+{
+    <Forbidden Message="Only project Maintainers and Owners can configure the service desk." BackHref="@($"/p/{Key}/settings")" />
+}
+else if (project != null && s != null)
+{
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Service desk</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
+        </div>
+        <div class="d-flex gap-2">
+            <MudButton Href="@($"/p/{project.Key}/service-desk")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.SupportAgent">Queue</MudButton>
+            <MudButton Href="@($"/p/{project.Key}/settings")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Settings</MudButton>
+        </div>
+    </div>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary sd-narrow mb-4">
+        People without a GitBench account can open issues by email or through a public form, and follow them with a private
+        tracking link. Their mail is filed by the <b>Service Desk</b> bot with the requester recorded on the issue. Comments stay
+        internal unless you choose <b>Reply to requester</b>.
+    </MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="sd-narrow mb-3" ShowCloseIcon="true" CloseIconClicked="() => error = null">@error</MudAlert> }
+
+    <MudPaper Outlined="true" Class="sd-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="sd-title">Intake</MudText>
+        <MudSwitch T="bool" @bind-Value="s.Enabled" Color="Color.Primary" Label="Accept requests for this project" />
+        <div class="sd-addresses">
+            <div><span class="mud-text-secondary">Email address:</span> <code>@Desk.Addresses.ForProject(project.Key)</code></div>
+            <div><span class="mud-text-secondary">Public form:</span> <a href="@($"/desk/{project.Key}")" target="_blank" rel="noopener">/desk/@project.Key</a></div>
+        </div>
+        <MudTextField T="string" @bind-Value="s.CustomAddress" Label="Custom address (optional)" Placeholder="support@example.com" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Class="mt-3" HelperText="Forward this address to the service desk inbox; mail sent to it also reaches this project." />
+        <MudSwitch T="bool" @bind-Value="s.PublicFormEnabled" Color="Color.Primary" Label="Public request form" Class="mt-2" />
+        <MudTextField T="string" @bind-Value="s.FormIntro" Label="Form introduction" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" />
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="sd-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="sd-title">New issues</MudText>
+        <div class="d-flex flex-wrap gap-3">
+            <MudSelect T="IssueType" @bind-Value="s.DefaultIssueType" Label="Issue type" Variant="Variant.Outlined" Margin="Margin.Dense" Class="sd-field">
+                @foreach (var t in Enum.GetValues<IssueType>().Where(t => t != IssueType.Subtask)) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="int" Value="@(s.DefaultAssigneeId ?? 0)" ValueChanged="v => s.DefaultAssigneeId = v == 0 ? null : v" Label="Assignee"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="sd-field"
+                       ToStringFunc="@(id => id == 0 ? "Unassigned" : users.FirstOrDefault(u => u.Id == id)?.DisplayName ?? "")">
+                <MudSelectItem Value="0">Unassigned</MudSelectItem>
+                @foreach (var u in users) { <MudSelectItem Value="u.Id">@u.DisplayName</MudSelectItem> }
+            </MudSelect>
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">Labels</MudText>
+        <div class="sd-labels">
+            @foreach (var l in project.Labels)
+            {
+                var on = s.DefaultLabelIds.Contains(l.Id);
+                <MudChip T="string" Size="Size.Small" OnClick="() => ToggleLabel(l.Id)" aria-pressed="@(on ? "true" : "false")"
+                         Variant="@(on ? Variant.Filled : Variant.Outlined)" Icon="@(on ? Icons.Material.Filled.Check : null)"
+                         Style="@(on ? $"background:{l.Color};color:{Display.TextOn(l.Color)}" : $"border-color:{l.Color}")">@l.Name</MudChip>
+            }
+            @if (project.Labels.Count == 0) { <span class="mud-text-secondary">This project has no labels.</span> }
+        </div>
+        <MudTextField T="string" @bind-Value="s.IssueTemplate" Label="Issue template (Markdown)" Lines="5" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3"
+                      Placeholder="{{body}}" MaxLength="10000"
+                      HelperText="The new issue's description. Placeholders: {{body}}, {{requester}}, {{email}}, {{subject}}. Empty: just the message." />
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="sd-narrow pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="sd-title">Emails to requesters</MudText>
+        @if (!emailEnabled)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">Email is turned off for this site (<code>Email:Enabled</code>), so nothing is sent to requesters.</MudAlert>
+        }
+        <MudSwitch T="bool" @bind-Value="s.AutoReplyEnabled" Color="Color.Primary" Label="Send an auto-reply to new requests" />
+        <MudTextField T="string" @bind-Value="s.AutoReplyTemplate" Label="Auto-reply (Markdown)" Lines="5" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Placeholder="@ServiceDeskMailer.DefaultAutoReply" MaxLength="10000"
+                      HelperText="Placeholders: {{requester}}, {{key}}, {{subject}}, {{tracking_url}}. Empty: the default text." />
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">Email the requester when the issue moves to</MudText>
+        <div class="sd-statuses">
+            @foreach (var st in workflow.Statuses)
+            {
+                <MudCheckBox T="bool" Value="@s.NotifyStatusIds.Contains(st.Id)" ValueChanged="v => ToggleStatus(st.Id, v)" Label="@st.Name" Dense="true" Color="Color.Primary" />
+            }
+        </div>
+        <MudNumericField T="int" @bind-Value="s.ResponseTargetHours" Label="Response target (hours)" Min="1" Max="720" Variant="Variant.Outlined" Margin="Margin.Dense"
+                         Class="sd-field mt-3" HelperText="The queue flags requests waiting on the team longer than this." />
+    </MudPaper>
+
+    <div class="sd-narrow d-flex gap-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="saving">Save</MudButton>
+    </div>
+}
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound, saving, emailEnabled;
+    private string? error;
+    private ServiceDeskSettings? s;
+    private List<User> users = [];
+    private ProjectWorkflow workflow = ProjectWorkflow.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        if (perms.Role < ProjectRole.Maintainer) return;
+        s = await Desk.GetSettingsAsync(project.Id);
+        users = await Issues.GetUsersAsync();
+        workflow = await Workflows.GetAsync(project.Id);
+        emailEnabled = EmailQueue.IsEnabled;
+    }
+
+    [Inject] private GitBench.Services.Email.EmailQueue EmailQueue { get; set; } = default!;
+
+    private void ToggleLabel(int id)
+    {
+        if (!s!.DefaultLabelIds.Remove(id)) s.DefaultLabelIds.Add(id);
+    }
+
+    private void ToggleStatus(int id, bool on)
+    {
+        s!.NotifyStatusIds.Remove(id);
+        if (on) s.NotifyStatusIds.Add(id);
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        saving = true;
+        try
+        {
+            await Desk.SaveSettingsAsync(s!);
+            Snackbar.Add("Service desk settings saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+}

@@ -1,0 +1,32 @@
+From: Omar Field <%FROM%>
+To: %TO%
+Subject: Screenshot of the error
+Date: Wed, 18 Nov 2026 10:00:00 +0000
+Message-ID: <%MSGID%>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer-boundary"
+
+--outer-boundary
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><head><style>p { color: red; }</style><script>alert('x')</script></head>
+<body><p>Hi team,</p><p>The <b>export</b> fails with <i>error 42</i>. See <a href="https://status.example.test/incidents/42">the status page</a> and
+<a href="javascript:alert(1)">this</a>.</p><ul><li>Step one</li><li>Step two</li></ul>
+<p>Thanks &amp; regards</p></body></html>
+
+--outer-boundary
+Content-Type: image/png; name="screenshot.png"
+Content-Disposition: attachment; filename="screenshot.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==
+
+--outer-boundary
+Content-Type: application/octet-stream; name="invoice.exe"
+Content-Disposition: attachment; filename="invoice.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAA=
+
+--outer-boundary--

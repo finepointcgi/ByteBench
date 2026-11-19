@@ -339,6 +339,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureCustomFieldsTime(b);
         ConfigureCiExtras(b);
         ConfigureWebEditor(b);
+        ConfigureServiceDesk(b);
     }
 
     // ----- Forks -----
@@ -535,5 +536,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<EditorWorkspaceChange>().HasOne<EditorWorkspace>().WithMany(w => w.Changes).HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectEditorSettings>().HasKey(s => s.ProjectId);
         b.Entity<ProjectEditorSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+    // ----- Service desk -----
+    public DbSet<ServiceDeskSettings> ServiceDeskSettings => Set<ServiceDeskSettings>();
+    public DbSet<ServiceDeskContact> ServiceDeskContacts => Set<ServiceDeskContact>();
+    public DbSet<ServiceDeskTicket> ServiceDeskTickets => Set<ServiceDeskTicket>();
+    public DbSet<ServiceDeskMessage> ServiceDeskMessages => Set<ServiceDeskMessage>();
+
+    private static void ConfigureServiceDesk(ModelBuilder b)
+    {
+        b.Entity<ServiceDeskSettings>().HasKey(s => s.ProjectId);
+        b.Entity<ServiceDeskSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ServiceDeskSettings>().HasOne<User>().WithMany().HasForeignKey(s => s.DefaultAssigneeId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<ServiceDeskSettings>().HasIndex(s => s.CustomAddress).IsUnique();
+        b.Entity<ServiceDeskContact>().HasIndex(c => c.Email).IsUnique();
+        b.Entity<ServiceDeskTicket>().HasIndex(t => t.IssueId).IsUnique();
+        b.Entity<ServiceDeskTicket>().HasIndex(t => t.ReplyToken).IsUnique();
+        b.Entity<ServiceDeskTicket>().HasIndex(t => t.TrackingToken).IsUnique();
+        b.Entity<ServiceDeskTicket>().HasIndex(t => new { t.ProjectId, t.LastRequesterActivityAt });
+        b.Entity<ServiceDeskTicket>().HasOne(t => t.Issue).WithMany().HasForeignKey(t => t.IssueId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ServiceDeskTicket>().HasOne<Project>().WithMany().HasForeignKey(t => t.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ServiceDeskTicket>().HasOne(t => t.Contact).WithMany().HasForeignKey(t => t.ContactId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ServiceDeskMessage>().HasIndex(m => m.MessageId);
+        b.Entity<ServiceDeskMessage>().HasIndex(m => m.TicketId);
+        b.Entity<ServiceDeskMessage>().HasOne(m => m.Ticket).WithMany().HasForeignKey(m => m.TicketId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<Comment>().HasOne<ServiceDeskContact>().WithMany().HasForeignKey(c => c.ServiceDeskContactId).OnDelete(DeleteBehavior.SetNull);
     }
 }

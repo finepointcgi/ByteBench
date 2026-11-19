@@ -92,6 +92,7 @@ public static class ApiEndpoints
         api.MapGqlSearchEndpoints(); // advanced (GQL) issue search
         api.MapForkEndpoints(); // forks, sync fork
         api.MapFieldEndpoints(); // custom fields, components, versions, issue templates, Workbench mapping
+        api.MapServiceDeskEndpoints(); // service desk queue, replies to requesters
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

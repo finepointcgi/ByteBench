@@ -1,0 +1,19 @@
+@using GitBench.Services.ServiceDesk
+@* Issue sidebar: who filed this service desk request. The address is only shown to Developers and above. *@
+
+<div class="sdp" aria-label="Service desk request">
+    <MudText Typo="Typo.caption" Class="mud-text-secondary sdp-label">Requested by</MudText>
+    <div class="sdp-name"><MudIcon Icon="@Icons.Material.Outlined.SupportAgent" Size="Size.Small" /> @Info.Ticket.Contact.DisplayName</div>
+    @if (Info.CanSeeEmail && Info.Ticket.Contact.Email.Length > 0 && Info.Ticket.Contact.Name != null)
+    {
+        <div class="sdp-small mud-text-secondary">@Info.Ticket.Contact.Email</div>
+    }
+    <div class="sdp-small mud-text-secondary">
+        via @(Info.Ticket.Source == ServiceDeskSource.Form ? "public form" : "email") ·
+        @(Info.Ticket.WaitingOnUs ? "waiting on us" : "waiting on requester")
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ServiceDeskIssueInfo Info { get; set; } = default!;
+}

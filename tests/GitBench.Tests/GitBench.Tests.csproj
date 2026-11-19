@@ -26,6 +26,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\**\*.eml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

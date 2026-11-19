@@ -1,0 +1,24 @@
+Return-Path: <>
+From: Mail Delivery Subsystem <MAILER-DAEMON@mx.customer.test>
+To: %TO%
+Subject: Undelivered Mail Returned to Sender
+Date: Wed, 18 Nov 2026 10:00:07 +0000
+Message-ID: <%MSGID%>
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="bounce-boundary"
+
+--bounce-boundary
+Content-Type: text/plain; charset=us-ascii
+
+This is the mail system at host mx.customer.test.
+I'm sorry to have to inform you that your message could not be delivered.
+
+--bounce-boundary
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.customer.test
+Final-Recipient: rfc822; nobody@customer.test
+Action: failed
+Status: 5.1.1
+
+--bounce-boundary--

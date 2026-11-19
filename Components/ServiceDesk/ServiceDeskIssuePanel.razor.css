@@ -1,0 +1,4 @@
+.sdp { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--mud-palette-lines-default); }
+.sdp-label { display: block; margin-bottom: 2px; }
+.sdp-name { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.sdp-small { font-size: .75rem; }

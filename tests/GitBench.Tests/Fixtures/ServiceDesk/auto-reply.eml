@@ -1,0 +1,12 @@
+From: Jane Customer <%FROM%>
+To: %TO%
+Subject: Out of office: [%KEY%] The printer on floor 3 is on fire
+Date: Wed, 18 Nov 2026 10:00:05 +0000
+Message-ID: <%MSGID%>
+Auto-Submitted: auto-replied
+Precedence: auto_reply
+X-Autoreply: yes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+I am out of the office until Monday and will reply when I'm back.
