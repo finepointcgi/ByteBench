@@ -1,0 +1,79 @@
+@* Stacked area chart as inline SVG (the cumulative flow diagram). Series are stacked bottom to top in the order given. *@
+@using static GitBench.Components.Sprints.ChartScale
+
+<figure class="chart" aria-label="@Title">
+    <div class="chart-legend" aria-hidden="true">
+        @foreach (var (s, k) in Series.Select((s, k) => (s, k)).Reverse())
+        {
+            <span class="@("gs-" + Slot(k))"><i class="sw"></i>@s.Name</span>
+        }
+    </div>
+    <svg viewBox="0 0 @W @H" class="chart-svg" role="img">
+        <title>@Title</title>
+        @for (var v = 0.0; v <= yMax + 0.001; v += yStep)
+        {
+            var y = Y(v);
+            <g>
+                <line x1="@L" x2="@(W - R)" y1="@F(y)" y2="@F(y)" class="chart-grid" />
+                <g><text x="@(L - 8)" y="@F(y + 4)" text-anchor="end" class="chart-tick">@F(v)</text></g>
+            </g>
+        }
+        <g><text x="12" y="@F(T + PlotH / 2)" class="chart-axis-label" text-anchor="middle" transform="rotate(-90 12 @F(T + PlotH / 2))">Issues</text></g>
+        @for (var k = 0; k < Series.Count; k++)
+        {
+            <path d="@Band(k)" class="@("band gs-" + Slot(k))"><title>@Series[k].Name</title></path>
+        }
+        <line x1="@L" x2="@(W - R)" y1="@F(Y(0))" y2="@F(Y(0))" class="chart-axis" />
+        @for (var d = 0; d < n; d++)
+        {
+            if (d % labelEvery != 0 && d != n - 1) continue;
+            <g><text x="@F(X(d))" y="@(H - B + 18)" text-anchor="middle" class="chart-tick">@Labels[d]</text></g>
+        }
+        @for (var d = 0; d < n; d++)
+        {
+            <rect x="@F(X(d) - colW / 2)" y="@T" width="@F(colW)" height="@PlotH" class="chart-hit"><title>@Tip(d)</title></rect>
+        }
+    </svg>
+</figure>
+
+@code {
+    public sealed record Band_(string Name, IReadOnlyList<int> Values);
+
+    [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
+    /// <summary>Bottom series first; each series has one value per label.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Band_> Series { get; set; } = [];
+    [Parameter] public string Title { get; set; } = "Cumulative flow";
+
+    private const int W = 760, H = 300, L = 48, R = 16, T = 12, B = 34;
+    private const int PlotW = W - L - R, PlotH = H - T - B;
+    private int n, labelEvery = 1;
+    private double yMax = 1, yStep = 1, colW = PlotW;
+    private int[][] cum = [];
+
+    private double X(int d) => L + (n <= 1 ? PlotW / 2.0 : d * (double)PlotW / (n - 1));
+    private double Y(double v) => T + PlotH - v / yMax * PlotH;
+    /// <summary>Colour slots 1–7; more series than that reuse them.</summary>
+    private static int Slot(int k) => k % 7 + 1;
+
+    protected override void OnParametersSet()
+    {
+        n = Labels.Count;
+        cum = new int[Series.Count + 1][];
+        cum[0] = new int[n];
+        for (var k = 0; k < Series.Count; k++)
+            cum[k + 1] = Enumerable.Range(0, n).Select(d => cum[k][d] + (d < Series[k].Values.Count ? Series[k].Values[d] : 0)).ToArray();
+        (yMax, yStep) = Nice(cum[^1].DefaultIfEmpty(0).Max());
+        labelEvery = n <= 10 ? 1 : (int)Math.Ceiling(n / 10.0);
+        colW = n <= 1 ? PlotW : PlotW / (double)(n - 1);
+    }
+
+    private string Band(int k)
+    {
+        if (n == 0) return "";
+        var top = Enumerable.Range(0, n).Select(d => $"{F(X(d))},{F(Y(cum[k + 1][d]))}");
+        var bottom = Enumerable.Range(0, n).Reverse().Select(d => $"{F(X(d))},{F(Y(cum[k][d]))}");
+        return "M" + string.Join(" L", top.Concat(bottom)) + " Z";
+    }
+
+    private string Tip(int d) => Labels[d] + string.Concat(Series.Select(s => $"\n{s.Name}: {(d < s.Values.Count ? s.Values[d] : 0)}"));
+}

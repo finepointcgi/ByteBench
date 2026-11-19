@@ -2573,6 +2573,9 @@ namespace GitBench.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("DoraFailureWindowHours")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("GroupId")
                         .HasColumnType("INTEGER");
 
@@ -2593,6 +2596,10 @@ namespace GitBench.Data.Migrations
 
                     b.Property<int>("NextIssueNumber")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProductionEnvironment")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Visibility")
                         .HasColumnType("INTEGER");

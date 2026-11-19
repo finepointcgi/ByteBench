@@ -126,6 +126,7 @@ builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search
 builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
 builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
 builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
+GitBench.Services.Reports.ReportsServiceCollectionExtensions.AddDeliveryReports(builder.Services); // cycle/lead time, flow, DORA and pull request reports
 builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, estimates, Workbench link
 GitBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder.Services, builder.Configuration); // web editor + AI assistant
 GitBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistry(builder.Services); // NuGet, npm and container registry per project
@@ -180,6 +181,7 @@ GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();
 app.MapIssueCsvExport(); // /p/{key}/issues/export.csv, /issues/export.csv
+GitBench.Services.Reports.ReportsServiceCollectionExtensions.MapReportDownloads(app); // /p/{key}/reports/{report}.csv
 GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 GitBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.MapServiceDesk(app); // POST /service-desk/inbound (signed raw MIME)
 app.MapReleases();

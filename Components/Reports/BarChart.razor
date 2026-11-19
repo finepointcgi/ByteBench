@@ -1,0 +1,59 @@
+@* Vertical bar chart as inline SVG (histograms, throughput, status times). A bar can be highlighted (a bottleneck) or selected; clicking one reports its index. *@
+@using static GitBench.Components.Sprints.ChartScale
+
+<figure class="chart" aria-label="@Title">
+    <svg viewBox="0 0 @W @H" class="chart-svg" role="img">
+        <title>@Title</title>
+        @for (var v = 0.0; v <= yMax + 0.001; v += yStep)
+        {
+            var y = Y(v);
+            <g>
+                <line x1="@L" x2="@(W - R)" y1="@F(y)" y2="@F(y)" class="chart-grid" />
+                <g><text x="@(L - 8)" y="@F(y + 4)" text-anchor="end" class="chart-tick">@F(v)</text></g>
+            </g>
+        }
+        <g><text x="12" y="@F(T + PlotH / 2)" class="chart-axis-label" text-anchor="middle" transform="rotate(-90 12 @F(T + PlotH / 2))">@YLabel</text></g>
+        <line x1="@L" x2="@(W - R)" y1="@F(Y(0))" y2="@F(Y(0))" class="chart-axis" />
+        @for (var k = 0; k < Items.Count; k++)
+        {
+            var i = k;
+            var it = Items[k];
+            var cx = L + slot * (k + 0.5);
+            <g class="@(OnSelect.HasDelegate ? "bar-clickable" : null)" @onclick="() => OnSelect.InvokeAsync(i)">
+                <title>@(it.Tip ?? $"{it.Label}: {F(it.Value)}")</title>
+                <rect x="@F(cx - slot / 2)" y="@T" width="@F(slot)" height="@PlotH" class="chart-hit" />
+                <rect x="@F(cx - barW / 2)" y="@F(Y(it.Value))" width="@F(barW)" height="@F(Math.Max(0, Y(0) - Y(it.Value)))" rx="2"
+                      class="@("bar " + (it.Highlight ? "bar-hot" : "bar-main") + (it.Selected ? " bar-selected" : ""))" />
+                @if (it.Value > 0)
+                {
+                    <g><text x="@F(cx)" y="@F(Y(it.Value) - 5)" text-anchor="middle" class="chart-value">@F(it.Value)</text></g>
+                }
+                <g><text x="@F(cx)" y="@(H - B + 18)" text-anchor="middle" class="chart-tick">@Short(it.Label)</text></g>
+            </g>
+        }
+    </svg>
+</figure>
+
+@code {
+    public sealed record Item(string Label, double Value, string? Tip = null, bool Highlight = false, bool Selected = false);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Item> Items { get; set; } = [];
+    [Parameter] public string Title { get; set; } = "Bar chart";
+    [Parameter] public string YLabel { get; set; } = "";
+    /// <summary>Called with the index of the clicked bar.</summary>
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+
+    private const int W = 760, H = 280, L = 48, R = 16, T = 18, B = 34;
+    private const int PlotW = W - L - R, PlotH = H - T - B;
+    private double yMax = 1, yStep = 1, slot = 1, barW = 1;
+
+    private double Y(double v) => T + PlotH - v / yMax * PlotH;
+    private string Short(string s) => s.Length > 12 && Items.Count > 8 ? s[..11] + "…" : s;
+
+    protected override void OnParametersSet()
+    {
+        (yMax, yStep) = Nice(Items.Select(i => i.Value).DefaultIfEmpty(0).Max());
+        slot = PlotW / (double)Math.Max(1, Items.Count);
+        barW = Math.Min(48, slot * 0.7);
+    }
+}
