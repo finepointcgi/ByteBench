@@ -22,6 +22,7 @@ public partial class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Watch> Watches => Set<Watch>();
     public DbSet<AiReview> AiReviews => Set<AiReview>();
+    public DbSet<RepositoryAiReviewSettings> RepositoryAiReviewSettings => Set<RepositoryAiReviewSettings>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<PersonalAccessToken> PersonalAccessTokens => Set<PersonalAccessToken>();
     public DbSet<RepositoryRedirect> RepositoryRedirects => Set<RepositoryRedirect>();
@@ -259,6 +260,9 @@ public partial class AppDbContext(DbContextOptions<AppDbContext> options)
         // ----- AI code review -----
         b.Entity<AiReview>().HasIndex(r => new { r.PullRequestId, r.HeadSha });
         b.Entity<AiReview>().HasOne<PullRequest>().WithMany().HasForeignKey(r => r.PullRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<RepositoryAiReviewSettings>().HasIndex(s => s.RepositoryId).IsUnique();
+        b.Entity<RepositoryAiReviewSettings>().HasOne<Repository>().WithMany().HasForeignKey(s => s.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<PullRequestComment>().HasIndex(c => new { c.PullRequestId, c.AiFingerprint });
 
         // ----- Membership & access tokens -----
         b.Entity<ProjectMember>().HasIndex(m => new { m.ProjectId, m.UserId }).IsUnique();

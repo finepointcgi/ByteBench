@@ -8,6 +8,8 @@
                          Class="@ItemClass("branches")" aria-current="@(Active == "branches" ? "page" : null)">Branch protection</MudListItem>
             <MudListItem T="string" Href="@PrUrls.MergeSettings(Repo)" Icon="@Icons.Material.Outlined.MergeType"
                          Class="@ItemClass("merge")" aria-current="@(Active == "merge" ? "page" : null)">Pull requests</MudListItem>
+            <MudListItem T="string" Href="@PrUrls.AiReviewSettings(Repo)" Icon="@Icons.Material.Outlined.AutoAwesome"
+                         Class="@ItemClass("ai-review")" aria-current="@(Active == "ai-review" ? "page" : null)">AI review</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/ci-variables")" Icon="@Icons.Material.Outlined.Key"
                          Class="@ItemClass("ci-variables")" aria-current="@(Active == "ci-variables" ? "page" : null)">CI variables</MudListItem>
             <MudListItem T="string" Href="@RepoUrls.DeployKeys(Repo)" Icon="@Icons.Material.Outlined.VpnKey"
@@ -24,7 +26,7 @@
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>The current settings page, "general", "branches", "merge", "ci-variables", "deploy-keys", "tags", "security" or "mirroring".</summary>
+    /// <summary>The current settings page, "general", "branches", "merge", "ai-review", "ci-variables", "deploy-keys", "tags", "security" or "mirroring".</summary>
     [Parameter] public string Active { get; set; } = "general";
 
     private string ItemClass(string page) => Active == page ? "settings-nav-item settings-nav-active" : "settings-nav-item";

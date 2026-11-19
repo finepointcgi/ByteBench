@@ -1,0 +1,109 @@
+@page "/p/{Key}/repos/{Slug}/settings/ai-review"
+@inherits RepoPageBase
+@using GitBench.Services.Ai
+@inject ProjectAccess Access
+@inject AiReviewSettingsService AiSettings
+@inject ISnackbar Snackbar
+
+<PageTitle>AI review · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !canManage)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can change AI review settings." BackHref="@RepoUrls.Source(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="ai-review" />
+        <div class="gb-min0">
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            <MudPaper Outlined="true" Class="pa-5">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">AI pull request review</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    GitBench AI reads a pull request's diff and posts findings as inline comments (each with a severity) plus one
+                    summary comment, as the <b>GitBench AI</b> account. It never approves or requests changes, and it can be wrong.
+                    The diff is treated as untrusted text: the reviewer has no tools and can't change anything.
+                </MudText>
+                @if (availability is { Available: false })
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@availability.Reason Reviews can't run until then.</MudAlert>
+                }
+                else if (availability != null)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mb-2" HtmlTag="div">Runs on: @availability.BackendName (same backend as the web editor).</MudText>
+                }
+
+                <MudSwitch T="bool" @bind-Value="enabled" Color="Color.Primary" Label="Enable AI review for this repository" />
+
+                <MudSelect T="AiReviewMode" Label="When to review" @bind-Value="mode" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           Disabled="@(!enabled)" OuterClass="mt-3 ai-review-mode">
+                    <MudSelectItem T="AiReviewMode" Value="AiReviewMode.OnDemand">On demand only ("Review with AI" button)</MudSelectItem>
+                    <MudSelectItem T="AiReviewMode" Value="AiReviewMode.OnOpen">When a pull request is opened</MudSelectItem>
+                    <MudSelectItem T="AiReviewMode" Value="AiReviewMode.OnPush">When opened and after each new push</MudSelectItem>
+                </MudSelect>
+
+                <MudNumericField T="int" Label="Max diff size (characters sent to the model)" @bind-Value="maxChars" Min="AiReviewSettingsService.MinDiffChars"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!enabled)" Class="mt-3 ai-review-size"
+                                 HelperText="Larger pull requests are reviewed partly and the summary says which files weren't." />
+
+                <MudTextField T="string" Label="Paths to ignore (one pattern per line)" @bind-Value="ignore" Lines="3" AutoGrow="true" MaxLines="10"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!enabled)" Class="mt-3"
+                              HelperText="Gitignore-style, like CODEOWNERS: docs/, *.generated.cs, vendor/**. Lockfiles, binaries and generated files are always skipped." />
+
+                <MudTextField T="string" Label="Focus prompt (optional)" @bind-Value="focus" Lines="2" AutoGrow="true" MaxLines="8" MaxLength="2000"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!enabled)" Class="mt-3"
+                              HelperText="Extra guidance for the reviewer, e.g. &quot;This service handles payments; pay attention to rounding and authorization.&quot;" />
+
+                <MudSwitch T="bool" @bind-Value="block" Color="Color.Primary" Disabled="@(!enabled)" Class="mt-3"
+                           Label="Merge check: block merging while AI blocker findings are unresolved" />
+                <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary">
+                    Blockers are bug and security findings. Resolving or dismissing the thread clears them. Applies to every merge, protected branch or not.
+                </MudText>
+
+                <div class="mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="busy" OnClick="Save">Save changes</MudButton>
+                </div>
+            </MudPaper>
+        </div>
+    </div>
+}
+
+@code {
+    private bool canManage, busy;
+    private AiReviewAvailability? availability;
+    private bool enabled, block;
+    private AiReviewMode mode;
+    private int maxChars = 240_000;
+    private string? ignore, focus;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        canManage = await Access.CanAsync(Repo!.ProjectId, Permission.ManageRepositories);
+        if (!canManage) return;
+        var s = await AiSettings.GetAsync(Repo.Id);
+        (enabled, mode, maxChars, ignore, focus, block) = (s.Enabled, s.Mode, s.MaxDiffChars, s.IgnorePaths, s.FocusPrompt, s.BlockOnUnresolvedFindings);
+        availability = await AiSettings.GetAvailabilityAsync();
+    }
+
+    private async Task Save()
+    {
+        busy = true;
+        Error = null;
+        try
+        {
+            await AiSettings.SaveAsync(Repo!.Id, new AiReviewSettingsInput(enabled, mode, maxChars, ignore, focus, block), Me.Id);
+            Snackbar.Add("AI review settings saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+}

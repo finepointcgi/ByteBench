@@ -51,7 +51,13 @@ public sealed class AnthropicEditorChatModel(AiClient ai) : IEditorChatModel
                 MaxTokens = setup.MaxTokensPerTurn,
                 Betas = [AnthropicBeta.ServerSideFallback2026_07_01],
                 Fallbacks = new Default(),
-                OutputConfig = new BetaOutputConfig { Effort = Effort.Medium },
+                OutputConfig = setup.OutputSchema == null
+                    ? new BetaOutputConfig { Effort = Effort.Medium }
+                    : new BetaOutputConfig
+                    {
+                        Effort = Effort.High,
+                        Format = new BetaJsonOutputFormat { Schema = setup.OutputSchema.ToDictionary(kv => kv.Key, kv => kv.Value) },
+                    },
                 System = new List<BetaTextBlockParam> { new() { Text = setup.System, CacheControl = new BetaCacheControlEphemeral() } },
                 Tools = tools,
                 Messages = messages.ToList(),

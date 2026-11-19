@@ -16,7 +16,7 @@ public sealed record EditorToolResult(string ToolUseId, string Content, bool IsE
 
 /// <summary>What a conversation with the model starts from.</summary>
 public sealed record EditorChatSetup(string System, IReadOnlyList<EditorToolDefinition> Tools, IReadOnlyList<EditorChatMessage> History,
-    string UserMessage, int MaxTokensPerTurn);
+    string UserMessage, int MaxTokensPerTurn, IReadOnlyDictionary<string, JsonElement>? OutputSchema = null);
 
 /// <summary>
 /// The model behind the API backend, abstracted so tests can script it (<c>FakeEditorChatModel</c>). The real one is
@@ -41,7 +41,7 @@ public interface IEditorChatConversation
 /// <see cref="EditorAiOptions.MaxToolCalls"/> tool calls and <see cref="EditorAiOptions.MaxOutputTokensPerRequest"/> output
 /// tokens. Every turn's usage is logged to AiUsage under the request's feature name.
 /// </summary>
-public sealed class ApiEditorBackend(IEditorChatModel model, AiClient ai, IOptions<EditorAiOptions> options, ILogger<ApiEditorBackend> log) : IEditorAiBackend
+public sealed class ApiEditorBackend(IEditorChatModel model, AiClient ai, IOptions<EditorAiOptions> options, ILogger<ApiEditorBackend> log) : IEditorAiBackend, IStructuredAiBackend
 {
     private readonly EditorAiOptions opts = options.Value;
 
@@ -106,5 +106,20 @@ public sealed class ApiEditorBackend(IEditorChatModel model, AiClient ai, IOptio
             if (text.Length > 0 && !text.ToString().EndsWith('\n')) { text.Append("\n\n"); await sink.TextAsync("\n\n"); }
         }
         return new EditorAiResult(text.ToString().Trim(), toolCalls, tools.Proposals.ToList(), null, stopNote);
+    }
+
+    /// <summary>
+    /// One model turn with no tools and the answer constrained to the request's schema (the real model enforces it; either way
+    /// the text is parsed and validated by the caller). Usage is logged under the request's feature name.
+    /// </summary>
+    public async Task<AiJsonResult<T>> CompleteJsonAsync<T>(StructuredAiRequest request, CancellationToken ct) where T : class
+    {
+        var conversation = model.Begin(new EditorChatSetup(request.System, [], [], request.User, request.MaxTokens, request.Schema));
+        var turn = await conversation.NextAsync(_ => Task.CompletedTask, ct);
+        await ai.RecordUsageAsync(request.Feature, request.UserId, request.ProjectId, turn.InputTokens, turn.OutputTokens,
+            turn.CacheReadTokens, turn.CacheWriteTokens, CancellationToken.None);
+        var result = AiClient.ParseJson<T>(AiJsonText.ExtractObject(turn.Text), turn.StopReason);
+        if (result.Refused) log.LogWarning("Claude declined a {Feature} request", request.Feature);
+        return result;
     }
 }

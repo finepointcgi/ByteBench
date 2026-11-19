@@ -12,6 +12,8 @@ public static class PrUrls
 
     public static string MergeSettings(Repository r) => RepoUrls.Base(r) + "/settings/merge";
 
+    public static string AiReviewSettings(Repository r) => RepoUrls.Base(r) + "/settings/ai-review";
+
     private static string Escape(string refName) => string.Join('/', refName.Split('/').Select(Uri.EscapeDataString));
 
     /// <summary>Splits "base...head" (or "base..head"; head may be empty); null when it isn't one.</summary>

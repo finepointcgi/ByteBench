@@ -32,7 +32,7 @@ public partial class Project
     public List<Issue> Issues { get; set; } = [];
     public List<Label> Labels { get; set; } = [];
     public List<Milestone> Milestones { get; set; } = [];
-    /// <summary>When true (default), GitBench AI reviews new pull requests and new pushes automatically (if AI is configured).</summary>
+    /// <summary>Superseded by the per-repository <see cref="RepositoryAiReviewSettings"/> (off by default); no longer read.</summary>
     public bool AiReviewEnabled { get; set; } = true;
 
     /// <summary>Private: members only. Internal: every signed-in user can view it (as Viewer unless a member).</summary>
@@ -284,7 +284,7 @@ public partial class Watch
 public enum AiReviewStatus { Queued, Running, Completed, Failed, Skipped }
 
 /// <summary>One GitBench AI review run of a pull request at a given head commit. Written by <see cref="GitBench.Services.Ai.AiReviewService"/>.</summary>
-public class AiReview
+public partial class AiReview
 {
     public int Id { get; set; }
     public int PullRequestId { get; set; }

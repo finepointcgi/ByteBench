@@ -44,14 +44,17 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
             .FirstOrDefaultAsync(p => p.Id == pullRequestId, ct) ?? throw new InvalidOperationException("Pull request not found.");
 
         var external = await ExternalChecksAsync(pullRequestId, ct);
+        // Per-repository, optional, independent of branch protection: no unresolved AI blocker findings.
+        var (aiCheck, aiBlocker) = await Ai.AiReviewMergeCheck.EvaluateAsync(db, pullRequestId, pr.RepositoryId, ct);
         var rules = await protection.RulesForAsync(pr.RepositoryId);
         var all = BranchProtectionService.ApplicableTo(rules, pr.TargetBranch, isAdmin: false);
         var checks = new List<MergeCheckResult>();
         // Not a branch rule: a draft is never mergeable (and can't be bypassed).
         List<string> draftBlockers = pr.IsDraft ? ["it is a draft (mark it ready for review first)"] : [];
         if (pr.IsDraft) checks.Add(new MergeCheckResult("Draft", MergeCheckState.Failed, "Draft pull requests can't be merged. Mark it ready for review first."));
+        if (aiBlocker != null) draftBlockers.Add(aiBlocker);
         if (!all.IsProtected)
-            return new MergeGateResult([.. checks, .. external], draftBlockers, all, false);
+            return new MergeGateResult([.. checks, .. external, .. (aiCheck == null ? [] : new[] { aiCheck })], draftBlockers, all, false);
 
         var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceRef));
         var approvers = pr.Reviews.Where(r => r.State == ReviewState.Approved && r.UserId != pr.AuthorId).ToList();
@@ -100,6 +103,7 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
                 : $"Needs owner approval for {unownedApproval.Count} file{(unownedApproval.Count == 1 ? "" : "s")}: " + string.Join(", ", unownedApproval.Take(5)) + (unownedApproval.Count > 5 ? ", …" : "")));
         }
         checks.AddRange(external);
+        if (aiCheck != null) checks.Add(aiCheck);
 
         List<string> BlockersFor(EffectiveProtection p)
         {

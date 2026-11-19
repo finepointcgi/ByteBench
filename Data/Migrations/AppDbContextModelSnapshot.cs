@@ -51,6 +51,10 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Backend")
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("BatchCount")
                         .HasColumnType("INTEGER");
 
@@ -59,6 +63,9 @@ namespace GitBench.Data.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("DiffChars")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Error")
                         .HasColumnType("TEXT");
@@ -2848,6 +2855,20 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("AiDismissed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AiFingerprint")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("AiReviewId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AiSeverity")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("AppliedCommitSha")
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
@@ -2906,9 +2927,9 @@ namespace GitBench.Data.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("PullRequestId");
-
                     b.HasIndex("ResolvedById");
+
+                    b.HasIndex("PullRequestId", "AiFingerprint");
 
                     b.ToTable("PullRequestComments");
                 });
@@ -3178,6 +3199,49 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Repositories");
+                });
+
+            modelBuilder.Entity("GitBench.Data.RepositoryAiReviewSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("BlockOnUnresolvedFindings")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FocusPrompt")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IgnorePaths")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MaxDiffChars")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("UpdatedById")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.ToTable("RepositoryAiReviewSettings");
                 });
 
             modelBuilder.Entity("GitBench.Data.RepositoryMirror", b =>
@@ -5699,6 +5763,15 @@ namespace GitBench.Data.Migrations
                     b.Navigation("ForkedFrom");
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("GitBench.Data.RepositoryAiReviewSettings", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GitBench.Data.RepositoryMirror", b =>

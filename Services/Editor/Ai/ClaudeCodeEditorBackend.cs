@@ -21,7 +21,7 @@ namespace GitBench.Services.Editor.Ai;
 /// </list>
 /// At most <see cref="ClaudeCodeOptions.MaxConcurrent"/> runs at once. Uses the server account's Claude Code login.
 /// </summary>
-public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
+public sealed partial class ClaudeCodeEditorBackend : IEditorAiBackend, IStructuredAiBackend, IDisposable
 {
     public const string Tools = "Read,Grep,Glob,Edit,Write";
     public const string AllowedTools = "Read(./**),Edit(./**),Write(./**),Grep,Glob";
@@ -65,7 +65,7 @@ public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
             await sink.ToolAsync("workspace", "Preparing a copy of your workspace");
             var written = await Task.Run(() => Materialize(request.Snapshot, dir), ct);
             var prompt = EditorAiPrompts.BuildUserMessage(request, p => written.GetValueOrDefault(p), inlineAttachments: false, EditorAiPrompts.NewBoundary());
-            var run = await RunProcessAsync(status, dir, prompt, sink, ct);
+            var run = await RunProcessAsync(status, dir, prompt, sink, BuildArguments(status), ct);
             if (run.Usage is { } u)
                 await ai.RecordUsageAsync(request.Feature + ".claude-code", request.UserId, request.ProjectId, u.Input, u.Output, u.CacheRead, u.CacheWrite, CancellationToken.None);
             if (run.Error != null) return new EditorAiResult(run.Text, run.ToolCalls, [], run.Error, run.StopNote);
@@ -210,7 +210,7 @@ public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
         return args;
     }
 
-    private async Task<RunResult> RunProcessAsync(ClaudeCodeStatus status, string dir, string prompt, IEditorAiSink sink, CancellationToken ct)
+    private async Task<RunResult> RunProcessAsync(ClaudeCodeStatus status, string dir, string prompt, IEditorAiSink sink, IReadOnlyList<string> arguments, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(status.ExecutablePath!)
         {
@@ -218,7 +218,7 @@ public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = dir,
             StandardOutputEncoding = Encoding.UTF8, StandardInputEncoding = new UTF8Encoding(false),
         };
-        foreach (var a in BuildArguments(status)) psi.ArgumentList.Add(a);
+        foreach (var a in arguments) psi.ArgumentList.Add(a);
         ClaudeCodeEnvironment.Apply(psi);
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start Claude Code.");

@@ -2,9 +2,14 @@
 
 <div class="@("diff-thread-box" + (Root.IsResolved ? " resolved" : ""))">
     <div class="thread-bar">
+        @if (Root.AiFingerprint != null && Root.AiSeverity != null)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(Root.AiSeverity is "bug" or "security" ? Color.Error : Color.Default)" Class="ma-0 ai-finding-chip"
+                     title="Finding from the GitBench AI review">AI · @Root.AiSeverity</MudChip>
+        }
         @if (Root.IsResolved)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Icon="@Icons.Material.Filled.CheckCircle" Class="ma-0">Resolved</MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Icon="@Icons.Material.Filled.CheckCircle" Class="ma-0">@(Root.AiDismissed ? "Dismissed" : "Resolved")</MudChip>
             @if (Root.ResolvedBy != null) { <span class="mud-text-secondary small">by @Root.ResolvedBy.DisplayName</span> }
         }
         @if (Outdated)
@@ -21,6 +26,11 @@
             {
                 <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => expanded = !expanded"
                            StartIcon="@(expanded ? Icons.Material.Filled.UnfoldLess : Icons.Material.Filled.UnfoldMore)">@(expanded ? "Hide" : "Show")</MudButton>
+            }
+            @if (CanResolve && Root.AiFingerprint != null && !Root.IsResolved)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="busy" OnClick="Dismiss" StartIcon="@Icons.Material.Outlined.Block"
+                           title="Not a real problem: resolve it as dismissed">Dismiss</MudButton>
             }
             @if (CanResolve)
             {
@@ -107,6 +117,7 @@
     [Parameter] public int? ProjectId { get; set; }
     [Parameter] public EventCallback<DiffView.InlineCommentRequest> OnReply { get; set; }
     [Parameter] public EventCallback<(int CommentId, bool Resolved)> OnResolve { get; set; }
+    [Parameter] public EventCallback<int> OnDismiss { get; set; }
     [Parameter] public EventCallback<IReadOnlyList<int>> OnApply { get; set; }
 
     private bool expanded, replying, busy;
@@ -139,6 +150,12 @@
     {
         expanded = false;
         await OnResolve.InvokeAsync((Root.Id, !Root.IsResolved));
+    });
+
+    private Task Dismiss() => Busy(async () =>
+    {
+        expanded = false;
+        await OnDismiss.InvokeAsync(Root.Id);
     });
 
     private Task Apply(PullRequestComment c) => Busy(() => OnApply.InvokeAsync([c.Id]));

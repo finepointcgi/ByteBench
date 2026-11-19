@@ -10,6 +10,7 @@
 @implements IDisposable
 @inject ProjectAccess Access
 @inject MergeGate MergeGateSvc
+@inject GitBench.Services.Ai.AiReviewService AiReviews
 @inject RepositorySettingsService RepoSettings
 @inject CodeOwnersService CodeOwners
 @inject GitBench.Services.MergeQueue.MergeQueueService MergeQueues
@@ -136,7 +137,7 @@ else if (pr != null)
                     }
                     <DiffView Files="changes.Files" Comments="pr.Comments" CanComment="@canComment" OnComment="AddInlineComment"
                               Repo="repo" ViewRef="@changes.HeadSha" Outdated="threads.Outdated"
-                              CanResolve="@(root => PullRequestService.CanResolve(pr, root, Me.Id, perms))" OnResolve="ResolveThread"
+                              CanResolve="@(root => PullRequestService.CanResolve(pr, root, Me.Id, perms))" OnResolve="ResolveThread" OnDismiss="DismissFinding"
                               CanApplySuggestions="canApply" OnApplySuggestions="ApplySuggestions" FileOwners="owners.Owners" />
                 }
             }
@@ -643,6 +644,9 @@ else if (pr != null)
 
     private Task ResolveThread((int CommentId, bool Resolved) req) =>
         Run(() => PRs.SetThreadResolvedAsync(req.CommentId, Me.Id, req.Resolved), full: false);
+
+    private Task DismissFinding(int commentId) =>
+        Run(() => AiReviews.DismissFindingAsync(commentId, Me.Id), full: false);
 
     private Task SetDraft(bool draft) => Run(() => PRs.SetDraftAsync(pr!.Id, Me.Id, draft), full: false);
 

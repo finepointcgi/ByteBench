@@ -101,7 +101,7 @@ else
                                                     <DiffThread @key="root.Id" Root="root" Replies="@lineComments.Where(c => c.ParentId == root.Id).ToList()"
                                                                 Outdated="@(Outdated?.Contains(root.Id) == true)" CanComment="CanComment"
                                                                 CanResolve="@(CanResolve?.Invoke(root) == true)" CanApply="CanApplySuggestions" ProjectId="Repo?.ProjectId"
-                                                                OnReply="OnComment" OnResolve="OnResolve" OnApply="OnApplySuggestions" />
+                                                                OnReply="OnComment" OnResolve="OnResolve" OnDismiss="OnDismiss" OnApply="OnApplySuggestions" />
                                                 }
                                                 @if (composingHere)
                                                 {
@@ -153,6 +153,7 @@ else
     /// <summary>Whether the current user may resolve the thread starting with this comment.</summary>
     [Parameter] public Func<PullRequestComment, bool>? CanResolve { get; set; }
     [Parameter] public EventCallback<(int CommentId, bool Resolved)> OnResolve { get; set; }
+    [Parameter] public EventCallback<int> OnDismiss { get; set; }
     /// <summary>The current user can commit suggestions to the source branch.</summary>
     [Parameter] public bool CanApplySuggestions { get; set; }
     [Parameter] public EventCallback<IReadOnlyList<int>> OnApplySuggestions { get; set; }

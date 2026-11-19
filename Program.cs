@@ -66,7 +66,7 @@ builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
 builder.Services.Configure<GitBench.Services.Workbench.WorkbenchOptions>(builder.Configuration.GetSection("Workbench")); // optional link to Workbench timesheets
 builder.Services.AddSingleton<AiClient>();
 builder.Services.AddScoped<IssueAiService>();
-builder.Services.AddAiCodeReview();
+builder.Services.AddAiCodeReview(builder.Configuration);
 builder.Services.AddScoped<RepositoryService>();
 builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();

@@ -1,16 +1,24 @@
-@* Sidebar block on the PR page: AI review status line plus "Ask GitBench AI to review" / "Re-run AI review". Live-updates. *@
+@* Sidebar block on the PR page: AI review status plus "Review with AI" (Developers+). Live-updates. *@
 @using GitBench.Services.Ai
 @implements IDisposable
-@inject AiClient Ai
 @inject AiReviewService Reviews
+@inject AiReviewSettingsService AiSettings
 @inject AiReviewQueue Queue
+@inject ProjectAccess Access
 @inject CurrentUser Me
 
 <div class="gb-side-field ai-review-panel">
     <span class="gb-section-label">AI review</span>
-    @if (!Ai.IsConfigured)
+    @if (!settings.Enabled)
     {
-        <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">AI review isn't set up (set ANTHROPIC_API_KEY).</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">
+            AI review is off for this repository.
+            @if (canManage) { <a href="@PrUrls.AiReviewSettings(PullRequest.Repository)">Turn it on in settings.</a> }
+        </MudText>
+    }
+    else if (availability is { Available: false })
+    {
+        <MudText Class="mud-text-secondary" Typo="Typo.caption" HtmlTag="div">@availability.Reason</MudText>
     }
     else
     {
@@ -21,16 +29,20 @@
         {
             <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">@latest.Error</MudText>
         }
-        @if (latest == null && !PullRequest.Repository.Project.AiReviewEnabled)
+        @if (blockers > 0)
         {
-            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">Automatic review is off for this project.</MudText>
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mt-1 ai-review-blockers">
+                @blockers unresolved blocking finding@(blockers == 1 ? "" : "s")@(settings.BlockOnUnresolvedFindings ? " (blocks merging)" : "")
+            </MudText>
         }
-        @if (PullRequest.State == PullRequestState.Open)
+        @if (notice != null)
         {
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true" Class="mt-2"
-                       StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="@(Busy || requesting)" OnClick="Request">
-                @(latest == null ? "Ask GitBench AI to review" : "Re-run AI review")
-            </MudButton>
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1 ai-review-notice">@notice</MudText>
+        }
+        @if (PullRequest.State == PullRequestState.Open && canReview)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" FullWidth="true" Class="mt-2 ai-review-button"
+                       StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="@(Busy || requesting)" OnClick="Request">Review with AI</MudButton>
         }
     }
 </div>
@@ -41,7 +53,11 @@
     [Parameter] public EventCallback OnReviewFinished { get; set; }
 
     private AiReview? latest;
-    private bool requesting;
+    private RepositoryAiReviewSettings settings = new();
+    private AiReviewAvailability? availability;
+    private bool requesting, canReview, canManage;
+    private int blockers;
+    private string? notice;
     private int? loadedFor;
 
     private bool Busy => latest?.Status is AiReviewStatus.Queued or AiReviewStatus.Running;
@@ -67,7 +83,7 @@
         null => "not run yet.",
         AiReviewStatus.Queued => "queued…",
         AiReviewStatus.Running => "running…",
-        AiReviewStatus.Completed => $"completed, {Plural(latest.FindingsCount, "finding")}" +
+        AiReviewStatus.Completed => $"done, {Plural(latest.FindingsCount, "finding")}" +
                                     (latest.UnplacedCount > 0 ? $" ({latest.InlineCount} inline)" : "") +
                                     $" on {Short(latest.HeadSha)} · {Display.Ago(latest.CompletedAt ?? latest.CreatedAt)}",
         AiReviewStatus.Failed => $"failed ({latest.Error ?? "unknown error"})",
@@ -84,7 +100,18 @@
     {
         if (loadedFor == PullRequest.Id) return;
         loadedFor = PullRequest.Id;
+        var projectId = PullRequest.Repository.ProjectId;
+        settings = await AiSettings.GetAsync(PullRequest.RepositoryId);
+        canReview = await Access.CanAsync(projectId, Permission.ReviewPullRequest);
+        canManage = await Access.CanAsync(projectId, Permission.ManageRepositories);
+        if (settings.Enabled) availability = await AiSettings.GetAvailabilityAsync();
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
         latest = await Reviews.GetLatestAsync(PullRequest.Id);
+        blockers = settings.Enabled ? await Reviews.CountBlockersAsync(PullRequest.Id) : 0;
     }
 
     private void OnChanged(int prId)
@@ -93,7 +120,7 @@
         _ = InvokeAsync(async () =>
         {
             var wasBusy = Busy;
-            latest = await Reviews.GetLatestAsync(PullRequest.Id);
+            await Refresh();
             if (wasBusy && !Busy) await OnReviewFinished.InvokeAsync();
             StateHasChanged();
         });
@@ -102,13 +129,14 @@
     private async Task Request()
     {
         requesting = true;
+        notice = null;
         try
         {
-            Queue.EnqueueManual(PullRequest.Id, Me.Id);
-            // The worker creates the queued row almost immediately; Changed then keeps the status current.
-            await Task.Delay(300);
-            latest = await Reviews.GetLatestAsync(PullRequest.Id);
+            var intake = await Reviews.RequestManualAsync(PullRequest.Id, Me.Id);
+            if (!intake.Queued) notice = intake.Reason;
+            await Refresh();
         }
+        catch (InvalidOperationException ex) { notice = ex.Message; }
         finally { requesting = false; }
     }
 
