@@ -90,7 +90,8 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
         if (input.RequiredApprovals is < 0 or > 10) throw new InvalidOperationException("Required approvals must be between 0 and 10.");
         if (input.MergeQueueMaxBatch is < 1 or > 20) throw new InvalidOperationException("The merge queue batch size must be between 1 and 20.");
         if (input.MergeQueueTimeoutMinutes is < 1 or > 1440) throw new InvalidOperationException("The merge queue timeout must be between 1 and 1440 minutes.");
-        if (input.MergeQueueStrategy is { } qs && !Enum.IsDefined(qs)) throw new InvalidOperationException("Unknown merge method.");
+        if (input.MergeQueueApprovalTimeoutMinutes is < 1 or > 10080) throw new InvalidOperationException("The merge queue approval timeout must be between 1 and 10080 minutes.");
+        if (input.MergeQueueStrategy is { } qs &&!Enum.IsDefined(qs)) throw new InvalidOperationException("Unknown merge method.");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var projectId = await db.Repositories.Where(r => r.Id == repositoryId).Select(r => r.ProjectId).FirstAsync();
@@ -127,6 +128,7 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
         rule.MergeQueueRequireCi = input.MergeQueueRequireCi;
         rule.MergeQueueStrategy = input.MergeQueueStrategy;
         rule.MergeQueueTimeoutMinutes = input.MergeQueueTimeoutMinutes;
+        rule.MergeQueueApprovalTimeoutMinutes = input.MergeQueueApprovalTimeoutMinutes;
         rule.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         await audit.RecordAsync(input.Id == 0 ? "branch_protection.created" : "branch_protection.updated", "branch_protection_rule", rule.Id, projectId,
@@ -134,7 +136,7 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
                   rule.RequireChecksToPass, rule.DismissStaleApprovals, rule.AllowAdminBypass, rule.DefaultReviewerIds,
                   rule.RequireThreadResolution, rule.RequireCodeOwnerApproval,
                   mergeQueue = rule.MergeQueueEnabled ? new { maxBatch = rule.MergeQueueMaxBatch, requireCi = rule.MergeQueueRequireCi,
-                      strategy = rule.MergeQueueStrategy?.ToString().ToLowerInvariant(), timeoutMinutes = rule.MergeQueueTimeoutMinutes } : null }, actorId);
+                      strategy = rule.MergeQueueStrategy?.ToString().ToLowerInvariant(), timeoutMinutes = rule.MergeQueueTimeoutMinutes, approvalTimeoutMinutes = rule.MergeQueueApprovalTimeoutMinutes } : null }, actorId);
         return rule;
     }
 

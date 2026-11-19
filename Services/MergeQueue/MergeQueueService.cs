@@ -94,15 +94,19 @@ public class MergeQueueService(IDbContextFactory<AppDbContext> dbFactory, Projec
     /// Adds the PR to its target's merge queue. It must be open, not a draft, merge cleanly and pass every merge check
     /// (branch protection; an admin bypass counts), and the acting user needs <see cref="Permission.MergePullRequest"/>.
     /// </summary>
-    public async Task<MergeQueueEntry> EnqueueAsync(int pullRequestId, int actorId)
+    public async Task<MergeQueueEntry> EnqueueAsync(int pullRequestId, int actorId, bool deleteSourceBranch = false)
     {
         await access.RequireForPullRequestAsync(pullRequestId, Permission.MergePullRequest, actorId);
+        if (deleteSourceBranch) await access.RequireForPullRequestAsync(pullRequestId, Permission.DeleteBranch, actorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.AsNoTracking().Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == pullRequestId) ?? throw new InvalidOperationException("Pull request not found.");
         if (pr.State != PullRequestState.Open) throw new InvalidOperationException("Only open pull requests can be added to the merge queue.");
         if (pr.IsDraft) throw new InvalidOperationException("Draft pull requests can't be added to the merge queue. Mark it ready for review first.");
         RepositorySettingsService.EnsureNotArchived(pr.Repository);
+        if (deleteSourceBranch && pr.IsCrossFork) throw new InvalidOperationException("The source branch is in a fork, so it can't be deleted from here.");
+        if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
+            await protection.EnsureAllowedAsync(pr.Repository, pr.SourceBranch, RefChangeKind.Delete, actorId);
         var config = await ConfigForAsync(pr.RepositoryId, pr.TargetBranch)
                      ?? throw new InvalidOperationException($"'{pr.TargetBranch}' doesn't use a merge queue.");
         if (await db.MergeQueueEntries.AnyAsync(e => e.PullRequestId == pullRequestId && ActiveStates.Contains(e.State)))
@@ -123,7 +127,7 @@ public class MergeQueueService(IDbContextFactory<AppDbContext> dbFactory, Projec
         var entry = new MergeQueueEntry
         {
             RepositoryId = pr.RepositoryId, PullRequestId = pr.Id, TargetBranch = pr.TargetBranch, EnqueuedById = actorId,
-            Position = last + 1, Strategy = config.StrategyFor(pr.Repository), HeadSha = head,
+            Position = last + 1, Strategy = config.StrategyFor(pr.Repository), HeadSha = head, DeleteSourceBranch = deleteSourceBranch,
         };
         db.MergeQueueEntries.Add(entry);
         await db.SaveChangesAsync();

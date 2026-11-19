@@ -62,7 +62,8 @@ public partial class PullRequestService
     /// as merged by <paramref name="actorId"/> (who queued it), with activity, linked-issue notes, notifications and the
     /// <c>pull_request.merged</c> webhook, exactly like a direct merge. False if the PR wasn't open any more.
     /// </summary>
-    internal async Task<bool> CompleteQueuedMergeAsync(int prId, int actorId, MergeStrategy strategy, string mergeSha, string headSha, string baseSha)
+    internal async Task<bool> CompleteQueuedMergeAsync(int prId, int actorId, MergeStrategy strategy, string mergeSha, string headSha, string baseSha,
+        bool deleteSourceBranch = false)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project).FirstOrDefaultAsync(p => p.Id == prId);
@@ -79,8 +80,26 @@ public partial class PullRequestService
         pr.MergeStrategy = strategy;
         Log(db, pr, actorId, MergedActivity(strategy, new MergeOutcome(true, null, mergeSha, false, headSha, baseSha, [])) + " through the merge queue");
         await NoteMergeOnLinkedIssuesAsync(db, pr, actorId, commits, now);
+
+        // "Delete the source branch" chosen when it was queued: the same behaviour as a direct merge, re-checked now (the
+        // enqueuer's permission or the branch rules may have changed while it waited). Never for a fork's branch.
+        Webhooks.PushedRef? deleted = null;
+        if (deleteSourceBranch && !pr.IsCrossFork && pr.SourceBranch != pr.Repository.DefaultBranch)
+        {
+            try
+            {
+                await access.RequireForPullRequestAsync(prId, Permission.DeleteBranch, actorId);
+                await protection.EnsureAllowedAsync(pr.Repository, pr.SourceBranch, RefChangeKind.Delete, actorId);
+                deleted = await DeleteSourceBranchAsync(db, pr, actorId, headSha, now);
+            }
+            catch (InvalidOperationException ex) // includes ForbiddenException and BranchProtectedException
+            {
+                Log(db, pr, actorId, $"couldn't delete the source branch `{pr.SourceBranch}`: {ex.Message}", now.AddMilliseconds(1));
+            }
+        }
         await db.SaveChangesAsync();
         await notifications.OnPullRequestMergedAsync(prId, actorId);
+        if (deleted != null) await pushEvents.SendAsync(pr.RepositoryId, [deleted], actorId);
         await webhooks.PullRequestMergedAsync(prId, actorId);
         return true;
     }

@@ -38,6 +38,7 @@ public partial class AppDbContext(DbContextOptions<AppDbContext> options)
     // ----- Webhooks & API -----
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
+    public DbSet<ChatIntegrationOptOut> ChatIntegrationOptOuts => Set<ChatIntegrationOptOut>();
 
     // ----- Linked work -----
     public DbSet<IssueLink> IssueLinks => Set<IssueLink>();
@@ -293,6 +294,11 @@ public partial class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<Webhook>().HasIndex(w => w.ProjectId);
         b.Entity<Webhook>().HasOne<Project>().WithMany().HasForeignKey(w => w.ProjectId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Webhook>().HasOne<User>().WithMany().HasForeignKey(w => w.CreatedById).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<Webhook>().HasIndex(w => w.GroupId);
+        b.Entity<Webhook>().HasOne<Group>().WithMany().HasForeignKey(w => w.GroupId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ChatIntegrationOptOut>().HasIndex(o => new { o.ProjectId, o.WebhookId }).IsUnique();
+        b.Entity<ChatIntegrationOptOut>().HasOne<Project>().WithMany().HasForeignKey(o => o.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<ChatIntegrationOptOut>().HasOne<Webhook>().WithMany().HasForeignKey(o => o.WebhookId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<WebhookDelivery>().HasIndex(d => new { d.WebhookId, d.CreatedAt });
         b.Entity<WebhookDelivery>().HasOne<Webhook>().WithMany().HasForeignKey(d => d.WebhookId).OnDelete(DeleteBehavior.Cascade);
         // ----- Linked work -----

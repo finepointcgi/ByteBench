@@ -19,7 +19,7 @@ public class MergeQueueOptions
 /// Several rules combine strictly (smallest batch and timeout, CI required if any rule requires it); the merge method is
 /// taken from the most specific rule that sets one (exact names before globs).
 /// </summary>
-public sealed record MergeQueueConfig(int MaxBatch, bool RequireCi, MergeStrategy? Strategy, int TimeoutMinutes, string Patterns)
+public sealed record MergeQueueConfig(int MaxBatch, bool RequireCi, MergeStrategy? Strategy, int TimeoutMinutes, string Patterns, int ApprovalTimeoutMinutes = 1440)
 {
     public static MergeQueueConfig? For(IEnumerable<BranchProtectionRule> rules, string branch)
     {
@@ -31,7 +31,8 @@ public sealed record MergeQueueConfig(int MaxBatch, bool RequireCi, MergeStrateg
             matching.Any(r => r.MergeQueueRequireCi),
             matching.Select(r => r.MergeQueueStrategy).FirstOrDefault(s => s != null),
             Math.Clamp(matching.Min(r => r.MergeQueueTimeoutMinutes), 1, 1440),
-            string.Join(", ", matching.Select(r => r.Pattern)));
+            string.Join(", ", matching.Select(r => r.Pattern)),
+            Math.Clamp(matching.Min(r => r.MergeQueueApprovalTimeoutMinutes), 1, 10080));
     }
 
     /// <summary>The strategy the queue merges with in <paramref name="repo"/>: the configured one if the repository allows it, else its default.</summary>

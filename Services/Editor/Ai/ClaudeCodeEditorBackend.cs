@@ -238,6 +238,7 @@ public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
         var toolCalls = 0;
         var turns = 0;
         string? stopNote = null, error = null, finalResult = null;
+        var capped = false;
         Usage? usage = null;
         try
         {
@@ -245,6 +246,7 @@ public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
             process.StandardInput.Close();
             while (await process.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
             {
+                if (capped) break; // the turn cap was hit: the killed process may still have output in the pipe, which must not count
                 if (line.Length == 0 || line[0] != '{') continue;
                 JsonElement ev;
                 try { ev = JsonDocument.Parse(line).RootElement; }
@@ -277,6 +279,7 @@ public sealed class ClaudeCodeEditorBackend : IEditorAiBackend, IDisposable
                         if (usedTool && ++turns > opts.MaxTurns)
                         {
                             stopNote = $"Stopped after {opts.MaxTurns} turns (Ai:ClaudeCode:MaxTurns).";
+                            capped = true;
                             Kill(process);
                         }
                         else if (!sawDeltas && text.Length > 0 && !text.ToString().EndsWith('\n')) { text.Append("\n\n"); await sink.TextAsync("\n\n"); }

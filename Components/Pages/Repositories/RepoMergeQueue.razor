@@ -159,7 +159,7 @@ else if (Repo != null)
     private static string StateLabel(MergeQueueEntry e) => e.State switch
     {
         MergeQueueEntryState.Queued => "Waiting",
-        MergeQueueEntryState.Testing => "Testing",
+        MergeQueueEntryState.Testing => e.AwaitingApproval ? "Waiting for approval" : "Testing",
         MergeQueueEntryState.Passed => "Passed, merging next",
         _ => e.State.ToString(),
     };

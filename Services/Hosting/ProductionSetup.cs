@@ -114,7 +114,10 @@ public static class ProductionSetup
         services.AddRateLimiter(o =>
         {
             var settings = config.GetSection("RateLimiting").Get<RateLimitSettings>() ?? new RateLimitSettings();
-            o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx => AppRateLimits.Partition(ctx, settings));
+            // Chained: the per-endpoint limits, then the registry's per-IP ceiling (a request must pass both).
+            o.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx => AppRateLimits.Partition(ctx, settings)),
+                PartitionedRateLimiter.Create<HttpContext, string>(ctx => AppRateLimits.RegistryIpPartition(ctx, settings)));
             o.OnRejected = AppRateLimits.OnRejectedAsync;
         });
 
@@ -299,6 +302,13 @@ public sealed class RateLimitSettings
     public WindowLimit Api { get; set; } = new() { PermitLimit = 300, WindowSeconds = 60 };
     /// <summary><c>/git/*</c>, per user named in the Basic credentials (else per IP).</summary>
     public WindowLimit Git { get; set; } = new() { PermitLimit = 120, WindowSeconds = 60 };
+    /// <summary>
+    /// <c>/packages/*</c> and <c>/v2/*</c> (NuGet, npm, container registry), per credential (hash of the token, else IP).
+    /// Counts requests, never bytes: a docker push makes dozens of requests per layer (HEAD, POST, PATCH chunks, PUT).
+    /// </summary>
+    public WindowLimit Registry { get; set; } = new() { PermitLimit = 3000, WindowSeconds = 60 };
+    /// <summary>The same paths, per client IP across all credentials (a CI farm behind one NAT needs headroom).</summary>
+    public WindowLimit RegistryIp { get; set; } = new() { PermitLimit = 6000, WindowSeconds = 60 };
     /// <summary>Webhook test pings, per user.</summary>
     public WindowLimit WebhookPing { get; set; } = new() { PermitLimit = 5, WindowSeconds = 60 };
     /// <summary>Git commands over SSH (each clone, fetch or push), per user or deploy key.</summary>
@@ -359,7 +369,43 @@ public sealed class AppRateLimits(IOptions<RateLimitSettings> options)
         if (path.StartsWithSegments("/git"))
             return Limit("git:" + (BasicUser(ctx) is { } user ? "u:" + user : "ip:" + ip), s.Git);
 
+        if (IsRegistryPath(path))
+            return Limit("reg:" + (RegistryCredentialKey(ctx) ?? "ip:" + ip), s.Registry);
+
         return RateLimitPartition.GetNoLimiter("none");
+    }
+
+    private static bool IsRegistryPath(PathString path) => path.StartsWithSegments("/packages") || path.StartsWithSegments("/v2");
+
+    /// <summary>The per-IP ceiling of the registry paths (second link of the chained global limiter).</summary>
+    internal static RateLimitPartition<string> RegistryIpPartition(HttpContext ctx, RateLimitSettings s)
+    {
+        if (!s.Enabled || !IsRegistryPath(ctx.Request.Path)) return RateLimitPartition.GetNoLimiter("none");
+        return Limit("regip:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"), s.RegistryIp);
+    }
+
+    /// <summary>
+    /// Identifies the caller of a registry request without checking the credentials: a hash of the Bearer token, the Basic
+    /// secret or the NuGet API key (never the secret itself), so one hammering token can't starve the others.
+    /// </summary>
+    private static string? RegistryCredentialKey(HttpContext ctx)
+    {
+        static string Hash(string secret) => "t:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret)))[..16];
+        var auth = ctx.Request.Headers.Authorization.ToString();
+        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return Hash(auth[7..].Trim());
+        if (auth.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(auth[6..].Trim()));
+                var sep = decoded.IndexOf(':');
+                if (sep >= 0 && decoded.Length > sep + 1) return Hash(decoded[(sep + 1)..]);
+            }
+            catch (FormatException) { /* falls back to the IP */ }
+            return null;
+        }
+        var apiKey = ctx.Request.Headers["X-NuGet-ApiKey"].ToString();
+        return apiKey.Length > 0 ? Hash(apiKey.Trim()) : null;
     }
 
     private static RateLimitPartition<string> Limit(string key, WindowLimit limit) =>
@@ -402,6 +448,16 @@ public sealed class AppRateLimits(IOptions<RateLimitSettings> options)
             {
                 type = "https://tools.ietf.org/html/rfc6585#section-4", title = "Too Many Requests", status = 429,
                 detail = $"Rate limit exceeded. Try again in {seconds} seconds.",
+            }), ct);
+            return;
+        }
+        if (http.Request.Path.StartsWithSegments("/v2"))
+        {
+            // The Docker registry error format, so `docker` prints the message.
+            http.Response.ContentType = "application/json";
+            await http.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                errors = new[] { new { code = "TOOMANYREQUESTS", message = $"Too many requests. Try again in {seconds} seconds." } },
             }), ct);
             return;
         }

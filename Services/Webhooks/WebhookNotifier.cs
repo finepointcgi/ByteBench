@@ -122,7 +122,7 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
     /// <summary>True if an active hook of the project subscribes to <paramref name="eventName"/> (so payloads aren't built for nobody).</summary>
     public static async Task<bool> AnyListenerAsync(AppDbContext db, int projectId, string eventName)
     {
-        var events = await db.Webhooks.Where(h => h.ProjectId == projectId && h.IsActive).Select(h => h.Events).ToListAsync();
+        var events = (await ChatIntegrations.ChatHookResolver.ActiveHooksAsync(db, projectId)).Select(h => h.Events).ToList();
         return events.Any(e => WebhookEventNames.Includes(e, eventName));
     }
 

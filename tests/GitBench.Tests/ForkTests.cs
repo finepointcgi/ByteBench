@@ -431,7 +431,8 @@ public class ForkPipelineExtrasTests(CiNoDockerApp app) : IClassFixture<CiNoDock
         // Approved: the runner picks it up (and stops at the missing docker).
         await using (var s = app.Scope(app.UserId("carol")))
             await s.Get<PipelineService>().ApproveAsync(upstream, p.Id);
-        for (var i = 0; i < 100 && (await ReloadAsync(p.Id)).Status == PipelineStatus.Queued; i++) await Task.Delay(50);
+        // Queued and Running are transient (the runner is between picking it up and hitting the missing docker): wait for the end state.
+        for (var i = 0; i < 200 && (await ReloadAsync(p.Id)).Status is PipelineStatus.Queued or PipelineStatus.Running; i++) await Task.Delay(50);
         var ran = await ReloadAsync(p.Id);
         Assert.Equal(PipelineStatus.Error, ran.Status);
         Assert.NotNull(ran.StartedAt);

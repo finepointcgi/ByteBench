@@ -78,7 +78,7 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
         {
             case WebhookEventJob e:
             {
-                var hooks = (await db.Webhooks.Where(h => h.ProjectId == e.ProjectId && h.IsActive).ToListAsync(ct))
+                var hooks = (await ChatIntegrations.ChatHookResolver.ActiveHooksAsync(db, e.ProjectId, ct))
                     .Where(h => WebhookEventNames.Includes(h.Events, e.Event)).ToList();
                 if (hooks.Count == 0) return [];
                 var envelope = await EnvelopeBaseAsync(db, e.ProjectId, e.SenderId, ct);
@@ -140,9 +140,9 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
     private static WebhookDelivery NewDelivery(int hookId, string eventName, string body, string deliveryId) =>
         new() { WebhookId = hookId, Event = eventName, Payload = body, DeliveryId = deliveryId, CreatedAt = DateTime.UtcNow };
 
-    private async Task<(JsonNode? Project, JsonNode? Sender)> EnvelopeBaseAsync(AppDbContext db, int projectId, int? senderId, CancellationToken ct)
+    private async Task<(JsonNode? Project, JsonNode? Sender)> EnvelopeBaseAsync(AppDbContext db, int? projectId, int? senderId, CancellationToken ct)
     {
-        var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, ct);
+        var project = projectId == null ? null : await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, ct);
         var sender = senderId is { } sid ? await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == sid, ct) : null;
         return (project == null ? null : JsonSerializer.SerializeToNode(Dto.ProjectRef(project, baseUrl.Value), Dto.Json),
                 sender == null ? null : JsonSerializer.SerializeToNode(Dto.User(sender), Dto.Json));

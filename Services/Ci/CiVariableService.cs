@@ -112,6 +112,29 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
     }
 
     /// <summary>
+    /// The branch whose protection decides which CI variables (and cache scope) a pipeline gets: normally its own ref. A
+    /// merge queue pipeline runs on <c>refs/merge-queue/…</c>, which GitBench itself created, so it would never see
+    /// protected variables. It is treated as running on its target branch only when ALL of these hold: it belongs to an
+    /// active queue entry of this repository, its PR is not from a fork, and the user who queued it can merge pull
+    /// requests in the project right now (so they could already have merged this very code, whose pipeline on the target
+    /// would get those variables). Anything else keeps the pipeline's own ref (no protected variables).
+    /// </summary>
+    public async Task<string> VariableBranchAsync(Pipeline p)
+    {
+        if (p.Trigger != PipelineTrigger.MergeQueue || p.IsForkPullRequest || !p.Ref.StartsWith(Git.GitOps.MergeQueueRefPrefix, StringComparison.Ordinal))
+            return p.Ref;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var entry = await db.MergeQueueEntries.AsNoTracking()
+            .Where(e => e.PipelineId == p.Id && e.RepositoryId == p.RepositoryId
+                        && (e.State == MergeQueueEntryState.Testing || e.State == MergeQueueEntryState.Passed))
+            .Select(e => new { e.TargetBranch, e.EnqueuedById, e.PullRequest.IsCrossFork, e.PullRequest.RepositoryId, ProjectId = e.Repository.ProjectId })
+            .FirstOrDefaultAsync();
+        if (entry == null || entry.IsCrossFork || !p.Ref.StartsWith(Git.GitOps.MergeQueueRefPrefix + entry.TargetBranch + "/", StringComparison.Ordinal)) return p.Ref;
+        if (!await access.CanAsync(entry.ProjectId, Permission.MergePullRequest, entry.EnqueuedById)) return p.Ref;
+        return entry.TargetBranch;
+    }
+
+    /// <summary>
     /// The decrypted variables for a pipeline on <paramref name="branch"/> of the repository (internal: no permission
     /// check). Protected variables are left out unless the branch is protected; for pull request pipelines the branch
     /// is the source branch, so an unprotected source branch never sees them. A pipeline of a pull request from a fork

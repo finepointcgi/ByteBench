@@ -165,10 +165,12 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             using (var scope = scopes.CreateScope())
             {
                 // A fork PR pipeline gets no CI variables, and its Ref (refs/pull/{n}/head) is never treated as protected.
-                variables = await scope.ServiceProvider.GetRequiredService<CiVariableService>()
-                    .ResolveAsync(p.Repository.ProjectId, p.RepositoryId, p.Ref, p.IsForkPullRequest);
+                // A merge queue pipeline (ref refs/merge-queue/…) counts as its target branch when that is safe (see VariableBranchAsync).
+                var vars = scope.ServiceProvider.GetRequiredService<CiVariableService>();
+                var protectionBranch = await vars.VariableBranchAsync(p);
+                variables = await vars.ResolveAsync(p.Repository.ProjectId, p.RepositoryId, protectionBranch, p.IsForkPullRequest);
                 protectedBranch = CiCacheStore.UsesProtectedScope(p,
-                    !p.IsForkPullRequest && (await scope.ServiceProvider.GetRequiredService<BranchProtectionService>().ForBranchAsync(p.RepositoryId, p.Ref)).IsProtected);
+                    !p.IsForkPullRequest && (await scope.ServiceProvider.GetRequiredService<BranchProtectionService>().ForBranchAsync(p.RepositoryId, protectionBranch)).IsProtected);
             }
             // Nor any extra (schedule) variables: those belong to the upstream.
             var run = new RunContext(p, repoPath, variables,

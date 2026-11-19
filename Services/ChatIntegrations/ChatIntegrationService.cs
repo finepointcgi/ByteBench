@@ -12,6 +12,20 @@ public sealed record ChatIntegrationInfo(int Id, WebhookKind Kind, string Name, 
     int ConsecutiveFailures, DateTime? LastDeliveryAt, string? UrlHint, string? TokenHint, IReadOnlyDictionary<ChatEventGroup, string> GroupUrlHints);
 
 /// <summary>
+/// Whose chat integrations: a project's (<see cref="ProjectId"/>) or a group's (<see cref="GroupId"/>, inherited by its
+/// projects). An <c>int</c> converts to a project scope, so the project-level callers read as before.
+/// </summary>
+public readonly record struct ChatScope(int? ProjectId, int? GroupId)
+{
+    public static ChatScope Project(int projectId) => new(projectId, null);
+    public static ChatScope Group(int groupId) => new(null, groupId);
+    public static implicit operator ChatScope(int projectId) => Project(projectId);
+}
+
+/// <summary>A group's integration as one of its projects sees it, with whether the project opted out.</summary>
+public sealed record InheritedChatIntegration(ChatIntegrationInfo Integration, string GroupPath, bool OptedOut);
+
+/// <summary>
 /// What the form submits. Secrets are write-only: on update a blank <see cref="Url"/>/<see cref="Token"/>/group URL
 /// keeps the stored one; <see cref="ClearGroupUrls"/> removes group URLs.
 /// </summary>
@@ -53,34 +67,84 @@ public partial class ChatIntegrationService(IDbContextFactory<AppDbContext> dbFa
 
     public static string Hint(string? secret) => string.IsNullOrEmpty(secret) ? "" : "••••••••" + (secret.Length > 8 ? secret[^4..] : "");
 
-    public async Task<List<ChatIntegrationInfo>> ListAsync(int projectId)
+    /// <summary>Checks the acting user may manage the scope's integrations: a project's (Maintainer+) or a group's (group Owner).</summary>
+    private async Task RequireScopeAsync(ChatScope scope)
     {
-        await access.RequireAsync(projectId, RequiredPermission);
+        if (scope.GroupId is { } gid) await access.RequireAsync(gid, GroupPermission.ManageGroupSettings);
+        else await access.RequireAsync(scope.ProjectId!.Value, RequiredPermission);
+    }
+
+    private static IQueryable<Webhook> Chat(AppDbContext db, ChatScope scope) =>
+        scope.GroupId is { } gid
+            ? db.Webhooks.Where(h => h.GroupId == gid && h.Kind != WebhookKind.Generic)
+            : db.Webhooks.Where(h => h.ProjectId == scope.ProjectId && h.Kind != WebhookKind.Generic);
+
+    private static int? AuditProject(ChatScope scope) => scope.ProjectId;
+
+    public async Task<List<ChatIntegrationInfo>> ListAsync(ChatScope scope)
+    {
+        await RequireScopeAsync(scope);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var hooks = await db.Webhooks.AsNoTracking().Where(h => h.ProjectId == projectId && h.Kind != WebhookKind.Generic).OrderBy(h => h.Id).ToListAsync();
+        var hooks = await Chat(db, scope).AsNoTracking().OrderBy(h => h.Id).ToListAsync();
         return hooks.Select(ToInfo).ToList();
     }
 
-    public async Task<ChatIntegrationInfo> CreateAsync(int projectId, ChatIntegrationInput input)
+    /// <summary>
+    /// The group-level integrations that reach the project (its group's and its ancestors'), with whether the project opted
+    /// out of each. Secrets stay hidden (hints only). Needs the project's integration permission.
+    /// </summary>
+    public async Task<List<InheritedChatIntegration>> ListInheritedAsync(int projectId)
     {
         await access.RequireAsync(projectId, RequiredPermission);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var groupId = await db.Projects.Where(p => p.Id == projectId).Select(p => p.GroupId).FirstOrDefaultAsync();
+        if (groupId == null) return [];
+        var chain = await ProjectAccess.GroupChainAsync(db, groupId.Value);
+        var hooks = await db.Webhooks.AsNoTracking().Where(h => h.GroupId != null && chain.Contains(h.GroupId.Value) && h.Kind != WebhookKind.Generic)
+            .OrderBy(h => h.Id).ToListAsync();
+        var optedOut = (await db.ChatIntegrationOptOuts.Where(o => o.ProjectId == projectId).Select(o => o.WebhookId).ToListAsync()).ToHashSet();
+        var groupNames = await db.Groups.Where(g => chain.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => g.FullPath);
+        return hooks.Select(h => new InheritedChatIntegration(ToInfo(h), groupNames.GetValueOrDefault(h.GroupId!.Value, ""), optedOut.Contains(h.Id))).ToList();
+    }
+
+    /// <summary>A project opts out of (or back into) a group's integration. Needs the project's integration permission.</summary>
+    public async Task SetOptOutAsync(int projectId, int webhookId, bool optOut)
+    {
+        await access.RequireAsync(projectId, RequiredPermission);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var groupId = await db.Projects.Where(p => p.Id == projectId).Select(p => p.GroupId).FirstOrDefaultAsync();
+        var chain = groupId == null ? [] : await ProjectAccess.GroupChainAsync(db, groupId.Value);
+        var hook = await db.Webhooks.AsNoTracking().FirstOrDefaultAsync(h => h.Id == webhookId && h.GroupId != null && chain.Contains(h.GroupId.Value) && h.Kind != WebhookKind.Generic)
+                   ?? throw new InvalidOperationException("That integration doesn't apply to this project.");
+        var existing = await db.ChatIntegrationOptOuts.FirstOrDefaultAsync(o => o.ProjectId == projectId && o.WebhookId == webhookId);
+        if (optOut == (existing != null)) return;
+        if (optOut) db.ChatIntegrationOptOuts.Add(new ChatIntegrationOptOut { ProjectId = projectId, WebhookId = webhookId, CreatedById = await access.ResolveUserIdAsync() });
+        else db.ChatIntegrationOptOuts.Remove(existing!);
+        await db.SaveChangesAsync();
+        await audit.RecordAsync(optOut ? "chat_integration.opted_out" : "chat_integration.opted_in", "webhook", webhookId, projectId,
+            new { kind = hook.Kind.ToString(), hook.Name, groupId = hook.GroupId });
+    }
+
+    public async Task<ChatIntegrationInfo> CreateAsync(ChatScope scope, ChatIntegrationInput input)
+    {
+        await RequireScopeAsync(scope);
         var actor = await access.ResolveUserIdAsync() ?? throw new ForbiddenException("Sign in to manage integrations.");
-        var hook = new Webhook { ProjectId = projectId, CreatedById = actor, Kind = input.Kind, IsActive = input.Active };
+        var hook = new Webhook { ProjectId = scope.ProjectId, GroupId = scope.GroupId, CreatedById = actor, Kind = input.Kind, IsActive = input.Active };
         Apply(hook, input, new ChatSecrets());
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (await db.Webhooks.CountAsync(h => h.ProjectId == projectId && h.Kind != WebhookKind.Generic) >= MaxPerProject)
-            throw new InvalidOperationException($"A project can have at most {MaxPerProject} chat integrations.");
+        if (await Chat(db, scope).CountAsync() >= MaxPerProject)
+            throw new InvalidOperationException($"A {(scope.GroupId != null ? "group" : "project")} can have at most {MaxPerProject} chat integrations.");
         db.Webhooks.Add(hook);
         await db.SaveChangesAsync();
-        await audit.RecordAsync("chat_integration.created", "webhook", hook.Id, projectId, AuditDetails(hook));
+        await audit.RecordAsync("chat_integration.created", "webhook", hook.Id, AuditProject(scope), AuditDetails(hook));
         return ToInfo(hook);
     }
 
-    public async Task<ChatIntegrationInfo> UpdateAsync(int projectId, int id, ChatIntegrationInput input)
+    public async Task<ChatIntegrationInfo> UpdateAsync(ChatScope scope, int id, ChatIntegrationInput input)
     {
-        await access.RequireAsync(projectId, RequiredPermission);
+        await RequireScopeAsync(scope);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var hook = await db.Webhooks.FirstOrDefaultAsync(h => h.Id == id && h.ProjectId == projectId && h.Kind != WebhookKind.Generic)
+        var hook = await Chat(db, scope).FirstOrDefaultAsync(h => h.Id == id)
                    ?? throw new InvalidOperationException("Integration not found.");
         if (input.Kind != hook.Kind) throw new InvalidOperationException("An integration can't change between Slack and Teams; add a new one.");
         var current = RevealOrEmpty(hook.Secret);
@@ -89,52 +153,52 @@ public partial class ChatIntegrationService(IDbContextFactory<AppDbContext> dbFa
         if (input.Active && !hook.IsActive) { hook.ConsecutiveFailures = 0; hook.DisabledAt = null; }
         hook.IsActive = input.Active;
         await db.SaveChangesAsync();
-        await audit.RecordAsync("chat_integration.updated", "webhook", hook.Id, projectId,
-            new { kind = hook.Kind.ToString(), host = Audit.AuditLog.SafeUrl(hook.Url), hook.Name, hook.Events, hook.IsActive, secretReplaced = secretBefore != hook.Secret });
+        await audit.RecordAsync("chat_integration.updated", "webhook", hook.Id, AuditProject(scope),
+            new { kind = hook.Kind.ToString(), host = Audit.AuditLog.SafeUrl(hook.Url), hook.Name, hook.Events, hook.IsActive, secretReplaced = secretBefore != hook.Secret, hook.GroupId });
         return ToInfo(hook);
     }
 
-    public async Task DeleteAsync(int projectId, int id)
+    public async Task DeleteAsync(ChatScope scope, int id)
     {
-        await access.RequireAsync(projectId, RequiredPermission);
+        await RequireScopeAsync(scope);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var hook = await db.Webhooks.AsNoTracking().FirstOrDefaultAsync(h => h.Id == id && h.ProjectId == projectId && h.Kind != WebhookKind.Generic);
+        var hook = await Chat(db, scope).AsNoTracking().FirstOrDefaultAsync(h => h.Id == id);
         if (hook == null) return;
         await db.Webhooks.Where(h => h.Id == id).ExecuteDeleteAsync();
-        await audit.RecordAsync("chat_integration.deleted", "webhook", id, projectId, new { kind = hook.Kind.ToString(), hook.Name });
+        await audit.RecordAsync("chat_integration.deleted", "webhook", id, AuditProject(scope), new { kind = hook.Kind.ToString(), hook.Name, hook.GroupId });
     }
 
     /// <summary>"Send test message": queued like a webhook ping (rate limited the same way).</summary>
-    public async Task SendTestAsync(int projectId, int id)
+    public async Task SendTestAsync(ChatScope scope, int id)
     {
-        await RequireAsync(projectId, id);
+        await RequireAsync(scope, id);
         var userId = await access.ResolveUserIdAsync();
         limits.CheckWebhookPing(userId);
         dispatcher.EnqueuePing(id, userId);
     }
 
-    public async Task<List<WebhookDelivery>> RecentDeliveriesAsync(int projectId, int id, int take = 25)
+    public async Task<List<WebhookDelivery>> RecentDeliveriesAsync(ChatScope scope, int id, int take = 25)
     {
-        await RequireAsync(projectId, id);
+        await RequireAsync(scope, id);
         await using var db = await dbFactory.CreateDbContextAsync();
         return await db.WebhookDeliveries.AsNoTracking().Where(d => d.WebhookId == id).OrderByDescending(d => d.Id).Take(take).ToListAsync();
     }
 
-    public async Task RedeliverAsync(int projectId, int deliveryRowId)
+    public async Task RedeliverAsync(ChatScope scope, int deliveryRowId)
     {
-        await access.RequireAsync(projectId, RequiredPermission);
+        await RequireScopeAsync(scope);
         await using var db = await dbFactory.CreateDbContextAsync();
-        var ok = await db.WebhookDeliveries.AnyAsync(d => d.Id == deliveryRowId
-            && db.Webhooks.Any(h => h.Id == d.WebhookId && h.ProjectId == projectId && h.Kind != WebhookKind.Generic));
+        var ids = Chat(db, scope).Select(h => h.Id);
+        var ok = await db.WebhookDeliveries.AnyAsync(d => d.Id == deliveryRowId && ids.Contains(d.WebhookId));
         if (!ok) throw new InvalidOperationException("Delivery not found.");
         dispatcher.EnqueueRedelivery(deliveryRowId);
     }
 
-    private async Task RequireAsync(int projectId, int id)
+    private async Task RequireAsync(ChatScope scope, int id)
     {
-        await access.RequireAsync(projectId, RequiredPermission);
+        await RequireScopeAsync(scope);
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (!await db.Webhooks.AnyAsync(h => h.Id == id && h.ProjectId == projectId && h.Kind != WebhookKind.Generic))
+        if (!await Chat(db, scope).AnyAsync(h => h.Id == id))
             throw new InvalidOperationException("Integration not found.");
     }
 

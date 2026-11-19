@@ -198,16 +198,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
 
         // The merge moved the target branch (and may delete the source branch): report them like a git push would.
         var pushed = new List<Webhooks.PushedRef> { Webhooks.WebhookPushEvents.Branch(pr.TargetBranch, outcome.TargetSha, outcome.MergeCommitSha) };
-        if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
-        {
-            try
-            {
-                await repos.Git(pr.Repository, path => GitOps.DeleteBranch(path, pr.SourceBranch, pr.Repository.DefaultBranch));
-                Log(db, pr, actor.Id, $"deleted the source branch `{pr.SourceBranch}`", now.AddMilliseconds(1));
-                pushed.Add(Webhooks.WebhookPushEvents.Branch(pr.SourceBranch, outcome.SourceSha, null));
-            }
-            catch (InvalidOperationException) { /* already gone: nothing to do */ }
-        }
+        if (deleteSourceBranch && await DeleteSourceBranchAsync(db, pr, actor.Id, outcome.SourceSha!, now) is { } deleted) pushed.Add(deleted);
 
         await NoteMergeOnLinkedIssuesAsync(db, pr, actor.Id, before?.Commits, now);
 
@@ -216,6 +207,22 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         await pushEvents.SendAsync(pr.RepositoryId, pushed, actor.Id);
         await webhooks.PullRequestMergedAsync(prId, actor.Id);
         return outcome;
+    }
+
+    /// <summary>
+    /// Deletes the merged PR's source branch (never the default branch) and logs it; shared by direct and merge queue merges.
+    /// The ref change to report as a push, or null when nothing was deleted (default branch, already gone).
+    /// </summary>
+    private async Task<Webhooks.PushedRef?> DeleteSourceBranchAsync(AppDbContext db, PullRequest pr, int actorId, string sourceSha, DateTime now)
+    {
+        if (pr.SourceBranch == pr.Repository.DefaultBranch) return null;
+        try
+        {
+            await repos.Git(pr.Repository, path => GitOps.DeleteBranch(path, pr.SourceBranch, pr.Repository.DefaultBranch));
+            Log(db, pr, actorId, $"deleted the source branch `{pr.SourceBranch}`", now.AddMilliseconds(1));
+            return Webhooks.WebhookPushEvents.Branch(pr.SourceBranch, sourceSha, null);
+        }
+        catch (InvalidOperationException) { return null; /* already gone: nothing to do */ }
     }
 
     public async Task DeclineAsync(int prId, int actorId)

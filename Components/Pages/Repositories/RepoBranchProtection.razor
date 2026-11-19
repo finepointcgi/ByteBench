@@ -110,6 +110,10 @@ else if (Repo != null)
                                 <MudNumericField T="int" Label="Pipeline timeout (minutes)" @bind-Value="draft.MergeQueueTimeoutMinutes" Min="1" Max="1440" Variant="Variant.Outlined" Margin="Margin.Dense" />
                             </MudItem>
                             <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int" Label="Approval timeout (minutes)" @bind-Value="draft.MergeQueueApprovalTimeoutMinutes" Min="1" Max="10080" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 HelperText="How long a pipeline may wait on a manual job" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
                                 <MudCheckBox T="bool" @bind-Value="draft.MergeQueueRequireCi" Color="Color.Primary" Dense="true">
                                     <b>Require CI</b> <span class="muted small">(a pipeline must pass on the merged result)</span>
                                 </MudCheckBox>
@@ -227,6 +231,7 @@ else if (Repo != null)
             RequireThreadResolution = r.RequireThreadResolution, RequireCodeOwnerApproval = r.RequireCodeOwnerApproval,
             MergeQueueEnabled = r.MergeQueueEnabled, MergeQueueMaxBatch = r.MergeQueueMaxBatch, MergeQueueRequireCi = r.MergeQueueRequireCi,
             MergeQueueStrategy = r.MergeQueueStrategy, MergeQueueTimeoutMinutes = r.MergeQueueTimeoutMinutes,
+            MergeQueueApprovalTimeoutMinutes = r.MergeQueueApprovalTimeoutMinutes,
         };
     }
 

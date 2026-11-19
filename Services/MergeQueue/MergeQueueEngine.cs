@@ -81,6 +81,9 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
         // Pipelines are read untracked: entries only ever change their PipelineId.
         var pipelineIds = entries.Where(e => e.PipelineId != null).Select(e => e.PipelineId!.Value).ToList();
         var pipelines = await db.Pipelines.AsNoTracking().Where(p => pipelineIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        // The manual jobs a pipeline waits on (shown as "waiting for approval").
+        var manualJobs = (await db.PipelineJobs.AsNoTracking().Where(j => pipelineIds.Contains(j.PipelineId) && j.Status == PipelineStatus.Manual)
+            .Select(j => new { j.PipelineId, j.Name }).ToListAsync(ct)).GroupBy(j => j.PipelineId).ToDictionary(g => g.Key, g => g.Select(j => j.Name).ToList());
         var dropped = new List<Dropped>();
         var now = DateTime.UtcNow;
         var merged = false;
@@ -141,11 +144,31 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
             var consistent = e.State is MergeQueueEntryState.Testing or MergeQueueEntryState.Passed && e.BaseSha == expected && e.SpeculativeSha != null;
             if (consistent && e.State == MergeQueueEntryState.Testing)
             {
-                switch (Evaluate(e, e.PipelineId is { } pid ? pipelines.GetValueOrDefault(pid) : null, config, now))
+                var pipeline = e.PipelineId is { } pid ? pipelines.GetValueOrDefault(pid) : null;
+                if (e.AwaitingApproval && pipeline?.Status != PipelineStatus.Manual)
+                {
+                    // Approved (the pipeline runs again): the pipeline timeout starts over, the wait doesn't count against it.
+                    e.AwaitingApproval = false;
+                    e.AwaitingApprovalSince = null;
+                    e.TestingSince = now;
+                    e.Message = null;
+                    e.UpdatedAt = now;
+                }
+                var verdict = Evaluate(e, pipeline, config, now);
+                if (verdict.Item1 == Verdict.Approval)
+                {
+                    var names = pipeline != null && manualJobs.TryGetValue(pipeline.Id, out var n) ? string.Join(", ", n) : "a manual job";
+                    var message = $"Waiting for approval: pipeline #{pipeline?.Id} is paused on {names}. It is removed if nobody approves it within {config.ApprovalTimeoutMinutes} minutes.";
+                    if (!e.AwaitingApproval) { e.AwaitingApproval = true; e.AwaitingApprovalSince = now; e.UpdatedAt = now; }
+                    if (e.Message != message) { e.Message = message; e.UpdatedAt = now; }
+                }
+                switch (verdict)
                 {
                     case (Verdict.Passed, _):
                         e.State = MergeQueueEntryState.Passed;
                         e.Message = null;
+                        e.AwaitingApproval = false;
+                        e.AwaitingApprovalSince = null;
                         e.UpdatedAt = now;
                         break;
                     case (Verdict.Failed, var why):
@@ -205,7 +228,7 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
         return merged;
     }
 
-    private enum Verdict { Pending, Passed, Failed, Retry }
+    private enum Verdict { Pending, Passed, Failed, Retry, Approval }
 
     private static (Verdict, string?) Evaluate(MergeQueueEntry e, Pipeline? p, MergeQueueConfig config, DateTime now)
     {
@@ -219,6 +242,12 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
             case PipelineStatus.Error: return (Verdict.Failed, $"Pipeline #{p.Id} could not run: {p.Error}");
             case PipelineStatus.Canceled: return (Verdict.Failed, $"Pipeline #{p.Id} was canceled.");
             case PipelineStatus.Skipped: return (Verdict.Failed, $"Pipeline #{p.Id} was skipped.");
+            case PipelineStatus.Manual:
+                // Paused on a manual job (an approval gate): not stuck, but not running either, so the pipeline timeout
+                // doesn't apply; the approval timeout counts from when it started waiting.
+                if (e.AwaitingApprovalSince is { } waiting && now - waiting > TimeSpan.FromMinutes(config.ApprovalTimeoutMinutes))
+                    return (Verdict.Failed, $"Pipeline #{p.Id} wasn't approved within {config.ApprovalTimeoutMinutes} minutes.");
+                return (Verdict.Approval, null);
         }
         if (e.TestingSince is { } since && now - since > TimeSpan.FromMinutes(config.TimeoutMinutes))
             return (Verdict.Failed, $"Pipeline #{p.Id} didn't finish within {config.TimeoutMinutes} minutes.");
@@ -263,6 +292,8 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
         e.BaseSha = e.SpeculativeSha = null;
         e.PipelineId = null;
         e.TestingSince = null;
+        e.AwaitingApproval = false;
+        e.AwaitingApprovalSince = null;
         e.Message = message;
         e.UpdatedAt = DateTime.UtcNow;
     }
@@ -298,7 +329,7 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
         // Merged as part of a batch before its own pipeline finished: that pipeline is no longer needed.
         if (e.PipelineId is { } pid) await MergeQueuePipelines.CancelAsync(dbFactory, ciQueue, live, pid);
         await Task.Run(() => GitOps.DeleteRef(path, GitOps.MergeQueueRef(e.TargetBranch, e.Id)), ct);
-        await prs.CompleteQueuedMergeAsync(e.PullRequestId, e.EnqueuedById, e.Strategy, e.SpeculativeSha!, e.HeadSha, e.BaseSha!);
+        await prs.CompleteQueuedMergeAsync(e.PullRequestId, e.EnqueuedById, e.Strategy, e.SpeculativeSha!, e.HeadSha, e.BaseSha!, e.DeleteSourceBranch);
         await audit.RecordAsync("merge_queue.merged", "pull_request", e.PullRequestId, repo.ProjectId,
             new { repository = repo.Slug, e.PullRequest.Number, e.TargetBranch, commit = e.SpeculativeSha, strategy = e.Strategy.ToString().ToLowerInvariant(), e.PipelineId, batch },
             e.EnqueuedById);

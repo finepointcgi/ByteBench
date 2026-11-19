@@ -70,6 +70,7 @@ public static partial class OciEndpoints
         var method = ctx.Request.Method;
         if (rest.Length == 0) { await BaseAsync(ctx); return; }
         if (rest == "token" && HttpMethods.IsGet(method)) { await TokenAsync(ctx); return; }
+        if (rest == "_catalog" && HttpMethods.IsGet(method)) { await CatalogAsync(ctx); return; }
 
         var m = RoutePattern().Match(rest);
         if (!m.Success) { await Error(ctx, 404, "NAME_INVALID", "Not a registry path. Images are named {project key}/{image}."); return; }
@@ -135,6 +136,44 @@ public static partial class OciEndpoints
         {
             token, access_token = token, expires_in = (int)RegistryAuth.BearerLifetime.TotalSeconds, issued_at = DateTimeOffset.UtcNow,
         });
+    }
+
+    /// <summary>
+    /// <c>GET /v2/_catalog</c>: the image repositories (<c>{key}/{image}</c>) the caller may pull, with <c>n</c>/<c>last</c>
+    /// paging. Every project is checked with <see cref="RegistryAuth.AuthorizeAsync"/>, so projects the caller can't
+    /// see (or whose registry is off) never appear.
+    /// </summary>
+    private static async Task CatalogAsync(HttpContext ctx)
+    {
+        var auth = ctx.RequestServices.GetRequiredService<RegistryAuth>();
+        var (identity, error) = await auth.AuthenticateAsync(ctx);
+        if (identity == null)
+        {
+            ctx.Response.Headers.WWWAuthenticate = ChallengeFor(ctx);
+            await Error(ctx, 401, "UNAUTHORIZED", error ?? "Authentication required.");
+            return;
+        }
+        List<(string Key, string Name)> rows;
+        await using (var db = await ctx.RequestServices.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ctx.RequestAborted))
+            rows = (await db.Packages.AsNoTracking().Where(p => p.Type == PackageType.Container)
+                .Select(p => new { p.Project.Key, p.Name }).ToListAsync(ctx.RequestAborted)).Select(r => (r.Key, r.Name)).ToList();
+        var allowed = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var names = new List<string>();
+        foreach (var (key, name) in rows)
+        {
+            if (!allowed.TryGetValue(key, out var ok))
+                allowed[key] = ok = (await auth.AuthorizeAsync(identity, key, RegistryOp.Read)).Allowed;
+            if (ok) names.Add($"{key.ToLowerInvariant()}/{name}");
+        }
+        names.Sort(StringComparer.Ordinal);
+        var last = ctx.Request.Query["last"].ToString();
+        if (last.Length > 0) names = names.Where(x => string.CompareOrdinal(x, last) > 0).ToList();
+        if (int.TryParse(ctx.Request.Query["n"], out var n) && n >= 0 && names.Count > n)
+        {
+            names = names.Take(n).ToList();
+            if (names.Count > 0) ctx.Response.Headers.Link = $"</v2/_catalog?n={n}&last={Uri.EscapeDataString(names[^1])}>; rel=\"next\"";
+        }
+        await RegistryHttp.JsonAsync(ctx, 200, new { repositories = names });
     }
 
     // ---------------------------------------------------------------- helpers
@@ -453,7 +492,7 @@ public static partial class OciEndpoints
             var tags = await db.PackageVersions.Where(v => v.PackageId == package.Id && v.ManifestDigest == reference).Select(v => v.Id).ToListAsync();
             foreach (var id in tags) await packages.DeleteVersionCoreAsync(package.Id, id, req.Identity.ActorId, req.Identity);
             if (await FindBlobAsync(ctx, package.Id, sha, manifest: true) is not null)
-                await ctx.RequestServices.GetRequiredService<PackageStorage>().DeleteUnreferencedAsync(await packages.DeleteManifestCoreAsync(package.Id, sha));
+                await packages.DeleteManifestAndChildrenAsync(package.Id, sha);
         }
         else
         {

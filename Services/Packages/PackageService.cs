@@ -271,12 +271,30 @@ public sealed class PackageService(IDbContextFactory<AppDbContext> dbFactory, Pr
             if (await db.PackageVersions.AnyAsync(v => v.PackageId == packageId && v.ManifestDigest == "sha256:" + manifestSha)) return;
             foreach (var m in await db.ContainerBlobs.Where(b => b.PackageId == packageId && b.IsManifest && b.Sha256 != manifestSha).Select(b => b.Sha256).ToListAsync())
                 if (storage.Exists(m) && OciManifest.References(await File.ReadAllBytesAsync(storage.PathFor(m))).Contains(manifestSha)) return;
-            await storage.DeleteUnreferencedAsync(await DeleteManifestCoreAsync(packageId, manifestSha));
+            await DeleteManifestAndChildrenAsync(packageId, manifestSha);
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
             log.LogWarning(ex, "Could not release manifest {Sha} of package {Id}", manifestSha, packageId);
         }
+    }
+
+    /// <summary>
+    /// Deletes a manifest (see <see cref="DeleteManifestCoreAsync"/>) and, when it is an image index, its child manifests
+    /// that nothing else keeps: no tag points at them and no other index references them (reference-count aware, recursive).
+    /// A child that was pushed on its own (by digest, for a later index) is only touched when this index referenced it.
+    /// </summary>
+    public async Task DeleteManifestAndChildrenAsync(int packageId, string manifestSha)
+    {
+        var children = new List<string>();
+        try
+        {
+            if (storage.Exists(manifestSha))
+                children = OciManifest.Descriptors(await File.ReadAllBytesAsync(storage.PathFor(manifestSha))).Where(d => d.IsManifest).Select(d => d.Sha256).Distinct().ToList();
+        }
+        catch (Exception ex) when (ex is IOException or JsonException) { log.LogWarning(ex, "Could not read manifest {Sha}", manifestSha); }
+        await storage.DeleteUnreferencedAsync(await DeleteManifestCoreAsync(packageId, manifestSha));
+        foreach (var child in children) await ReleaseManifestIfUnusedAsync(packageId, child);
     }
 
     /// <summary>Records that a blob or manifest belongs to an image repository (idempotent).</summary>

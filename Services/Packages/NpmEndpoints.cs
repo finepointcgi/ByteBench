@@ -309,7 +309,8 @@ public static partial class NpmEndpoints
         {
             foreach (var v in found.Versions.Except(removed))
             {
-                var deprecated = sent[v.Version]?["deprecated"]?.GetValue<string>();
+                string? deprecated = null;
+                if (sent[v.Version]?["deprecated"] is JsonValue dv && !dv.TryGetValue(out deprecated)) deprecated = null; // not a string: ignored
                 var meta = v.MetadataJson != null ? JsonNode.Parse(v.MetadataJson) as JsonObject ?? [] : [];
                 if (meta["deprecated"]?.GetValue<string>() == deprecated) continue;
                 if (string.IsNullOrEmpty(deprecated)) meta.Remove("deprecated"); else meta["deprecated"] = deprecated;

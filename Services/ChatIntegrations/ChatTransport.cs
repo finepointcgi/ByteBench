@@ -35,8 +35,10 @@ public sealed class ChatTransport(WebhookSecrets secrets, ChatHttp http, IOption
         var m = new ChatMessage
         {
             Event = ChatEvents.Test,
-            Summary = $"GitBench is connected: this channel will get updates from {key}.",
-            Title = $"{key} {name}".Trim(),
+            Summary = key == null && hook.GroupId != null
+                ? "GitBench is connected: this channel will get updates from the projects of this group."
+                : $"GitBench is connected: this channel will get updates from {key}.",
+            Title = key == null ? "GitBench group" : $"{key} {name}".Trim(),
             Url = envelope["project"]?["webUrl"]?.GetValue<string>(),
             Status = ChatStatus.Good,
             Actor = actor,

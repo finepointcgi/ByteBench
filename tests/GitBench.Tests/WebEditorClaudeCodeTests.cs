@@ -73,8 +73,9 @@ public class ClaudeCodeApp : TestApp
           while [ $i -lt 50 ]; do
             echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Read","input":{"file_path":"old.txt"}}]}}'
             i=$((i+1))
-            sleep 0.05
           done
+          sleep 30 &
+          wait
           exit 0
         fi
         echo '{"type":"system","subtype":"init","tools":["Read","Grep","Glob","Edit","Write"]}'

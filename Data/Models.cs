@@ -500,7 +500,8 @@ public class RepositoryRedirect
 public partial class Webhook
 {
     public int Id { get; set; }
-    public int ProjectId { get; set; }
+    /// <summary>The project the hook belongs to; null for a group-level chat integration (see <see cref="GroupId"/>).</summary>
+    public int? ProjectId { get; set; }
     [Required, MaxLength(2000)] public string Url { get; set; } = "";
     /// <summary>
     /// HMAC-SHA256 signing key (16 to 200 characters), encrypted at rest with ASP.NET Core Data Protection by
@@ -2012,6 +2013,11 @@ public partial class BranchProtectionRule
     public MergeStrategy? MergeQueueStrategy { get; set; }
     /// <summary>A queue pipeline that hasn't finished after this long is canceled and its entry removed.</summary>
     [Range(1, 1440)] public int MergeQueueTimeoutMinutes { get; set; } = 60;
+    /// <summary>
+    /// A queue pipeline waiting on a manual job (an approval) is not ejected until it has waited this many minutes; it is shown
+    /// as "waiting for approval". Separate from <see cref="MergeQueueTimeoutMinutes"/>, which covers running pipelines.
+    /// </summary>
+    [Range(1, 10080)] public int MergeQueueApprovalTimeoutMinutes { get; set; } = 1440;
 }
 
 /// <summary>Where a <see cref="MergeQueueEntry"/> is. Queued, Testing and Passed are active; the rest are final.</summary>
@@ -2053,6 +2059,12 @@ public class MergeQueueEntry
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     /// <summary>When its current pipeline started (for the timeout).</summary>
     public DateTime? TestingSince { get; set; }
+    /// <summary>The entry's pipeline waits on a manual job (an approval): shown as "waiting for approval", with its own timeout.</summary>
+    public bool AwaitingApproval { get; set; }
+    /// <summary>When the pipeline started waiting for approval (the approval timeout counts from here).</summary>
+    public DateTime? AwaitingApprovalSince { get; set; }
+    /// <summary>Delete the PR's source branch after the queue merges it (chosen when queued, like the merge box's checkbox).</summary>
+    public bool DeleteSourceBranch { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? FinishedAt { get; set; }
 
@@ -2187,6 +2199,21 @@ public partial class Webhook
     [MaxLength(100)] public string? Name { get; set; }
     /// <summary>JSON of <c>GitBench.Services.ChatIntegrations.ChatSettings</c>: chat events, filters, channels. No secrets.</summary>
     [MaxLength(8000)] public string? ChatSettings { get; set; }
+    /// <summary>
+    /// Set (with <see cref="ProjectId"/> null) for a group-level Slack/Teams integration: it announces the events of every
+    /// project in the group and its subgroups, except those that opted out (<see cref="ChatIntegrationOptOut"/>).
+    /// </summary>
+    public int? GroupId { get; set; }
+}
+
+/// <summary>A project that doesn't want a group's chat integration (<see cref="Webhook.GroupId"/>) to announce its events.</summary>
+public class ChatIntegrationOptOut
+{
+    public int Id { get; set; }
+    public int ProjectId { get; set; }
+    public int WebhookId { get; set; }
+    public int? CreatedById { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>

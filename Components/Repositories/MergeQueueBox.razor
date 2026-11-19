@@ -17,6 +17,13 @@
                     case MergeQueueEntryState.Queued:
                         <span>@(e.Message ?? "Waiting to be tested.")</span>
                         break;
+                    case MergeQueueEntryState.Testing when e.AwaitingApproval:
+                        <span><b>Waiting for approval.</b> @e.Message</span>
+                        if (e.Pipeline is { } ap)
+                        {
+                            <span> <a href="@PipelineUrls.Detail(Pr.Repository, ap.Id)">Open pipeline #@ap.Id</a></span>
+                        }
+                        break;
                     case MergeQueueEntryState.Testing:
                         <span>Testing the merge with @(Status.Position - 1 == 0 ? "the target" : $"the target and {Status.Position - 1} pull request{(Status.Position - 1 == 1 ? "" : "s")} ahead")</span>
                         if (e.Pipeline is { } p)
@@ -60,6 +67,10 @@
         {
             <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" Class="mt-2" StartIcon="@Icons.Material.Outlined.Train"
                        Disabled="@(!CanQueue || busy)" OnClick="Enqueue">Add to merge queue</MudButton>
+            @if (Perms.Can(Permission.DeleteBranch) && !Pr.IsCrossFork && Pr.SourceBranch != Pr.Repository.DefaultBranch)
+            {
+                <MudCheckBox T="bool" @bind-Value="deleteSource" Size="Size.Small" Dense="true" Color="Color.Primary">Delete source branch after it merges</MudCheckBox>
+            }
             <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">
                 @MergeStrategySettings.Label(Status.Config!.StrategyFor(Pr.Repository)) · @Status.Config.Describe.
             </MudText>
@@ -80,13 +91,13 @@
     [Parameter] public bool CanQueue { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
 
-    private bool busy;
+    private bool busy, deleteSource;
 
     private bool CanDequeue => Perms.Can(Permission.MergePullRequest) || Pr.AuthorId == Me.Id;
 
     private Task Enqueue() => Run(async () =>
     {
-        await Queue.EnqueueAsync(Pr.Id, Me.Id);
+        await Queue.EnqueueAsync(Pr.Id, Me.Id, deleteSource);
         Snackbar.Add($"Added to the merge queue of '{Pr.TargetBranch}'.", Severity.Success);
     });
 

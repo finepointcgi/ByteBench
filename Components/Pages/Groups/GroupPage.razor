@@ -59,6 +59,7 @@ else if (group != null)
             }
             @if (perms.Can(GroupPermission.ManageGroupSettings))
             {
+                <TabLink Href="@Url("integrations")" Active="@(section == "integrations")" Icon="@Icons.Material.Outlined.Chat">Integrations</TabLink>
                 <TabLink Href="@Url("settings")" Active="@(section == "settings")" Icon="@Icons.Material.Outlined.Settings">Settings</TabLink>
             }
         </nav>
@@ -72,6 +73,8 @@ else if (group != null)
             case "labels": <GroupLabels Group="group" Perms="perms" /> break;
             case "members": <GroupMembers Group="group" Perms="perms" /> break;
             case "settings" when perms.Can(GroupPermission.ManageGroupSettings): <GroupSettings Group="group" Perms="perms" OnChanged="Reload" /> break;
+            case "integrations" when perms.Can(GroupPermission.ManageGroupSettings): <GroupIntegrations Group="group" Perms="perms" /> break;
+            case "integrations": <Forbidden Message="Only Owners can manage this group's chat integrations." BackHref="@Url("")" /> break;
             case "automation" when perms.Can(GroupPermission.ManageGroupLabelsAndMilestones):
                 <GitBench.Components.Automation.AutomationRules Owner="GitBench.Services.Automation.RuleOwner.Group(group.Id)" BaseHref="@Url("automation")" /> break;
             case "automation": <Forbidden Message="Only Maintainers and Owners of this group can manage its automation rules." BackHref="@Url("")" /> break;
@@ -89,12 +92,12 @@ else if (group != null)
     private bool notFound;
     private string section = "";
 
-    private static readonly string[] Sections = ["", "issues", "roadmap", "pull-requests", "labels", "members", "settings", "automation"];
+    private static readonly string[] Sections = ["", "issues", "roadmap", "pull-requests", "labels", "members", "settings", "automation", "integrations"];
 
     private string SectionTitle => section switch
     {
         "issues" => "Issues", "roadmap" => "Roadmap", "pull-requests" => "Pull requests", "labels" => "Labels & milestones",
-        "members" => "Members", "settings" => "Settings", "automation" => "Automation", _ => "Overview",
+        "members" => "Members", "settings" => "Settings", "automation" => "Automation", "integrations" => "Integrations", _ => "Overview",
     };
 
     private string Url(string s) => $"/g/{group!.FullPath}" + (s == "" ? "" : "/-/" + s);

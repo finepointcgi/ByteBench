@@ -1,11 +1,9 @@
 @page "/p/{Key}/settings/integrations"
 @using GitBench.Services.ChatIntegrations
 @using GitBench.Services.Webhooks
-@implements IDisposable
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject ChatIntegrationService Integrations
-@inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 
 <PageTitle>Chat integrations · @project?.Name</PageTitle>
@@ -31,178 +29,30 @@ else if (project != null)
         below, and turned off after @WebhookService.MaxConsecutiveFailures failures in a row. Webhook URLs and tokens are stored
         encrypted and never shown again.
     </MudText>
-    @if (error != null && editingId == null && !formOpen) { <MudAlert Severity="Severity.Error" Dense="true" Class="chat-narrow mb-3">@error</MudAlert> }
 
-    @foreach (var i in items)
+    @if (inherited.Count > 0)
     {
-        <MudPaper Outlined="true" Class="chat-narrow pa-4 mb-3" @key="i.Id">
-            <div class="chat-head">
-                <div class="chat-info">
-                    <div class="chat-name">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(i.Kind == WebhookKind.Teams ? Color.Info : Color.Secondary)">@(i.Kind == WebhookKind.Teams ? "Teams" : "Slack")</MudChip>
-                        <b>@i.Name</b>
-                        <span class="chat-muted">@ModeLabel(i.Settings.Mode)</span>
-                    </div>
-                    <div class="chat-status">
-                        @if (i.IsActive) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Active</MudChip> }
-                        else if (i.DisabledAt != null) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">Disabled after @WebhookService.MaxConsecutiveFailures failures</MudChip> }
-                        else { <MudChip T="string" Size="Size.Small" Variant="Variant.Text">Inactive</MudChip> }
-                        @if (i.ConsecutiveFailures > 0) { <span class="chat-error">@i.ConsecutiveFailures failed in a row</span> }
-                        @if (i.UrlHint != null) { <span class="chat-muted">URL <span class="mono">@i.UrlHint</span></span> }
-                        @if (i.TokenHint != null) { <span class="chat-muted">Token <span class="mono">@i.TokenHint</span> → <span class="mono">@i.Settings.Channel</span></span> }
-                    </div>
-                    <div class="chat-muted chat-small">@string.Join(", ", i.Settings.Events.Select(e => ChatEvents.Find(e)?.Title ?? e))</div>
-                    @if (!i.Settings.Filters.IsEmpty) { <div class="chat-muted chat-small">Filters: @FilterSummary(i.Settings.Filters)</div> }
-                    @foreach (var (g, c) in i.Settings.GroupChannels) { <div class="chat-muted chat-small">@ChatEvents.GroupTitle(g) → <span class="mono">@c</span></div> }
-                    @foreach (var (g, h) in i.GroupUrlHints) { <div class="chat-muted chat-small">@ChatEvents.GroupTitle(g) → own URL <span class="mono">@h</span></div> }
-                </div>
-                <div class="chat-actions">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Send"
-                               Disabled="@busy" OnClick="() => SendTest(i)">Send test message</MudButton>
-                    <MudTooltip Text="Edit"><MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Edit integration" OnClick="() => StartEdit(i)" /></MudTooltip>
-                    <MudTooltip Text="Delete"><MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" aria-label="Delete integration" OnClick="() => Delete(i)" /></MudTooltip>
-                </div>
-            </div>
-            <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-2"
-                       StartIcon="@(openId == i.Id ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)"
-                       aria-expanded="@(openId == i.Id ? "true" : "false")" OnClick="() => ToggleDeliveries(i.Id)">Recent messages</MudButton>
-            @if (openId == i.Id && deliveries.TryGetValue(i.Id, out var list))
+        <MudPaper Outlined="true" Class="chat-narrow pa-4 mb-4" data-testid="inherited-integrations">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="chat-title">From the group</MudText>
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-2">
+                These integrations belong to the project's group and also announce this project's events. Turn one off to opt this project out;
+                the group's owners manage them.
+            </MudText>
+            @foreach (var i in inherited)
             {
-                @if (list.Count == 0) { <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-2">Nothing sent yet. Send a test message to try it out.</MudText> }
-                else
-                {
-                    <div class="deliveries">
-                        <MudSimpleTable Dense="true" Elevation="0">
-                            <thead><tr><th>When</th><th>Event</th><th>Result</th><th></th></tr></thead>
-                            <tbody>
-                                @foreach (var d in list)
-                                {
-                                    <tr @key="d.Id">
-                                        <td class="nowrap">@d.CreatedAt.ToLocalTime().ToString("g")</td>
-                                        <td class="mono">@d.Event</td>
-                                        <td>
-                                            @if (d.Success == null) { <span class="chat-muted">pending…</span> }
-                                            else if (d.Success == true) { <span class="chat-ok">@d.StatusCode</span> }
-                                            else { <span class="chat-error">@(d.StatusCode?.ToString() ?? "")</span> <span class="chat-muted">@d.Error</span> }
-                                            @if (d.Attempts > 1) { <span class="chat-muted"> (@d.Attempts attempts)</span> }
-                                        </td>
-                                        <td class="nowrap right">
-                                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" OnClick="() => expanded = expanded == d.Id ? null : d.Id">Details</MudButton>
-                                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary" Disabled="@(d.Success == null)" OnClick="() => Redeliver(i, d)">Resend</MudButton>
-                                        </td>
-                                    </tr>
-                                    @if (expanded == d.Id)
-                                    {
-                                        <tr class="detail-row"><td colspan="4">
-                                            <div class="detail-label">Message</div>
-                                            <pre class="code-box mono">@Pretty(d.Payload)</pre>
-                                            <div class="detail-label">Response</div>
-                                            <pre class="code-box mono">@(d.ResponseBody ?? "(empty)")</pre>
-                                        </td></tr>
-                                    }
-                                }
-                            </tbody>
-                        </MudSimpleTable>
-                    </div>
-                }
+                <div class="d-flex align-center gap-2 mb-1" @key="i.Integration.Id">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(i.Integration.Kind == WebhookKind.Teams ? Color.Info : Color.Secondary)">@(i.Integration.Kind == WebhookKind.Teams ? "Teams" : "Slack")</MudChip>
+                    <b>@i.Integration.Name</b>
+                    <span class="mud-text-secondary">from <span class="mono">@i.GroupPath</span></span>
+                    <MudSpacer />
+                    <MudSwitch T="bool" Value="@(!i.OptedOut)" ValueChanged="on => SetInherited(i, on)" Color="Color.Primary" Label="@(i.OptedOut ? "Opted out" : "Announcing")" />
+                </div>
             }
+            @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText> }
         </MudPaper>
     }
 
-    @if (!formOpen)
-    {
-        <div class="chat-narrow d-flex gap-2 mb-4">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="() => StartAdd(WebhookKind.Slack)">Add Slack</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="() => StartAdd(WebhookKind.Teams)">Add Microsoft Teams</MudButton>
-        </div>
-    }
-    else
-    {
-        <MudPaper Outlined="true" Class="chat-narrow pa-5 mb-4">
-            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="chat-title">@(editingId == null ? "Add" : "Edit") @(form.Kind == WebhookKind.Teams ? "Microsoft Teams" : "Slack") integration</MudText>
-            <MudStack Spacing="3">
-                <MudTextField T="string" Label="Name (optional)" @bind-Value="form.Name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
-                @if (form.Kind == WebhookKind.Slack)
-                {
-                    <MudRadioGroup T="ChatMode" @bind-Value="form.Mode" Name="chat-mode">
-                        <MudRadio T="ChatMode" Value="ChatMode.SlackWebhook" Color="Color.Primary" Dense="true">Incoming webhook</MudRadio>
-                        <MudRadio T="ChatMode" Value="ChatMode.SlackBot" Color="Color.Primary" Dense="true">Bot token + channel</MudRadio>
-                    </MudRadioGroup>
-                }
-                @if (form.Kind == WebhookKind.Slack && form.Mode == ChatMode.SlackBot)
-                {
-                    <MudTextField T="string" Label="Bot token" @bind-Value="form.Token" InputType="InputType.Password" autocomplete="off" Class="chat-mono"
-                                  Placeholder="@(editingId == null ? "xoxb-…" : "Leave blank to keep the current token")"
-                                  HelperText="Needs the chat:write scope; invite the bot to the channels it posts to." Variant="Variant.Outlined" Margin="Margin.Dense" />
-                    <MudTextField T="string" Label="Channel" @bind-Value="form.Channel" Placeholder="#dev or C0123ABC" Variant="Variant.Outlined" Margin="Margin.Dense" Class="chat-mono" />
-                    <div>
-                        <MudText Typo="Typo.body2" Class="chat-label">Channel per event group (optional)</MudText>
-                        @foreach (var g in Enum.GetValues<ChatEventGroup>())
-                        {
-                            var group = g;
-                            <MudTextField T="string" Label="@ChatEvents.GroupTitle(group)" Value="@form.GroupChannels.GetValueOrDefault(group)"
-                                          ValueChanged="v => form.GroupChannels[group] = v" Placeholder="Same as above" Variant="Variant.Outlined" Margin="Margin.Dense" Class="chat-mono mb-1" />
-                        }
-                    </div>
-                }
-                else
-                {
-                    <MudTextField T="string" Label="@(form.Kind == WebhookKind.Teams ? "Teams webhook or Workflows URL" : "Slack incoming webhook URL")" @bind-Value="form.Url"
-                                  InputType="InputType.Password" autocomplete="off" Class="chat-mono" Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  Placeholder="@(editingId != null ? "Leave blank to keep the current URL" : form.Kind == WebhookKind.Teams ? "https://….webhook.office.com/… or https://….logic.azure.com/…" : "https://hooks.slack.com/services/…")" />
-                    <div>
-                        <MudText Typo="Typo.body2" Class="chat-label">Other URL per event group (optional)</MudText>
-                        @foreach (var g in Enum.GetValues<ChatEventGroup>())
-                        {
-                            var group = g;
-                            var hint = editing?.GroupUrlHints.GetValueOrDefault(group);
-                            <div class="d-flex align-center gap-2 mb-1">
-                                <MudTextField T="string" Label="@ChatEvents.GroupTitle(group)" Value="@form.GroupUrls.GetValueOrDefault(group)"
-                                              ValueChanged="v => form.GroupUrls[group] = v" InputType="InputType.Password" autocomplete="off"
-                                              Placeholder="@(hint != null ? $"Keep {hint}" : "Same as above")" Variant="Variant.Outlined" Margin="Margin.Dense" Class="chat-mono" />
-                                @if (hint != null)
-                                {
-                                    <MudCheckBox T="bool" Value="@form.ClearGroupUrls.Contains(group)" Dense="true" Label="Remove"
-                                                 ValueChanged="on => { if (on) form.ClearGroupUrls.Add(group); else form.ClearGroupUrls.Remove(group); }" />
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-
-                <div>
-                    <MudText Typo="Typo.body2" Class="chat-label">Events</MudText>
-                    @foreach (var g in Enum.GetValues<ChatEventGroup>())
-                    {
-                        <div class="chat-small chat-muted mt-1">@ChatEvents.GroupTitle(g)</div>
-                        @foreach (var e in ChatEvents.All.Where(x => x.Group == g))
-                        {
-                            var name = e.Name;
-                            <MudCheckBox T="bool" Value="@form.Events.Contains(name)" ValueChanged="on => ToggleEvent(name, on)" Color="Color.Primary" Dense="true" Label="@e.Title" />
-                        }
-                    }
-                </div>
-
-                <div>
-                    <MudText Typo="Typo.body2" Class="chat-label">Filters (optional)</MudText>
-                    <MudTextField T="string" Label="Branches" @bind-Value="branches" Placeholder="main, release/*" HelperText="Pipelines, deployments and pull requests (target branch)."
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
-                    <MudTextField T="string" Label="Labels" @bind-Value="labels" Placeholder="bug, security" HelperText="Issue events: only issues with one of these labels."
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
-                    <MudSelect T="IssuePriority?" Label="Minimum priority" @bind-Value="form.MinPriority" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
-                               HelperText="Issue events: only issues at or above this priority.">
-                        @foreach (var p in Enum.GetValues<IssuePriority>()) { <MudSelectItem T="IssuePriority?" Value="@p">@p</MudSelectItem> }
-                    </MudSelect>
-                </div>
-                <MudCheckBox T="bool" @bind-Value="form.Active" Color="Color.Primary" Dense="true" Label="Active" />
-                <div class="d-flex gap-2">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy" OnClick="Save">@(editingId == null ? "Add integration" : "Save changes")</MudButton>
-                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CloseForm">Cancel</MudButton>
-                </div>
-                @if (error != null) { <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText> }
-            </MudStack>
-        </MudPaper>
-    }
+    <ChatIntegrationsManager Scope="@ChatScope.Project(project.Id)" />
 }
 </div>
 
@@ -211,15 +61,9 @@ else if (project != null)
 
     private Project? project;
     private ProjectPermissions perms = ProjectPermissions.None;
-    private bool notFound, busy, formOpen;
+    private bool notFound;
     private string? error;
-    private List<ChatIntegrationInfo> items = [];
-    private readonly Dictionary<int, List<WebhookDelivery>> deliveries = [];
-    private int? openId, expanded, editingId;
-    private ChatIntegrationInfo? editing;
-    private ChatIntegrationInput form = new();
-    private string? branches, labels;
-    private CancellationTokenSource? polling;
+    private List<InheritedChatIntegration> inherited = [];
 
     protected override async Task OnParametersSetAsync()
     {
@@ -227,156 +71,18 @@ else if (project != null)
         notFound = project == null;
         if (project == null) return;
         perms = await Access.GetPermissionsAsync(project.Id);
-        if (perms.Can(ChatIntegrationService.RequiredPermission)) await Load();
+        if (perms.Can(ChatIntegrationService.RequiredPermission)) inherited = await Integrations.ListInheritedAsync(project.Id);
     }
 
-    private async Task Load()
-    {
-        items = await Integrations.ListAsync(project!.Id);
-        foreach (var id in deliveries.Keys.ToList()) await LoadDeliveries(id);
-    }
-
-    private async Task LoadDeliveries(int id)
-    {
-        if (items.All(i => i.Id != id)) { deliveries.Remove(id); return; }
-        deliveries[id] = await Integrations.RecentDeliveriesAsync(project!.Id, id);
-    }
-
-    private async Task ToggleDeliveries(int id)
-    {
-        openId = openId == id ? null : id;
-        if (openId == id) await LoadDeliveries(id);
-    }
-
-    private async Task<bool> Try(Func<Task> action)
+    private async Task SetInherited(InheritedChatIntegration i, bool announcing)
     {
         error = null;
-        try { await action(); return true; }
-        catch (InvalidOperationException ex) { error = ex.Message; return false; }
-    }
-
-    private static string ModeLabel(ChatMode m) => m switch
-    {
-        ChatMode.SlackBot => "bot token",
-        ChatMode.TeamsWebhook => "webhook / Workflows",
-        _ => "incoming webhook",
-    };
-
-    private static string FilterSummary(ChatFilters f) => string.Join("; ", new[]
-    {
-        f.Branches.Count > 0 ? "branches " + string.Join(", ", f.Branches) : null,
-        f.Labels.Count > 0 ? "labels " + string.Join(", ", f.Labels) : null,
-        f.MinPriority is { } p ? $"priority ≥ {p}" : null,
-    }.Where(x => x != null));
-
-    private void ToggleEvent(string name, bool on) { if (on) { if (!form.Events.Contains(name)) form.Events.Add(name); } else form.Events.Remove(name); }
-
-    private void StartAdd(WebhookKind kind)
-    {
-        editingId = null;
-        editing = null;
-        form = new ChatIntegrationInput { Kind = kind, Mode = kind == WebhookKind.Teams ? ChatMode.TeamsWebhook : ChatMode.SlackWebhook };
-        branches = labels = null;
-        error = null;
-        formOpen = true;
-    }
-
-    private void StartEdit(ChatIntegrationInfo i)
-    {
-        editingId = i.Id;
-        editing = i;
-        var s = i.Settings;
-        form = new ChatIntegrationInput
+        try
         {
-            Kind = i.Kind, Name = i.Name, Mode = s.Mode, Events = [.. s.Events], Channel = s.Channel,
-            GroupChannels = s.GroupChannels.ToDictionary(kv => kv.Key, kv => (string?)kv.Value),
-            MinPriority = s.Filters.MinPriority, Active = i.IsActive,
-        };
-        branches = string.Join(", ", s.Filters.Branches);
-        labels = string.Join(", ", s.Filters.Labels);
-        error = null;
-        formOpen = true;
-    }
-
-    private void CloseForm()
-    {
-        formOpen = false;
-        editingId = null;
-        editing = null;
-        error = null;
-    }
-
-    private static List<string> Split(string? csv) =>
-        (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-
-    private async Task Save()
-    {
-        busy = true;
-        form.Branches = Split(branches);
-        form.Labels = Split(labels);
-        var adding = editingId == null;
-        var ok = await Try(async () =>
-        {
-            if (adding) await Integrations.CreateAsync(project!.Id, form);
-            else await Integrations.UpdateAsync(project!.Id, editingId!.Value, form);
-        });
-        busy = false;
-        if (!ok) return;
-        Snackbar.Add(adding ? "Integration added. Send a test message to check it." : "Integration saved.", Severity.Success);
-        CloseForm();
-        await Load();
-    }
-
-    private async Task Delete(ChatIntegrationInfo i)
-    {
-        if (await Dialogs.ShowMessageBoxAsync("Delete integration?", $"Delete the {i.Name} integration? Its message history is deleted too.",
-                yesText: "Delete", cancelText: "Cancel") != true) return;
-        if (await Try(() => Integrations.DeleteAsync(project!.Id, i.Id)))
-        {
-            if (editingId == i.Id) CloseForm();
-            await Load();
+            await Integrations.SetOptOutAsync(project!.Id, i.Integration.Id, optOut: !announcing);
+            inherited = await Integrations.ListInheritedAsync(project.Id);
+            Snackbar.Add(announcing ? $"{i.Integration.Name} announces this project again." : $"This project opted out of {i.Integration.Name}.", Severity.Success);
         }
+        catch (InvalidOperationException ex) { error = ex.Message; }
     }
-
-    private async Task SendTest(ChatIntegrationInfo i)
-    {
-        if (!await Try(() => Integrations.SendTestAsync(project!.Id, i.Id))) return;
-        Snackbar.Add("Test message queued.", Severity.Info);
-        openId = i.Id;
-        await LoadDeliveries(i.Id);
-        StartPolling(i.Id);
-    }
-
-    private async Task Redeliver(ChatIntegrationInfo i, WebhookDelivery d)
-    {
-        if (!await Try(() => Integrations.RedeliverAsync(project!.Id, d.Id))) return;
-        await LoadDeliveries(i.Id);
-        StartPolling(i.Id);
-    }
-
-    /// <summary>Messages are sent in the background: refresh for a little while (stops once nothing is pending).</summary>
-    private void StartPolling(int id)
-    {
-        polling?.Cancel();
-        var cts = polling = new CancellationTokenSource();
-        _ = InvokeAsync(async () =>
-        {
-            for (var n = 0; n < 30 && !cts.IsCancellationRequested; n++)
-            {
-                try { await Task.Delay(1000, cts.Token); } catch (OperationCanceledException) { return; }
-                await LoadDeliveries(id);
-                items = await Integrations.ListAsync(project!.Id);
-                StateHasChanged();
-                if (n >= 1 && deliveries.GetValueOrDefault(id)?.All(d => d.Success != null) == true) return;
-            }
-        });
-    }
-
-    private static string Pretty(string json)
-    {
-        try { return System.Text.Json.Nodes.JsonNode.Parse(json)?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? json; }
-        catch (System.Text.Json.JsonException) { return json; }
-    }
-
-    public void Dispose() => polling?.Cancel();
 }

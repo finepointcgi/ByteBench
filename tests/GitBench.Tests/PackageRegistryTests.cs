@@ -308,7 +308,7 @@ public class PackageRegistryTests(PackageTestApp app) : IClassFixture<PackageTes
     private sealed record Pushed(string ConfigDigest, string LayerDigest, string ManifestDigest, byte[] Manifest, byte[] Layer);
 
     /// <summary>Pushes a config (monolithic) and a layer (chunked, two PATCHes), then the manifest under <paramref name="tag"/>.</summary>
-    private static async Task<Pushed> PushImageAsync(HttpClient c, string repo, string tag)
+    private static async Task<Pushed> PushImageAsync(HttpClient c, string repo, string? tag)
     {
         var config = Encoding.UTF8.GetBytes($$"""{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]},"n":"{{Guid.NewGuid()}}"}""");
         var layer = RandomNumberGenerator.GetBytes(5000);
@@ -344,7 +344,7 @@ public class PackageRegistryTests(PackageTestApp app) : IClassFixture<PackageTes
         }.ToJsonString());
         var content = new ByteArrayContent(manifest);
         content.Headers.ContentType = new MediaTypeHeaderValue(OciManifest.DockerV2);
-        var put = await c.PutAsync($"/v2/{repo}/manifests/{tag}", content);
+        var put = await c.PutAsync($"/v2/{repo}/manifests/{tag ?? "sha256:" + Sha256(manifest)}", content); // no tag: pushed by digest, untagged
         Assert.Equal(HttpStatusCode.Created, put.StatusCode);
         var digest = put.Headers.GetValues("Docker-Content-Digest").Single();
         Assert.Equal("sha256:" + Sha256(manifest), digest);
@@ -466,6 +466,147 @@ public class PackageRegistryTests(PackageTestApp app) : IClassFixture<PackageTes
         var c2 = new ByteArrayContent(unknownChild);
         c2.Headers.ContentType = new MediaTypeHeaderValue(OciManifest.OciIndex);
         Assert.Equal(HttpStatusCode.BadRequest, (await bob.PutAsync($"/v2/{repo}/manifests/2.0", c2)).StatusCode);
+    }
+
+    // ---------------------------------------------------------------- image indexes, catalog, npm deprecate
+
+    private static byte[] IndexOf(params Pushed[] children) => Encoding.UTF8.GetBytes(new JsonObject
+    {
+        ["schemaVersion"] = 2,
+        ["mediaType"] = OciManifest.OciIndex,
+        ["manifests"] = new JsonArray(children.Select(c => (JsonNode)new JsonObject
+            { ["mediaType"] = OciManifest.DockerV2, ["size"] = c.Manifest.Length, ["digest"] = c.ManifestDigest }).ToArray()),
+    }.ToJsonString());
+
+    private static async Task<HttpResponseMessage> PutIndexAsync(HttpClient c, string repo, string reference, byte[] index)
+    {
+        var content = new ByteArrayContent(index);
+        content.Headers.ContentType = new MediaTypeHeaderValue(OciManifest.OciIndex);
+        return await c.PutAsync($"/v2/{repo}/manifests/{reference}", content);
+    }
+
+    private static async Task<HttpStatusCode> ManifestStatusAsync(HttpClient c, string repo, string digest) =>
+        (await c.SendAsync(new HttpRequestMessage(HttpMethod.Head, $"/v2/{repo}/manifests/{digest}"))).StatusCode;
+
+    [Fact]
+    public async Task Deleting_an_image_index_deletes_its_child_manifests_unless_something_else_references_them()
+    {
+        var p = await ProjectAsync();
+        var repo = $"{p.Key.ToLowerInvariant()}/multi";
+        using var carol = await BasicClientAsync("carol");
+        var a = await PushImageAsync(carol, repo, null); // children are pushed by digest: untagged
+        var b = await PushImageAsync(carol, repo, null);
+        var c = await PushImageAsync(carol, repo, "tagged-child"); // a tagged image the index also lists
+        var loose = await PushImageAsync(carol, repo, null); // pushed for a later index, referenced by none yet
+        Assert.Equal(HttpStatusCode.Created, (await PutIndexAsync(carol, repo, "1.0", IndexOf(a, b, c))).StatusCode);
+        var second = IndexOf(a);
+        Assert.Equal(HttpStatusCode.Created, (await PutIndexAsync(carol, repo, "2.0", second)).StatusCode);
+
+        // Layers younger than an hour are kept (a push may be in progress): age them so the sweep can take them.
+        await using (var db = app.Db())
+            await db.ContainerBlobs.ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedAt, DateTime.UtcNow.AddHours(-2)));
+
+        // Delete the first index by tag: b (only it used it) goes; a (the second index) and c (a tag) stay.
+        Assert.Equal(HttpStatusCode.Accepted, (await carol.DeleteAsync($"/v2/{repo}/manifests/1.0")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, await ManifestStatusAsync(carol, repo, b.ManifestDigest));
+        Assert.Equal(HttpStatusCode.OK, await ManifestStatusAsync(carol, repo, a.ManifestDigest));
+        Assert.Equal(HttpStatusCode.OK, await ManifestStatusAsync(carol, repo, c.ManifestDigest));
+        Assert.Equal(HttpStatusCode.OK, await ManifestStatusAsync(carol, repo, loose.ManifestDigest)); // never part of the index: untouched
+        Assert.Equal(HttpStatusCode.NotFound, (await carol.GetAsync($"/v2/{repo}/blobs/{b.LayerDigest}")).StatusCode); // its layer is released with it
+        Assert.Equal(HttpStatusCode.OK, (await carol.GetAsync($"/v2/{repo}/blobs/{a.LayerDigest}")).StatusCode);
+
+        // Delete the second index by digest: a goes now, c still has its tag.
+        var secondDigest = "sha256:" + Sha256(second);
+        Assert.Equal(HttpStatusCode.Accepted, (await carol.DeleteAsync($"/v2/{repo}/manifests/{secondDigest}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, await ManifestStatusAsync(carol, repo, secondDigest));
+        Assert.Equal(HttpStatusCode.NotFound, await ManifestStatusAsync(carol, repo, a.ManifestDigest));
+        Assert.Equal(HttpStatusCode.OK, await ManifestStatusAsync(carol, repo, c.ManifestDigest));
+        Assert.Equal(HttpStatusCode.OK, await ManifestStatusAsync(carol, repo, "tagged-child"));
+    }
+
+    [Fact]
+    public async Task Catalog_lists_only_the_repositories_the_caller_may_pull()
+    {
+        var shared = await ProjectAsync(); // bob Developer, dan Viewer
+        var other = await app.CreateProjectAsync("alice"); // dan has no access
+        var off = await ProjectAsync();
+        using var carol = await BasicClientAsync("carol");
+        using var alice = await BasicClientAsync("alice");
+        var sharedRepo = $"{shared.Key.ToLowerInvariant()}/web";
+        var otherRepo = $"{other.Key.ToLowerInvariant()}/secret";
+        var offRepo = $"{off.Key.ToLowerInvariant()}/hidden";
+        await PushImageAsync(carol, sharedRepo, "1");
+        await PushImageAsync(carol, $"{shared.Key.ToLowerInvariant()}/api", "1");
+        await PushImageAsync(alice, otherRepo, "1");
+        await PushImageAsync(carol, offRepo, "1");
+        await using (var db = app.Db())
+        {
+            db.ProjectPackageSettings.Add(new ProjectPackageSettings { ProjectId = off.Id, Enabled = false });
+            await db.SaveChangesAsync();
+        }
+
+        using var dan = await BasicClientAsync("dan", TokenScopes.ReadRepository);
+        var danList = (await JsonAsync(await dan.GetAsync("/v2/_catalog")))["repositories"]!.AsArray().Select(x => x!.GetValue<string>()).ToList();
+        Assert.Contains(sharedRepo, danList);
+        Assert.Contains($"{shared.Key.ToLowerInvariant()}/api", danList);
+        Assert.DoesNotContain(otherRepo, danList); // no access to that project
+        Assert.DoesNotContain(offRepo, danList); // registry turned off
+        Assert.Equal(danList.Order(StringComparer.Ordinal).ToList(), danList);
+
+        var adminList = (await JsonAsync(await alice.GetAsync("/v2/_catalog")))["repositories"]!.AsArray().Select(x => x!.GetValue<string>()).ToList();
+        Assert.Contains(otherRepo, adminList); // alice owns it (and administers the site)
+        Assert.Contains(sharedRepo, adminList);
+
+        // Paging with n and last (Link header for the next page).
+        var page = await dan.GetAsync("/v2/_catalog?n=1");
+        Assert.Single((await JsonAsync(page))["repositories"]!.AsArray());
+        Assert.Contains("rel=\"next\"", page.Headers.GetValues("Link").Single());
+        var next = await JsonAsync(await dan.GetAsync($"/v2/_catalog?n=1&last={Uri.EscapeDataString(danList[0])}"));
+        Assert.Equal(danList[1], next["repositories"]![0]!.GetValue<string>());
+
+        // Anonymous callers are challenged.
+        var anon = await Client().GetAsync("/v2/_catalog");
+        Assert.Equal(HttpStatusCode.Unauthorized, anon.StatusCode);
+        Assert.Contains("Bearer", anon.Headers.WwwAuthenticate.ToString());
+    }
+
+    [Fact]
+    public async Task Npm_deprecate_marks_a_version_and_clearing_it_removes_the_mark()
+    {
+        var p = await ProjectAsync();
+        using var bob = await BasicClientAsync("bob");
+        using var dan = await BasicClientAsync("dan", TokenScopes.ReadRepository | TokenScopes.WriteRepository);
+        const string name = "@acme/old-lib";
+        Assert.Equal(HttpStatusCode.Created, (await NpmPublishAsync(bob, p.Key, name, NpmPublishBody(name, "1.0.0", Encoding.UTF8.GetBytes("tarball one " + Guid.NewGuid())))).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await NpmPublishAsync(bob, p.Key, name, NpmPublishBody(name, "1.1.0", Encoding.UTF8.GetBytes("tarball two " + Guid.NewGuid())))).StatusCode);
+
+        // `npm deprecate pkg@1.0.0 "use 1.1.0"`: the packument is fetched, the message set on the version, and PUT back to -rev.
+        var doc = await JsonAsync(await bob.GetAsync(NpmPath(p.Key, name)));
+        Assert.Null(doc["versions"]!["1.0.0"]!["deprecated"]);
+        var rev = doc["_rev"]!.GetValue<string>();
+        doc["versions"]!["1.0.0"]!["deprecated"] = "use 1.1.0 instead";
+        using (var viewer = await BasicClientAsync("dan", TokenScopes.ReadRepository))
+            Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PutAsync($"{NpmPath(p.Key, name)}/-rev/{rev}", new StringContent(doc.ToJsonString(), Encoding.UTF8, "application/json"))).StatusCode);
+        var put = await bob.PutAsync($"{NpmPath(p.Key, name)}/-rev/{rev}", new StringContent(doc.ToJsonString(), Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode); // a Developer may deprecate; nothing is unpublished
+
+        var after = await JsonAsync(await dan.GetAsync(NpmPath(p.Key, name)));
+        Assert.Equal("use 1.1.0 instead", after["versions"]!["1.0.0"]!["deprecated"]!.GetValue<string>());
+        Assert.Null(after["versions"]!["1.1.0"]!["deprecated"]);
+        Assert.Equal(["1.0.0", "1.1.0"], after["versions"]!.AsObject().Select(kv => kv.Key).Order().ToArray()); // both still installable
+
+        // `npm deprecate pkg@1.0.0 ""`: an empty message undoes it.
+        after["versions"]!["1.0.0"]!["deprecated"] = "";
+        Assert.Equal(HttpStatusCode.OK, (await bob.PutAsync($"{NpmPath(p.Key, name)}/-rev/{after["_rev"]!.GetValue<string>()}",
+            new StringContent(after.ToJsonString(), Encoding.UTF8, "application/json"))).StatusCode);
+        var cleared = await JsonAsync(await dan.GetAsync(NpmPath(p.Key, name)));
+        Assert.Null(cleared["versions"]!["1.0.0"]!["deprecated"]);
+
+        // A non-string "deprecated" is ignored instead of failing the request.
+        cleared["versions"]!["1.1.0"]!["deprecated"] = 42;
+        Assert.Equal(HttpStatusCode.OK, (await bob.PutAsync($"{NpmPath(p.Key, name)}/-rev/{cleared["_rev"]!.GetValue<string>()}",
+            new StringContent(cleared.ToJsonString(), Encoding.UTF8, "application/json"))).StatusCode);
+        Assert.Null((await JsonAsync(await dan.GetAsync(NpmPath(p.Key, name))))["versions"]!["1.1.0"]!["deprecated"]);
     }
 
     // ---------------------------------------------------------------- CI job tokens and webhooks

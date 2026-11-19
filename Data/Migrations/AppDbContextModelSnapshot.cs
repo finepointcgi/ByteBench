@@ -528,6 +528,9 @@ namespace GitBench.Data.Migrations
                     b.Property<bool>("DismissStaleApprovals")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("MergeQueueApprovalTimeoutMinutes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("MergeQueueEnabled")
                         .HasColumnType("INTEGER");
 
@@ -572,6 +575,34 @@ namespace GitBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("BranchProtectionRules");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ChatIntegrationOptOut", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WebhookId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WebhookId");
+
+                    b.HasIndex("ProjectId", "WebhookId")
+                        .IsUnique();
+
+                    b.ToTable("ChatIntegrationOptOuts");
                 });
 
             modelBuilder.Entity("GitBench.Data.ChatUserLink", b =>
@@ -1697,6 +1728,12 @@ namespace GitBench.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("AwaitingApproval")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("AwaitingApprovalSince")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("BaseSha")
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
@@ -1706,6 +1743,9 @@ namespace GitBench.Data.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("DeleteSourceBranch")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("EnqueuedById")
                         .HasColumnType("INTEGER");
@@ -4142,6 +4182,9 @@ namespace GitBench.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -4155,7 +4198,7 @@ namespace GitBench.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("ProjectId")
+                    b.Property<int?>("ProjectId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Secret")
@@ -4171,6 +4214,8 @@ namespace GitBench.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedById");
+
+                    b.HasIndex("GroupId");
 
                     b.HasIndex("ProjectId");
 
@@ -4605,6 +4650,21 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ChatIntegrationOptOut", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Webhook", null)
+                        .WithMany()
+                        .HasForeignKey("WebhookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GitBench.Data.ChatUserLink", b =>
@@ -5933,11 +5993,15 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.Group", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("GitBench.Data.Project", null)
                         .WithMany()
                         .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("GitBench.Data.WebhookDelivery", b =>
