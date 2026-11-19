@@ -48,19 +48,8 @@ public class EditorAiService(
     // ---------- Status & settings ----------
 
     /// <summary>The backend configured (or, for Auto, detected) right now; null when none is usable.</summary>
-    public async Task<IEditorAiBackend?> SelectBackendAsync(CancellationToken ct = default)
-    {
-        IEditorAiBackend? Of(EditorAiBackendKind k) => backends.FirstOrDefault(b => b.Kind == k);
-        var order = opts.Backend switch
-        {
-            EditorAiBackendKind.Api => [EditorAiBackendKind.Api],
-            EditorAiBackendKind.ClaudeCode => [EditorAiBackendKind.ClaudeCode],
-            _ => new[] { EditorAiBackendKind.ClaudeCode, EditorAiBackendKind.Api },
-        };
-        foreach (var kind in order)
-            if (Of(kind) is { } b && await b.IsAvailableAsync(ct)) return b;
-        return null;
-    }
+    public Task<IEditorAiBackend?> SelectBackendAsync(CancellationToken ct = default) =>
+        EditorAiBackendSelector.SelectAsync(backends, opts.Backend, ct);
 
     public async Task<bool> IsProjectEnabledAsync(int projectId)
     {

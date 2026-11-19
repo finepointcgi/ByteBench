@@ -98,6 +98,7 @@ public partial class PullRequestService
             throw new ForbiddenException("Only the pull request's author, the comment's author or a Maintainer can resolve this thread.");
         if (root.IsResolved == resolved) return;
         root.IsResolved = resolved;
+        if (!resolved) root.AiDismissed = false;
         root.ResolvedById = resolved ? actorId : null;
         root.ResolvedAt = resolved ? DateTime.UtcNow : null;
         Log(db, pr, actorId, $"{(resolved ? "resolved" : "unresolved")} a thread on `{root.FilePath}:{root.Line ?? root.OldLine}`");
