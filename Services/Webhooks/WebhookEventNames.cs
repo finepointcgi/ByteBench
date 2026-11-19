@@ -19,6 +19,8 @@ public static class WebhookEventNames
     public const string SecurityNewFindings = "security.new_findings";
     /// <summary>A deployment waits for approval, starts, finishes, or is rejected or canceled (raised by CI).</summary>
     public const string DeploymentStatus = "deployment.status";
+    /// <summary>A static site (Pages) was deployed, or an earlier version was rolled back to (Services/Pages).</summary>
+    public const string PagesDeployed = "pages.deployed";
     // ----- Releases -----
     public const string ReleasePublished = "release.published";
     public const string TagCreated = "tag.created";
@@ -42,6 +44,7 @@ public static class WebhookEventNames
         (PipelineCompleted, "A CI pipeline finishes"),
         (SecurityNewFindings, "A security scan finds new high-severity issues on the default branch"),
         (DeploymentStatus, "A deployment changes status (waiting for approval, running, passed, failed, canceled)"),
+        (PagesDeployed, "A Pages site is deployed or rolled back"),
         (ReleasePublished, "A release is published"),
         (TagCreated, "A tag is created (in GitBench or by a push)"),
         (TagDeleted, "A tag is deleted (in GitBench or by a push)"),

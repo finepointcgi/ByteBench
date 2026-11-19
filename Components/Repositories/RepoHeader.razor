@@ -5,6 +5,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject CurrentUser Me
+@inject GitBench.Services.Pages.PagesService Pages
 <div class="repo-crumbs"><MudBreadcrumbs Items="Crumbs" Class="px-0 pt-0 pb-2" /></div>
 <div class="repo-header">
     <div class="repo-title">
@@ -53,6 +54,12 @@
             <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.MergeType"
                        Href="@GitBench.Services.Forks.ForkUrls.NewPullRequest(Repo)">PR to upstream</MudButton>
         }
+        @if (siteUrl != null)
+        {
+            <MudTooltip Text="Open the published site (Pages)">
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Language" Href="@siteUrl" Target="_blank" rel="noopener">Site</MudButton>
+            </MudTooltip>
+        }
         <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
             <MudButton StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="Fork">Fork</MudButton>
             <MudButton Href="@GitBench.Services.Forks.ForkUrls.List(Repo)" title="Forks of this repository" aria-label="@($"{forkInfo.ForkCount} forks")">@forkInfo.ForkCount</MudButton>
@@ -95,6 +102,7 @@
     private int? permsFor;
     private GitBench.Services.Forks.ForkInfo forkInfo = new(null, false, 0);
     private string? query;
+    private string? siteUrl;
 
     private List<BreadcrumbItem> Crumbs =>
     [
@@ -111,6 +119,7 @@
         canPush = await Access.CanAsync(Repo.ProjectId, Permission.PushCode);
         canCreatePr = await Access.CanAsync(Repo.ProjectId, Permission.CreatePullRequest);
         forkInfo = await Forks.GetInfoAsync(Repo);
+        siteUrl = await Pages.LiveUrlAsync(Repo);
     }
 
     private async Task Fork()

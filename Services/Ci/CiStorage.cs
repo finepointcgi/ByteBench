@@ -5,12 +5,12 @@ using Microsoft.Extensions.Options;
 namespace GitBench.Services.Ci;
 
 /// <summary>A job's <c>artifacts</c> and <c>cache</c> settings, stored as JSON on <see cref="Data.PipelineJob.ExtrasJson"/>.</summary>
-public sealed record CiJobExtras(CiArtifactsDefinition? Artifacts, CiCacheDefinition? Cache)
+public sealed record CiJobExtras(CiArtifactsDefinition? Artifacts, CiCacheDefinition? Cache, CiPagesDefinition? Pages = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static string? Serialize(CiJobDefinition j) =>
-        j.Artifacts == null && j.Cache == null ? null : JsonSerializer.Serialize(new CiJobExtras(j.Artifacts, j.Cache), Json);
+        j.Artifacts == null && j.Cache == null && j.Pages == null ? null : JsonSerializer.Serialize(new CiJobExtras(j.Artifacts, j.Cache, j.Pages), Json);
 
     public static CiJobExtras Parse(string? json)
     {

@@ -354,6 +354,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         NotificationKind.DeploymentApprovalRequested => "asks you to approve a deployment:",
         NotificationKind.DeploymentApproved => "approved a deployment:",
         NotificationKind.DeploymentRejected => "rejected a deployment:",
+        NotificationKind.PagesDeployed => "deployed your Pages site:",
         _ => "updated",
     };
 

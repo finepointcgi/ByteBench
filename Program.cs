@@ -131,6 +131,7 @@ builder.Services.AddIssueFields(); // custom fields, components, versions, issue
 GitBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder.Services, builder.Configuration); // web editor + AI assistant
 GitBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistry(builder.Services); // NuGet, npm and container registry per project
 GitBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.AddServiceDesk(builder.Services, builder.Configuration); // service desk: inbound mail, public form, queue
+GitBench.Services.Pages.PagesServiceCollectionExtensions.AddPages(builder.Services, builder.Configuration); // static sites from CI output (Pages:*)
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
@@ -163,6 +164,9 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 // UseStatusCodePagesWithReExecute/UseExceptionHandler re-execute into /not-found or /Error,
 // which carry authorization metadata ([AllowAnonymous]).
 app.UseAuthentication();
+// Pages serves /pages/... and Pages:BaseDomain hosts only. It sits before UseAuthorization, which would otherwise challenge the
+// app's own endpoints that a site's "/" matches (Home); it does its own access checks. Before rate limiting, antiforgery and static assets.
+GitBench.Services.Pages.PagesServiceCollectionExtensions.UsePages(app);
 app.UseAuthorization();
 app.UseRateLimiter(); // after authentication, so API limits can key on the signed-in user
 

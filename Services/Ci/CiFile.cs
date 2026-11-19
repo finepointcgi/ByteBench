@@ -47,6 +47,8 @@ public sealed record CiJobDefinition(string Name, string Image, IReadOnlyList<st
     public CiArtifactsDefinition? Artifacts { get; init; }
     public CiCacheDefinition? Cache { get; init; }
     public CiEnvironmentDefinition? Environment { get; init; }
+    /// <summary>Set for a job that publishes a static site (<c>pages:</c>, <c>publish:</c>, or a job named <c>pages</c>).</summary>
+    public CiPagesDefinition? Pages { get; init; }
     /// <summary><c>rules:</c> (or <c>only:</c>); empty means the job runs on every branch.</summary>
     public IReadOnlyList<CiRule> Rules { get; init; } = [];
 
@@ -93,6 +95,17 @@ public sealed record CiCacheDefinition(string Key, IReadOnlyList<string> Paths);
 public sealed record CiEnvironmentDefinition(string Name, string? Url, string? Action = null)
 {
     public bool IsStop => Action == "stop";
+}
+
+/// <summary>
+/// A job that publishes a static site when it passes: the files of <see cref="Path"/> (a folder of the workspace) become the
+/// repository's site. On the default branch that is the main site; with <see cref="Review"/> other branches get review sites
+/// that expire after <see cref="ReviewExpireIn"/> (null: the site's setting).
+/// </summary>
+public sealed record CiPagesDefinition(string Path, bool Review, TimeSpan? ReviewExpireIn)
+{
+    public const string DefaultPath = "public";
+    public const string JobName = "pages";
 }
 
 /// <summary>The result of parsing: a definition, or a readable error.</summary>
@@ -177,6 +190,10 @@ public static partial class CiFile
         public ArtifactsDto? Artifacts { get; set; }
         public CacheDto? Cache { get; set; }
         public EnvironmentDto? Environment { get; set; }
+        /// <summary><c>pages: true</c>, <c>pages: false</c>, <c>pages: dist</c> or <c>pages: { path, review, expire_in }</c>.</summary>
+        public object? Pages { get; set; }
+        /// <summary>Alias: <c>publish: dist</c> is <c>pages: { path: dist }</c>.</summary>
+        public string? Publish { get; set; }
     }
 
     private sealed class StepDto
@@ -271,6 +288,7 @@ public static partial class CiFile
                 Artifacts = extras.Artifacts,
                 Cache = extras.Cache,
                 Environment = extras.Environment,
+                Pages = extras.Pages,
             });
         }
 
@@ -288,7 +306,7 @@ public static partial class CiFile
     }
 
     private sealed record Extras(CiJobWhen When, IReadOnlyList<CiRule> Rules, CiArtifactsDefinition? Artifacts,
-        CiCacheDefinition? Cache, CiEnvironmentDefinition? Environment, string? Error);
+        CiCacheDefinition? Cache, CiEnvironmentDefinition? Environment, string? Error, CiPagesDefinition? Pages = null);
 
     private static Extras ParseExtras(string name, JobDto job)
     {
@@ -402,7 +420,63 @@ public static partial class CiFile
             environment = new CiEnvironmentDefinition(en, url, action);
         }
 
-        return new Extras(when, rules, artifacts, cache, environment, null);
+        var (pages, pagesError) = ParsePages(name, job);
+        if (pagesError != null) return Err(pagesError);
+
+        return new Extras(when, rules, artifacts, cache, environment, null, pages);
+    }
+
+    /// <summary>
+    /// <c>pages:</c> / <c>publish:</c> / a job named <c>pages</c>. <c>pages: false</c> turns the implicit one off.
+    /// The folder must be a plain relative path (no globs); it defaults to <c>public</c>.
+    /// </summary>
+    private static (CiPagesDefinition? Pages, string? Error) ParsePages(string name, JobDto job)
+    {
+        if (job.Pages != null && job.Publish != null) return (null, "use either 'pages' or 'publish', not both.");
+        string? path = null;
+        var review = false;
+        TimeSpan? expire = null;
+        var on = name == CiPagesDefinition.JobName && job.Pages == null && job.Publish == null;
+        if (job.Publish != null) { path = job.Publish; on = true; }
+        else if (job.Pages is string text)
+        {
+            switch (text.Trim().ToLowerInvariant())
+            {
+                case "true": on = true; break;
+                case "false" or "": on = false; break;
+                default: path = text; on = true; break;
+            }
+        }
+        else if (job.Pages is bool b) on = b;
+        else if (job.Pages is IDictionary<object, object> map)
+        {
+            on = true;
+            foreach (var (k, v) in map)
+            {
+                var key = k?.ToString()?.Trim() ?? "";
+                var value = v?.ToString()?.Trim() ?? "";
+                switch (key)
+                {
+                    case "path": path = value; break;
+                    case "review":
+                        if (!bool.TryParse(value, out review)) return (null, $"pages 'review: {value}' must be true or false.");
+                        break;
+                    case "expire_in":
+                        if (!TryParseDuration(value, out expire) || expire == null)
+                            return (null, $"pages 'expire_in: {value}' is not valid: use e.g. 12h, 3d or 2w.");
+                        break;
+                    default: return (null, $"pages has an unknown key '{key}': use path, review or expire_in.");
+                }
+            }
+        }
+        else if (job.Pages != null) return (null, "'pages' must be true, false, a folder name or a mapping with path, review and expire_in.");
+        if (!on) return (null, null);
+
+        var p = (path ?? CiPagesDefinition.DefaultPath).Trim().TrimEnd('/');
+        if (p.Length == 0) p = CiPagesDefinition.DefaultPath;
+        if (p.Contains('*') || p.Contains('?')) return (null, $"pages path '{p}' must name one folder, not a pattern.");
+        if (CiArtifacts.ValidatePattern(p) is { } pe) return (null, $"pages path '{p}' {pe}");
+        return (new CiPagesDefinition(p, review, expire), null);
     }
 
     /// <summary>True if <paramref name="name"/> can name an environment.</summary>

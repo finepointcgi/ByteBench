@@ -30,7 +30,7 @@ public static class PipelineUrls
 public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbContextFactory<AppDbContext> dbFactory,
     RepoStorage storage, LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options,
     Webhooks.WebhookDispatcher webhooks, Api.PublicBaseUrl baseUrl, CiArtifactStore artifacts, CiCacheStore caches,
-    CiDeploymentRecorder deployments, ILogger<CiRunner> log, Automation.AutomationQueue automation, CiJobTokens jobTokens) : BackgroundService
+    CiDeploymentRecorder deployments, ILogger<CiRunner> log, Automation.AutomationQueue automation, CiJobTokens jobTokens, Pages.PagesDeployer pages) : BackgroundService
 {
     private SemaphoreSlim jobSlots = null!;
     private readonly List<Task> active = [];
@@ -360,6 +360,22 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 log.LogWarning(ex, "Saving the cache or artifacts of job {Job} failed", job.Id);
                 postNotes.Add($"[gitbench] Could not save the cache or artifacts: {ex.Message}");
                 if (extras.Artifacts != null && result == PipelineStatus.Passed) result = PipelineStatus.Failed;
+            }
+            // Pages: a passed job with pages:/publish: (or named "pages") publishes its folder as the repository's site.
+            if (extras.Pages is { } pagesDef && result == PipelineStatus.Passed && !ct.IsCancellationRequested && Directory.Exists(workspace))
+            {
+                try
+                {
+                    var (ok, notes) = await pages.DeployFromWorkspaceAsync(p, job, workspace, pagesDef);
+                    postNotes.AddRange(notes);
+                    if (!ok) { postNotes.Add("[gitbench] The job failed because its site could not be published."); result = PipelineStatus.Failed; }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    log.LogWarning(ex, "Publishing the Pages site of job {Job} failed", job.Id);
+                    postNotes.Add($"[gitbench] Could not publish the site: {ex.Message}");
+                    result = PipelineStatus.Failed;
+                }
             }
             // Security reports (artifacts.reports): read whether the job passed or failed (a failed quality gate still has a report).
             if (extras.Artifacts?.Reports is { Count: > 0 } reports && lastStarted != null && !ct.IsCancellationRequested && Directory.Exists(workspace))

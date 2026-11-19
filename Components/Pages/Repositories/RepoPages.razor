@@ -1,0 +1,270 @@
+@page "/p/{Key}/repos/{Slug}/settings/pages"
+@inherits RepoPageBase
+@using GitBench.Services.Pages
+@inject PagesService PagesSvc
+@inject PagesLinks Links
+@inject ProjectAccess Access
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Pages · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage Pages." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null && info != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="pages" />
+        <div class="gb-min0">
+            <div class="mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Language" /> Pages</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Publish a static website from CI. A job named <code>pages</code> (or with <code>pages: true</code>, or <code>publish: dist</code>) that passes on
+                    <code>@Repo.DefaultBranch</code> deploys the files of its <code>public/</code> folder (or the folder you name) as this repository's site. Each deployment
+                    is a version you can roll back to. Other branches can get short-lived review sites with <code>pages: { review: true }</code>.
+                </MudText>
+                <pre class="pg-example">jobs:
+  pages:
+    steps:
+      - run: mkdir -p public &amp;&amp; echo '&lt;h1&gt;Hello&lt;/h1&gt;' &gt; public/index.html</pre>
+            </div>
+
+            @if (!info.PagesEnabledOnServer)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">Pages is turned off on this server (<code>Pages:Enabled</code>): nothing is deployed or served.</MudAlert>
+            }
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-3">Site</MudText>
+                @if (info.Current is { } cur)
+                {
+                    <div class="mb-3">
+                        <div>
+                            <a href="@Links.SiteUrl(Repo)" target="_blank" rel="noopener" class="mono">@Links.SiteUrl(Repo)</a>
+                            @if (!info.Site.Enabled) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-2">Disabled</MudChip> }
+                        </div>
+                        <div class="mud-text-secondary pg-meta">
+                            Version @cur.Version · <span class="mono">@Short(cur.CommitSha)</span> on @cur.Ref · @cur.FileCount files, @Bytes(cur.SizeBytes)
+                            · live since @((cur.ActivatedAt ?? cur.CreatedAt).ToLocalTime().ToString("MMM d, yyyy HH:mm"))@(cur.IsRollback ? " (rolled back)" : "")
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">No site has been deployed yet.</MudText>
+                }
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12">
+                        <MudCheckBox T="bool" @bind-Value="draft.Enabled" Color="Color.Primary" Dense="true">
+                            <b>Enable Pages</b> <span class="mud-text-secondary">(turn off to stop serving the site and to make pages jobs skip publishing)</span>
+                        </MudCheckBox>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="PagesVisibility" Label="Who can open the site" @bind-Value="draft.Visibility" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem T="PagesVisibility" Value="PagesVisibility.Members">People who can view this project (sign-in required)</MudSelectItem>
+                            @if (info.PublicAllowed || draft.Visibility == PagesVisibility.Public)
+                            {
+                                <MudSelectItem T="PagesVisibility" Value="PagesVisibility.Public">Everyone, without signing in</MudSelectItem>
+                            }
+                        </MudSelect>
+                        @if (draft.Visibility == PagesVisibility.Public)
+                        {
+                            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-warning mt-1">The published files are readable by anyone who knows the address. Only Owners can switch a site to public.</MudText>
+                        }
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="PagesNotFoundMode" Label="Unknown addresses" @bind-Value="draft.NotFound" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem T="PagesNotFoundMode" Value="PagesNotFoundMode.Site404">Show the site's 404.html (or a plain 404)</MudSelectItem>
+                            <MudSelectItem T="PagesNotFoundMode" Value="PagesNotFoundMode.Plain">Always show a plain 404</MudSelectItem>
+                            <MudSelectItem T="PagesNotFoundMode" Value="PagesNotFoundMode.SpaFallback">Single-page app: serve index.html for paths without a file extension</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudCheckBox T="bool" @bind-Value="draft.ReviewSites" Color="Color.Primary" Dense="true">
+                            <b>Review sites</b> <span class="mud-text-secondary">(deploy other branches when the job has <code>review: true</code>)</span>
+                        </MudCheckBox>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="int" Label="Review sites expire after (days)" @bind-Value="draft.ReviewExpireDays" Min="1" Max="365" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+                <div class="d-flex gap-2 mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy" OnClick="Save">Save settings</MudButton>
+                    @if (info.Deployments.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete" Disabled="@busy"
+                                   OnClick="() => DeleteContent(null)">Delete site</MudButton>
+                    }
+                </div>
+                <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-3">
+                    @if (info.HostMode)
+                    {
+                        <span>This server gives each site its own address (<code>@Links.HostFor(Repo.Project.Key, Repo.Slug, "")</code>), so it runs in its own browser origin.
+                        The address under <code>/pages/@Repo.Project.Key/@Repo.Slug/</code> also works, but there pages run sandboxed: no cookies or local storage.</span>
+                    }
+                    else
+                    {
+                        <span>Sites are served from <code>/pages/@Repo.Project.Key/@Repo.Slug/</code> on this server inside a browser sandbox: scripts run, but without cookies,
+                        local storage or access to GitBench. An administrator can give sites their own addresses with <code>Pages:BaseDomain</code>.</span>
+                    }
+                    Sign-in is checked on every request. Limits: @Bytes(Opts.MaxSiteBytes) per site, @Opts.MaxFiles files, @Bytes(Opts.MaxFileBytes) per file.
+                </MudText>
+            </MudPaper>
+
+            @{ var reviews = info.ReviewSites.ToList(); }
+            @if (reviews.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Review sites</MudText>
+                <div class="gb-rows mb-4">
+                    @foreach (var d in reviews)
+                    {
+                        <div class="gb-row" @key="d.Id">
+                            <MudIcon Icon="@Icons.Material.Outlined.Preview" Size="Size.Small" Class="mud-text-secondary" />
+                            <div class="gb-row-main gb-min0">
+                                <div class="gb-row-title"><a href="@Links.SiteUrl(Repo, d.Slot)" target="_blank" rel="noopener">@d.Ref</a></div>
+                                <div class="gb-row-meta">Version @d.Version · <span class="mono">@Short(d.CommitSha)</span>@(d.ExpiresAt is { } e ? $" · expires {e.ToLocalTime():MMM d, HH:mm}" : "")</div>
+                            </div>
+                            <div class="gb-row-right">
+                                <MudTooltip Text="Delete this review site">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                                   aria-label="@($"Delete the review site of {d.Ref}")" OnClick="() => DeleteContent(d.Slot)" />
+                                </MudTooltip>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Deployments</MudText>
+            <div class="gb-rows">
+                @if (info.Deployments.Count == 0)
+                {
+                    <div class="empty">Nothing deployed yet. Add a <span class="mono">pages</span> job to <span class="mono">.gitbench-ci.yml</span> and push to <span class="mono">@Repo.DefaultBranch</span>.</div>
+                }
+                @foreach (var d in info.Deployments)
+                {
+                    <div class="gb-row pg-row" @key="d.Id">
+                        <MudIcon Icon="@(d.IsCurrent ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.History)" Size="Size.Small"
+                                 Color="@(d.IsCurrent ? Color.Success : Color.Default)" />
+                        <div class="gb-row-main gb-min0">
+                            <div class="gb-row-title">
+                                Version @d.Version
+                                @if (d.Slot.Length > 0) { <MudChip T="string" Size="Size.Small" Class="ml-1">review: @d.Ref</MudChip> }
+                                @if (d.IsCurrent) { <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="ml-1">live</MudChip> }
+                                @if (d.IsRollback && d.IsCurrent) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Class="ml-1">rolled back</MudChip> }
+                            </div>
+                            <div class="gb-row-meta">
+                                <span class="mono">@Short(d.CommitSha)</span> on @d.Ref · @d.FileCount files, @Bytes(d.SizeBytes)
+                                · @d.CreatedAt.ToLocalTime().ToString("MMM d, yyyy HH:mm")@(d.DeployedBy != null ? $" · by {d.DeployedBy.DisplayName}" : "")
+                                @if (d.PipelineId is { } pid) { <span> · <a href="@PipelineUrls.Detail(Repo, pid)">pipeline #@pid</a></span> }
+                            </div>
+                        </div>
+                        <div class="gb-row-right">
+                            @if (!d.IsCurrent && (d.ExpiresAt == null || d.ExpiresAt > DateTime.UtcNow))
+                            {
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Undo" Disabled="@busy"
+                                           OnClick="() => Rollback(d)">Roll back to this</MudButton>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private PagesSiteInfo? info;
+    private readonly Draft draft = new();
+    private bool busy;
+
+    private PagesOptions Opts => optionsAccessor.CurrentValue;
+    [Inject] private Microsoft.Extensions.Options.IOptionsMonitor<PagesOptions> optionsAccessor { get; set; } = null!;
+
+    private sealed class Draft
+    {
+        public bool Enabled { get; set; } = true;
+        public PagesVisibility Visibility { get; set; }
+        public PagesNotFoundMode NotFound { get; set; }
+        public bool ReviewSites { get; set; }
+        public int ReviewExpireDays { get; set; } = 7;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (!perms.Can(Permission.ManageRepositories)) return;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        info = await PagesSvc.GetAsync(Repo!);
+        draft.Enabled = info.Site.Enabled;
+        draft.Visibility = info.Site.Visibility;
+        draft.NotFound = info.Site.NotFound;
+        draft.ReviewSites = info.Site.ReviewSites;
+        draft.ReviewExpireDays = info.Site.ReviewExpireDays;
+    }
+
+    private async Task Save()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            await PagesSvc.UpdateSettingsAsync(Repo!, new PagesSettingsInput(draft.Enabled, draft.Visibility, draft.NotFound, draft.ReviewSites, draft.ReviewExpireDays));
+            Snackbar.Add("Saved the Pages settings.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Rollback(PagesDeployment d)
+    {
+        Error = null;
+        if (!await Dialogs.ConfirmAsync("Roll back", $"Make version {d.Version} ({Short(d.CommitSha)}) the live site again?")) return;
+        busy = true;
+        try
+        {
+            await PagesSvc.RollbackAsync(Repo!, d.Id);
+            Snackbar.Add($"Version {d.Version} is live again.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task DeleteContent(string? slot)
+    {
+        Error = null;
+        var what = slot == null ? "the site and all its versions (settings are kept)" : "this review site";
+        if (!await Dialogs.ConfirmAsync("Delete", $"Delete {what}? This can't be undone; the next passing pages job publishes it again.")) return;
+        busy = true;
+        try
+        {
+            await PagesSvc.DeleteContentAsync(Repo!, slot);
+            Snackbar.Add("Deleted.", Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private static string Short(string sha) => sha.Length > 7 ? sha[..7] : sha;
+    private static string Bytes(long bytes) => GitBench.Services.Ci.CiArtifacts.Format(bytes);
+}
