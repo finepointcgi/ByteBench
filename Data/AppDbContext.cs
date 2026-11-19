@@ -345,6 +345,7 @@ public partial class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureSecurity(b);
         ConfigureChatIntegrations(b);
         ConfigureServiceDesk(b);
+        ConfigureFlags(b);
     }
 
     // ----- Forks -----

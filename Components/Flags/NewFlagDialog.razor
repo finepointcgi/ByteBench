@@ -1,0 +1,49 @@
+@* "New flag" dialog: key, name, description, type. Returns DialogResult.Ok(NewFlagDialog.Result). *@
+@using GitBench.Services.Flags
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">New feature flag</MudText></TitleContent>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="name" Immediate="true" Label="Name" MaxLength="120" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      AutoFocus="true" ShrinkLabel="true" Class="mb-3" OnBlur="SuggestKey" />
+        <MudTextField T="string" @bind-Value="key" Immediate="true" Label="Key" MaxLength="64" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      ShrinkLabel="true" HelperText="Used by clients. Lowercase letters, digits, '.', '_' and '-'. Can't be changed." Class="mb-3"
+                      Error="@(key.Length > 0 && !FlagService.IsValidKey(key))" />
+        <MudTextField T="string" @bind-Value="description" Label="Description" Lines="2" MaxLength="2000" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      ShrinkLabel="true" Class="mb-3" />
+        <MudSelect T="FlagType" @bind-Value="type" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+            <MudSelectItem Value="FlagType.Boolean">Boolean (true / false)</MudSelectItem>
+            <MudSelectItem Value="FlagType.String">String</MudSelectItem>
+            <MudSelectItem Value="FlagType.Number">Number</MudSelectItem>
+            <MudSelectItem Value="FlagType.Json">JSON</MudSelectItem>
+        </MudSelect>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3">The flag starts off in every environment.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!FlagService.IsValidKey(key) || string.IsNullOrWhiteSpace(name))" OnClick="Create">Create</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public sealed record Result(string Key, string Name, string? Description, FlagType Type);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private string name = "", key = "", description = "";
+    private FlagType type = FlagType.Boolean;
+
+    private void SuggestKey()
+    {
+        if (key.Length > 0) return;
+        var chars = name.Trim().ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray();
+        key = string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+        if (key.Length > 64) key = key[..64];
+    }
+
+    private void Create()
+    {
+        SuggestKey();
+        if (FlagService.IsValidKey(key) && !string.IsNullOrWhiteSpace(name))
+            MudDialog.Close(DialogResult.Ok(new Result(key, name.Trim(), string.IsNullOrWhiteSpace(description) ? null : description.Trim(), type)));
+    }
+}

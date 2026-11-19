@@ -1,0 +1,339 @@
+@page "/p/{Key}/flags"
+@using GitBench.Services.Flags
+@using GitBench.Components.Flags
+@using GitBench.Components.Repositories
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject FlagService FlagSvc
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject GitBench.Api.PublicBaseUrl PublicUrl
+
+<PageTitle>Feature flags · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+<div class="fl-page">
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Feature flags</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                @project.Name · turn features on per environment, target users, roll out gradually. Clients evaluate on the server with an SDK key.
+            </MudText>
+        </div>
+        @if (canManage)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="NewFlagAsync">New flag</MudButton>
+        }
+    </div>
+
+    <div class="fl-filters">
+        <MudTextField T="string" @bind-Value="search" Immediate="true" Placeholder="Filter by key or name" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Class="fl-search" aria-label="Filter flags" />
+        <MudSwitch T="bool" Value="showArchived" ValueChanged="ToggleArchivedAsync" Label="Show archived" Color="Color.Primary" Class="ml-2" />
+        <MudNumericField T="int" @bind-Value="staleDays" Min="1" Max="3650" Label="Stale after (days)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                         Class="fl-days" HideSpinButtons="true" />
+    </div>
+
+    @if (flags.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            No flags yet. @(canManage ? "Create one with New flag." : "A Maintainer can create flags.")
+        </MudText>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="mb-4 fl-scroll">
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="fl-table">
+                <thead>
+                    <tr>
+                        <th>Flag</th><th>Type</th>
+                        @foreach (var e in environments) { <th class="fl-env" title="@e.Name">@e.Name</th> }
+                        <th>Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in Filtered)
+                    {
+                        <tr @key="f.Id" class="@(f.IsArchived ? "fl-archived" : null)">
+                            <td>
+                                <a href="@FlagUrls.Detail(project.Key, f.Key)" class="fl-name">@f.Name</a>
+                                <div class="fl-key">@f.Key
+                                    @if (f.IsArchived) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">archived</MudChip> }
+                                    @if (staleKeys.Contains(f.Key)) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined" title="@($"Not changed or evaluated for {staleDays} days")">stale</MudChip> }
+                                </div>
+                            </td>
+                            <td>@f.Type.ToString().ToLowerInvariant()</td>
+                            @foreach (var e in environments)
+                            {
+                                var s = f.States.FirstOrDefault(x => x.EnvironmentId == e.Id);
+                                <td class="fl-env">
+                                    @if (s != null)
+                                    {
+                                        <MudSwitch T="bool" Value="s.Enabled" ValueChanged="@(v => ToggleAsync(f, e, v))" Color="Color.Success" Size="Size.Small"
+                                                   Disabled="@(!canToggle || f.IsArchived)" aria-label="@($"{f.Key} in {e.Name}")" />
+                                    }
+                                </td>
+                            }
+                            <td title="@f.UpdatedAt.ToString("u")">@f.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
+
+    @if (stale.Count > 0)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+            <b>@stale.Count stale @(stale.Count == 1 ? "flag" : "flags")</b>, not changed or evaluated for @staleDays days:
+            @string.Join(", ", stale.Select(s => s.Flag.Key)). Remove them from the code, then archive or delete them.
+        </MudAlert>
+    }
+
+    @if (canManage)
+    {
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Environments and SDK keys</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+            Environments match the CI environments of the project's repositories. Each SDK key reads one environment and cannot change anything.
+            A client key only evaluates flags (safe to ship in a browser); a server key can also download the rules.
+        </MudText>
+        @if (secret != null)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => secret = null">
+                Copy the key for <b>@secretFor</b> now; it is not shown again.
+                <pre class="fl-code fl-secret">@secret</pre>
+            </MudAlert>
+        }
+        <MudPaper Outlined="true" Class="mb-3 pa-3">
+            <div class="fl-row">
+                <MudTextField T="string" @bind-Value="newEnv" Immediate="true" Label="New environment" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="64" Class="fl-grow" />
+                <MudButton Variant="Variant.Outlined" OnClick="AddEnvironmentAsync" Disabled="@string.IsNullOrWhiteSpace(newEnv)">Add environment</MudButton>
+            </div>
+            <div class="fl-row mt-2">
+                @foreach (var e in environments)
+                {
+                    <MudChip T="string" Size="Size.Small" OnClose="() => DeleteEnvironmentAsync(e)">@e.Name</MudChip>
+                }
+            </div>
+        </MudPaper>
+        <MudPaper Outlined="true" Class="mb-4 fl-scroll">
+            <MudSimpleTable Dense="true" Elevation="0">
+                <thead><tr><th>Name</th><th>Environment</th><th>Kind</th><th>Key</th><th>Last used</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var k in keys)
+                    {
+                        <tr @key="k.Id" class="@(k.IsActive ? null : "fl-archived")">
+                            <td>@k.Name</td>
+                            <td>@k.Environment.Name</td>
+                            <td>@k.Kind.ToString().ToLowerInvariant()</td>
+                            <td class="mono">@k.Prefix…@(k.IsActive ? "" : " (revoked)")</td>
+                            <td>@(k.LastUsedAt is { } u ? u.ToLocalTime().ToString("MMM d, HH:mm") : "never")</td>
+                            <td class="fl-actions">
+                                @if (k.IsActive)
+                                {
+                                    <MudButton Size="Size.Small" OnClick="() => RotateAsync(k)">Rotate</MudButton>
+                                    <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => RevokeAsync(k)">Revoke</MudButton>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (keys.Count == 0) { <tr><td colspan="6" class="mud-text-secondary">No SDK keys yet.</td></tr> }
+                </tbody>
+            </MudSimpleTable>
+            <div class="fl-row pa-3">
+                <MudSelect T="int" @bind-Value="keyEnv" Label="Environment" Disabled="@(environments.Count == 0)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="fl-sel">
+                    @foreach (var e in environments) { <MudSelectItem Value="e.Id">@e.Name</MudSelectItem> }
+                </MudSelect>
+                <MudSelect T="SdkKeyKind" @bind-Value="keyKind" Label="Kind" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="fl-sel">
+                    <MudSelectItem Value="SdkKeyKind.Client">Client (evaluate only)</MudSelectItem>
+                    <MudSelectItem Value="SdkKeyKind.Server">Server (also rules)</MudSelectItem>
+                </MudSelect>
+                <MudTextField T="string" @bind-Value="keyName" Immediate="true" Label="Name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" Class="fl-grow" />
+                <MudButton Variant="Variant.Outlined" OnClick="CreateKeyAsync" Disabled="@(string.IsNullOrWhiteSpace(keyName) || keyEnv == 0)">Create key</MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Segments</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">A segment is a list of user ids that rules can target ("in segment").</MudText>
+    <MudPaper Outlined="true" Class="mb-4 pa-3">
+        @foreach (var s in segments)
+        {
+            <div class="fl-seg" @key="s.Id">
+                <span><b>@s.Name</b> <span class="fl-key">@s.Key · @FlagService.SegmentMembers(s).Count members</span></span>
+                @if (canToggle)
+                {
+                    <span>
+                        <MudButton Size="Size.Small" OnClick="() => EditSegment(s)">Edit</MudButton>
+                        @if (canManage) { <MudButton Size="Size.Small" Color="Color.Error" OnClick="() => DeleteSegmentAsync(s)">Delete</MudButton> }
+                    </span>
+                }
+            </div>
+        }
+        @if (segments.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">No segments.</MudText> }
+        @if (canToggle)
+        {
+            <div class="fl-row mt-2">
+                <MudTextField T="string" @bind-Value="segKey" Immediate="true" Label="Key" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="64" Class="fl-sel" Disabled="@(segEditing)" />
+                <MudTextField T="string" @bind-Value="segName" Immediate="true" Label="Name" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="120" Class="fl-sel" />
+            </div>
+            <MudTextField T="string" @bind-Value="segMembers" Label="User ids (one per line or comma separated)" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+            <MudButton Variant="Variant.Outlined" Class="mt-2" OnClick="SaveSegmentAsync" Disabled="@(string.IsNullOrWhiteSpace(segKey) || string.IsNullOrWhiteSpace(segName))">@(segEditing ? "Save segment" : "Add segment")</MudButton>
+            @if (segEditing) { <MudButton Class="mt-2" OnClick="ResetSegment">Cancel</MudButton> }
+        }
+    </MudPaper>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Use a flag in your code</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+        Send the SDK key as a Bearer token. Responses carry an <code>ETag</code>: send it back as <code>If-None-Match</code> when polling to get <code>304</code> while nothing changed,
+        or open <code>/api/v1/flags/stream</code> (server-sent events) for live updates. The API allows cross-origin requests and never accepts personal access tokens.
+    </MudText>
+    <MudTabs Elevation="0" Rounded="true" PanelClass="pt-2" Class="mb-4">
+        <MudTabPanel Text="C#"><pre class="fl-code">@CSharpSnippet</pre></MudTabPanel>
+        <MudTabPanel Text="JavaScript"><pre class="fl-code">@JsSnippet</pre></MudTabPanel>
+    </MudTabs>
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound, canToggle, canManage, showArchived;
+    private List<FeatureFlag> flags = [];
+    private List<FlagEnvironment> environments = [];
+    private List<FlagSegment> segments = [];
+    private List<FlagSdkKey> keys = [];
+    private List<FlagStaleness> stale = [];
+    private HashSet<string> staleKeys = [];
+    private string? search;
+    private int staleDays = FlagService.DefaultStaleDays;
+    private string? secret, secretFor;
+    private string newEnv = "", keyName = "", segKey = "", segName = "", segMembers = "";
+    private int keyEnv;
+    private SdkKeyKind keyKind = SdkKeyKind.Client;
+    private bool segEditing;
+
+    private string BaseUrl => PublicUrl.Value is { Length: > 0 } v ? v : Nav.BaseUri.TrimEnd('/');
+
+    private IEnumerable<FeatureFlag> Filtered => flags.Where(f => string.IsNullOrWhiteSpace(search)
+        || f.Key.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) || f.Name.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        var perms = await Access.GetPermissionsAsync(project.Id);
+        canToggle = perms.Can(Permission.ToggleFlags);
+        canManage = perms.Can(Permission.ManageFlags);
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (project == null) return;
+        environments = await FlagSvc.ListEnvironmentsAsync(project.Id);
+        flags = await FlagSvc.ListFlagsAsync(project.Id, showArchived);
+        segments = await FlagSvc.ListSegmentsAsync(project.Id);
+        stale = await FlagSvc.StaleFlagsAsync(project.Id, Math.Max(1, staleDays));
+        staleKeys = stale.Select(s => s.Flag.Key).ToHashSet();
+        keys = canManage ? await FlagSvc.ListKeysAsync(project.Id) : [];
+        if (keyEnv == 0 || environments.All(e => e.Id != keyEnv)) keyEnv = environments.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task Try(Func<Task> action)
+    {
+        try { await action(); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        await ReloadAsync();
+    }
+
+    private Task ToggleArchivedAsync(bool v) { showArchived = v; return ReloadAsync(); }
+
+    private async Task NewFlagAsync()
+    {
+        var dialog = await Dialogs.ShowAsync<NewFlagDialog>("New flag", new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        if ((await dialog.Result) is not { Canceled: false, Data: NewFlagDialog.Result r }) return;
+        try
+        {
+            await FlagSvc.CreateFlagAsync(project!.Id, r.Key, r.Name, r.Description, r.Type);
+            Nav.NavigateTo(FlagUrls.Detail(project.Key, r.Key));
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private Task ToggleAsync(FeatureFlag f, FlagEnvironment e, bool on) => Try(() => FlagSvc.SetEnabledAsync(project!.Id, f.Key, e.Id, on));
+
+    private Task AddEnvironmentAsync() => Try(async () => { await FlagSvc.CreateEnvironmentAsync(project!.Id, newEnv); newEnv = ""; });
+
+    private async Task DeleteEnvironmentAsync(FlagEnvironment e)
+    {
+        if (!await Dialogs.ConfirmAsync("Remove environment", $"Remove '{e.Name}'? Its flag states and SDK keys are deleted.", "Remove")) return;
+        await Try(() => FlagSvc.DeleteEnvironmentAsync(project!.Id, e.Id));
+    }
+
+    private Task CreateKeyAsync() => Try(async () =>
+    {
+        var (k, plain) = await FlagSvc.CreateKeyAsync(project!.Id, keyEnv, keyName, keyKind);
+        secret = plain; secretFor = $"{keyName.Trim()} ({environments.FirstOrDefault(e => e.Id == k.EnvironmentId)?.Name})"; keyName = "";
+    });
+
+    private async Task RotateAsync(FlagSdkKey k)
+    {
+        if (!await Dialogs.ConfirmAsync("Rotate SDK key", $"Replace the secret of '{k.Name}'? Clients using the old one stop working immediately.", "Rotate")) return;
+        await Try(async () => { var (key, plain) = await FlagSvc.RotateKeyAsync(project!.Id, k.Id); secret = plain; secretFor = $"{key.Name} ({k.Environment.Name})"; });
+    }
+
+    private async Task RevokeAsync(FlagSdkKey k)
+    {
+        if (!await Dialogs.ConfirmAsync("Revoke SDK key", $"Revoke '{k.Name}'? Clients using it stop working immediately.", "Revoke")) return;
+        await Try(() => FlagSvc.RevokeKeyAsync(project!.Id, k.Id));
+    }
+
+    private void EditSegment(FlagSegment s) { segKey = s.Key; segName = s.Name; segMembers = string.Join("\n", FlagService.SegmentMembers(s)); segEditing = true; }
+
+    private void ResetSegment() { segKey = segName = segMembers = ""; segEditing = false; }
+
+    private Task SaveSegmentAsync() => Try(async () =>
+    {
+        await FlagSvc.SaveSegmentAsync(project!.Id, segKey, segName, null, segMembers.Split(['\n', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        ResetSegment();
+    });
+
+    private async Task DeleteSegmentAsync(FlagSegment s)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete segment", $"Delete '{s.Name}'?")) return;
+        await Try(() => FlagSvc.DeleteSegmentAsync(project!.Id, s.Key));
+    }
+
+    private string CSharpSnippet => $$"""
+        // Server-side: ask GitBench to evaluate; the SDK key stays on your server.
+        using var http = new HttpClient { BaseAddress = new Uri("{{BaseUrl}}") };
+        http.DefaultRequestHeaders.Authorization = new("Bearer", Environment.GetEnvironmentVariable("GITBENCH_SDK_KEY"));
+
+        var url = $"/api/v1/flags/evaluate?flag=new-checkout&user={Uri.EscapeDataString(userId)}&attr.plan=pro";
+        using var doc = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(url));
+        var enabled = doc.RootElement.GetProperty("value").GetBoolean();
+        """;
+
+    private string JsSnippet => $$"""
+        // Browser or Node: poll with ETag (a 304 means nothing changed), or open /api/v1/flags/stream for live updates.
+        let etag, flags = {};
+        async function refresh(userId) {
+          const res = await fetch("{{BaseUrl}}/api/v1/flags/evaluate-all?user=" + encodeURIComponent(userId) + "&attr.plan=pro", {
+            headers: { Authorization: "Bearer " + SDK_KEY, ...(etag && { "If-None-Match": etag }) },
+          });
+          if (res.status === 304) return flags;
+          etag = res.headers.get("ETag");
+          flags = (await res.json()).flags;       // { "new-checkout": { value: true, reason: "rule", ... } }
+          return flags;
+        }
+        """;
+}
