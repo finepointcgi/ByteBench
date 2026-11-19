@@ -1,0 +1,92 @@
+<h1>Boards and sprints</h1>
+<p class="lead">Plan in the backlog, run sprints, work cards across Kanban or Scrum boards, and see the road ahead on the roadmap and the versions page.</p>
+
+<div class="cards">
+<a class="card" href="#boards"><b>Boards</b><span>Kanban and Scrum, columns, WIP limits, swimlanes</span></a>
+<a class="card" href="#backlog"><b>Backlog</b><span>Rank work and plan sprints</span></a>
+<a class="card" href="#sprints"><b>Sprint lifecycle</b><span>Start, complete, carry over</span></a>
+<a class="card" href="#roadmap"><b>Roadmap</b><span>Epics on a timeline</span></a>
+</div>
+
+<h2 id="boards">Boards</h2>
+<p>Each project can have several boards. The sidebar <b>Board</b> link opens the project's default board at <code>/p/{KEY}/board</code>; other boards live at <code>/p/{KEY}/boards/{id}</code>. The arrow next to the board name switches boards and, for Maintainers, offers <b>Create board</b> and <b>Board settings</b> (<code>/p/{KEY}/boards/{id}/settings</code>).</p>
+
+<h3 id="default-board">The default board</h3>
+<p>Every project has exactly one default board, created the first time boards are read. It <i>follows the workflow</i>: one column per workflow status, in workflow order, updated whenever the workflow changes. It shows every issue including all Done ones, and its sprint picker starts on the active sprint. You can move the default flag to another board (<b>Make default board</b>), but you cannot delete the default board.</p>
+
+<h3 id="board-types">Kanban and Scrum boards</h3>
+<table>
+<tr><th>Type</th><th>What it shows</th></tr>
+<tr><td>Kanban</td><td>Every issue matching the board's filter. Done-category issues appear only if closed in the last <i>N</i> days (14 for new boards; empty means all). A toolbar sprint picker narrows further.</td></tr>
+<tr><td>Scrum</td><td>Only the project's active sprint. With no active sprint the board is empty and links to the backlog.</td></tr>
+</table>
+
+<h3 id="columns-wip">Columns and WIP limits</h3>
+<p>A column maps to one or more workflow statuses. A status can be in at most one column of a board; a status in no column is not on that board (the settings page lists such statuses). Customising columns stops a board following the workflow; <b>Follow the workflow again</b> restores it.</p>
+<p>A column can have a <b>WIP limit</b>. It counts the column's issues within the board's own scope (filter and sprint), ignoring toolbar and quick filters. A column over its limit turns red. Tick <b>Refuse drops that go past a column's WIP limit</b> to make a full column refuse new cards (reordering inside it still works).</p>
+
+<h3 id="board-filters">Filters, quick filters and swimlanes</h3>
+<ul>
+<li><b>Board filter</b>: a query string in the issue list's format (copy it from a filtered issue list or choose a saved filter) plus simple pickers for labels, assignee, type and epic. Unlike the issue list, a board query without <code>open=</code> includes closed issues. <code>assigneeId=me</code> means whoever is viewing.</li>
+<li><b>Quick filters</b>: named toggle chips above the board, each a query (suggestions: <i>Only my issues</i> <code>assigneeId=me</code>, <i>Bugs</i> <code>type=Bug</code>). Several active chips must all match.</li>
+<li><b>Swimlanes</b>: none, assignee, epic, priority or type. An issue's epic is its parent, or its grandparent for a sub-task.</li>
+<li><b>Card fields</b>: key, type, labels, priority, story points, assignee, parent and blocked chips, epic, due date and milestone.</li>
+</ul>
+
+<h3 id="moving-cards">Moving cards</h3>
+<p>Drag a card to another column. The move goes through the normal issue code, so <a href="issues.html#workflows">workflow transitions</a> are enforced: a column that cannot take the dragged card is hatched and refuses the drop. Dropping on a column that already shows the card's status just reorders it; otherwise the card moves to the column's first status that the workflow allows. With swimlanes, dropping changes only the status, not the lane's field. Moving cards needs Developer; creating, configuring and deleting boards needs Maintainer. Two people on the same board see each other's moves live.</p>
+
+<h2 id="backlog">Backlog and planning</h2>
+<p>The backlog (<code>/p/{KEY}/backlog</code>, sidebar <b>Backlog</b>) lists the active sprint, then planned sprints, then the backlog proper: open issues in no sprint. Each section shows its issue count and story points. Drag issues between sections or within one to rank them; ranking uses the same order as the board. Each row also has a <b>Move</b> menu (top, up, down, bottom, or another sprint) for keyboards and touch screens. Moving issues in and out of sprints and ranking needs Developer.</p>
+
+<h2 id="sprints">Sprint lifecycle</h2>
+<p>A sprint is <b>Planned</b>, then <b>Active</b>, then <b>Completed</b>. At most one sprint per project is active (the database enforces it). Creating, editing, starting, completing and deleting sprints needs Maintainer.</p>
+<ol>
+<li><b>Create</b>: <b>Create sprint</b> on the backlog suggests a name like "WEB Sprint 9".</li>
+<li><b>Plan</b>: drag issues into the planned sprint.</li>
+<li><b>Start</b>: <b>Start sprint</b> asks for start and end dates and a goal, and snapshots the committed scope (issue count and story points).</li>
+<li><b>Work</b>: the Scrum board shows the sprint. Scope changes are tracked, so burndown reflects them.</li>
+<li><b>Complete</b>: <b>Complete sprint</b> shows the done and open counts, snapshots what was completed, and asks where the open issues go: <b>carry over</b> to a planned sprint, to a new sprint, or back to the backlog. Done issues stay in the completed sprint.</li>
+</ol>
+<p>Deleting a planned or active sprint sends its issues back to the backlog. Completed sprints are kept for reports.</p>
+<p>Elsewhere, the issue page has a Sprint picker, the issue list a sprint filter, and <a href="fields-filters.html#gql">GQL</a> understands <code>sprint = openSprints()</code>, <code>futureSprints()</code> and <code>closedSprints()</code>.</p>
+
+<h3 id="burndown">Burndown and velocity</h3>
+<p>The project's <b>Reports</b> page (<code>/p/{KEY}/reports</code>) draws:</p>
+<ul>
+<li><b>Burndown</b>: remaining work per day from start to end against an ideal line. History is rebuilt from issue activity: from each issue's current state it undoes status changes to and from Done, estimate changes and sprint membership changes, newest first. Unestimated issues count as 0 points. A toggle switches between story points and issue count.</li>
+<li><b>Velocity</b>: committed versus completed for the last 8 completed sprints, with the average completed.</li>
+</ul>
+<p>More flow charts (cycle time, cumulative flow and so on) are on <a href="reports.html">Dashboards and delivery reports</a>. Sprint data in the API: <code>GET /api/v1/projects/{key}/sprints?state=planned|active|completed</code> and <code>/sprints/{id}</code>; issues carry <code>sprintId</code> and can be filtered with <code>?sprint=</code> (an id, <code>none</code> or <code>active</code>).</p>
+
+<h2 id="milestones">Milestones</h2>
+<p>Milestones (<code>/p/{KEY}/milestones</code>, also showing sprints) group issues under a goal with a start and due date and show progress and a story-point burn-up. Maintainers manage them; groups can define milestones inherited by their projects. They are separate from <a href="#versions">versions</a>, which describe releases.</p>
+
+<h2 id="roadmap">Roadmap and timeline</h2>
+<p>The roadmap is a Gantt-style timeline of epics at <code>/p/{KEY}/roadmap</code>, and across a group's projects at <code>/g/{path}/-/roadmap</code>.</p>
+<ul>
+<li><b>Dates</b>: each issue has a start date and a due date (the target). A bar runs between them; with one date it is dashed for that day. Epics without dates have a <b>Set dates</b> button.</li>
+<li><b>Progress</b>: an epic's bar fills with the share of its children that are done. Expand an epic to see its children with their own bars.</li>
+<li><b>Editing</b> (Developer): drag a bar to move it or drag an end to change one date, snapping to whole days. Click a bar, or focus it and press Enter, for a dates dialog. Changes are recorded in the issue's activity and notify watchers; a start after the target is refused.</li>
+<li><b>Markers</b>: a red today line, sprint bands in the header, milestone flags, and arrows for "blocks" links.</li>
+<li><b>Zoom and filters</b>: weeks, months or quarters; filter by label or assignee.</li>
+</ul>
+<pre><code># Move an epic's dates with the API
+curl -X PUT -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"startDate":"2026-12-01","dueDate":"2027-02-15"}' \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/9/dates</code></pre>
+<p><code>GET /api/v1/projects/{key}/roadmap</code> (and <code>/groups/{group}/roadmap</code>) returns epics, dependencies, sprints and milestones.</p>
+
+<h2 id="versions">Versions and releases of a project</h2>
+<p>Versions are named releases of a project that issues can be assigned to as <i>fix version</i> or <i>affects version</i>. The <b>Versions</b> page (<code>/p/{KEY}/versions</code>) lists unreleased versions first, each with the done/total progress of its fix-version issues, story points and issue list. Maintainers create, edit, mark released and delete versions there. A version whose name matches a published release tag in one of the project's repositories (<code>1.0</code> or <code>v1.0</code>) links to that release; see <a href="code-tools.html">Code browsing and tools</a> for releases and tags. Versions are defined in <a href="fields-filters.html#components-versions">Fields, filters and search</a>.</p>
+
+<h2 id="config">Settings and limits</h2>
+<p>Boards and sprints have no site-wide configuration keys. Everything above is per project. Board changes are audited as <code>board.*</code> events. The demo seed gives the WEB project completed sprints, an active one and a planned one so the charts have data.</p>
+
+<h2 id="api">Board API</h2>
+<table>
+<tr><th>Method</th><th>Path under <code>/api/v1/projects/{key}</code></th><th>Notes</th></tr>
+<tr><td>GET</td><td><code>/boards</code></td><td>Default board first</td></tr>
+<tr><td>GET</td><td><code>/boards/{id}</code></td><td>Columns with statuses, WIP limit, scope count, over-limit flag and issues; <code>?quickFilters=1,2</code> applies quick filters</td></tr>
+<tr><td>PATCH</td><td><code>/issues/{number}</code></td><td>Move a card with <code>{"workflowStatusId": 12}</code></td></tr>
+</table>

@@ -1,0 +1,136 @@
+<h1>Dashboards and delivery reports</h1>
+<p class="lead">Build dashboards of gadgets, read sprint burndown and velocity, and measure how work flows with cycle time, cumulative flow, throughput, WIP, pull request metrics and the four DORA metrics.</p>
+
+<div class="cards">
+<a class="card" href="#dashboards"><b>Dashboards</b><span>Personal grids of gadgets, shareable per project or group</span></a>
+<a class="card" href="#sprint-reports"><b>Sprint reports</b><span>Burndown and velocity</span></a>
+<a class="card" href="#delivery"><b>Delivery reports</b><span>Cycle time, flow, throughput, WIP, PRs</span></a>
+<a class="card" href="#dora"><b>DORA metrics</b><span>Definitions, bands and the production setting</span></a>
+</div>
+
+<h2 id="dashboards">Project and personal dashboards</h2>
+<p>Dashboards live at <code>/dashboards</code> (sidebar <b>Dashboards</b>). Each is a grid of gadgets that you own. Without a pinned dashboard the home page <code>/</code> shows the classic layout (projects, assigned issues, activity). <b>Customize</b> copies that layout into a new dashboard and pins it; <b>Use as Home</b> on any dashboard you can see pins it, and <b>Unpin from Home</b> goes back.</p>
+
+<h3 id="gadgets">Gadgets</h3>
+<p>Choose <b>Add gadget</b>, then the gadget's menu, <b>Configure</b>, for title, width and settings.</p>
+<table>
+<tr><th>Gadget</th><th>Shows</th></tr>
+<tr><td>Filter results</td><td>A saved filter's issues (or an issue-list query string) with the columns you choose</td></tr>
+<tr><td>Issue chart</td><td>A pie or bar chart of a filter's issues by status, assignee, priority, type or label; beyond seven values the rest fold into "Other"</td></tr>
+<tr><td>Created vs resolved</td><td>Cumulative issues created and resolved per day over the last N days, for one project or all of yours</td></tr>
+<tr><td>Sprint burndown</td><td>The burndown chart for the active sprint or a chosen one</td></tr>
+<tr><td>Activity stream</td><td>Recent issues, comments, pull requests and pushes</td></tr>
+<tr><td>Assigned to me</td><td>Your open issues</td></tr>
+<tr><td>Awaiting my review</td><td>Open, non-draft pull requests where you are a reviewer and have not reviewed</td></tr>
+<tr><td>Pipeline status</td><td>A repository's latest CI pipelines</td></tr>
+<tr><td>Note</td><td>Markdown, rendered safely (raw HTML disabled), up to 5,000 characters</td></tr>
+<tr><td>Projects</td><td>Your projects with open and closed counts</td></tr>
+</table>
+<p>Charts have hover titles, a legend and a data table. Gadgets refresh on relevant live events at most once a second. Widths are one third, half, two thirds or full; use <b>Move earlier / Move later</b> to reorder.</p>
+
+<h3 id="dashboard-sharing">Sharing and limits</h3>
+<p>Only the owner edits a dashboard. <b>Settings</b> shares it with one project (needs Developer there) or one group (Developer in the group); everyone who can view that project or group can open it, read-only. All gadget data is loaded <i>as the viewer</i>, so a shared dashboard never reveals more than the viewer could already see: a project, saved filter or repository they cannot access shows a short notice instead. Limits: 50 dashboards per user, 30 gadgets per dashboard. API: <code>GET /api/v1/dashboards</code> and <code>/dashboards/{id}</code> (yours and those shared with you; others are 404).</p>
+
+<h2 id="sprint-reports">Sprint reports (the Reports page)</h2>
+<p><code>/p/{KEY}/reports</code> (sidebar <b>Reports</b>) shows the sprint <b>burndown</b> for a chosen sprint and <b>velocity</b> for the last 8 completed sprints, with a toggle between story points and issue count. How they are computed is explained in <a href="boards-sprints.html#burndown">Boards and sprints</a>. A <b>Delivery reports</b> button on this page opens the flow reports below.</p>
+
+<h2 id="delivery">Delivery reports</h2>
+<p>Delivery reports are at <code>/p/{KEY}/reports/delivery</code>, in tabs: <b>Cycle and lead time</b>, <b>Time in status and flow</b>, <b>Throughput and WIP</b>, <b>DORA</b> and <b>Pull requests</b>. Anyone who can view the project can read them (the <code>ViewProject</code> permission). They are computed from existing data: issues, their status-change activity, sprints, pull requests and deployments. Nothing needs configuring except the production environment for DORA.</p>
+
+<h3 id="filters">Filters</h3>
+<table>
+<tr><th>Filter</th><th>Effect</th></tr>
+<tr><td>Date range</td><td>UTC calendar days, both ends inclusive. Default: the last 90 days. Ranges longer than 1,100 days are cut to the latest 1,100.</td></tr>
+<tr><td>Interval</td><td>Trend and throughput buckets: weeks (starting Monday) or calendar months.</td></tr>
+<tr><td>Type, label, component, assignee</td><td>Narrow the issues ("unassigned" is available for assignee). Pull request and DORA reports ignore these four.</td></tr>
+</table>
+
+<h3 id="cycle-time">Cycle and lead time</h3>
+<ul>
+<li><b>Lead time</b>: issue created to done.</li>
+<li><b>Cycle time</b>: the first time the issue entered an In Progress or In Review category status to done. Finished issues that never entered such a status count only in lead time (the report shows how many).</li>
+<li>Which issues: those finished (Done category, with a closed date) inside the date range. "Done" is the last time the issue entered a Done status.</li>
+<li>Shown: average, p50, p85, p95 and max, a histogram with buckets of 1, 2, 3, 5, 8, 13, 21, 34 and 55 days, a weekly or monthly trend of p50 and p85, and a drill-down table (up to 5,000 issues) with links to each issue.</li>
+</ul>
+<p>Percentiles use linear interpolation between closest ranks (the spreadsheet PERCENTILE.INC rule). Read p85 as "85 percent of issues finish within this many days": a good basis for forecasts.</p>
+
+<h3 id="time-in-status">Time in status</h3>
+<p>For issues that existed at some point in the range, GitBench rebuilds each issue's timeline from its status-change activity and sums the time spent in each non-Done status within the range. You get the issue count, average, median, total and share of total per status. A <b>bottleneck</b> flag marks a working status (not Backlog, not Done) whose average is at least 1.5 times the mean of the other working statuses. A table lists the issues that spent the longest in the workflow, with the status that took longest.</p>
+
+<h3 id="cfd">Cumulative flow</h3>
+<p>For every day in the range, the number of issues in each status at the end of that day, drawn as stacked bands from Done at the bottom to Backlog at the top. Widening bands show where work piles up; parallel bands show steady flow.</p>
+
+<h3 id="throughput-wip">Throughput and WIP</h3>
+<ul>
+<li><b>Throughput</b>: per week or month, issues created, issues done and story points done, plus completed sprints in the range with committed versus completed counts and points, and the average done per period.</li>
+<li><b>WIP</b> (work in progress): open issues per status right now, with story points, and the total in progress or in review. It uses the current state and the type, label, component and assignee filters; the date range does not apply.</li>
+</ul>
+
+<h3 id="pr-metrics">Pull request metrics</h3>
+<p>For pull requests <i>created</i> in the range across the project's repositories:</p>
+<table>
+<tr><th>Metric</th><th>Definition</th></tr>
+<tr><td>Time to first review</td><td>Creation to the first review verdict or comment by someone other than the author</td></tr>
+<tr><td>Time to merge</td><td>Creation to merge, merged pull requests only</td></tr>
+<tr><td>Size</td><td>Lines added plus removed against the merge base, measured from git for at most the newest 300 pull requests. Classes: XS up to 10 lines, S 11 to 50, M 51 to 250, L 251 to 1000, XL over 1000</td></tr>
+</table>
+<p>The tab also shows a trend of median merge and first-review hours and a table of up to 2,000 pull requests. Details of reviewing are in <a href="pull-requests.html">Pull requests</a>.</p>
+
+<h2 id="dora">DORA metrics</h2>
+<p>The DORA tab computes the four DORA delivery metrics for the project's <b>production environment</b>, from <a href="environments.html">deployments</a>.</p>
+
+<h3 id="production-setting">Production environment setting</h3>
+<p>On the DORA tab an Owner (the <code>ManageProjectSettings</code> permission) picks the <b>Production environment</b> from the environments that exist in the project's repositories, and the <b>Failure window</b> in hours (1 to 720, default 24). The environment is matched by name, case-insensitively, in <i>every</i> repository of the project. If unset, GitBench looks for an environment named <code>production</code>, then <code>prod</code>, and labels it "found by name". With none, the tab shows a notice instead of numbers. The change is audited as <code>project.dora_settings_changed</code>.</p>
+<pre><code># Set it with the API (Owner)
+curl -X PUT -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"productionEnvironment":"production","failureWindowHours":24}' \
+  https://gitbench.example.com/api/v1/projects/WEB/reports/dora/settings</code></pre>
+
+<h3 id="dora-definitions">Definitions</h3>
+<table>
+<tr><th>Metric</th><th>How GitBench measures it</th></tr>
+<tr><td>Deployment frequency</td><td>Successful production deployments that finished in the range, excluding rollbacks, per day and per week</td></tr>
+<tr><td>Lead time for changes</td><td>For each counted deployment, every commit it shipped (those between the environment's previous successful deployment and this one) waited from its commit date until the deployment finished. Reported as percentiles over all commits. An environment's first deployment has no baseline and is skipped; at most the 200 most recent deployments are measured, up to 100 commits each</td></tr>
+<tr><td>Change failure rate</td><td>Share of counted deployments followed within the failure window by a <i>failure signal</i>: a rollback to production, a failed production deployment, or an issue labelled <code>hotfix</code> created in the project. A signal is attributed to the latest successful production deployment before it</td></tr>
+<tr><td>Time to restore</td><td>For each failed deployment, from when it finished until the first successful production deployment (the rollback or the fix) that finished at or after the first failure signal. Failures with no such deployment yet count as not restored. The headline is the median</td></tr>
+</table>
+<div class="note">The <code>hotfix</code> label must literally be named <code>hotfix</code> (any case) to count as a failure signal. Create it in project labels and apply it to incidents you want counted.</div>
+
+<h3 id="dora-bands">Bands</h3>
+<p>Each metric is placed in one of four bands, using the commonly published DORA ranges:</p>
+<table>
+<tr><th>Metric</th><th>Elite</th><th>High</th><th>Medium</th><th>Low</th></tr>
+<tr><td>Deployment frequency</td><td>at least one a day on average</td><td>between daily and weekly</td><td>between weekly and monthly</td><td>less than monthly</td></tr>
+<tr><td>Lead time for changes (median)</td><td>under 1 day</td><td>1 day to 1 week</td><td>1 week to 1 month</td><td>over 1 month</td></tr>
+<tr><td>Change failure rate</td><td>0 to 5%</td><td>5 to 10%</td><td>10 to 15%</td><td>over 15%</td></tr>
+<tr><td>Time to restore (median)</td><td>under 1 hour</td><td>under 1 day</td><td>under 1 week</td><td>1 week or more</td></tr>
+</table>
+<p>Treat the bands as a conversation starter, not a score: with only a handful of deployments in the range, one failure swings the rate a lot.</p>
+
+<h2 id="export">CSV and API</h2>
+<p>Every tab has CSV download buttons. In a browser session the downloads are <code>GET /p/{key}/reports/{report}.csv</code> with the same filter query string. Report names: <code>cycle-time</code>, <code>time-in-status</code>, <code>cumulative-flow</code>, <code>throughput</code>, <code>wip</code>, <code>dora</code>, <code>pull-requests</code>, and the alternative tables <code>time-in-status-issues</code>, <code>throughput-sprints</code> and <code>dora-summary</code>. Files are UTF-8 with a byte-order mark.</p>
+<p>The API serves JSON, or CSV with <code>format=csv</code>:</p>
+<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  "https://gitbench.example.com/api/v1/projects/WEB/reports/cycle-time?from=2026-09-01&amp;to=2026-11-30&amp;type=Bug&amp;interval=month"
+
+# CSV of the sprints table of the throughput report
+curl -H "Authorization: Bearer $GITBENCH_TOKEN" -o throughput.csv \
+  "https://gitbench.example.com/api/v1/projects/WEB/reports/throughput?format=csv&amp;view=sprints"</code></pre>
+<table>
+<tr><th>Query parameter</th><th>Values</th></tr>
+<tr><td><code>type</code></td><td>an issue type, for example <code>Bug</code></td></tr>
+<tr><td><code>label</code>, <code>component</code></td><td>id or name</td></tr>
+<tr><td><code>assignee</code></td><td>username, id or <code>none</code></td></tr>
+<tr><td><code>from</code>, <code>to</code></td><td><code>yyyy-MM-dd</code> (UTC, inclusive)</td></tr>
+<tr><td><code>interval</code></td><td><code>week</code> or <code>month</code></td></tr>
+<tr><td><code>format</code></td><td><code>csv</code> for a CSV download</td></tr>
+<tr><td><code>view</code></td><td><code>issues</code> (time-in-status), <code>sprints</code> (throughput) or <code>summary</code> (dora)</td></tr>
+</table>
+<p>The endpoints are <code>/api/v1/projects/{key}/reports/{name}</code> for <code>cycle-time</code>, <code>time-in-status</code>, <code>cumulative-flow</code>, <code>throughput</code>, <code>wip</code>, <code>dora</code> and <code>pull-requests</code>, plus <code>GET</code> and <code>PUT /reports/dora/settings</code>. A bad filter value is a <code>400</code>. See <a href="api.html">REST API and webhooks</a> for tokens.</p>
+
+<h2 id="caveats">Caveats</h2>
+<ul>
+<li>Time-based reports rebuild history from status-change activity lines. Issues whose status was changed by code that bypasses the normal issue service (or imported with a status) may show their current status for their whole life.</li>
+<li>Reports are computed on demand, with no stored snapshots, so they change if you edit the workflow's categories.</li>
+<li>DORA needs real deployments recorded by CI. See <a href="ci.html">CI pipelines</a> and <a href="environments.html">Environments and deployments</a>.</li>
+</ul>

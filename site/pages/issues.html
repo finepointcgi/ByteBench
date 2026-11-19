@@ -1,0 +1,141 @@
+<h1>Issues and workflows</h1>
+<p class="lead">Issues are the unit of work in a GitBench project: they have a type, a status from your project's workflow, people, labels, links to other issues, files, and a live view of the code that implements them.</p>
+
+<p>Every issue belongs to one <a href="concepts.html">project</a> and is numbered per project, so the third issue of project <code>WEB</code> is <code>WEB-3</code>. That key is what you type in commit messages, branch names, pull request titles and comments to refer to it. Open the issue list at <code>/p/{KEY}/issues</code> (sidebar: <b>Issues</b>) and an issue at <code>/p/{KEY}/issues/{number}</code>.</p>
+
+<h2 id="creating">Creating and editing issues</h2>
+<p>Click <b>New issue</b> on the issue list (<code>/p/{KEY}/issues/new</code>). You need the Developer role or above (the <code>EditIssues</code> permission). Fill in:</p>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td>Title and description</td><td>The description is Markdown with a Write/Preview toggle. Type <code>@</code> to mention a person, <code>#</code> or a key like <code>WEB-</code> to link an issue. You can drag, paste or pick (Attach) files straight into the editor.</td></tr>
+<tr><td>Type</td><td>Task, Bug, Feature, Story, Epic or Sub-task. See <a href="#hierarchy">hierarchy</a> for what each may contain.</td></tr>
+<tr><td>Priority</td><td>Lowest, Low, Medium, High, Highest.</td></tr>
+<tr><td>Status</td><td>One of the project's workflow statuses (see <a href="#workflows">workflows</a>).</td></tr>
+<tr><td>Assignee</td><td>Any member who can edit issues. A new issue with no assignee gets the first component's default assignee, if there is one.</td></tr>
+<tr><td>Labels, milestone</td><td>Project labels, plus labels and milestones inherited from the project's group. Maintainers manage them.</td></tr>
+<tr><td>Story points, due date, start date</td><td>Planning fields. See <a href="workbench.html">Estimates and Workbench</a> for estimates, and <a href="boards-sprints.html#roadmap">the roadmap</a> for dates.</td></tr>
+<tr><td>Parent</td><td>An epic for stories, or a parent for sub-tasks. <code>/p/{KEY}/issues/new?parent=WEB-9</code> starts a child of <code>WEB-9</code>.</td></tr>
+<tr><td>Components, versions, custom fields</td><td>Defined in project settings; see <a href="fields-filters.html">Fields, filters and search</a>.</td></tr>
+<tr><td>Template</td><td>Pre-fills the form. See <a href="#templates">templates</a>.</td></tr>
+</table>
+<p>On the issue page most fields are edited in place and saved when you change them. Every change adds a line to the issue's activity ("changed status from <b>To Do</b> to <b>In Progress</b>"), notifies watchers, refreshes other people's open pages live, and fires the <code>issue.updated</code> <a href="api.html">webhook</a>.</p>
+<div class="note">If Claude is configured (<a href="ai.html">AI setup</a>), the new-issue page offers <b>Draft with AI</b> and a duplicate check, and the issue page offers <b>Catch me up</b>. AI never saves anything by itself.</div>
+
+<h2 id="types-priorities">Types and priorities</h2>
+<p>The five built-in types are Task, Bug, Feature, Story and Epic, plus Sub-task for the bottom level of the hierarchy. The list is fixed: you cannot add types, but you can add <a href="fields-filters.html">custom fields</a> that apply only to certain types (for example a required Severity for bugs). Priorities are the five fixed levels above and sort Highest first in the issue list's priority sort and on boards with a priority swimlane.</p>
+
+<h2 id="labels">Labels</h2>
+<p>Labels are coloured tags. A project has its own; a group can also define labels that every project below it inherits (shown read-only in the project and marked <i>Group</i>). Developers can apply labels; creating, renaming and deleting them needs Maintainer. Filter by label in the list, in <a href="fields-filters.html#gql">GQL</a> (<code>labels = urgent</code>) or in <a href="reports.html">reports</a>.</p>
+
+<h2 id="workflows">Workflows, custom statuses and transitions</h2>
+<p>Each project has its own workflow: an ordered list of <b>statuses</b> (name, colour and category) and, optionally, the moves allowed between them. Project Owners edit it at <b>Settings, Edit workflow</b> (<code>/p/{KEY}/settings/workflow</code>).</p>
+<ul>
+<li><b>Categories.</b> Every status belongs to one of five categories: Backlog, To Do, In Progress, In Review or Done. Done-category statuses count as closed. Sprints, burndown, the open/closed tabs, the API's <code>status</code> field and the <a href="reports.html">delivery reports</a> all work off categories, so you can rename statuses freely without breaking them.</li>
+<li><b>Default workflow.</b> A new project gets five statuses, one per category.</li>
+<li><b>Editing.</b> Add, rename, recolour, reorder and recategorise statuses. A status that still has issues can be deleted only after you move them elsewhere (the page offers it). The workflow must keep at least one Done status and one open status.</li>
+<li><b>Transitions.</b> A matrix of checkboxes: tick where issues may move <i>to</i> from each status. A status with nothing ticked may move anywhere. When transitions are restricted, the board greys out and refuses disallowed columns, the status picker disables them, and the API answers <code>422</code>. Automation rules and bulk edits obey the same transitions.</li>
+</ul>
+<table>
+<tr><th>Task</th><th>Where</th></tr>
+<tr><td>Change one issue's status</td><td>Status picker on the issue, a drag on the <a href="boards-sprints.html">board</a>, or the Close issue / Reopen buttons (they choose the first allowed Done or open status).</td></tr>
+<tr><td>Change many</td><td><a href="#bulk-edit">Bulk edit</a> on the issue list.</td></tr>
+<tr><td>Read the workflow in code</td><td><code>GET /api/v1/projects/{key}/workflow</code> returns statuses and <code>transitions</code> as <code>{from, to}</code> status ids.</td></tr>
+</table>
+<div class="warn">Changing a status's category also changes the category of every issue in it (and closes or reopens them). Changes to the workflow are written to the audit log as <code>workflow.*</code> events.</div>
+
+<h2 id="hierarchy">Hierarchy: epics and sub-tasks</h2>
+<p>An issue can have a parent in the same project, up to three levels: <b>Epic, then Story/Task/Bug/Feature, then Sub-task</b>.</p>
+<ul>
+<li>An epic has no parent; its children can be any type except Epic and Sub-task.</li>
+<li>A sub-task must have a parent that is neither an epic nor a sub-task, and cannot have children.</li>
+<li>Other types may have an epic as parent (or none); their children can only be sub-tasks.</li>
+<li>No cycles. These rules are checked on every create and update, including through the API (violations are <code>422</code>), so changing a type can be refused.</li>
+</ul>
+<p>The issue page shows a parent breadcrumb, a <b>Parent</b> picker and a child panel with progress by count and points, where you can create or add children inline. The <b>Epics</b> page (<code>/p/{KEY}/epics</code>) lists each epic with child count, points and progress. Deleting an issue deletes its sub-tasks (the UI says how many first); an epic's children are kept and unlinked.</p>
+
+<h2 id="links">Issue links and link types</h2>
+<p>A link connects two issues with one of four built-in types, and each side shows its own phrase:</p>
+<table>
+<tr><th>Type</th><th>Source side / target side</th></tr>
+<tr><td>blocks</td><td>blocks / is blocked by</td></tr>
+<tr><td>relates to</td><td>relates to / relates to</td></tr>
+<tr><td>duplicates</td><td>duplicates / is duplicated by (the UI offers to close the duplicate)</td></tr>
+<tr><td>clones</td><td>clones / is cloned by</td></tr>
+</table>
+<p>You cannot define extra link types. Links can cross projects, but only to issues you can view; links to issues you cannot view are hidden. Self-links and a second link of the same type between the same two issues are refused. An open "is blocked by" link shows a blocked marker on the board card, list row and links panel; moving a blocked issue still works but warns you. "Blocks" links also appear as arrows on the <a href="boards-sprints.html#roadmap">roadmap</a>.</p>
+<pre><code># Link WEB-5 as blocking OPS-2
+curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type":"blocks","issue":"OPS-2"}' \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/5/links</code></pre>
+<p>The API also has <code>GET /links</code>, <code>DELETE /links/{linkId}</code> and <code>GET /children</code> under the issue path. Adding a link needs EditIssues on this issue and view access to the other.</p>
+
+<h2 id="comments-mentions">Comments and mentions</h2>
+<p>Developers and above can comment (the <code>Comment</code> permission). Comments are Markdown, can have files attached, and can be edited; editing or deleting someone else's comment needs Maintainer. Writing <code>@username</code> notifies that person (only if they can view the project); mentions inside code spans and code blocks are ignored, and editing a description notifies only people newly mentioned. Editing a comment notifies nobody.</p>
+
+<h2 id="watchers">Watchers and notifications</h2>
+<p>The reporter, the assignee and everyone who comments watch an issue automatically. Use <b>Watch / Watching</b> on the issue to toggle it, or <b>Mute</b> to stay a watcher without watcher notifications (assignment and mentions still reach you). Watchers are notified of comments, status changes, closing and reopening, and link and parent changes. You never get notified of your own actions, and each person gets at most one notification per event. Channels and preferences are described in <a href="notifications.html">Notifications and email</a>. Search by watcher with <code>watcher = currentUser()</code>.</p>
+
+<h2 id="attachments">Attachments</h2>
+<p>Attach files from the <b>Attachments</b> panel, or by picking, dragging or pasting into a description or comment editor (images insert as <code>![name](url)</code>). Uploading needs Developer or above. Limits are set by <code>Attachments:MaxBytes</code> (default 25 MB per file) and <code>Attachments:MaxPerIssue</code> (default 50); see <a href="configuration.html">Configuration reference</a>. Files are stored on disk under <code>Attachments:Root</code> (default <code>attachments/</code> next to the app) with random names. The uploader can delete their own files and Maintainers can delete anyone's.</p>
+<p>Downloads need a signed-in user who can view the project. Only PNG, JPEG, GIF and WebP are shown inline, and only if the bytes match; everything else, including SVG, HTML and PDF, is served as a download with <code>nosniff</code> and a sandboxing Content-Security-Policy.</p>
+<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" -F "file=@screenshot.png" \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/12/attachments</code></pre>
+
+<h2 id="bulk-edit">Bulk edit</h2>
+<p>With Developer or above, tick issues in the list (or select all on the page). A sticky bar offers status, assignee, priority, milestone, add label, remove label, and Delete (Maintainer only, with confirmation). Permissions and values are validated for every issue first, then everything is applied in one transaction with a per-issue activity entry. If one issue may not move (for example because of a workflow transition), nothing changes and the message names that issue. Each watcher gets one batched notification, for example "2 issues in WEB: WEB-5, WEB-10".</p>
+
+<h2 id="templates">Issue templates</h2>
+<p>Templates pre-fill the new-issue form with a title prefix, type, Markdown body and default labels. Maintainers define them at <code>/p/{KEY}/settings/fields</code> (the Templates tab); pick one with the <b>Template</b> selector or open <code>/p/{KEY}/issues/new?template=t{id}</code>. GitBench also offers Markdown files from <code>.gitbench/issue_templates/*.md</code> on the default branch of the project's first repository, with optional front matter:</p>
+<pre><code>---
+name: Bug report
+title: "[Bug] "
+labels: bug, needs-triage
+type: Bug
+---
+## What happened
+
+## Steps to reproduce
+
+## Expected</code></pre>
+<p>The API lists them at <code>GET /api/v1/projects/{key}/issue-templates</code>.</p>
+
+<h2 id="activity">Activity and history</h2>
+<p>The activity timeline on each issue records who changed what and when: field changes (including old and new estimates), status moves, parent and link changes (written to both ends of a link), attachments, sprint moves, and code references. It is the data behind the sprint burndown and the delivery reports, which rebuild an issue's time in each status from the status-change lines. Security-relevant events (deleted issues, CSV imports, workflow changes) also go to the <a href="admin.html">audit log</a>.</p>
+
+<h2 id="development-panel">The Development panel and smart commits</h2>
+<p>The issue sidebar has a <b>Development</b> block showing, for the project's repositories:</p>
+<ul>
+<li><b>Pull requests</b> whose title or source branch contains the issue key.</li>
+<li><b>Branches</b> whose name contains the key.</li>
+<li>The ten most recent <b>commits</b> whose message contains the key.</li>
+<li><b>Deployments</b>: the environments the issue's commits are deployed to (see <a href="environments.html">Environments and deployments</a>), or "Not deployed to any environment yet".</li>
+</ul>
+<p>Key matching is case-insensitive and needs a word boundary, so <code>web-12</code> matches but <code>WEB-123</code> does not match issue 12.</p>
+<p><b>Smart commits</b> are references: after each push (over HTTP, SSH or the web editor), a commit whose message mentions an issue key is added to that issue's activity as "referenced this issue in commit <i>sha</i>", once per commit and issue.</p>
+<pre><code>git switch -c WEB-5-fix-avatars
+git commit -m "WEB-5: fix Safari avatar scaling"
+git push -u origin WEB-5-fix-avatars</code></pre>
+<div class="note">Smart commits do <b>not</b> change status from keywords in the message. To move issues when code ships, use an <a href="automation.html">automation rule</a> such as the built-in template "When a PR is merged, move linked issues to Done".</div>
+
+<h2 id="permissions">Permissions</h2>
+<table>
+<tr><th>Action</th><th>Role needed</th></tr>
+<tr><td>View issues</td><td>Viewer (anyone who can see the project)</td></tr>
+<tr><td>Create and edit issues, board moves, attachments, links, bulk edit</td><td>Developer</td></tr>
+<tr><td>Comment</td><td>Developer</td></tr>
+<tr><td>Manage labels and milestones, edit others' comments, delete issues</td><td>Maintainer</td></tr>
+<tr><td>Edit the workflow</td><td>Owner</td></tr>
+</table>
+<p>See <a href="permissions.html">Roles, groups and permissions</a> for the full table.</p>
+
+<h2 id="api">API</h2>
+<table>
+<tr><th>Method</th><th>Path under <code>/api/v1/projects/{key}</code></th><th>Notes</th></tr>
+<tr><td>GET</td><td><code>/issues</code></td><td><code>status</code> (open default, closed, all or a category), <code>workflowStatus</code>, <code>assignee</code>, <code>label</code>, <code>milestone</code>, <code>sprint</code>, <code>component</code>, <code>fixVersion</code>, <code>q</code>, <code>sort</code></td></tr>
+<tr><td>POST</td><td><code>/issues</code></td><td><code>{title, description?, type?, priority?, status?, workflowStatusId?, assignee?, labels?, milestoneId?, storyPoints?, dueDate?}</code>; returns 201. Also accepts <code>parentId</code>, custom fields, components, versions and estimates.</td></tr>
+<tr><td>GET, PATCH</td><td><code>/issues/{number}</code></td><td>PATCH changes only the fields sent; <code>null</code> clears.</td></tr>
+<tr><td>GET, POST</td><td><code>/issues/{number}/comments</code></td><td><code>{body}</code></td></tr>
+<tr><td>GET, POST, DELETE</td><td><code>/issues/{number}/attachments</code></td><td>multipart upload</td></tr>
+<tr><td>GET</td><td><code>/workflow</code>, <code>/labels</code>, <code>/milestones</code></td><td></td></tr>
+</table>
+<p>For authentication, scopes, paging and errors see <a href="api.html">REST API and webhooks</a>.</p>

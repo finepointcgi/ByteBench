@@ -1,0 +1,178 @@
+<h1>Service desk</h1>
+<p class="lead">Let people without a GitBench account report problems by email or through a public form, and answer them from the issue page.</p>
+
+<p>When the service desk is on for a project, each request becomes an ordinary issue in that project, created by a built-in <b>Service Desk</b> system user (<code>gitbench-service-desk</code>, no password, cannot sign in). The person who asked is a <i>requester</i>: just an email address and a name, never an account. Your team works the request like any issue; only comments you explicitly send as a <b>reply to the requester</b> leave the building.</p>
+
+<div class="cards">
+<a class="card" href="#setup"><b>Setup</b><span>Inbox, email and project settings</span></a>
+<a class="card" href="#inbound-email"><b>Inbound email</b><span>IMAP polling and the signed webhook</span></a>
+<a class="card" href="#form-tracking"><b>Form and tracking page</b><span>For requesters without email</span></a>
+<a class="card" href="#protection"><b>Loop and spam protection</b><span>What gets ignored or refused</span></a>
+</div>
+
+<h2 id="how-it-works">How a request flows</h2>
+<ol>
+<li>A requester emails <code>desk+web@support.example.com</code> (or submits the form at <code>/desk/WEB</code>).</li>
+<li>GitBench checks for loops and spam, then creates an issue in project WEB with the subject as title and the message as description. Attachments are saved to the issue.</li>
+<li>If auto-reply is on and outbound email is enabled, the requester gets a confirmation with the issue key and a private tracking link.</li>
+<li>Your team sees it in the queue at <code>/p/WEB/service-desk</code>, handles it as an issue, and sends public replies.</li>
+<li>When the requester answers the email (or uses the tracking page), their message is added as a comment on the same issue and the request returns to "waiting on us".</li>
+</ol>
+
+<h2 id="setup">Setup</h2>
+<ol>
+<li><b>Choose an inbox address.</b> Create one real mailbox for the whole GitBench server, for example <code>desk@support.example.com</code>, and set <code>ServiceDesk:IncomingAddress</code> to it. Every project gets a plus-address of it (see <a href="#addresses">below</a>), so one mailbox serves all projects. Your mail provider must support plus-addressing (Gmail, Microsoft 365 and most others do).</li>
+<li><b>Connect mail to GitBench</b> in one of two ways: poll the mailbox over <a href="#imap">IMAP</a>, or have your provider POST each message to the <a href="#webhook">signed webhook</a>.</li>
+<li><b>Turn on outbound email</b> (<code>Email:Enabled</code>, SMTP settings) if you want auto-replies and replies to reach requesters. See <a href="notifications.html">Notifications and email</a>. Without it, requests still arrive, but nothing is emailed back; the reply is still saved and shown on the tracking page, and the form says it was not emailed.</li>
+<li><b>Enable the project.</b> A Maintainer opens <b>Settings, Service desk</b> (<code>/p/{KEY}/settings/service-desk</code>) and switches on <b>Accept requests for this project</b>. Until then, mail to the project's address is refused and the form is unavailable.</li>
+</ol>
+<pre><code># appsettings.Production.json (secrets go in environment variables, not here)
+"ServiceDesk": {
+  "IncomingAddress": "desk@support.example.com",
+  "Imap": { "Enabled": true, "Host": "imap.example.com", "Port": 993, "UseSsl": true,
+            "User": "desk@support.example.com", "Folder": "INBOX", "PollSeconds": 60 }
+}
+
+# environment
+ServiceDesk__Imap__Password=...        # never commit
+ServiceDesk__WebhookSecret=...         # only if you use the webhook</code></pre>
+
+<h2 id="addresses">Addresses and plus-addressing</h2>
+<table>
+<tr><th>Address</th><th>Meaning</th></tr>
+<tr><td><code>desk@support.example.com</code></td><td>The inbox itself. Mail sent here alone has no project and is refused ("no matching project").</td></tr>
+<tr><td><code>desk+web@support.example.com</code></td><td>Opens a request in the project with key <code>WEB</code>. The tag is the project key, lower-cased, 2 to 10 letters or digits starting with a letter.</td></tr>
+<tr><td><code>desk+r-&lt;token&gt;@support.example.com</code></td><td>The reply address of one request. GitBench sets it as <code>Reply-To</code> on every email it sends, so a reply lands on the same issue. The token is 128 random bits.</td></tr>
+<tr><td>A custom address, e.g. <code>support@example.com</code></td><td>Set per project in the settings and <b>forward it to the inbox</b>. GitBench reads the original recipient from headers such as <code>Delivered-To</code> and <code>X-Original-To</code> to find the project. It cannot be the inbox itself and a custom address can belong to only one project.</td></tr>
+</table>
+<p>Replies are matched even without the token: a message from the requester whose <code>In-Reply-To</code> or <code>References</code> names a message already on that request is added to it.</p>
+
+<h2 id="inbound-email">Inbound email</h2>
+<h3 id="imap">IMAP polling</h3>
+<p>Off by default. When <code>ServiceDesk:Imap:Enabled</code> is true and a host is set, GitBench connects every <code>PollSeconds</code> (minimum 10), reads up to 100 unseen messages from the folder and flags each one seen (or deletes it with <code>DeleteProcessed</code>). A message that fails to process stays unseen and is retried on the next poll. Messages larger than <code>MaxMessageBytes</code> are skipped and logged.</p>
+<h3 id="webhook">Signed webhook</h3>
+<p>For providers that forward each message as raw MIME (and for tests), send it to:</p>
+<pre><code>POST https://gitbench.example.com/service-desk/inbound
+X-GitBench-Timestamp: 1767225600
+X-GitBench-Signature: sha256=&lt;hex&gt;
+Content-Type: message/rfc822
+
+&lt;raw RFC 5322 message as the body&gt;</code></pre>
+<p><b>Signature scheme.</b> The signature is the lower-case hex HMAC-SHA256, keyed with <code>ServiceDesk:WebhookSecret</code> (as UTF-8), of the string <code>"{timestamp}.{body}"</code>: the timestamp digits, a literal dot, then the exact raw body bytes. Prefix the hex with <code>sha256=</code>. The timestamp is Unix seconds and must be within <code>WebhookToleranceSeconds</code> (default 300) of the server's clock, which blocks replays. The comparison is constant-time.</p>
+<pre><code>SECRET='...'                       # same value as ServiceDesk:WebhookSecret
+TS=$(date +%s)
+SIG=$( { printf '%s.' "$TS"; cat message.eml; } | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //' )
+curl -X POST https://gitbench.example.com/service-desk/inbound \
+  -H "X-GitBench-Timestamp: $TS" -H "X-GitBench-Signature: sha256=$SIG" \
+  -H "Content-Type: message/rfc822" --data-binary @message.eml</code></pre>
+<table>
+<tr><th>Response</th><th>Meaning</th></tr>
+<tr><td><code>200</code> with <code>{outcome, reason, issueId}</code></td><td>Handled. <code>outcome</code> is <code>created</code>, <code>commented</code>, <code>ignored</code> or <code>rejected</code>. Even ignored or refused mail returns 200 so the provider does not retry it; read the outcome in the body.</td></tr>
+<tr><td><code>401</code></td><td>Bad or missing signature or timestamp</td></tr>
+<tr><td><code>404</code></td><td>No <code>WebhookSecret</code> is configured: the endpoint is off</td></tr>
+<tr><td><code>413</code></td><td>Body larger than <code>MaxMessageBytes</code></td></tr>
+</table>
+
+<h2 id="form-tracking">Public form and tracking page</h2>
+<ul>
+<li><b>Request form</b>: <code>/desk/{KEY}</code>, open to anyone, no sign-in. It asks for name, email, subject and message, and shows your <b>Form introduction</b>. Turn it off with <b>Public request form</b> in the settings. Submissions are limited per client IP.</li>
+<li><b>Tracking page</b>: <code>/desk/t/{token}</code>. The requester gets this link in the auto-reply and in every email. The 256-bit token <i>is</i> the credential, so anyone with the link sees the request; the page is marked <code>noindex</code> and sends no referrer. It shows the status and the public conversation only: never internal comments or activity. The requester can reply there while the desk is enabled.</li>
+</ul>
+
+<h2 id="public-internal">Public replies vs internal comments</h2>
+<p>On an issue that came through the desk, the comment box offers <b>Reply to requester</b> alongside normal comments. Needs Developer or above (the <code>Comment</code> permission).</p>
+<table>
+<tr><th></th><th>Internal comment</th><th>Reply to requester</th></tr>
+<tr><td>Who sees it</td><td>Project members</td><td>Members, and the requester on the tracking page</td></tr>
+<tr><td>Emailed</td><td>Never</td><td>Yes, to the requester, signed with your display name</td></tr>
+</table>
+<p>Only three things email a requester: the auto-reply, a reply to requester, and a status notification (the issue moving into a status you picked in the settings). Requester comments appear on the issue with the requester's name and are visibly distinct. Requester email addresses are visible to Developers and above only.</p>
+
+<h2 id="queue">The queue</h2>
+<p><code>/p/{KEY}/service-desk</code> (Developer and above) lists requests, with the project's inbound address and a link to the public form. Filters:</p>
+<table>
+<tr><th>Filter</th><th>Shows</th></tr>
+<tr><td>Waiting on us</td><td>(default) nobody has replied yet, or the requester spoke last. A closed issue counts only if the requester wrote after it closed.</td></tr>
+<tr><td>Unanswered</td><td>Open and never replied to</td></tr>
+<tr><td>Open, Closed, All</td><td>By issue state</td></tr>
+</table>
+<p>Longest-waiting first. A request waiting longer than the <b>response target</b> is flagged <b>overdue</b>. This is a simple flag, not a full SLA engine: no business hours, no escalation.</p>
+
+<h2 id="settings">Project settings</h2>
+<p>Maintainer and above, at <code>/p/{KEY}/settings/service-desk</code>:</p>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Effect</th></tr>
+<tr><td>Accept requests for this project</td><td>off</td><td>Master switch for mail and form</td></tr>
+<tr><td>Custom address</td><td>none</td><td>An extra address forwarded to the inbox that also reaches this project</td></tr>
+<tr><td>Public request form</td><td>on</td><td>Enables <code>/desk/{KEY}</code></td></tr>
+<tr><td>Form introduction</td><td>empty</td><td>Text shown above the form (max 2,000 characters)</td></tr>
+<tr><td>Issue type</td><td>Task</td><td>Type of new issues (not Sub-task)</td></tr>
+<tr><td>Assignee</td><td>none</td><td>Must be a Developer or above in the project</td></tr>
+<tr><td>Labels</td><td>none</td><td>Project labels added to new issues</td></tr>
+<tr><td>Issue template</td><td>empty (just the message)</td><td>Markdown for the description; placeholders <code>{{body}}</code>, <code>{{requester}}</code>, <code>{{email}}</code>, <code>{{subject}}</code></td></tr>
+<tr><td>Send an auto-reply</td><td>on</td><td>Confirmation email to new requesters</td></tr>
+<tr><td>Auto-reply text</td><td>built-in text</td><td>Markdown; placeholders <code>{{requester}}</code>, <code>{{key}}</code>, <code>{{subject}}</code>, <code>{{tracking_url}}</code></td></tr>
+<tr><td>Notify on status</td><td>Done statuses</td><td>Moving into a ticked workflow status emails the requester</td></tr>
+<tr><td>Response target (hours)</td><td>24</td><td>1 to 720; drives the overdue flag</td></tr>
+</table>
+<p>Placeholder values are Markdown-escaped, so a requester cannot inject links through their name or subject.</p>
+
+<h2 id="protection">Loop, spam and abuse protection</h2>
+<p>Every inbound message passes these checks. A rule that fires is recorded in the audit log and the message creates nothing.</p>
+<table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td>Same <code>Message-ID</code> seen before</td><td>Ignored (<code>duplicate</code>), silently</td></tr>
+<tr><td><code>Auto-Submitted</code> other than <code>no</code>, <code>Precedence</code> bulk/junk/list/auto_reply, <code>X-Autoreply</code> headers, <code>List-Id</code> or <code>List-Unsubscribe</code>, delivery reports, empty <code>Return-Path</code></td><td>Ignored (auto-reply, mailing list, bounce)</td></tr>
+<tr><td>Sender local part <code>mailer-daemon</code>, <code>postmaster</code>, <code>noreply</code>, <code>no-reply</code>, <code>donotreply</code></td><td>Ignored (automated sender)</td></tr>
+<tr><td>Sender is the inbox, a plus-address of it, or GitBench's own From address</td><td>Ignored (own address): this is what stops two systems answering each other forever</td></tr>
+<tr><td>No matching project, or the desk is disabled</td><td>Rejected</td></tr>
+<tr><td>More than <code>MaxMessagesPerSenderPerHour</code> from one sender</td><td>Rejected (rate limited)</td></tr>
+<tr><td><code>X-Spam-Flag: yes</code> or <code>X-Spam-Status: yes</code>, a blocked sender, or more than <code>MaxLinks</code> links</td><td>Rejected (spam)</td></tr>
+<tr><td>Empty reply or empty message</td><td>Ignored</td></tr>
+</table>
+<p>GitBench's outbound mail helps the other side avoid loops too: it sets <code>Auto-Submitted</code> on auto-replies and status emails and <code>X-Auto-Response-Suppress: All</code> on all of them. Quoted text in replies is stripped (the reply marker line, "On ... wrote:", "Original Message", Outlook headers, <code>&gt;</code> quotes and signatures), HTML mail is converted to Markdown with scripts and unsafe links removed, and attachments with executable or script extensions are skipped with a note on the issue. The in-memory rate limits reset when the server restarts.</p>
+
+<h2 id="config">Configuration keys</h2>
+<p>Section <code>ServiceDesk</code>. As environment variables use double underscores (<code>ServiceDesk__Imap__Host</code>). Put <code>WebhookSecret</code> and <code>Imap:Password</code> in user-secrets or environment variables, never in committed files. See <a href="configuration.html">Configuration reference</a>.</p>
+<table>
+<tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+<tr><td><code>IncomingAddress</code></td><td><code>desk@gitbench.localhost</code></td><td>The shared inbox; projects use plus-addresses of it</td></tr>
+<tr><td><code>WebhookSecret</code></td><td>empty</td><td>Enables <code>POST /service-desk/inbound</code> and keys the signature</td></tr>
+<tr><td><code>WebhookToleranceSeconds</code></td><td>300</td><td>Allowed clock skew of <code>X-GitBench-Timestamp</code></td></tr>
+<tr><td><code>MaxMessageBytes</code></td><td>31457280 (30 MB)</td><td>Largest raw message from the webhook or IMAP</td></tr>
+<tr><td><code>MaxAttachmentBytes</code></td><td>10485760 (10 MB)</td><td>Per attachment; also capped by <code>Attachments:MaxBytes</code></td></tr>
+<tr><td><code>MaxAttachmentsPerMessage</code></td><td>10</td><td>Extra ones are skipped with a note</td></tr>
+<tr><td><code>BlockedExtensions</code></td><td>exe, bat, cmd, com, scr, pif, msi, js, jse, vbs, vbe, wsf, ps1, jar, lnk, hta, dll, cpl, reg</td><td>Attachment types never saved</td></tr>
+<tr><td><code>MaxBodyChars</code></td><td>20000</td><td>Longer text is cut</td></tr>
+<tr><td><code>MaxMessagesPerSenderPerHour</code></td><td>20</td><td>Per sender address, new requests and replies</td></tr>
+<tr><td><code>MaxFormSubmissionsPerHour</code></td><td>10</td><td>Per client IP, form and tracking-page replies</td></tr>
+<tr><td><code>MaxLinks</code></td><td>25</td><td>More <code>http(s)://</code> links than this is treated as spam; 0 turns the check off</td></tr>
+<tr><td><code>BlockedSenders</code></td><td>empty list</td><td>Addresses, or <code>@domain</code> entries, always refused</td></tr>
+<tr><td><code>Imap:Enabled</code></td><td><code>false</code></td><td>Poll the mailbox</td></tr>
+<tr><td><code>Imap:Host</code>, <code>Port</code>, <code>UseSsl</code></td><td>-, 993, <code>true</code></td><td>Connection; <code>UseSsl=false</code> uses STARTTLS when offered</td></tr>
+<tr><td><code>Imap:User</code>, <code>Password</code></td><td>empty</td><td>Credentials (password via secrets)</td></tr>
+<tr><td><code>Imap:Folder</code></td><td><code>INBOX</code></td><td>Folder to read</td></tr>
+<tr><td><code>Imap:PollSeconds</code></td><td>60</td><td>Poll interval (floor of 10)</td></tr>
+<tr><td><code>Imap:DeleteProcessed</code></td><td><code>false</code></td><td>Delete instead of marking seen</td></tr>
+</table>
+<p>The whole desk runs in the app process: IMAP polling is a background service, and status emails are queued through the same email queue as other notifications.</p>
+
+<h2 id="api">API</h2>
+<table>
+<tr><th>Method</th><th>Path under <code>/api/v1/projects/{key}</code></th><th>Notes</th></tr>
+<tr><td>GET</td><td><code>/service-desk/requests</code></td><td><code>?filter=waitingOnUs</code> (default), <code>unanswered</code>, <code>open</code>, <code>closed</code>, <code>all</code>. Returns issue id and key, title, status, requester name and email, <code>source</code> (<code>email</code> or <code>form</code>), timestamps, <code>waitingOnUs</code>, <code>overdue</code>, web URL. Developer and above; paged.</td></tr>
+<tr><td>POST</td><td><code>/issues/{number}/requester-replies</code></td><td><code>{"body": "Markdown"}</code>. Adds a public comment and emails it; returns <code>201</code> with <code>{commentId, emailed}</code></td></tr>
+</table>
+<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"body":"Thanks, a fix ships on Friday."}' \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/57/requester-replies</code></pre>
+
+<h2 id="audit">Audit events</h2>
+<p><code>service_desk.enabled</code>, <code>service_desk.disabled</code>, <code>service_desk.settings_updated</code>, <code>service_desk.request_created</code>, <code>service_desk.reply_received</code>, <code>service_desk.reply_sent</code>, <code>service_desk.status_notified</code>, <code>service_desk.mail_ignored</code>, <code>service_desk.mail_rejected</code> and <code>service_desk.form_rejected</code>. Ignored and rejected mail records the reason, sender and subject, which is how you debug "why did my email not create an issue". See <a href="admin.html">Administration</a>.</p>
+
+<h2 id="gotchas">Limits and gotchas</h2>
+<ul>
+<li>Requesters have no accounts: they cannot see the issue page, only the tracking page.</li>
+<li>Email to a project works only while its desk is enabled. Disabling closes the form and tracking-page replies too.</li>
+<li>Auto-replies need working SMTP. In development, mail is written to the pickup directory (<code>Email:PickupDirectory</code>) instead of being sent.</li>
+</ul>

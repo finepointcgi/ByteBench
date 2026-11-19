@@ -1,0 +1,99 @@
+<h1>Automation rules</h1>
+<p class="lead">Rules do routine work for you: when something happens, if the issue matches, run a list of actions, as a bot or as the rule's author.</p>
+
+<p>A rule has three parts: a <b>trigger</b> (when), optional <b>conditions</b> (if) and an ordered list of <b>actions</b> (then). Typical uses are closing a parent when all its sub-tasks are done, moving issues to Done when their pull request merges, assigning new bugs round-robin, or commenting when a pipeline fails.</p>
+
+<h2 id="where">Where rules live</h2>
+<ul>
+<li><b>Project rules</b>: <b>Settings, Automation</b> at <code>/p/{KEY}/settings/automation</code>. Maintainers and Owners manage them.</li>
+<li><b>Group rules</b>: <code>/g/{path}/-/automation</code>. Group Maintainers and above manage them. They run in every project of the group and its subgroups, and each project's page lists the group rules that apply to it, read-only. Group rules refer to statuses and labels by name so they work across projects.</li>
+</ul>
+<p>Creating, editing, enabling, disabling and deleting rules is audited (see <a href="#audit">Audit</a>). The editor offers templates: "When a PR is merged, move linked issues to Done", "When all sub-tasks are done, close the parent", "Auto-assign new bugs round-robin", and "Comment when a pipeline fails".</p>
+
+<h2 id="triggers">Triggers</h2>
+<table>
+<tr><th>Trigger</th><th>Fires when</th></tr>
+<tr><td>Issue created</td><td>a new issue is created (UI or API; CSV import sends no events)</td></tr>
+<tr><td>Issue transitioned</td><td>status changes; optionally restricted to from and/or to a status</td></tr>
+<tr><td>Field changed</td><td>assignee, priority, labels or sprint changes</td></tr>
+<tr><td>Comment added</td><td>someone comments on an issue</td></tr>
+<tr><td>Pull request opened, merged or declined</td><td>runs on every issue of the project whose key appears in the PR title or source branch</td></tr>
+<tr><td>Pipeline failed or passed</td><td>runs on the issues matched through the pipeline's branch and its pull request</td></tr>
+<tr><td>Scheduled</td><td>daily at a time, weekly on a day, or every N hours. Times are UTC. Runs on each open issue that meets the conditions (up to 100), or once without an issue</td></tr>
+<tr><td>Manual</td><td>a Developer picks the rule from the <b>Automation</b> menu on an issue's page</td></tr>
+</table>
+<p>Pull request and pipeline triggers behave like the smart-commit links in the <a href="issues.html#development-panel">Development panel</a>. If no issue is linked, the rule runs once with no issue, so only notification and webhook actions can do anything.</p>
+
+<h2 id="conditions">Conditions</h2>
+<p>Conditions combine with <b>all</b> or <b>any</b>:</p>
+<ul>
+<li>Issue type, priority (is, is not, at least, at most), status, status category.</li>
+<li>Labels contain or do not contain.</li>
+<li>Assignee: is, is not, empty, not empty, is the person who triggered the rule.</li>
+<li>Title contains.</li>
+<li>Linked pull request: exists, an open one exists, none.</li>
+<li>Sub-tasks: all done, not all done.</li>
+<li><b>Matches GQL query</b> (or does not match), for example <code>labels = urgent AND cf[severity] in (Major, Critical)</code>. The query's syntax and field names are checked when the rule is saved. It runs as the rule runs (as the author, so <code>currentUser()</code> is the author and only issues they can view match; or as the bot with system access), with names resolved only in the rule's project. A query that fails at run time, for example an unknown status, counts as not matching. See <a href="fields-filters.html#gql">GQL</a>.</li>
+</ul>
+
+<h2 id="actions">Actions</h2>
+<p>Actions run in order; the first failing action stops the run.</p>
+<table>
+<tr><th>Action</th><th>Notes</th></tr>
+<tr><td>Transition the issue</td><td>by status name; goes through the normal issue code, so <a href="issues.html#workflows">workflow transitions</a> apply</td></tr>
+<tr><td>Assign</td><td>a user, the reporter, the person who triggered the rule, round-robin among the project's developers, or unassign</td></tr>
+<tr><td>Set priority</td><td></td></tr>
+<tr><td>Add or remove a label</td><td></td></tr>
+<tr><td>Add a comment</td><td>supports smart values</td></tr>
+<tr><td>Create a sub-task</td><td>supports smart values</td></tr>
+<tr><td>Link to another issue</td><td>only issues of the rule's project</td></tr>
+<tr><td>Transition the parent</td><td>when all its children are done</td></tr>
+<tr><td>Send a notification</td><td>to a user, the assignee, the reporter, the watchers or the person who triggered the rule</td></tr>
+<tr><td>Send a webhook</td><td>see below</td></tr>
+</table>
+
+<h3 id="smart-values">Smart values</h3>
+<p>Text fields accept <code>{{...}}</code> placeholders. Unknown names render as nothing. The editor lists all of them; common ones:</p>
+<pre><code>{{issue.key}}  {{issue.title}}  {{issue.status}}  {{issue.assignee}}  {{issue.parent.key}}
+{{initiator.name}}  {{pr.title}}  {{pr.url}}  {{pipeline.status}}  {{comment.body}}  {{rule.name}}</code></pre>
+<pre><code>Comment text example:
+Pipeline {{pipeline.status}} for {{issue.key}} ({{issue.title}}). Please check, {{issue.assignee}}.</code></pre>
+
+<h3 id="webhook-action">Webhook action</h3>
+<p>POSTs JSON with <code>event: "automation"</code> and the rule, project, issue, pull request, pipeline and initiator. It uses the same sender as project webhooks: an SSRF guard, a 10 second timeout and no redirects. It is <b>unsigned</b> and the URL is validated when the rule is saved. For signed deliveries use project <a href="api.html">webhooks</a> instead.</p>
+
+<h2 id="run-as">Run as</h2>
+<p>By default a rule runs as the <b>GitBench Automation</b> bot (username <code>gitbench-automation</code>), created on first use. It has no password, is locked out, and cannot be assigned or mentioned. It stays inside the rule's project: it only links issues of that project and only assigns users who can view it. Alternatively, a rule can run <b>as its author</b>, meaning whoever last saved it, with that person's permissions at run time. If the author has since been demoted, the rule fails. Activity, comments, notifications and webhooks show the acting identity like any other change.</p>
+
+<h2 id="limits">Execution, loops and limits</h2>
+<p>Events are queued in memory and processed one at a time by a background worker, each rule in a fresh scope. A timer in the same worker evaluates scheduled rules every minute; missed runs collapse into one.</p>
+<ul>
+<li><b>Loop protection</b>: changes made by a rule's actions do not trigger other rules unless the rule has <b>Allow this rule's changes to trigger other rules</b> ticked. Even then a chain stops after 3 rules and logs "Loop stopped".</li>
+<li><b>Rate limit</b>: a rule runs at most 100 times in a rolling hour; the first skipped run is logged as "Throttled".</li>
+<li><b>Restarts</b>: the queue is in memory, so queued events are lost if the server stops before processing them.</li>
+</ul>
+<table>
+<tr><th>Config key</th><th>Default</th><th>Effect</th></tr>
+<tr><td><code>Automation:Enabled</code></td><td><code>true</code></td><td><code>false</code> turns the worker off: events are dropped, but rules can still be edited</td></tr>
+<tr><td><code>Automation:SchedulerEnabled</code></td><td><code>true</code></td><td>Runs the scheduled-trigger timer</td></tr>
+<tr><td><code>Automation:SchedulerIntervalSeconds</code></td><td><code>60</code></td><td>How often due scheduled rules are looked for</td></tr>
+<tr><td><code>Automation:MaxRunsPerRulePerHour</code></td><td><code>100</code></td><td>Per-rule rolling-hour cap</td></tr>
+<tr><td><code>Automation:MaxDepth</code></td><td><code>3</code></td><td>How many rules deep a chain may go</td></tr>
+<tr><td><code>Automation:MaxLogEntriesPerRule</code></td><td><code>500</code></td><td>Log entries kept per rule</td></tr>
+</table>
+<p>In environment variables use double underscores, for example <code>Automation__MaxDepth=2</code>. See <a href="configuration.html">Configuration reference</a>.</p>
+
+<h2 id="log">Run log</h2>
+<p>Every run records the trigger, issue, result (Success, Failed, No actions, Throttled, Loop stopped), the actions taken, a message and the duration. The <b>Log</b> button on a rule shows its latest 100 runs and updates live (<code>?log={id}</code> on the settings page). Only the latest 500 runs per rule are kept.</p>
+
+<h2 id="example">Walk-through: close the parent when all sub-tasks are done</h2>
+<ol>
+<li>Open <code>/p/WEB/settings/automation</code> and choose the template "When all sub-tasks are done, close the parent" (or <b>New rule</b>).</li>
+<li>Trigger: <b>Issue transitioned</b>, to your Done status.</li>
+<li>Condition: the issue's type is Sub-task.</li>
+<li>Action: <b>Transition parent when all children are done</b>, to Done. It checks the siblings itself and does nothing (logged as "Not all children ... are done") until the last one finishes.</li>
+<li>Leave <b>Run as</b> on the bot, save, then move the last sub-task to Done and open the rule's <b>Log</b> to see the run.</li>
+</ol>
+
+<h2 id="audit">Audit events</h2>
+<p><code>automation.rule_created</code>, <code>automation.rule_updated</code>, <code>automation.rule_enabled</code>, <code>automation.rule_disabled</code>, <code>automation.rule_deleted</code>. They appear in the project's audit page and the site <a href="admin.html">audit log</a>.</p>

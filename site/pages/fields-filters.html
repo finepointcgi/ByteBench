@@ -1,0 +1,155 @@
+<h1>Fields, filters and search</h1>
+<p class="lead">Model your own data with custom fields, components and versions, then find it again with saved filters, quick filters and GQL, GitBench's JQL-style query language.</p>
+
+<h2 id="settings">Where to configure fields</h2>
+<p>Maintainers and Owners open <code>/p/{KEY}/settings/fields</code> (project <b>Settings</b>, then fields). It has tabs for custom fields, components, issue templates and estimates (hours per day). All definitions are audited as <code>custom_field.*</code>, <code>component.*</code> and <code>version.*</code> events.</p>
+
+<h2 id="custom-fields">Custom fields</h2>
+<p>Custom fields add your own data to issues, per project.</p>
+<table>
+<tr><th>Property</th><th>Meaning</th></tr>
+<tr><td>Type</td><td>Text, long text, number, date, single select, multi select, user, checkbox or URL. A field's type cannot change once issues have values.</td></tr>
+<tr><td>Key</td><td>A short identifier such as <code>severity</code>. Used by the API, webhooks, GQL (<code>cf[severity]</code>) and the issue list's <code>cf=</code> filter.</td></tr>
+<tr><td>Required</td><td>Required fields must have a value on the issue types they apply to; new issues get the default.</td></tr>
+<tr><td>Default</td><td>Applied to new issues.</td></tr>
+<tr><td>Applies to</td><td>Optional list of issue types (for example only Bug).</td></tr>
+<tr><td>Order</td><td>Display order in the sidebar and form.</td></tr>
+</table>
+<p>Values are validated: select options must exist, numbers must parse, dates are <code>yyyy-MM-dd</code>, URLs must be http(s), and user fields only accept people who can see the project. Fields appear in the issue sidebar (saved on change and logged: "changed <b>Severity</b> to <b>Critical</b>"), on the new-issue form and as optional columns in the issue list.</p>
+<pre><code># Set custom fields through the API (PATCH changes only the keys you send; null clears)
+curl -X PATCH -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"customFields":{"severity":"Critical","regression":true}}' \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/12</code></pre>
+
+<h2 id="components-versions">Components and versions</h2>
+<ul>
+<li><b>Components</b> (name, description, lead, default assignee): parts of your product. An issue can have several. A new issue with no assignee gets its first component's default assignee.</li>
+<li><b>Versions</b> (name, description, start and release dates, released flag): used as <i>fix versions</i> and <i>affects versions</i>, both multi-valued. Manage them on the <b>Versions</b> page (<code>/p/{KEY}/versions</code>, Maintainer): unreleased first, with progress per version. A version named like a published release tag (<code>1.0</code> or <code>v1.0</code>) links to that release. See <a href="boards-sprints.html#versions">Boards and sprints</a>.</li>
+</ul>
+<p>The issue list can filter by component, fix version and affects version (each also "none"), one custom field (<code>cf=key:value</code>; <code>key:</code> means no value), and choose columns from a <b>columns</b> menu. These are query-string properties, so saved filters and URLs keep them.</p>
+
+<h2 id="saved-filters">Saved filters and quick filters</h2>
+<p>The issue list keeps its whole filter in the URL (<code>/p/WEB/issues?type=Bug&amp;assigneeId=3&amp;sort=priority</code>), so every filtered view is a link. The status menu lists workflow statuses grouped by category, plus entries like "Any Done status".</p>
+<ul>
+<li><b>Saved filter</b>: a name plus that query string (or a GQL query, stored as <code>gql=&lt;query&gt;</code>). <b>Filters</b> on the issue list applies, stars and saves them and offers to update the last-applied one. <b>Manage filters</b> (<code>/p/{KEY}/filters</code>) renames, deletes, shares and unshares.</li>
+<li><b>Sharing</b>: filters are private to their owner. Sharing with the project needs Developer; Maintainers can also unshare or delete shared filters. Anyone who can see a filter can star it, and starred filters appear in the sidebar.</li>
+<li><b>Quick filters</b> belong to <a href="boards-sprints.html#board-filters">boards</a>: named toggle chips above the board, each a query. Saved filters also feed dashboard gadgets (see <a href="reports.html">Dashboards</a>).</li>
+</ul>
+
+<h2 id="gql">GQL, the advanced search language</h2>
+<p>Click <b>Advanced</b> on a project's issue list to switch to the GQL editor (the basic filter is converted to the equivalent query; <b>Switch to basic</b> goes back). <code>/issues/search</code> searches every project you can view. Example:</p>
+<pre><code>project = WEB AND status in ("In Progress", Blocked) AND assignee = currentUser()
+  AND labels = bug AND created &gt;= -14d ORDER BY priority DESC, updated DESC</code></pre>
+<p>The editor autocompletes fields, operators valid for the field, and values (statuses, users, labels, milestones, sprints, projects, epics, date shortcuts). Up/Down/Enter/Tab pick, Esc closes, Ctrl+Space asks for suggestions, Enter runs. Errors are shown with the offending text underlined.</p>
+
+<h3 id="gql-grammar">Grammar</h3>
+<p>Keywords are case-insensitive.</p>
+<pre><code>query   := [or] [ORDER BY sort ("," sort)*]
+or      := and (OR and)*
+and     := not (AND not)*
+not     := NOT not | "(" or ")" | clause
+clause  := field ( ("=" | "!=" | "~" | "!~" | "&lt;" | "&gt;" | "&lt;=" | "&gt;=") value
+                 | [NOT] IN "(" value ("," value)* ")"
+                 | IS [NOT] (EMPTY | NULL) )
+value   := "quoted" | 'quoted' | word | function "(" [value ("," value)*] ")"
+sort    := field [ASC | DESC]</code></pre>
+<ul>
+<li>Precedence: <code>NOT</code>, then <code>AND</code>, then <code>OR</code>; use parentheses otherwise. <code>= EMPTY</code> and <code>!= EMPTY</code> mean <code>is EMPTY</code> and <code>is not EMPTY</code>.</li>
+<li>Quote values with spaces or that are keywords (<code>"In Progress"</code>, <code>"and"</code>). <code>\"</code> and <code>\\</code> escape inside quotes. Field names can be quoted too (<code>"story points" &gt; 3</code>).</li>
+<li><code>~</code> matches when every word appears (case-insensitive). <code>!=</code> and <code>not in</code> also match issues where the field is empty, so <code>assignee != bob</code> includes unassigned issues.</li>
+<li>Limits: 4000 characters, 100 conditions, 32 levels of nesting, 200 values in a list.</li>
+</ul>
+
+<h3 id="gql-fields">Fields</h3>
+<table>
+<tr><th>Field (aliases)</th><th>Operators</th><th>Values</th></tr>
+<tr><td><code>project</code></td><td><code>= != in</code></td><td>key or name (only projects you can view)</td></tr>
+<tr><td><code>key</code> (<code>issueKey</code>, <code>issue</code>)</td><td><code>= != in &lt; &gt; &lt;= &gt;=</code></td><td><code>WEB-12</code>; <code>&lt;</code>/<code>&gt;</code> compare numbers within a project</td></tr>
+<tr><td><code>summary</code> (<code>title</code>), <code>description</code></td><td><code>~ !~ = !=</code>, <code>is</code> (description)</td><td>text</td></tr>
+<tr><td><code>text</code></td><td><code>~ !~</code></td><td>title, description and comments</td></tr>
+<tr><td><code>comment</code></td><td><code>~ !~</code></td><td>comment text</td></tr>
+<tr><td><code>type</code> (<code>issuetype</code>)</td><td><code>= != in</code></td><td>Task, Bug, Feature, Story, Epic, Subtask (<code>"sub-task"</code>)</td></tr>
+<tr><td><code>status</code></td><td><code>= != in</code></td><td>workflow status name in any searched project (a category name also works)</td></tr>
+<tr><td><code>statusCategory</code> (<code>category</code>)</td><td><code>= != in</code></td><td>Backlog, <code>"To Do"</code>, <code>"In Progress"</code>, <code>"In Review"</code>, Done</td></tr>
+<tr><td><code>priority</code></td><td><code>= != in &lt; &gt; &lt;= &gt;=</code></td><td>Lowest to Highest</td></tr>
+<tr><td><code>assignee</code>, <code>reporter</code>, <code>watcher</code></td><td><code>= != in</code>, <code>is</code> (not reporter)</td><td>username, email, display name or <code>currentUser()</code></td></tr>
+<tr><td><code>labels</code> (<code>label</code>)</td><td><code>= != in is</code></td><td>label names (<code>=</code> means "has the label")</td></tr>
+<tr><td><code>milestone</code></td><td><code>= != in is</code></td><td>title</td></tr>
+<tr><td><code>component</code></td><td><code>= != in is</code></td><td>name or id</td></tr>
+<tr><td><code>fixVersion</code>, <code>affectsVersion</code></td><td><code>= != in is</code></td><td>version name or id</td></tr>
+<tr><td><code>sprint</code></td><td><code>= != in is</code></td><td>name, id, <code>openSprints()</code>, <code>futureSprints()</code>, <code>closedSprints()</code></td></tr>
+<tr><td><code>parent</code></td><td><code>= != in is</code></td><td>issue key</td></tr>
+<tr><td><code>epic</code> (<code>epicLink</code>)</td><td><code>= != in is</code></td><td>epic key: its children and their sub-tasks</td></tr>
+<tr><td><code>created</code>, <code>updated</code>, <code>resolved</code> (<code>closed</code>), <code>due</code></td><td><code>= != &lt; &gt; &lt;= &gt;=</code>, <code>is</code> (resolved, due)</td><td>see dates below</td></tr>
+<tr><td><code>storyPoints</code> (<code>points</code>)</td><td><code>= != in &lt; &gt; &lt;= &gt;= is</code></td><td>whole numbers</td></tr>
+<tr><td><code>originalEstimate</code>, <code>remainingEstimate</code></td><td><code>= != &lt; &gt; &lt;= &gt;= is</code></td><td>durations: <code>2h</code>, <code>30m</code>, <code>"1d 4h"</code>, <code>1w</code> (a bare number is hours)</td></tr>
+<tr><td><code>wbs</code> (<code>chargeCode</code>)</td><td><code>= != in, not in, is</code></td><td>Workbench charge code; see <a href="workbench.html">Estimates and Workbench</a></td></tr>
+<tr><td><code>cf[key]</code></td><td>by field type</td><td>a custom field by key, e.g. <code>cf[severity] = Major</code></td></tr>
+</table>
+
+<h3 id="gql-custom">Custom fields in GQL</h3>
+<table>
+<tr><th>Type</th><th>Operators</th><th>Values</th></tr>
+<tr><td>Text, long text, URL</td><td><code>~ !~ = != is</code></td><td>text (<code>=</code> exact, case-insensitive)</td></tr>
+<tr><td>Number</td><td><code>= != &lt; &gt; &lt;= &gt;= is</code></td><td>numbers (<code>7.5</code>)</td></tr>
+<tr><td>Date</td><td><code>= != &lt; &gt; &lt;= &gt;= is</code></td><td>dates as for <code>created</code></td></tr>
+<tr><td>Single and multi select</td><td><code>= != in is</code></td><td>options (a multi select matches when it has the option)</td></tr>
+<tr><td>User</td><td><code>= != in is</code></td><td>username, email or <code>currentUser()</code></td></tr>
+<tr><td>Checkbox</td><td><code>= !=</code></td><td><code>true</code> / <code>false</code> (unset counts as false)</td></tr>
+</table>
+<p>The key is looked up in the projects being searched; an unknown key (or one only used in projects you cannot view) is the same error: "No project searched has a custom field". Custom fields cannot be used in <code>ORDER BY</code>.</p>
+
+<h3 id="gql-dates">Dates, functions and sorting</h3>
+<p>Dates are UTC. Use <code>2026-01-31</code> (a whole day: <code>=</code> matches that day, <code>&lt;=</code> includes it), <code>"2026-01-31 14:30"</code>, relative offsets from now (<code>-7d</code>, <code>-2w</code>, <code>+1M</code>, <code>-1w2d</code>; units <code>y M w d h m</code>) and functions <code>now()</code>, <code>startOfDay()</code>, <code>endOfDay()</code>, <code>startOfWeek()</code> (Monday), <code>endOfWeek()</code>, <code>startOfMonth()</code>, <code>endOfMonth()</code>, <code>startOfYear()</code>, <code>endOfYear()</code>, each with an optional offset such as <code>startOfWeek(-1w)</code>. <code>currentUser()</code> is the signed-in user.</p>
+<p><code>ORDER BY</code> works with any field except <code>text</code>, <code>comment</code>, <code>labels</code>, <code>watcher</code>, <code>parent</code>, <code>epic</code>, <code>component</code>, the versions and <code>cf[...]</code>. The default is <code>updated DESC</code>, with the issue id breaking ties.</p>
+
+<h3 id="gql-examples">Examples</h3>
+<pre><code># My open work, most urgent first
+assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC
+
+# Overdue and unassigned
+due &lt; startOfDay() AND assignee IS EMPTY AND statusCategory != Done
+
+# Bugs created this week with a major custom severity
+type = Bug AND created &gt;= startOfWeek() AND cf[severity] in (Major, Critical)
+
+# Everything in the current sprint that nobody has started
+sprint = openSprints() AND statusCategory in (Backlog, "To Do")
+
+# An epic's whole subtree, and issues with no charge code
+epic = WEB-9
+wbs IS EMPTY AND project = WEB
+
+# Free text across title, description and comments
+text ~ "avatar safari"</code></pre>
+
+<h3 id="gql-security">Security and permissions</h3>
+<p>Queries are parsed to a tree and translated into a database query with every value as a parameter, never as SQL text. Every query is first limited to the projects you can view, and names (projects, statuses, sprints, keys) are resolved only inside those projects, so an error for a private project reads the same as for one that does not exist.</p>
+
+<h2 id="csv">CSV export and import</h2>
+<h3 id="csv-export">Export</h3>
+<p><b>Menu, Export CSV</b> on the issue list (basic filters or GQL) and on <code>/issues/search</code> lets you pick columns: key, project, title, type, status, status category, priority, assignee, reporter, labels, milestone, sprint, parent, story points, due date, created, updated, resolved, description. Downloads come from <code>GET /p/{key}/issues/export.csv?...&amp;columns=...</code> or <code>GET /issues/export.csv?gql=...&amp;columns=...</code>. Files are UTF-8 with a byte-order mark, at most 10,000 rows, and cells starting like a spreadsheet formula (<code>= + - @</code>, tab, CR) are prefixed with <code>'</code>.</p>
+<h3 id="csv-import">Import</h3>
+<p><b>Menu, Import CSV</b> (<code>/p/{KEY}/import</code>, Maintainer):</p>
+<ol>
+<li><b>Upload</b> a UTF-8 CSV whose first row names the columns. Limits: <code>CsvImport:MaxBytes</code> (default 2 MB) and <code>CsvImport:MaxRows</code> (default 1000).</li>
+<li><b>Map columns</b> to title (required), description, type, priority, status, assignee, labels (comma or semicolon separated, existing labels), story points (0 to 100), due date (<code>yyyy-MM-dd</code>), parent and key. Headers from the export map automatically.</li>
+<li><b>Preview</b> lists every row with its errors (unknown status, label or user, bad numbers or dates, hierarchy violations, duplicate keys). Import is disabled while any row has an error.</li>
+<li><b>Import</b> creates everything in one transaction: all or nothing. <b>Parent</b> may be an existing issue (<code>WEB-12</code>) or the <b>Key</b> of another row, so an exported epic with its stories re-imports with its hierarchy.</li>
+</ol>
+<p>Each imported issue gets the activity "imported from CSV" and the import is audited as <code>issue.imported</code>. Imports send no notifications or webhooks.</p>
+
+<h2 id="api">Search and fields API</h2>
+<pre><code>curl -G -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  --data-urlencode 'gql=project = WEB AND type = Bug AND statusCategory != Done ORDER BY priority DESC' \
+  --data-urlencode 'perPage=50' \
+  https://gitbench.example.com/api/v1/search/issues</code></pre>
+<p>The response is a list of issues with <code>X-Total-Count</code> and <code>Link</code> paging headers. A query error is a <code>400</code> problem document with <code>position</code> (0-based), <code>length</code> and <code>reason</code>. Related endpoints under <code>/api/v1/projects/{key}</code>: <code>/fields</code>, <code>/components</code>, <code>/versions</code>, <code>/issue-templates</code>. Issues carry <code>customFields</code>, <code>components</code>, <code>fixVersions</code>, <code>affectsVersions</code> and <code>estimates</code>. See <a href="api.html">REST API and webhooks</a> for tokens and paging.</p>
+
+<h2 id="config">Configuration keys</h2>
+<table>
+<tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+<tr><td><code>CsvImport:MaxBytes</code></td><td>2097152 (2 MB)</td><td>Largest CSV accepted for import</td></tr>
+<tr><td><code>CsvImport:MaxRows</code></td><td>1000</td><td>Most data rows in one import</td></tr>
+</table>
+<p>Everything else (GQL limits, the 10,000-row export cap) is fixed in code. See <a href="configuration.html">Configuration reference</a>.</p>
