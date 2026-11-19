@@ -1,0 +1,85 @@
+@* Multi-line chart as inline SVG (trends). Missing values (null) break the line. Hover a column for the values. *@
+@using static GitBench.Components.Sprints.ChartScale
+
+<figure class="chart" aria-label="@Title">
+    <div class="chart-legend" aria-hidden="true">
+        @foreach (var s in Series)
+        {
+            <span class="@("gs-" + s.Slot)"><i class="sw"></i>@s.Name</span>
+        }
+    </div>
+    <svg viewBox="0 0 @W @H" class="chart-svg" role="img">
+        <title>@Title</title>
+        @for (var v = 0.0; v <= yMax + 0.001; v += yStep)
+        {
+            var y = Y(v);
+            <g>
+                <line x1="@L" x2="@(W - R)" y1="@F(y)" y2="@F(y)" class="chart-grid" />
+                <g><text x="@(L - 8)" y="@F(y + 4)" text-anchor="end" class="chart-tick">@F(v)</text></g>
+            </g>
+        }
+        <g><text x="12" y="@F(T + PlotH / 2)" class="chart-axis-label" text-anchor="middle" transform="rotate(-90 12 @F(T + PlotH / 2))">@YLabel</text></g>
+        <line x1="@L" x2="@(W - R)" y1="@F(Y(0))" y2="@F(Y(0))" class="chart-axis" />
+        @for (var k = 0; k < n; k++)
+        {
+            if (k % labelEvery != 0 && k != n - 1) continue;
+            <g><text x="@F(X(k))" y="@(H - B + 18)" text-anchor="middle" class="chart-tick">@Labels[k]</text></g>
+        }
+        @foreach (var s in Series)
+        {
+            @foreach (var run in Runs(s))
+            {
+                <polyline points="@run" class="@("line gs-" + s.Slot)" />
+            }
+            @for (var k = 0; k < n && k < s.Values.Count; k++)
+            {
+                if (s.Values[k] is { } val)
+                {
+                    <circle cx="@F(X(k))" cy="@F(Y(val))" r="3.5" class="@("dot gs-" + s.Slot)" />
+                }
+            }
+        }
+        @for (var k = 0; k < n; k++)
+        {
+            <rect x="@F(X(k) - colW / 2)" y="@T" width="@F(colW)" height="@PlotH" class="chart-hit"><title>@Tip(k)</title></rect>
+        }
+    </svg>
+</figure>
+
+@code {
+    public sealed record Line(string Name, IReadOnlyList<double?> Values, int Slot);
+
+    [Parameter, EditorRequired] public IReadOnlyList<string> Labels { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<Line> Series { get; set; } = [];
+    [Parameter] public string Title { get; set; } = "Trend";
+    [Parameter] public string YLabel { get; set; } = "";
+
+    private const int W = 760, H = 280, L = 48, R = 16, T = 12, B = 34;
+    private const int PlotW = W - L - R, PlotH = H - T - B;
+    private int n, labelEvery = 1;
+    private double yMax = 1, yStep = 1, colW = PlotW;
+
+    private double X(int k) => L + (n <= 1 ? PlotW / 2.0 : k * (double)PlotW / (n - 1));
+    private double Y(double v) => T + PlotH - v / yMax * PlotH;
+
+    protected override void OnParametersSet()
+    {
+        n = Labels.Count;
+        (yMax, yStep) = Nice(Series.SelectMany(s => s.Values).Select(v => v ?? 0).DefaultIfEmpty(0).Max());
+        labelEvery = n <= 10 ? 1 : (int)Math.Ceiling(n / 10.0);
+        colW = n <= 1 ? PlotW : PlotW / (double)(n - 1);
+    }
+
+    private IEnumerable<string> Runs(Line s)
+    {
+        var pts = new List<string>();
+        for (var k = 0; k < n && k < s.Values.Count; k++)
+        {
+            if (s.Values[k] is { } v) pts.Add($"{F(X(k))},{F(Y(v))}");
+            else { if (pts.Count > 1) yield return string.Join(" ", pts); pts.Clear(); }
+        }
+        if (pts.Count > 1) yield return string.Join(" ", pts);
+    }
+
+    private string Tip(int k) => Labels[k] + string.Concat(Series.Select(s => $"\n{s.Name}: {(k < s.Values.Count && s.Values[k] is { } v ? F(v) : "–")}"));
+}

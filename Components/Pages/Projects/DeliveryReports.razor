@@ -1,0 +1,554 @@
+@page "/p/{Key}/reports/delivery"
+@using System.Globalization
+@using GitBench.Components.Reports
+@using GitBench.Services.Reports
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject DeliveryReportService Delivery
+@inject DoraReportService Dora
+@inject PullRequestReportService PullRequests
+@inject GitBench.Services.Fields.ComponentVersionService ComponentsService
+@inject ISnackbar Snackbar
+
+<PageTitle>Delivery reports · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="dr-page">
+        <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-3">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1" Class="dr-heading">Delivery reports</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@project.Name · flow, throughput, DORA and pull requests, from issue history and deployments</MudText>
+            </div>
+            <MudButton Href="@($"/p/{project.Key}/reports")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Insights">Sprint reports</MudButton>
+        </div>
+
+        <MudPaper Outlined="true" Class="pa-3 mb-4">
+            <div class="dr-filters">
+                <MudSelect T="string" @bind-Value="typeFilter" @bind-Value:after="Reload" Label="Type" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="string" Value="@("")">All types</MudSelectItem>
+                    @foreach (var t in Enum.GetValues<IssueType>())
+                    {
+                        <MudSelectItem T="string" Value="@t.ToString()">@t</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="int" @bind-Value="labelId" @bind-Value:after="Reload" Label="Label" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="int" Value="0">Any label</MudSelectItem>
+                    @foreach (var l in project.Labels)
+                    {
+                        <MudSelectItem T="int" Value="@l.Id">@l.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="int" @bind-Value="componentId" @bind-Value:after="Reload" Label="Component" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="int" Value="0">Any component</MudSelectItem>
+                    @foreach (var c in components)
+                    {
+                        <MudSelectItem T="int" Value="@c.Id">@c.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="int" @bind-Value="assigneeId" @bind-Value:after="Reload" Label="Assignee" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="int" Value="-1">Anyone</MudSelectItem>
+                    <MudSelectItem T="int" Value="0">Unassigned</MudSelectItem>
+                    @foreach (var u in users)
+                    {
+                        <MudSelectItem T="int" Value="@u.Id">@u.DisplayName</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudDatePicker Date="from" DateChanged="d => { from = d; return ReloadAsync(); }" Label="From" Variant="Variant.Outlined" Margin="Margin.Dense"
+                               DateFormat="yyyy-MM-dd" Editable="true" AutoClose="true" />
+                <MudDatePicker Date="to" DateChanged="d => { to = d; return ReloadAsync(); }" Label="To" Variant="Variant.Outlined" Margin="Margin.Dense"
+                               DateFormat="yyyy-MM-dd" Editable="true" AutoClose="true" />
+                <MudToggleGroup T="bool" Value="monthly" ValueChanged="v => { monthly = v; return ReloadAsync(); }" Size="Size.Small" Color="Color.Primary" Outlined="true"
+                                CheckMark="false" aria-label="Interval">
+                    <MudToggleItem T="bool" Value="false" Text="Weekly" />
+                    <MudToggleItem T="bool" Value="true" Text="Monthly" />
+                </MudToggleGroup>
+            </div>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Dates are UTC; the default range is the last 90 days. Type, label, component and assignee apply to the issue reports; DORA and pull request reports use the dates and interval.</MudText>
+        </MudPaper>
+
+        <MudTabs Elevation="0" Rounded="true" ActivePanelIndex="tab" ActivePanelIndexChanged="OnTab" PanelClass="pt-4" KeepPanelsAlive="false">
+            <MudTabPanel Text="Cycle and lead time">
+                @if (cycle is { } c)
+                {
+                    <div class="dr-toolbar">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Issues finished in the range. Lead time: created to done. Cycle time: first in progress to done.</MudText>
+                        <MudButton Href="@CsvUrl("cycle-time")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>CSV</MudButton>
+                    </div>
+                    @if (c.Lead == null)
+                    {
+                        <div class="dr-empty">No issues were finished in this range with these filters.</div>
+                    }
+                    else
+                    {
+                        <div class="dr-stats">
+                            @Stat("Finished", c.Lead.Count.ToString())
+                            @Stat("Lead time p50", Days(c.Lead.P50))
+                            @Stat("Lead time p85", Days(c.Lead.P85))
+                            @Stat("Lead time p95", Days(c.Lead.P95))
+                            @Stat("Cycle time p50", c.Cycle == null ? "–" : Days(c.Cycle.P50))
+                            @Stat("Cycle time p85", c.Cycle == null ? "–" : Days(c.Cycle.P85))
+                            @Stat("Cycle time p95", c.Cycle == null ? "–" : Days(c.Cycle.P95))
+                        </div>
+                        <MudToggleGroup T="bool" Value="showCycle" ValueChanged="v => { showCycle = v; bucket = null; }" Size="Size.Small" Color="Color.Primary" Outlined="true" CheckMark="false" Class="mb-2" aria-label="Distribution">
+                            <MudToggleItem T="bool" Value="false" Text="Lead time" />
+                            <MudToggleItem T="bool" Value="true" Text="Cycle time" />
+                        </MudToggleGroup>
+                        <MudText Typo="Typo.subtitle2">Distribution: issues per @(showCycle ? "cycle" : "lead") time bucket (click a bar to list its issues)</MudText>
+                        <BarChart Items="Histogram(c)" Title="@(showCycle ? "Cycle time distribution" : "Lead time distribution")" YLabel="Issues" OnSelect="i => bucket = bucket == i ? null : i" />
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Trend: median and 85th percentile by @(monthly ? "month" : "week") finished</MudText>
+                        <LineChart Labels="PeriodLabels(c.Trend.Select(t => t.Period))"
+                                   Series="TrendLines(c)" Title="Lead and cycle time trend" YLabel="Days" />
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">
+                            Issues@(bucket is { } b ? $" in {ReportMath.BucketLabel(b)}" : "") (@FilteredIssues(c).Count)
+                            @if (bucket != null) { <MudButton Size="Size.Small" OnClick="() => bucket = null">Show all</MudButton> }
+                        </MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Outlined="true" Class="dr-table">
+                            <thead><tr><th>Issue</th><th>Title</th><th>Assignee</th><th>Started</th><th>Done</th><th class="num">Lead</th><th class="num">Cycle</th></tr></thead>
+                            <tbody>
+                                @foreach (var i in FilteredIssues(c).Take(100))
+                                {
+                                    <tr>
+                                        <td><a href="@i.Url" class="mono">@i.Key</a></td>
+                                        <td>@i.Title</td>
+                                        <td>@(i.Assignee ?? "–")</td>
+                                        <td>@(i.StartedAt?.ToString("MMM d") ?? "–")</td>
+                                        <td>@i.DoneAt.ToString("MMM d")</td>
+                                        <td class="num">@Days(i.LeadDays)</td>
+                                        <td class="num">@(i.CycleDays is { } cd ? Days(cd) : "–")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                        @if (c.WithoutStart > 0)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@c.WithoutStart finished issue(s) never entered an In Progress status and are counted in lead time only.</MudText>
+                        }
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Time in status and flow">
+                @if (tis is { } t)
+                {
+                    <div class="dr-toolbar">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Rebuilt from status changes, for issues that existed in the range (time inside the range only). Done is not counted. A bottleneck is a status whose average is at least 1.5 times the mean of the other working statuses.</MudText>
+                        <div class="d-flex gap-2">
+                            <MudButton Href="@CsvUrl("time-in-status")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>Statuses CSV</MudButton>
+                            <MudButton Href="@CsvUrl("time-in-status-issues")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>Issues CSV</MudButton>
+                        </div>
+                    </div>
+                    @if (t.Statuses.Count == 0)
+                    {
+                        <div class="dr-empty">No issue history in this range.</div>
+                    }
+                    else
+                    {
+                        <BarChart Items="StatusItems(t)"
+                                  Title="Average time per issue in each status" YLabel="Days" />
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Outlined="true" Class="dr-table mt-2">
+                            <thead><tr><th>Status</th><th class="num">Issues</th><th class="num">Average</th><th class="num">Median</th><th class="num">Total</th><th class="num">Share</th><th></th></tr></thead>
+                            <tbody>
+                                @foreach (var s in t.Statuses)
+                                {
+                                    <tr class="@(s.Bottleneck ? "dr-hot" : null)">
+                                        <td>@s.Status</td>
+                                        <td class="num">@s.Issues</td>
+                                        <td class="num">@Days(s.AvgDays)</td>
+                                        <td class="num">@Days(s.MedianDays)</td>
+                                        <td class="num">@Days(s.TotalDays)</td>
+                                        <td class="num">@s.SharePercent.ToString("0.#", CultureInfo.InvariantCulture)%</td>
+                                        <td>@if (s.Bottleneck) { <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">Bottleneck</MudChip> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                        <MudText Typo="Typo.subtitle2" Class="mt-4">Issues that spent the longest in the workflow</MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Outlined="true" Class="dr-table">
+                            <thead><tr><th>Issue</th><th>Title</th><th>Now</th><th>Longest in</th><th class="num">Total</th></tr></thead>
+                            <tbody>
+                                @foreach (var i in t.Issues.Take(30))
+                                {
+                                    <tr>
+                                        <td><a href="/p/@project.Key/issues/@i.Key.Split('-').Last()" class="mono">@i.Key</a></td>
+                                        <td>@i.Title</td>
+                                        <td>@i.CurrentStatus</td>
+                                        <td>@i.LongestStatus (@Days(i.Days[i.LongestStatus]))</td>
+                                        <td class="num">@Days(i.TotalDays)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                }
+                @if (cfd is { } f)
+                {
+                    <div class="dr-toolbar mt-6">
+                        <MudText Typo="Typo.h6">Cumulative flow</MudText>
+                        <MudButton Href="@CsvUrl("cumulative-flow")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>CSV</MudButton>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Issues in each status at the end of every day. Parallel bands are steady flow; a band that widens is work piling up in that status.</MudText>
+                    <AreaChart Labels="f.Days.Select(d => d.Date.ToString(DayFormat, CultureInfo.InvariantCulture)).ToList()" Series="CfdBands(f)" Title="Cumulative flow diagram" />
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Throughput and WIP">
+                @if (throughput is { } th)
+                {
+                    <div class="dr-toolbar">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Issues finished per @(monthly ? "month" : "week"). Average @th.AverageDone.ToString("0.#", CultureInfo.InvariantCulture) per @(monthly ? "month" : "week").</MudText>
+                        <div class="d-flex gap-2">
+                            <MudButton Href="@CsvUrl("throughput")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>Throughput CSV</MudButton>
+                            <MudButton Href="@CsvUrl("throughput-sprints")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>Sprints CSV</MudButton>
+                        </div>
+                    </div>
+                    <BarChart Items="ThroughputItems(th)" Title="Issues finished" YLabel="Issues" />
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Sprints completed in the range (committed and completed when the sprint started and ended)</MudText>
+                    @if (th.Sprints.Count == 0)
+                    {
+                        <div class="dr-empty">No sprint was completed in this range.</div>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Outlined="true" Class="dr-table">
+                            <thead><tr><th>Sprint</th><th>Completed</th><th class="num">Committed issues</th><th class="num">Completed issues</th><th class="num">Committed points</th><th class="num">Completed points</th></tr></thead>
+                            <tbody>
+                                @foreach (var s in th.Sprints)
+                                {
+                                    <tr><td>@s.Name</td><td>@s.CompletedAt.ToString("MMM d")</td><td class="num">@s.CommittedCount</td><td class="num">@s.CompletedCount</td><td class="num">@s.CommittedPoints</td><td class="num">@s.CompletedPoints</td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                }
+                @if (wip is { } w)
+                {
+                    <div class="dr-toolbar mt-6">
+                        <MudText Typo="Typo.h6">Work in progress now</MudText>
+                        <MudButton Href="@CsvUrl("wip")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>CSV</MudButton>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">@w.Total open issues, @w.InProgress in progress or in review.</MudText>
+                    <BarChart Items="WipItems(w)" Title="Open issues per status" YLabel="Issues" />
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="DORA">
+                @if (dora is { } d)
+                {
+                    <div class="dr-toolbar">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Production environment: <strong>@(d.ProductionEnvironment ?? "not set")</strong>@(d.Configured ? "" : " (found by name)").
+                            Failure window: @d.FailureWindowHours h.
+                        </MudText>
+                        <div class="d-flex gap-2">
+                            <MudButton Href="@CsvUrl("dora-summary")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>Summary CSV</MudButton>
+                            <MudButton Href="@CsvUrl("dora")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>Deployments CSV</MudButton>
+                        </div>
+                    </div>
+                    @if (d.Notice != null)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@d.Notice</MudAlert>
+                    }
+                    @if (canManage)
+                    {
+                        <MudPaper Outlined="true" Class="pa-3 mb-4">
+                            <div class="dr-filters">
+                                <MudSelect T="string" @bind-Value="prodEnv" Label="Production environment" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                           HelperText="Matched by name in every repository of the project">
+                                    @foreach (var n in envNames)
+                                    {
+                                        <MudSelectItem T="string" Value="@n">@n</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudNumericField T="int" @bind-Value="windowHours" Label="Failure window (hours)" Min="1" Max="720" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 HelperText="A rollback, failed deploy or hotfix issue within this time marks a deployment as failed" />
+                                <MudButton OnClick="SaveDoraSettings" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">Save</MudButton>
+                            </div>
+                        </MudPaper>
+                    }
+                    <div class="dr-dora">
+                        @Dora4("Deployment frequency", d.Deployments == 0 ? "–" : $"{d.PerDay.ToString("0.##", CultureInfo.InvariantCulture)}/day", $"{d.Deployments} deployments · {d.PerWeek.ToString("0.##", CultureInfo.InvariantCulture)}/week", d.FrequencyBand)
+                        @Dora4("Lead time for changes", d.LeadTimeHours == null ? "–" : Hours(d.LeadTimeHours.P50), d.LeadTimeHours == null ? "no commits measured" : $"p85 {Hours(d.LeadTimeHours.P85)} · {d.CommitsMeasured} commits", d.LeadTimeBand)
+                        @Dora4("Change failure rate", d.FailureRate is { } fr ? $"{(fr * 100).ToString("0.#", CultureInfo.InvariantCulture)}%" : "–", $"{d.Failures} of {d.Deployments} deployments", d.FailureBand)
+                        @Dora4("Time to restore", d.RestoreMedianHours is { } rm ? Hours(rm) : "–", $"{d.Restored} restored · {d.Unrestored} not yet", d.RestoreBand)
+                    </div>
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Successful production deployments per @(monthly ? "month" : "week")</MudText>
+                    <BarChart Items="d.Frequency.Select(p => new BarChart.Item(PeriodLabel(p.Period), p.Deployments)).ToList()" Title="Deployments" YLabel="Deployments" />
+
+                    <MudExpansionPanels Class="mt-3" Elevation="0">
+                        <MudExpansionPanel Text="Definitions and bands">
+                            <ul class="dr-defs">
+                                <li><strong>Deployment frequency</strong>: successful start deployments to the production environment that finished in the range (rollbacks are not counted).</li>
+                                <li><strong>Lead time for changes</strong>: for every commit a deployment shipped (those since the environment's previous successful deployment), time from commit to the deployment finishing. An environment's first deployment has no baseline and is skipped.</li>
+                                <li><strong>Change failure rate</strong>: share of deployments followed within the failure window by a rollback to production, a failed production deployment, or an issue labelled "hotfix" created in this project. Each signal counts against the latest successful deployment before it.</li>
+                                <li><strong>Time to restore</strong>: from a failed deployment finishing to the first successful production deployment (the rollback or fix) at or after its first failure signal.</li>
+                            </ul>
+                            <MudSimpleTable Dense="true" Elevation="0" Outlined="true" Class="dr-table">
+                                <thead><tr><th>Band</th><th>Deployment frequency</th><th>Lead time for changes</th><th>Change failure rate</th><th>Time to restore</th></tr></thead>
+                                <tbody>
+                                    @for (var k = 0; k < 4; k++)
+                                    {
+                                        var kk = k;
+                                        <tr>
+                                            <td><strong>@d.Bands["frequency"][kk].Name</strong></td>
+                                            <td class="@BandCell(d.FrequencyBand, kk)">@d.Bands["frequency"][kk].Rule</td>
+                                            <td class="@BandCell(d.LeadTimeBand, kk)">@d.Bands["leadTime"][kk].Rule</td>
+                                            <td class="@BandCell(d.FailureBand, kk)">@d.Bands["failureRate"][kk].Rule</td>
+                                            <td class="@BandCell(d.RestoreBand, kk)">@d.Bands["restoreTime"][kk].Rule</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+
+                    @if (d.Rows.Count > 0)
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Deployments</MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Outlined="true" Class="dr-table">
+                            <thead><tr><th>Finished</th><th>Repository</th><th>Commit</th><th class="num">Commits</th><th class="num">Lead time (median)</th><th>Outcome</th><th class="num">Restored in</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in d.Rows.Take(100))
+                                {
+                                    <tr class="@(r.Failed ? "dr-hot" : null)">
+                                        <td>@r.FinishedAt.ToString("MMM d HH:mm")</td>
+                                        <td>@r.Repository</td>
+                                        <td class="mono">@r.CommitSha[..Math.Min(7, r.CommitSha.Length)]</td>
+                                        <td class="num">@r.Commits</td>
+                                        <td class="num">@(r.LeadTimeHours is { } lh ? Hours(lh) : "–")</td>
+                                        <td>@(r.Failed ? "Failed: " + r.FailureSignal : "OK")</td>
+                                        <td class="num">@(r.RestoreHours is { } rh ? Hours(rh) : "–")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Pull requests">
+                @if (prs is { } p)
+                {
+                    <div class="dr-toolbar">
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Pull requests created in the range. First review: first verdict or comment by someone other than the author. Size: lines added plus removed (measured for the newest @PullRequestReportService.MaxMeasured).</MudText>
+                        <MudButton Href="@CsvUrl("pull-requests")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Download" download>CSV</MudButton>
+                    </div>
+                    @if (p.PullRequests == 0)
+                    {
+                        <div class="dr-empty">No pull requests were created in this range.</div>
+                    }
+                    else
+                    {
+                        <div class="dr-stats">
+                            @Stat("Pull requests", p.PullRequests.ToString())
+                            @Stat("Merged", p.Merged.ToString())
+                            @Stat("First review p50", p.TimeToFirstReviewHours == null ? "–" : Hours(p.TimeToFirstReviewHours.P50))
+                            @Stat("First review p85", p.TimeToFirstReviewHours == null ? "–" : Hours(p.TimeToFirstReviewHours.P85))
+                            @Stat("Time to merge p50", p.TimeToMergeHours == null ? "–" : Hours(p.TimeToMergeHours.P50))
+                            @Stat("Time to merge p85", p.TimeToMergeHours == null ? "–" : Hours(p.TimeToMergeHours.P85))
+                            @Stat("Size p50", p.Size == null ? "–" : $"{p.Size.P50:0} lines")
+                        </div>
+                        <MudText Typo="Typo.subtitle2">Size (lines changed)</MudText>
+                        <BarChart Items="SizeItems(p)" Title="Pull requests by size" YLabel="Pull requests" />
+                        <MudText Typo="Typo.subtitle2" Class="mt-3">Median hours by @(monthly ? "month" : "week") created</MudText>
+                        <LineChart Labels="PeriodLabels(p.Trend.Select(t => t.Period))"
+                                   Series="PrLines(p)"
+                                   Title="Pull request times" YLabel="Hours" />
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Outlined="true" Class="dr-table mt-3">
+                            <thead><tr><th>Pull request</th><th>Author</th><th>State</th><th class="num">First review</th><th class="num">To merge</th><th class="num">Size</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in p.Rows.Take(100))
+                                {
+                                    <tr>
+                                        <td><a href="@r.Url(project.Key)">@r.Repository#@r.Number</a> @r.Title</td>
+                                        <td>@r.Author</td>
+                                        <td>@r.State@(r.IsDraft ? " (draft)" : "")</td>
+                                        <td class="num">@(r.HoursToFirstReview is { } h1 ? Hours(h1) : "–")</td>
+                                        <td class="num">@(r.HoursToMerge is { } h2 ? Hours(h2) : "–")</td>
+                                        <td class="num">@(r.Size is { } sz ? $"{sz} ({r.SizeClass})" : "–")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound, canManage;
+    private List<ProjectComponent> components = [];
+    private List<User> users = [];
+    private int tab;
+
+    // filters
+    private string typeFilter = "";
+    private int labelId, componentId, assigneeId = -1;
+    private DateTime? from, to;
+    private bool monthly;
+
+    // data
+    private CycleTimeReport? cycle;
+    private TimeInStatusReport? tis;
+    private CumulativeFlowReport? cfd;
+    private ThroughputReport? throughput;
+    private WipReport? wip;
+    private DoraReport? dora;
+    private PullRequestReport? prs;
+    private bool showCycle;
+    private int? bucket;
+    private List<string> envNames = [];
+    private string? prodEnv;
+    private int windowHours = 24;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (project?.Key == Key.ToUpperInvariant()) return;
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        canManage = await Access.CanAsync(project.Id, Permission.ManageProjectSettings);
+        components = (await ComponentsService.GetComponentsAsync(project.Id)).Select(c => c.Component).ToList();
+        users = await Issues.GetUsersAsync();
+        await Reload();
+    }
+
+    private ReportFilter Filter() => new()
+    {
+        Type = Enum.TryParse<IssueType>(typeFilter, out var t) ? t : null,
+        LabelId = labelId > 0 ? labelId : null,
+        ComponentId = componentId > 0 ? componentId : null,
+        AssigneeId = assigneeId >= 0 ? assigneeId : null,
+        From = from, To = to, Monthly = monthly,
+    };
+
+    /// <summary>The CSV download of a report with the current filters (a session-authenticated GET).</summary>
+    private string CsvUrl(string report)
+    {
+        var q = new List<string>();
+        if (typeFilter != "") q.Add("type=" + typeFilter);
+        if (labelId > 0) q.Add("label=" + labelId);
+        if (componentId > 0) q.Add("component=" + componentId);
+        if (assigneeId >= 0) q.Add("assignee=" + assigneeId);
+        if (from is { } f) q.Add("from=" + f.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        if (to is { } t) q.Add("to=" + t.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        if (monthly) q.Add("interval=month");
+        return $"/p/{project!.Key}/reports/{report}.csv" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+    }
+
+    private Task ReloadAsync() => Reload();
+
+    private async Task OnTab(int i)
+    {
+        tab = i;
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        if (project == null) return;
+        var id = project.Id;
+        var f = Filter();
+        bucket = null;
+        switch (tab)
+        {
+            case 0: cycle = await Delivery.CycleTimeAsync(id, f); break;
+            case 1:
+                tis = await Delivery.TimeInStatusAsync(id, f);
+                cfd = await Delivery.CumulativeFlowAsync(id, f);
+                break;
+            case 2:
+                throughput = await Delivery.ThroughputAsync(id, f);
+                wip = await Delivery.WipAsync(id, f);
+                break;
+            case 3:
+                dora = await Dora.ReportAsync(id, f);
+                envNames = await Dora.EnvironmentNamesAsync(id);
+                prodEnv = project.ProductionEnvironment;
+                windowHours = dora.FailureWindowHours;
+                break;
+            case 4: prs = await PullRequests.ReportAsync(id, f); break;
+        }
+    }
+
+    private async Task SaveDoraSettings()
+    {
+        if (project == null) return;
+        try
+        {
+            await Dora.SetSettingsAsync(project.Id, prodEnv, windowHours);
+            project.ProductionEnvironment = string.IsNullOrWhiteSpace(prodEnv) ? null : prodEnv;
+            Snackbar.Add("DORA settings saved.", Severity.Success);
+            await Reload();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    // ----- view helpers -----
+
+    private static string Days(double d) => d < 1 ? $"{(d * 24).ToString("0.#", CultureInfo.InvariantCulture)} h" : $"{d.ToString("0.#", CultureInfo.InvariantCulture)} d";
+    private static string Hours(double h) => h < 48 ? $"{h.ToString("0.#", CultureInfo.InvariantCulture)} h" : $"{(h / 24).ToString("0.#", CultureInfo.InvariantCulture)} d";
+
+    private RenderFragment Stat(string label, string value) => @<div><span class="dr-label">@label</span><strong>@value</strong></div>;
+
+    private RenderFragment Dora4(string title, string value, string sub, string? band) => @<div class="dr-card">
+        <span class="dr-label">@title</span>
+        <strong class="dr-big">@value</strong>
+        <span class="dr-sub">@sub</span>
+        @if (band != null)
+        {
+            <MudChip T="string" Size="Size.Small" Color="@BandColor(band)" Variant="Variant.Filled">@band</MudChip>
+        }
+    </div>;
+
+    private const string DayFormat = "MMM d";
+    private string PeriodLabel(DateTime d) => d.ToString(monthly ? "MMM yyyy" : "MMM d", CultureInfo.InvariantCulture);
+    private List<string> PeriodLabels(IEnumerable<DateTime> d) => d.Select(PeriodLabel).ToList();
+
+    private static List<BarChart.Item> StatusItems(TimeInStatusReport t) =>
+        t.Statuses.Select(s => new BarChart.Item(s.Status, s.AvgDays, $"{s.Status}: {Days(s.AvgDays)} average over {s.Issues} issues", s.Bottleneck)).ToList();
+
+    private List<BarChart.Item> ThroughputItems(ThroughputReport t) =>
+        t.Periods.Select(p => new BarChart.Item(PeriodLabel(p.Period), p.Done, $"{p.Period:MMM d}: {p.Done} finished, {p.Points} points, {p.Created} created")).ToList();
+
+    private static List<BarChart.Item> WipItems(WipReport w) =>
+        w.Rows.Select(r => new BarChart.Item(r.Status, r.Issues, $"{r.Status}: {r.Issues} issues, {r.Points} points")).ToList();
+
+    private static List<BarChart.Item> SizeItems(PullRequestReport p) =>
+        p.SizeBuckets.Select(s => new BarChart.Item(s.Name, s.Count, $"{s.Name} ({s.Rule}): {s.Count}")).ToList();
+
+    private static List<AreaChart.Band_> CfdBands(CumulativeFlowReport f) =>
+        f.Series.Select((s, k) => new AreaChart.Band_(s.Status, f.Days.Select(d => d.Counts[k]).ToList())).ToList();
+
+    private static Color BandColor(string band) => band switch { "Elite" => Color.Success, "High" => Color.Info, "Medium" => Color.Warning, _ => Color.Error };
+    private static string? BandCell(string? current, int index) => current != null && ReportMath.Bands["frequency"][index].Name == current ? "dr-band-current" : null;
+
+    private List<BarChart.Item> Histogram(CycleTimeReport c) =>
+        (showCycle ? c.CycleHistogram : c.LeadHistogram).Select(h => new BarChart.Item(h.Label, h.Count, $"{h.Label}: {h.Count} issues", false, bucket == h.Index)).ToList();
+
+    private static List<LineChart.Line> PrLines(PullRequestReport p) =>
+    [
+        new("To first review", p.Trend.Select(t => t.MedianHoursToFirstReview).ToList(), 1),
+        new("To merge", p.Trend.Select(t => t.MedianHoursToMerge).ToList(), 2),
+    ];
+
+    private static List<LineChart.Line> TrendLines(CycleTimeReport c) =>
+    [
+        new("Lead p50", c.Trend.Select(t => t.LeadP50).ToList(), 1),
+        new("Lead p85", c.Trend.Select(t => t.LeadP85).ToList(), 4),
+        new("Cycle p50", c.Trend.Select(t => t.CycleP50).ToList(), 3),
+        new("Cycle p85", c.Trend.Select(t => t.CycleP85).ToList(), 2),
+    ];
+
+    private List<IssueTimeRow> FilteredIssues(CycleTimeReport c) => bucket is not { } b ? [.. c.Issues]
+        : c.Issues.Where(i => (showCycle ? i.CycleDays : i.LeadDays) is { } v && ReportMath.BucketOf(v) == b).ToList();
+}

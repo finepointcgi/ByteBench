@@ -1,0 +1,17 @@
+.chart { margin: 0; }
+.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--mud-palette-text-secondary); margin-bottom: 4px; }
+.chart-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 6px; background: var(--c); }
+.chart-grid { stroke: var(--mud-palette-lines-default); stroke-width: 1; }
+.chart-axis { stroke: var(--mud-palette-text-disabled); stroke-width: 1; }
+.chart-tick, .chart-axis-label { font-size: 11px; fill: var(--mud-palette-text-secondary); }
+.chart-hit { fill: transparent; }
+.chart-hit:hover { fill: rgba(var(--mud-palette-text-primary-rgb, 0, 0, 0), .06); }
+.band { fill: var(--c); stroke: var(--mud-palette-surface); stroke-width: 1; fill-opacity: .9; }
+.gs-1 { --c: light-dark(#2a78d6, #3987e5); }
+.gs-2 { --c: light-dark(#eb6834, #d95926); }
+.gs-3 { --c: light-dark(#1baf7a, #199e70); }
+.gs-4 { --c: light-dark(#eda100, #c98500); }
+.gs-5 { --c: light-dark(#e87ba4, #d55181); }
+.gs-6 { --c: light-dark(#008300, #0ca30c); }
+.gs-7 { --c: light-dark(#6250d6, #9085e9); }

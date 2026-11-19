@@ -24,6 +24,7 @@ else if (project != null)
                     <MudToggleItem T="bool" Value="false" Text="Story points" />
                     <MudToggleItem T="bool" Value="true" Text="Issue count" />
                 </MudToggleGroup>
+                <MudButton Href="@($"/p/{project.Key}/reports/delivery")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.QueryStats">Delivery reports</MudButton>
                 <MudButton Href="@($"/p/{project.Key}/backlog")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DirectionsRun">Backlog</MudButton>
             </div>
         </div>

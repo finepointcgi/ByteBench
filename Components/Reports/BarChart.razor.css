@@ -1,0 +1,12 @@
+.chart { margin: 0; }
+.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-grid { stroke: var(--mud-palette-lines-default); stroke-width: 1; }
+.chart-axis { stroke: var(--mud-palette-text-disabled); stroke-width: 1; }
+.chart-tick, .chart-axis-label { font-size: 11px; fill: var(--mud-palette-text-secondary); }
+.chart-value { font-size: 11px; fill: var(--mud-palette-text-primary); font-variant-numeric: tabular-nums; }
+.chart-hit { fill: transparent; }
+.chart-hit:hover { fill: rgba(var(--mud-palette-primary-rgb), .08); }
+.bar-clickable { cursor: pointer; }
+.bar-main { fill: light-dark(#2a78d6, #3987e5); }
+.bar-hot { fill: light-dark(#eb6834, #d95926); }
+.bar-selected { stroke: var(--mud-palette-text-primary); stroke-width: 2; }
