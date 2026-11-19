@@ -1,0 +1,256 @@
+<h1>Repositories and Git hosting</h1>
+<p class="lead">Every project can host any number of Git repositories. You clone and push over HTTP with a password or personal access token, or over GitBench's built-in SSH server with an SSH key or a deploy key.</p>
+
+<h2 id="overview">How repositories work</h2>
+<p>A <strong>repository</strong> lives inside a <strong>project</strong> (which has a key such as <code>WEB</code>). It is a normal bare Git repository on the server's disk, plus a database row for its name, description, default branch and settings. GitBench reads and writes it with LibGit2Sharp and runs the real <code>git</code> executable for the network protocols, so any Git client works.</p>
+<p>A repository is addressed as <code>KEY/slug</code>, for example <code>WEB/web-app</code>. The slug is the URL-friendly name. These are the main pages:</p>
+<table>
+  <tr><th>Route</th><th>What is there</th></tr>
+  <tr><td><code>/p/{KEY}/repos</code></td><td>The repository list and <strong>Create repository</strong></td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}</code></td><td>Source browser, clone box, rendered README (see <a href="code-tools.html">Code browsing and tools</a>)</td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/branches</code></td><td>Branches with ahead/behind counts, create, delete, <strong>Create pull request</strong></td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/settings</code></td><td>General settings, rename, archive, delete (Maintainer or Owner)</td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/forks</code></td><td>The forks of this repository</td></tr>
+</table>
+<p>The repository tabs are Source, Commits, Branches, Tags, Releases, Pull requests, Pipelines, Environments, Security and Search, plus Settings for Maintainers and Owners.</p>
+
+<h2 id="creating-a-repository">Creating a repository</h2>
+<ol class="steps">
+  <li>Open the project, then <strong>Repositories</strong> in the sidebar (<code>/p/{KEY}/repos</code>).</li>
+  <li>Click <strong>Create repository</strong>. You need the Maintainer role or higher (the <code>ManageRepositories</code> permission).</li>
+  <li>Enter a <strong>Name</strong> (required, up to 100 characters). The <strong>Slug</strong> is filled in from the name; you can change it. It must start with a letter or digit and use only lowercase letters, digits, <code>.</code>, <code>_</code> or <code>-</code>, at most 100 characters, and must not end in <code>.git</code>. The slugs <code>wiki</code> and <code>*.wiki</code> are reserved for the <a href="wiki-snippets.html">project wiki</a>.</li>
+  <li>Optionally add a description, then click <strong>Create repository</strong>.</li>
+</ol>
+<p>The new repository starts with one commit on <code>main</code> containing a <code>README.md</code> built from the name and description. The default branch of a new repository is always <code>main</code>; change it later in <a href="#repository-settings">Settings</a>. The slug must be unique inside the project. Creation is recorded in the audit log as <code>repository.created</code>.</p>
+
+<h2 id="importing">Bringing existing code in</h2>
+<p>GitBench has no "import from URL" wizard. There are three ways to get history in:</p>
+<ul>
+  <li><strong>Push it.</strong> Add the new repository as a remote and push. Because a new repository already has a README commit, either push to a different branch name, or force-push if you want your history to replace <code>main</code> (branch protection must allow it):
+<pre><code>git remote add gitbench https://gitbench.example.com/git/WEB/web-app.git
+git push gitbench --all
+git push gitbench --tags</code></pre></li>
+  <li><strong>Mirror it.</strong> A <a href="#mirroring">pull mirror</a> keeps the repository in sync with an upstream URL on a schedule. While a pull mirror is enabled the repository is read-only for pushes.</li>
+  <li><strong>Fork it.</strong> To copy a repository that already lives in GitBench, use <a href="#forks">Fork</a>.</li>
+</ul>
+<p>Issues and pull requests from other systems are not imported by repository tools. For issues use the CSV import described in <a href="fields-filters.html">Fields, filters and search</a>.</p>
+
+<h2 id="cloning-over-http">Cloning over HTTP</h2>
+<p>Every repository is served over the Git Smart HTTP protocol at <code>/git/{KEY}/{slug}.git</code>:</p>
+<pre><code>git clone https://gitbench.example.com/git/WEB/web-app.git
+cd web-app
+git push origin main</code></pre>
+<p>The repository page has <strong>HTTPS</strong> and <strong>SSH</strong> tabs in its clone box with the exact URLs for your server.</p>
+<ul>
+  <li><strong>Credentials.</strong> Clone, fetch and push all require a GitBench account. When git prompts, enter your username (or email) and either your password or a personal access token. Use a credential helper (<code>osxkeychain</code>, <code>manager</code>, <code>store</code>) instead of putting a secret in the URL. Failed logins count towards account lockout.</li>
+  <li><strong>Two-factor accounts.</strong> If you turned on two-factor sign-in, Git over HTTP refuses your password with a message to use a personal access token instead. See <a href="accounts.html">Accounts, sign-in and SSO</a>.</li>
+  <li><strong>Permissions.</strong> Clone and fetch need the Viewer role (<code>ViewProject</code>). Push needs Developer or higher (<code>PushCode</code>). If you cannot see the project, git answers <code>404 Repository not found</code>, the same as for a repository that does not exist. A Viewer who tries to push gets <code>403</code>.</li>
+  <li><strong>Server requirement.</strong> The server needs the <code>git</code> executable on its <code>PATH</code> (or set <code>Git:Executable</code>). Without it the Git endpoints answer <code>503</code> and an error is logged at startup.</li>
+  <li>Protocol v2 works (<code>git -c protocol.version=2 ...</code>). The legacy "dumb" HTTP protocol is not supported.</li>
+  <li><strong>Smart commits.</strong> After each push, commits whose message mentions an issue key (for example <code>WEB-5: virtualize the list</code>) are added to that issue's activity and shown in its Development panel. Each commit is linked once per issue.</li>
+  <li>Old slugs of renamed repositories keep working (see <a href="#rename">Rename</a>).</li>
+</ul>
+
+<h2 id="personal-access-tokens">Personal access tokens</h2>
+<p>A token replaces your password for Git and for the <a href="api.html">REST API</a>. Create one under <strong>Profile, Access tokens</strong> (<code>/account/profile</code>): give it a name, choose scopes and pick an expiry of 7, 30, 90 or 365 days, or never.</p>
+<table>
+  <tr><th>Scope</th><th>Allows</th></tr>
+  <tr><td><code>read_repository</code></td><td>Clone and fetch over HTTP (and download LFS objects)</td></tr>
+  <tr><td><code>write_repository</code></td><td>Push, and also clone and fetch</td></tr>
+  <tr><td><code>read_api</code>, <code>write_api</code></td><td>REST API read and write access (see <a href="api.html">REST API and webhooks</a>)</td></tr>
+</table>
+<ul>
+  <li>The token looks like <code>gbp_</code> followed by 43 characters and is shown <strong>once</strong>. GitBench stores only a SHA-256 hash and a short display prefix.</li>
+  <li>Use it as the password: <code>git clone https://bob@gitbench.example.com/git/WEB/web-app.git</code>, then paste the token when prompted.</li>
+  <li>A token with only <code>read_repository</code> gets <code>403</code> on push. Your project role still applies on top of the token's scopes.</li>
+  <li>Revoked or expired tokens are rejected like a wrong password. The token list shows when each was last used.</li>
+</ul>
+<div class="warn">Treat a token like a password. Never commit it, and do not paste it into issues or chat. If one leaks, revoke it on the same page.</div>
+
+<h2 id="cloning-over-ssh">Cloning over SSH</h2>
+<p>GitBench has its own SSH server for Git. It is <strong>off by default</strong>; it is on in <code>appsettings.Development.json</code> (port 2222) and in the Docker image.</p>
+<pre><code>git clone ssh://git@gitbench.example.com:2222/WEB/web-app.git
+git clone git@gitbench.example.com:WEB/web-app.git     # scp-like form, only works when the public port is 22</code></pre>
+<p>Any SSH user name works; use <code>git</code>. The identity comes from your key, not the name.</p>
+
+<h3 id="ssh-keys">Your SSH keys</h3>
+<ol class="steps">
+  <li>Open <strong>Profile, SSH keys</strong> (<code>/account/ssh-keys</code>).</li>
+  <li>Paste the contents of your <code>.pub</code> file, give it a title (default: the key's comment) and optionally an expiry.</li>
+  <li>Test: <code>ssh -p 2222 git@gitbench.example.com</code> should print <code>Hi alice! You've successfully authenticated, but GitBench does not provide shell access.</code></li>
+</ol>
+<ul>
+  <li>Supported: <code>ssh-ed25519</code> (recommended), <code>ecdsa-sha2-nistp256/384/521</code> and <code>ssh-rsa</code> of 2048 bits or more. FIDO (<code>sk-...</code>) keys are not supported yet.</li>
+  <li>The list shows each key's <code>SHA256:</code> fingerprint (as <code>ssh-keygen -lf key.pub</code> prints it), when it was added and when it was last used.</li>
+  <li>A key acts as you, with your project permissions. Two-factor sign-in does not apply to SSH keys.</li>
+  <li>Keys of deactivated or locked accounts stop working at once, as do expired keys.</li>
+  <li>A key (by fingerprint) can be registered only once across all users and deploy keys.</li>
+  <li>To pick a specific key: <code>GIT_SSH_COMMAND="ssh -i ~/.ssh/other_key -o IdentitiesOnly=yes" git clone ...</code></li>
+  <li>Audit events: <code>ssh_key.added</code>, <code>ssh_key.removed</code>.</li>
+</ul>
+
+<h3 id="deploy-keys">Deploy keys</h3>
+<p>A <strong>deploy key</strong> is an SSH key for a server or CI system that needs one repository and nothing else. Add it under the repository's <strong>Settings, Deploy keys</strong> (<code>/p/{KEY}/repos/{slug}/settings/deploy-keys</code>; Maintainer or Owner).</p>
+<ul>
+  <li>It works for that repository only, and is <strong>read-only</strong> unless you tick <strong>Allow write access</strong>.</li>
+  <li>A write deploy key pushes like a Developer: <a href="branch-protection.html">branch protection</a> applies and there is no admin bypass.</li>
+  <li>Its pushes run webhooks, pipelines and smart commits as the person who added it. It stops working if that person's account is deactivated.</li>
+  <li>Deploy keys only work when the SSH server is on (the page warns you if it is off).</li>
+  <li>Audit events: <code>deploy_key.added</code>, <code>deploy_key.removed</code>.</li>
+</ul>
+
+<h3 id="ssh-server-config">The SSH server and its configuration</h3>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Ssh:Enabled</code></td><td><code>false</code> (<code>true</code> in Development and the Docker image)</td><td>Run the Git SSH server</td></tr>
+  <tr><td><code>Ssh:Port</code></td><td><code>2222</code></td><td>TCP port to listen on</td></tr>
+  <tr><td><code>Ssh:ListenAddress</code></td><td>all interfaces</td><td>Address to bind</td></tr>
+  <tr><td><code>Ssh:HostKeyPath</code></td><td><code>{DataProtection:KeysPath}/ssh_host_rsa_key</code></td><td>The host key (PEM). Generated on first start as RSA 3072, mode 600</td></tr>
+  <tr><td><code>Ssh:PublicHost</code></td><td>the host of the web request</td><td>Host shown in SSH clone URLs</td></tr>
+  <tr><td><code>Ssh:PublicPort</code></td><td><code>Ssh:Port</code></td><td>Port shown in SSH clone URLs, for example <code>22</code> when Docker or a load balancer maps 22 to 2222</td></tr>
+  <tr><td><code>Ssh:MaxConnections</code></td><td><code>200</code></td><td>Simultaneous connections; more are dropped</td></tr>
+  <tr><td><code>Ssh:AuthTimeoutSeconds</code></td><td><code>30</code></td><td>A connection that has not authenticated by then is closed</td></tr>
+  <tr><td><code>RateLimiting:Ssh</code></td><td>120 per 60 s</td><td>Git commands per user or deploy key</td></tr>
+</table>
+<pre><code># docker-compose.yml: map the host's port 22 to GitBench and tell it what to show
+ports:
+  - "22:2222"
+environment:
+  Ssh__PublicHost: "gitbench.example.com"
+  Ssh__PublicPort: "22"</code></pre>
+<ul>
+  <li><strong>Only Git.</strong> The server runs <code>git-upload-pack</code> and <code>git-receive-pack</code> for <code>KEY/slug.git</code> paths and nothing else. Password and keyboard-interactive login are not offered; shells, PTYs, forwarding and <code>sftp</code> are refused.</li>
+  <li><strong>Same rules as HTTP.</strong> Archived repositories refuse pushes; branch protection and protected tags are checked before Git sees the push, so a refused push prints <code>! [remote rejected] ...</code> and writes nothing. After a push, webhooks, CI, smart commits, stale-approval dismissal and AI review run as usual.</li>
+  <li><strong>Host key.</strong> Back it up with the Data Protection key ring. If it changes, every client warns about a changed host. The fingerprint is logged at startup and shown on the SSH keys page.</li>
+  <li><strong>Post-quantum warning.</strong> OpenSSH 10.1 or newer prints a warning that the connection is not using a post-quantum key exchange. The connection is still encrypted. Silence it per host with <code>WarnWeakCrypto no-pq-kex</code> in <code>~/.ssh/config</code>.</li>
+</ul>
+<p>More on running behind a proxy and in Docker: <a href="production.html">Production setup</a>. All settings: <a href="configuration.html">Configuration reference</a>.</p>
+
+<h2 id="git-lfs">Git LFS</h2>
+<p>GitBench implements the Git LFS Batch API (the <code>basic</code> transfer adapter) at the URL git-lfs derives from the clone URL, <code>/git/{KEY}/{slug}.git/info/lfs/</code>. Nothing needs turning on:</p>
+<pre><code>git lfs install
+git lfs track "*.psd"
+git add .gitattributes
+git commit -m "Track PSD files with LFS"
+git push</code></pre>
+<ul>
+  <li><strong>Auth</strong> is the same as Git over HTTP (password or <code>gbp_</code> token). The batch response hands out short-lived (one hour) transfer tokens limited to one user, repository and operation, so your password is never echoed back.</li>
+  <li><strong>Permissions.</strong> Download needs <code>ViewProject</code> (token scope <code>read_repository</code> or <code>write_repository</code>). Upload needs <code>PushCode</code> (<code>write_repository</code>) and is refused for archived repositories and pull mirrors.</li>
+  <li><strong>Storage.</strong> Objects are content-addressed under <code>Lfs:Root</code> (default <code>{ContentRoot}/lfs</code>) and stored once. A repository can only download objects that were uploaded to it. Objects are removed with their repository unless another repository references them; a daily sweep removes leftovers after a one-day grace period.</li>
+  <li><strong>Limit.</strong> <code>Lfs:MaxObjectBytes</code> (default 2 GB) per object; bigger uploads get <code>413</code>.</li>
+  <li>In the file viewer an LFS pointer shows <strong>Stored with Git LFS</strong> with the real size and a <strong>Download</strong> link.</li>
+  <li><strong>Not implemented:</strong> the LFS locks API (git-lfs prints a one-time warning; silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>) and <code>git-lfs-authenticate</code> over SSH. With an SSH remote, set <code>lfs.url</code> to the HTTPS LFS URL.</li>
+  <li>LFS objects are not copied by <a href="#mirroring">mirrors</a>.</li>
+</ul>
+
+<h2 id="mirroring">Pull and push mirroring</h2>
+<p>Under <strong>Settings, Mirroring</strong> (<code>.../settings/mirroring</code>, Maintainer or Owner) a repository can follow an upstream or copy itself elsewhere.</p>
+<h3 id="pull-mirror">Pull mirror</h3>
+<p>At most one per repository. You enter an upstream URL, an optional username with a password or token, a sync interval (at least <code>Mirroring:MinIntervalMinutes</code>, default 5) and whether to mirror <strong>only protected branches</strong> or all of them.</p>
+<ul>
+  <li>A background service runs <code>git fetch --prune</code> of <code>refs/heads/*</code> and <code>refs/tags/*</code> into the bare repository when the mirror is due. With "only protected branches" it fetches only branches matching a <a href="branch-protection.html">branch protection rule</a> (and all tags).</li>
+  <li>While a pull mirror is enabled the repository is <strong>read-only for pushes</strong> over HTTP and SSH, and tag changes in GitBench and LFS uploads are refused too.</li>
+  <li>Push listeners (webhooks, CI, smart commits) do not run for mirrored commits.</li>
+</ul>
+<h3 id="push-mirror">Push mirrors</h3>
+<p>Up to 10 per repository. After every successful push, and on demand with <strong>Sync now</strong>, GitBench runs a forced <code>git push --prune</code> of branches and tags to the target. With "only protected branches" it pushes the matching branches plus tags and deletes nothing.</p>
+<h3 id="mirror-security">Credentials and safety</h3>
+<ul>
+  <li>Passwords and tokens are encrypted at rest and never shown again. Leave the field blank to keep a saved token; changing the URL drops it. During a sync the token goes through a temporary credential helper, never the URL or command line.</li>
+  <li>URLs must be <code>http://</code>, <code>https://</code> or <code>ssh://</code> (use <code>ssh://git@host/path.git</code>, not the scp-like form), with no embedded credentials.</li>
+  <li><strong>SSRF guard.</strong> Loopback, private, link-local and cloud-metadata addresses are refused when the mirror is saved and again before every sync. Set <code>Mirroring:AllowPrivateNetworks=true</code> to allow private addresses; when unset it follows <code>Webhooks:AllowPrivateNetworks</code>.</li>
+  <li><code>ssh://</code> mirrors authenticate with the key in <code>Mirroring:SshKeyFile</code>; new host keys are trusted on first use and stored in <code>Mirroring:KnownHostsFile</code>.</li>
+  <li>Not mirrored: LFS objects, pull requests, issues and other refs such as <code>refs/pull/*</code>.</li>
+</ul>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Mirroring:Enabled</code></td><td><code>true</code></td><td>Run background syncs</td></tr>
+  <tr><td><code>Mirroring:PollSeconds</code></td><td><code>30</code></td><td>How often due pull mirrors are checked</td></tr>
+  <tr><td><code>Mirroring:TimeoutSeconds</code></td><td><code>600</code></td><td>Kills a git process that takes longer</td></tr>
+  <tr><td><code>Mirroring:MinIntervalMinutes</code></td><td><code>5</code></td><td>Shortest pull interval</td></tr>
+  <tr><td><code>Mirroring:AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>Allow private-network mirror URLs</td></tr>
+  <tr><td><code>Mirroring:SshKeyFile</code> / <code>KnownHostsFile</code></td><td>none / <code>{ContentRoot}/keys/mirror_known_hosts</code></td><td>Key and known hosts for <code>ssh://</code> mirrors</td></tr>
+</table>
+<p>Each mirror shows its last sync status, time and message. Audit events: <code>mirror.created</code>, <code>mirror.updated</code>, <code>mirror.deleted</code>, <code>mirror.sync_requested</code>.</p>
+
+<h2 id="forks">Forks</h2>
+<p>The <strong>Fork</strong> button in a repository's header (any user who can view it) copies the repository into a project where you can create repositories (Maintainer or higher). GitBench has no personal namespaces, so for a fork of your own, create a project first (you become its Owner). The button shows the fork count and links to the list of forks.</p>
+<ul>
+  <li>The copy is a <code>git clone --bare --local</code>, which hard-links the object files: nearly free on disk and fully independent (deleting either side never breaks the other).</li>
+  <li><strong>Sync fork</strong> fetches every upstream branch into the fork's <code>refs/upstream/*</code> and fast-forwards the fork's default branch. If the fork has its own commits it reports "ahead" or "diverged" and changes nothing.</li>
+  <li><strong>PR to upstream</strong> opens a cross-fork pull request. Details, including how CI treats such PRs, are in <a href="pull-requests.html#forks">Pull requests</a>.</li>
+  <li>Forking is audited as <code>repository.forked</code>. API: <code>POST /api/v1/projects/{key}/repos/{slug}/forks</code> with <code>{ "project": "KEY", "slug": "...", "name": "..." }</code>.</li>
+</ul>
+
+<h2 id="repository-settings">Repository settings</h2>
+<p>The <strong>Settings</strong> tab (<code>/p/{KEY}/repos/{slug}/settings</code>) needs the Maintainer role or higher. The left menu links to the other settings pages:</p>
+<div class="cards">
+  <a class="card" href="branch-protection.html"><b>Branch protection</b><span>Rules, protected tags, merge queue</span></a>
+  <a class="card" href="pull-requests.html#merge-strategies"><b>Pull requests</b><span>Allowed merge strategies and default</span></a>
+  <a class="card" href="ai-review-triage.html"><b>AI review</b><span>Automatic AI pull request review</span></a>
+  <a class="card" href="ci.html"><b>CI variables</b><span>Secrets for pipelines</span></a>
+  <a class="card" href="#deploy-keys"><b>Deploy keys</b><span>SSH keys for servers and CI</span></a>
+  <a class="card" href="#mirroring"><b>Mirroring</b><span>Pull and push mirrors</span></a>
+  <a class="card" href="pages.html"><b>Pages</b><span>Static sites from CI</span></a>
+  <a class="card" href="security-scanning.html"><b>Security</b><span>Night Owl scanning settings</span></a>
+</div>
+
+<h3 id="general">General</h3>
+<ul>
+  <li><strong>Name</strong> and <strong>description</strong>.</li>
+  <li><strong>Default branch</strong>: a dropdown of existing branches. Changing it also points the bare repository's <code>HEAD</code>, so new clones check it out. Pull requests, the Source page and the web editor use it as the starting point.</li>
+</ul>
+
+<h3 id="rename">Rename</h3>
+<p>Renaming changes the slug and moves <code>{KEY}/{old}.git</code> to <code>{KEY}/{new}.git</code>. It refuses if another repository or anything on disk already has the new slug.</p>
+<ul>
+  <li>Web URLs with the old slug redirect to the new one, keeping the query and <code>#L</code> anchors.</li>
+  <li>Git over HTTP and SSH keep serving the old slug, so existing clones keep working. Update remotes with <code>git remote set-url origin ...</code> when convenient.</li>
+  <li>Renaming back to a former slug removes that redirect. A real repository always wins over a redirect.</li>
+</ul>
+
+<h3 id="archive">Archive and unarchive</h3>
+<p>An archived repository is read-only. It shows an <strong>Archived</strong> badge. <code>git push</code> fails with <code>This repository is archived and read-only</code>; creating, deleting and merging branches and pull requests is refused. Cloning, browsing and search still work. Use it for finished projects you want to keep.</p>
+
+<h3 id="delete">Delete</h3>
+<p>Type the repository name to confirm. The database rows go first (pull requests with their comments, reviews and activity, watches, AI reviews, redirects, plus notifications linking into it), then the bare repository is moved aside and deleted. This cannot be undone, so take a <a href="production.html">backup</a> first if in doubt. Deleting an upstream leaves its forks working, just no longer linked.</p>
+
+<h2 id="storage-layout">Storage layout on disk</h2>
+<table>
+  <tr><th>What</th><th>Where (default)</th><th>Setting</th></tr>
+  <tr><td>Bare repositories</td><td><code>./repos/{KEY}/{slug}.git</code></td><td><code>Git:RepositoryRoot</code></td></tr>
+  <tr><td>Project wiki</td><td><code>./repos/{KEY}/{key}.wiki.git</code> (created on first use)</td><td><code>Git:RepositoryRoot</code></td></tr>
+  <tr><td>LFS objects</td><td><code>./lfs/{oid[0..2]}/{oid[2..4]}/{oid}</code></td><td><code>Lfs:Root</code></td></tr>
+  <tr><td>Release assets and attachments</td><td><code>./attachments</code></td><td><code>Attachments:Root</code></td></tr>
+  <tr><td>SSH host key and Data Protection keys</td><td><code>./keys</code> (<code>/data/keys</code> in Docker)</td><td><code>DataProtection:KeysPath</code>, <code>Ssh:HostKeyPath</code></td></tr>
+  <tr><td>Push hook scripts</td><td><code>{RepositoryRoot}/.hooks</code></td><td>(managed by GitBench)</td></tr>
+</table>
+<p>The project key is upper-cased and the slug lower-cased on disk. Metadata (names, settings, pull requests) is in the database, so back up both. Never edit the bare repositories by hand while the server runs. Deleted projects and repositories are first renamed to a <code>.trash-...</code> name and then removed.</p>
+
+<h2 id="api">API</h2>
+<table>
+  <tr><th>Endpoint</th><th>What</th></tr>
+  <tr><td><code>GET /api/v1/projects/{key}/repos</code></td><td>List repositories</td></tr>
+  <tr><td><code>GET /api/v1/projects/{key}/repos/{slug}</code></td><td>One repository, including its HTTP <code>cloneUrl</code> and <code>webUrl</code></td></tr>
+  <tr><td><code>GET .../repos/{slug}/branches</code></td><td>Branches</td></tr>
+  <tr><td><code>GET .../repos/{slug}/commits?ref=&amp;path=</code></td><td>Commit list</td></tr>
+  <tr><td><code>GET .../repos/{slug}/raw/{path}?ref=</code></td><td>Raw file</td></tr>
+  <tr><td><code>GET/POST .../repos/{slug}/forks</code>, <code>POST .../sync-fork</code></td><td>Forks</td></tr>
+</table>
+<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  https://gitbench.example.com/api/v1/projects/WEB/repos</code></pre>
+<p>There is no API endpoint to create or delete a repository; do that in the UI. See <a href="api.html">REST API and webhooks</a> for tokens and conventions.</p>
+
+<h2 id="troubleshooting">Common problems</h2>
+<table>
+  <tr><th>Symptom</th><th>Cause and fix</th></tr>
+  <tr><td><code>404 Repository not found</code> on clone</td><td>Wrong path, or your account cannot view the project</td></tr>
+  <tr><td><code>403</code> on push</td><td>You are a Viewer, or your token only has <code>read_repository</code></td></tr>
+  <tr><td><code>401</code> with a correct password</td><td>Two-factor accounts must use a personal access token</td></tr>
+  <tr><td><code>! [remote rejected] ... protected</code></td><td>A <a href="branch-protection.html">branch protection</a> or protected tag rule; open a pull request instead</td></tr>
+  <tr><td>"this repository is a pull mirror"</td><td>Disable the pull mirror to push</td></tr>
+  <tr><td>SSH: <code>Permission denied (publickey)</code></td><td>Key not added, expired, or the account is deactivated</td></tr>
+  <tr><td>SSH: host key changed warning</td><td>The host key file was lost; restore it from backup or remove the old entry from <code>~/.ssh/known_hosts</code></td></tr>
+  <tr><td><code>503</code> from <code>/git/...</code></td><td><code>git</code> is not installed on the server</td></tr>
+</table>
+<p>See also <a href="troubleshooting.html">FAQ and troubleshooting</a>.</p>

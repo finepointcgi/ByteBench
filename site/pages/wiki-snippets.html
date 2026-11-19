@@ -1,0 +1,138 @@
+<h1>Wiki and snippets</h1>
+<p class="lead">Every project has a Markdown wiki that is also a Git repository, and anyone can share small pieces of code or text as snippets, personal or per project.</p>
+
+<h2 id="wiki">Project wiki</h2>
+<p>Open <strong>Wiki</strong> in the project sidebar (<code>/p/{KEY}/wiki</code>, or <code>/p/{KEY}/wiki/{path}</code> for a page). Behind the scenes the wiki is a bare Git repository at <code>{Git:RepositoryRoot}/{KEY}/{key}.wiki.git</code>, created on first use, with one Markdown file per page on <code>main</code>. That gives you history, revert and clone for free.</p>
+
+<h3 id="wiki-pages">Pages and the sidebar</h3>
+<ul>
+  <li>Pages are files named <code>{path}.md</code>. A <code>/</code> in the path makes folders (<code>guides/Getting-started</code>); spaces become <code>-</code>; the page title is the last path segment.</li>
+  <li><code>home</code> is the landing page.</li>
+  <li>The sidebar shows the generated page tree. Create a page called <code>_sidebar</code> (<strong>Customise sidebar</strong>) to replace the tree with your own Markdown navigation.</li>
+</ul>
+
+<h3 id="wiki-editing">Creating and editing</h3>
+<ol class="steps">
+  <li>Click <strong>New page</strong> and enter a path, or follow a red link to a page that does not exist yet.</li>
+  <li>The editor (<code>?action=edit</code>) is the Markdown editor with a wiki-aware preview, a <strong>page path</strong> field (change it to rename or move the page), an optional <strong>commit message</strong> and <strong>Upload image</strong>.</li>
+  <li>Save. Each save, rename, delete or revert is a Git commit authored by you.</li>
+</ol>
+<p><strong>Edit conflicts.</strong> The editor remembers the version it opened. If the page changed (or was deleted) since then, nothing is written; you see the current version and can choose <strong>Save mine anyway</strong> or <strong>Discard mine, edit theirs</strong>. Creating or moving a page onto an existing path is also a conflict. The check runs under the repository lock, so two writers cannot both win.</p>
+
+<h3 id="wiki-history">History</h3>
+<p><code>?action=history</code> lists the commits that touched the page. For each: <strong>View</strong> (<code>?rev=</code>), <strong>Changes</strong> (the diff), <strong>Compare with current</strong>, and <strong>Revert to this</strong>, which makes a new commit rather than rewriting history.</p>
+
+<h3 id="markdown">Markdown features</h3>
+<p>Wiki pages, issues, comments, README files and snippet descriptions all use the same Markdown (the Markdig "advanced" feature set). You can use:</p>
+<ul>
+  <li>headings, emphasis, lists, block quotes, links and images</li>
+  <li><strong>tables</strong>, <strong>task lists</strong> (<code>- [ ]</code>), footnotes, definition lists, abbreviations and automatic links</li>
+  <li><strong>fenced code blocks</strong> with a language for syntax highlighting (<code>```yaml</code>)</li>
+  <li><code>@username</code> mentions (highlighted, and they notify in issues and pull requests) with autocomplete in the editor</li>
+  <li><strong>Raw HTML is escaped</strong>, not rendered, for security.</li>
+</ul>
+<p>Wiki-specific syntax (processed by the wiki renderer):</p>
+<table>
+  <tr><th>Write</th><th>Result</th></tr>
+  <tr><td><code>[[Page Name]]</code></td><td>Link to a page. Resolved next to the current page first, then from the root, then by unique title</td></tr>
+  <tr><td><code>[[guides/Setup|the setup guide]]</code></td><td>Link with your own label</td></tr>
+  <tr><td><code>[text](other-page)</code>, <code>![](uploads/pic.png)</code></td><td>Relative links and images resolve against the page's folder (<code>uploads/...</code> from the root)</td></tr>
+  <tr><td><code>WEB-12</code></td><td>This project's issue keys link to the issue, except inside code or existing links</td></tr>
+</table>
+<p>Missing pages show in red and open the editor. Links with a scheme other than <code>http</code>, <code>https</code> or <code>mailto</code> are neutralised.</p>
+<pre><code># Onboarding
+
+See [[guides/Getting-started]] for the first day.
+
+| Tool | Where |
+|------|-------|
+| Issues | WEB-1 |
+
+- [x] Read the wiki
+- [ ] Ask for access</code></pre>
+
+<h3 id="wiki-images">Images</h3>
+<p>Use <strong>Upload image</strong> in the editor. Images are committed to <code>uploads/</code> in the wiki repository (PNG, JPEG, GIF or WebP, checked by file signature, at most 10 MB) and served from <code>/wiki-files/{KEY}/{path}</code> with <code>nosniff</code> and a sandbox policy. Anything that is not one of those image types is sent as a download.</p>
+
+<h3 id="wiki-git">Cloning the wiki</h3>
+<pre><code>git clone https://gitbench.example.com/git/WEB/wiki.git
+git clone ssh://git@gitbench.example.com:2222/WEB/wiki.git</code></pre>
+<p><code>KEY/wiki.git</code> and <code>KEY/{key}.wiki.git</code> both work, over HTTP and SSH. Authentication is the same as for code repositories (<a href="repositories.html">Repositories</a>). Branch protection, deploy keys and code push listeners do not apply to wikis; after a push the search index is rebuilt. The repository slugs <code>wiki</code> and <code>*.wiki</code> are reserved so a code repository cannot clash.</p>
+
+<h3 id="wiki-permissions">Permissions and turning it off</h3>
+<table>
+  <tr><th>Action</th><th>Role</th></tr>
+  <tr><td>Read pages, history, search</td><td>Viewer (<code>ViewProject</code>)</td></tr>
+  <tr><td>Create, edit, rename, delete, revert, upload, push over Git</td><td>Developer (<code>EditIssues</code>)</td></tr>
+  <tr><td>Turn the wiki on or off for the project</td><td>Owner (<code>ManageProjectSettings</code>), in <strong>Project settings, Wiki</strong></td></tr>
+</table>
+<p>The wiki is on by default. Turning it off hides the pages, the Git remote (it answers 404) and search hits, but deletes nothing; turn it on again to get everything back.</p>
+
+<h3 id="wiki-search">Search</h3>
+<p>Wiki pages (title, path and text) are indexed after every save and push. The global search has a <strong>Wiki</strong> group and tab (<code>type=wiki</code>); see <a href="fields-filters.html">Fields, filters and search</a>.</p>
+
+<h3 id="wiki-api">Wiki API</h3>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
+  <tr><td>GET</td><td><code>/api/v1/projects/{key}/wiki/pages</code></td><td>List pages</td></tr>
+  <tr><td>GET</td><td><code>.../wiki/pages/{path}?rev=</code></td><td>A page: <code>content</code>, <code>sha</code> (its blob id) and <code>lastCommit</code></td></tr>
+  <tr><td>POST</td><td><code>.../wiki/pages</code></td><td><code>{path, content, message?}</code>. <code>409</code> if it exists</td></tr>
+  <tr><td>PUT</td><td><code>.../wiki/pages/{path}</code></td><td><code>{content?, sha?, message?, newPath?}</code>. With <code>sha</code>, a page that changed since is <code>409</code> with <code>currentSha</code></td></tr>
+  <tr><td>DELETE</td><td><code>.../wiki/pages/{path}?sha=</code></td><td>Delete, conditional with <code>sha</code></td></tr>
+  <tr><td>GET</td><td><code>.../wiki/history?path=</code></td><td>Commits that changed a page</td></tr>
+</table>
+<pre><code>curl -X PUT -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"content":"# Home\nWelcome!","sha":"SHA_FROM_THE_GET","message":"Update home"}' \
+  https://gitbench.example.com/api/v1/projects/WEB/wiki/pages/home</code></pre>
+
+<h2 id="snippets">Snippets</h2>
+<p>Snippets are small pasted pieces of code or text, like gists. A snippet has a title, an optional Markdown description, a visibility and <strong>1 to 10 files</strong> (512 KB each, 1 MB in total). Files are highlighted by extension.</p>
+<table>
+  <tr><th>Page</th><th>Shows</th></tr>
+  <tr><td><code>/snippets</code></td><td>Your snippets (<strong>Snippets</strong> in the main sidebar)</td></tr>
+  <tr><td><code>/snippets/explore</code></td><td>Public snippets from everyone</td></tr>
+  <tr><td><code>/p/{KEY}/snippets</code></td><td>A project's snippets (<strong>Snippets</strong> in the project sidebar)</td></tr>
+  <tr><td><code>/snippets/new[?project=KEY]</code></td><td>Create (personal, or for a project)</td></tr>
+  <tr><td><code>/snippets/{id}[?rev=n]</code>, <code>/snippets/{id}/edit</code></td><td>View (with a revision picker) and edit</td></tr>
+</table>
+
+<h3 id="snippet-visibility">Visibility and sharing</h3>
+<table>
+  <tr><th>Visibility</th><th>Who can see it</th><th>Available for</th></tr>
+  <tr><td><strong>Private</strong></td><td>Only the author</td><td>personal and project snippets</td></tr>
+  <tr><td><strong>Project</strong></td><td>Everyone who can view the project</td><td>project snippets only</td></tr>
+  <tr><td><strong>Public</strong></td><td>Every signed-in user</td><td>personal snippets only</td></tr>
+</table>
+<p>"Public" means every <em>signed-in</em> user of this GitBench server; there is no anonymous access. Site admins see everything. To share, copy the snippet's URL, or use the raw and embed links below.</p>
+<ul>
+  <li><strong>Raw</strong>: <code>/snippets/{id}/raw/{file}</code> (add <code>?rev=</code> for an older revision, <code>?download=1</code> to download). Always <code>text/plain; charset=utf-8</code> with <code>nosniff</code> and a sandbox policy.</li>
+  <li><strong>Embed</strong>: <code>/snippets/{id}/embed</code> is a chrome-less read-only view. <strong>Embed</strong> on the snippet page copies an <code>&lt;iframe&gt;</code> tag. Embeds are allowed only from the same site (<code>frame-ancestors 'self'</code>) and require sign-in, so they work on pages hosted on your own GitBench domain for signed-in viewers.</li>
+</ul>
+
+<h3 id="snippet-revisions">Revisions and storage</h3>
+<p>Snippets live in the database, not in Git repositories. Every change to the files adds a revision holding a full copy, so the snippet page has a revision picker without a repository per snippet. Title, description and visibility change in place without a new revision.</p>
+
+<h3 id="snippet-permissions">Who can do what</h3>
+<table>
+  <tr><th>Action</th><th>Allowed for</th></tr>
+  <tr><td>Create a personal snippet</td><td>Any signed-in user</td></tr>
+  <tr><td>Create a project snippet</td><td>Developer or higher</td></tr>
+  <tr><td>Edit</td><td>The author (or a site admin)</td></tr>
+  <tr><td>Delete</td><td>The author, a site admin, or (for project snippets) a Maintainer or higher</td></tr>
+  <tr><td>Comment</td><td>Anyone who can see the snippet</td></tr>
+  <tr><td>Delete a comment</td><td>The comment's author, the snippet's author or a site admin</td></tr>
+</table>
+<p>Audit events: <code>snippet.created</code>, <code>snippet.updated</code>, <code>snippet.deleted</code>.</p>
+
+<h3 id="snippet-api">Snippet API</h3>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
+  <tr><td>GET</td><td><code>/api/v1/snippets?scope=mine|explore</code>, <code>/api/v1/projects/{key}/snippets</code></td><td>List</td></tr>
+  <tr><td>GET, POST, PUT, DELETE</td><td><code>/api/v1/snippets[/{id}]</code></td><td>CRUD. Body: <code>{title, description, visibility, files: [{fileName, content}], project?}</code>. Omitted fields keep their value on PUT. <code>GET ...?rev=</code> for an older revision</td></tr>
+  <tr><td>GET</td><td><code>/api/v1/snippets/{id}/files/{fileName}/raw</code></td><td>A file as <code>text/plain</code></td></tr>
+  <tr><td>GET, POST, DELETE</td><td><code>/api/v1/snippets/{id}/comments[/{commentId}]</code></td><td>Comments</td></tr>
+</table>
+<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Retry helper","visibility":"Private","files":[{"fileName":"retry.sh","content":"until \"$@\"; do sleep 1; done"}]}' \
+  https://gitbench.example.com/api/v1/snippets</code></pre>
+<p>For tokens, rate limits and conventions see <a href="api.html">REST API and webhooks</a>. Roles are explained in <a href="permissions.html">Roles, groups and permissions</a>.</p>

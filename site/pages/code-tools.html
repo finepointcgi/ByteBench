@@ -1,0 +1,113 @@
+<h1>Code browsing and tools</h1>
+<p class="lead">Browse files and history in the browser, compare branches, search code, share links to exact lines, and publish tags, releases and source downloads.</p>
+
+<h2 id="code-browser">The code browser</h2>
+<p>A repository's <strong>Source</strong> tab (<code>/p/{KEY}/repos/{slug}</code>) is the front door. Refs and paths travel as query parameters (<code>?ref=feature/x&amp;path=src/app.cs</code>) because branch names contain <code>/</code>.</p>
+<ul>
+  <li><strong>Ref picker</strong>: switch between branches and tags. A commit SHA works in the URL too.</li>
+  <li><strong>Breadcrumbs</strong> show where you are; click a segment to go up.</li>
+  <li><strong>Folder view</strong>: the file tree lists each entry with the last commit that touched it and when. The repository's <code>README.md</code> is rendered under the tree.</li>
+  <li><strong>Last commit bar</strong> at the top of the listing: author, message, short SHA and age.</li>
+  <li><strong>Toolbar</strong>: <strong>History</strong> (commits for the current path), <strong>Open in editor</strong> (the <a href="web-editor.html">web editor</a> on the current branch and file), <strong>Create pull request</strong> (when you are on a non-default branch), and a <strong>Latest</strong> badge linking to the newest published, non-pre-release release.</li>
+  <li><strong>Clone box</strong> with HTTPS and SSH tabs (see <a href="repositories.html">Repositories</a>).</li>
+  <li>An empty repository shows the command to push a first branch.</li>
+</ul>
+<p>Anyone who can view the project (Viewer or higher) can browse. Users who cannot see the project get "Not found".</p>
+
+<h2 id="file-view">File view</h2>
+<ul>
+  <li><strong>Text files</strong> are shown with line numbers and syntax highlighting. Markdown files render as formatted text with a toggle to see the source.</li>
+  <li><strong>Large and binary files</strong>: files over 1 MB show "too large to display", and binary files show "Binary file not shown".</li>
+  <li><strong>Git LFS pointers</strong> show <strong>Stored with Git LFS</strong> with the real size and a <strong>Download</strong> link.</li>
+  <li><strong>Submodules</strong> appear as plain names without links.</li>
+  <li><strong>Line links</strong>: each line number is a link. <code>#L42</code> highlights and scrolls to a line, shift-click selects a range (<code>#L10-L20</code>), and the address bar updates so you can share it.</li>
+  <li>Raw content is available through the API: <code>GET /api/v1/projects/{key}/repos/{slug}/raw/{path}?ref=</code>.</li>
+</ul>
+
+<h3 id="no-blame">Blame</h3>
+<p>There is <strong>no blame (annotate) view</strong> yet. To find who last changed a file, use <strong>History</strong> for that path, or the last-commit column in the folder listing.</p>
+
+<h2 id="history">History</h2>
+<p><code>/p/{KEY}/repos/{slug}/commits?ref=&amp;path=&amp;page=</code> lists commits newest first for a branch, tag or SHA, optionally for one file or folder. Each row links to the commit view. Issue keys in messages (such as <code>WEB-5</code>) are links to the issue. After a push, commits that mention an issue key also appear in that issue's Development panel (smart commits).</p>
+
+<h2 id="commit-view">Commit view</h2>
+<p><code>/p/{KEY}/repos/{slug}/commits/{sha}</code> shows the full message, author, time, parent links and the full SHA, plus a unified diff of every changed file against the first parent (merge commits say so). The diff is highlighted per side, so multi-line strings and comments colour correctly. A button opens the tree at that commit.</p>
+
+<h2 id="compare">Compare branches</h2>
+<p><code>/p/{KEY}/repos/{slug}/compare/{base}...{head}</code> lets you pick two branches and shows the commits on <code>head</code> that are not on <code>base</code>, plus the diff since their merge base, with a prefilled <strong>Create pull request</strong> button. The Branches page links here from the toolbar (<strong>Compare</strong>) and from each branch. The same data is available as <code>GET .../repos/{slug}/compare?base=&amp;head=</code>.</p>
+<p>The <strong>Branches</strong> page (<code>.../branches</code>) lists every branch with ahead and behind counts against the default branch, protection badges, and buttons to create, delete or start a pull request. Creating a branch needs the Developer role; deleting needs Maintainer and is subject to <a href="branch-protection.html">branch protection</a>.</p>
+
+<h2 id="code-search">Code search</h2>
+<table>
+  <tr><th>Route</th><th>Searches</th></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/search?q=&amp;ref=&amp;case=1&amp;regex=1</code></td><td>One repository at a branch, tag or commit (default branch if <code>ref</code> is empty). Also the <strong>Search</strong> tab and the search box in the repository header</td></tr>
+  <tr><td><code>/p/{KEY}/code-search?q=&amp;case=1&amp;regex=1</code></td><td>The default branch of every repository in the project (<strong>Code search</strong> in the sidebar)</td></tr>
+</table>
+<ul>
+  <li><strong>File contents</strong> are searched with <code>git grep</code> against the resolved commit. Matching is case-insensitive unless <strong>Match case</strong> is ticked. <strong>Regex</strong> uses Perl-compatible regular expressions, falling back to extended regular expressions if git was built without PCRE.</li>
+  <li><strong>File names</strong> are matched against the full path (up to 50).</li>
+  <li><strong>Limits</strong>: queries of at most 200 characters, at most 50 matches per file, 200 per repository and 400 per project search, and a 10-second timeout (the git process is killed).</li>
+  <li>Results are grouped by file with one line of context; each line number links to <code>file#L{n}</code> at the searched ref.</li>
+  <li>The query is passed to git without a shell and after <code>-e</code>, so it cannot be interpreted as an option. Everything requires <code>ViewProject</code>.</li>
+  <li>Wiki pages and issues are searched from the global search box, not from code search (see <a href="fields-filters.html">Fields, filters and search</a>).</li>
+</ul>
+<p>Only the files in the searched commit are indexed on demand; there is no background index, so very large repositories search slower. The web editor's find-in-files uses the same engine plus your uncommitted changes.</p>
+
+<h2 id="languages">Languages and syntax highlighting</h2>
+<p>Code is highlighted in your browser with highlight.js 11.11.1, shipped inside GitBench (no CDN is contacted). It covers about 35 common languages plus Dockerfile, PowerShell and F#. The language comes from the file extension or name. Highlighting applies to the file viewer, diffs (commit view, pull request files, new-PR preview) and fenced code blocks in Markdown (<code>```csharp</code>) in issues, comments, README files and wiki pages. Unknown file types, and files or diffs over 200 KB, stay plain. Token colours follow the light or dark theme.</p>
+<p>GitBench does not compute a per-language percentage bar for repositories.</p>
+
+<h2 id="tags">Tags</h2>
+<p>The <strong>Tags</strong> tab (<code>/p/{KEY}/repos/{slug}/tags</code>) lists every tag, newest first, with its commit, the release that uses it, <strong>zip</strong> and <strong>tar.gz</strong> downloads, and for annotated tags the tagger, date and message.</p>
+<ul>
+  <li><strong>Create</strong> (Developer or higher): a name, a branch or commit (anything git can resolve, such as <code>main~3</code> or a SHA) and an optional message. With a message it is an <strong>annotated</strong> tag (tagger = you); without one, a lightweight tag. Names must be valid git ref names (no spaces, <code>..</code> or <code>~^:?*[\</code>, no leading <code>-</code>, at most 250 characters) and cannot equal a branch name.</li>
+  <li><strong>Delete</strong> (Maintainer or higher). A tag used by a release cannot be deleted, in the UI or by <code>git push --delete</code> (the push prints <code>tag 'v1.0' is used by a release</code>). Delete the release first.</li>
+  <li>Tags pushed with git work as usual and raise <code>tag.created</code> and <code>tag.deleted</code> webhooks. Branch protection and CI triggers only look at branches.</li>
+</ul>
+
+<h2 id="tag-protection">Tag protection</h2>
+<p>Protected tag rules (who may create matching tags, and whether they can be deleted or moved) are covered in <a href="branch-protection.html#protected-tags">Branch protection, Protected tags</a>. They apply to pushes, the Tags page, the release form and the API.</p>
+
+<h2 id="releases">Releases</h2>
+<p>A <strong>release</strong> attaches a title, Markdown notes and files to a tag. Open the <strong>Releases</strong> tab (<code>.../releases</code>) and click <strong>New release</strong> (Developer or higher).</p>
+<ol class="steps">
+  <li>Pick an existing tag or type a new name. A new tag is created from the branch or SHA you choose when you save, and is annotated if you give a tag message.</li>
+  <li>Set a title (defaults to the tag), notes, and <strong>Pre-release</strong> if it applies.</li>
+  <li>Click <strong>Publish release</strong>, or <strong>Save draft</strong>.</li>
+</ol>
+<ul>
+  <li><strong>Drafts</strong> and their assets are visible only to Developers and above. Publishing a draft keeps its first publish date.</li>
+  <li><strong>Edit</strong> changes title, notes and flags, not the tag. <strong>Delete</strong> (Maintainer or higher) removes the release and its asset files, and optionally the tag.</li>
+  <li>Every release lists <strong>Source code (zip / tar.gz)</strong>.</li>
+  <li>Audit: <code>release.created</code>, <code>release.published</code>, <code>release.deleted</code>, <code>tag.deleted</code>. Webhooks: <code>release.published</code>, <code>tag.created</code>, <code>tag.deleted</code>.</li>
+</ul>
+
+<h3 id="release-notes">Generating release notes</h3>
+<p><strong>Generate notes</strong> fills the notes from git history since the previous release, which is the other release whose tag is the closest ancestor of this one. The notes list merged pull requests (matched by merge commit), non-merge commits, and the issues mentioned in their messages with linked keys. Without an earlier release the whole history is used, up to 300 commits. Edit the text before publishing.</p>
+
+<h3 id="release-assets">Release assets</h3>
+<p>Upload files on the release page (Developer or higher). Limits: <code>Releases:MaxAssetBytes</code> per file (default 512 MB) and 50 files per release. Files are stored under random names in <code>Attachments:Root</code>. Downloads (<code>/release-assets/{id}/{name}</code>) are served as attachments with <code>nosniff</code> and a sandbox policy (only verified png, jpeg, gif and webp display inline). Download counts are shown.</p>
+
+<h3 id="archives">Source archives</h3>
+<p><code>GET /p/{KEY}/repos/{slug}/archive/{ref}.zip</code> or <code>.tar.gz</code> (also <code>.tgz</code>) works for any branch, tag or commit, with files under <code>{slug}-{ref}/</code>. Access needs <code>ViewProject</code> through a signed-in session or a <code>Bearer</code> token with any scope.</p>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Archives:MaxBytes</code></td><td>1 GB</td><td>Larger archives are cut off (the connection is aborted so it never looks complete)</td></tr>
+  <tr><td><code>Archives:TimeoutSeconds</code></td><td>300</td><td>Slow archives are cut off</td></tr>
+  <tr><td><code>Archives:MaxConcurrent</code></td><td>4</td><td>More at once get <code>503</code> with <code>Retry-After</code></td></tr>
+  <tr><td><code>Releases:MaxAssetBytes</code></td><td>512 MB</td><td>Per release asset</td></tr>
+</table>
+
+<h2 id="api">API</h2>
+<table>
+  <tr><th>Endpoint</th><th>What</th></tr>
+  <tr><td><code>GET /api/v1/projects/{key}/repos/{slug}/commits?ref=&amp;path=</code></td><td>Commit list</td></tr>
+  <tr><td><code>GET .../repos/{slug}/raw/{path}?ref=</code></td><td>Raw file (text as <code>text/plain</code>)</td></tr>
+  <tr><td><code>GET .../repos/{slug}/compare?base=&amp;head=</code></td><td>Commits and changed files</td></tr>
+  <tr><td><code>GET .../repos/{slug}/tags</code></td><td>Tags with archive links</td></tr>
+  <tr><td><code>GET .../repos/{slug}/releases</code>, <code>/releases/latest</code>, <code>/releases/{id}</code>, <code>/releases/tags/{tag}</code></td><td>Releases (drafts only for Developers and above)</td></tr>
+  <tr><td><code>POST .../repos/{slug}/releases</code></td><td>Create a release: <code>tagName</code>, <code>target</code> (branch or SHA for a new tag), <code>tagMessage</code>, <code>generateNotes</code>, plus <code>title</code>, <code>notes</code>, <code>prerelease</code>, <code>draft</code></td></tr>
+</table>
+<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/releases/latest</code></pre>
+<p>There is no code search API. See <a href="api.html">REST API and webhooks</a> for authentication.</p>
