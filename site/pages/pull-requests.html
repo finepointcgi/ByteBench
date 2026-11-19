@@ -1,0 +1,154 @@
+<h1>Pull requests</h1>
+<p class="lead">A pull request proposes merging one branch into another, collects review (approvals, inline threads, suggested changes), runs checks, and merges with a merge commit, a squash or a rebase.</p>
+
+<h2 id="overview">The big picture</h2>
+<p>Every pull request (PR) belongs to one repository and has a <strong>source</strong> branch and a <strong>target</strong> branch. It is numbered per repository (<code>web-app#12</code>). Its page (<code>/p/{KEY}/repos/{slug}/pull-requests/{n}</code>) has three tabs:</p>
+<ul>
+  <li><strong>Overview</strong>: description, timeline of comments and activity, and the sidebar with the merge box, reviewers, code owners and linked issues.</li>
+  <li><strong>Commits</strong>: the commits on the source that are not on the target.</li>
+  <li><strong>Files changed</strong>: the diff, with inline comment threads and code owners per file.</li>
+</ul>
+<p>Lists: <code>/p/{KEY}/pull-requests</code> shows every PR across the project (Open, Merged, Declined) and <code>/p/{KEY}/repos/{slug}/pull-requests</code> one repository. Filters: <strong>Review requested</strong> (open PRs waiting for your verdict, <code>?filter=review-requested</code>), the repository, and draft state (<code>?draft=ready</code> or <code>?draft=only</code>).</p>
+
+<h3 id="who-can-do-what">Who can do what</h3>
+<table>
+  <tr><th>Action</th><th>Minimum role</th></tr>
+  <tr><td>View, comment on PRs</td><td>Viewer to view; Developer to comment (the <code>Comment</code> permission)</td></tr>
+  <tr><td>Create a PR, edit your own, convert to or from draft, decline or reopen your own</td><td>Developer (<code>CreatePullRequest</code>)</td></tr>
+  <tr><td>Approve, request changes</td><td>Developer (<code>ReviewPullRequest</code>), never on your own PR</td></tr>
+  <tr><td>Merge, add to the merge queue, edit someone else's PR, decline or reopen others' PRs, edit reviewers on others' PRs</td><td>Maintainer (<code>MergePullRequest</code>)</td></tr>
+  <tr><td>Delete the source branch when merging</td><td>Maintainer (<code>DeleteBranch</code>)</td></tr>
+  <tr><td>Resolve a thread</td><td>The PR author, the thread's author, or a Maintainer</td></tr>
+  <tr><td>Apply a suggestion</td><td>Anyone who can push to the source branch (Developer, branch protection permitting)</td></tr>
+</table>
+<p>Site admins count as Owners everywhere. See <a href="permissions.html">Roles, groups and permissions</a>.</p>
+
+<h2 id="creating">Creating a pull request</h2>
+<ol class="steps">
+  <li>Push a branch (or create one in the web editor, see <a href="web-editor.html">Web editor</a>).</li>
+  <li>Click <strong>Create pull request</strong> on the Source page, on the Branches page, or in the web editor. You can also go to <code>/p/{KEY}/pull-requests/new?repo=&amp;source=&amp;target=</code>.</li>
+  <li>Pick the repository, source and target (the target defaults to the repository's default branch). The page previews the commits and the diff and runs a conflict check.</li>
+  <li>Give it a title (required, up to 200 characters) and a description in Markdown. Add reviewers if you like.</li>
+  <li>Click <strong>Create pull request</strong>, or <strong>Create draft</strong> to open it as a <a href="#drafts">draft</a>.</li>
+</ol>
+<p>Rules: the source must have commits that the target lacks, source and target must differ, there can be only one open PR from a given source into a given target, and archived repositories refuse new PRs. When a PR is created, assigned reviewers, default reviewers from <a href="branch-protection.html">branch protection</a> and <a href="#code-owners">code owners</a> are notified (unless it is a draft), and the PR is queued for an <a href="ai-review-triage.html">AI review</a> if that is turned on for the repository.</p>
+
+<h3 id="templates">PR templates</h3>
+<p>The description is prefilled from a template file on the <strong>target</strong> branch. GitBench looks, in order, for <code>.gitbench/pull_request_template.md</code>, <code>PULL_REQUEST_TEMPLATE.md</code>, <code>.github/pull_request_template.md</code> and <code>.github/PULL_REQUEST_TEMPLATE.md</code>.</p>
+<pre><code>&lt;!-- .gitbench/pull_request_template.md --&gt;
+## What changed
+
+## How to test
+
+## Linked issues
+WEB-</code></pre>
+
+<h2 id="reviewers">Reviewers and approvals</h2>
+<ul>
+  <li><strong>Assign reviewers</strong> on the New PR page (project members who can review) or with <strong>Edit reviewers</strong> in the PR sidebar (the author or a Maintainer). Each reviewer shows as Pending, Approved or Changes requested. Added reviewers get a "requested your review" notification and start watching the PR.</li>
+  <li><strong>Approve</strong>, <strong>Request changes</strong>, <strong>Unapprove</strong> or <strong>Withdraw</strong> from the sidebar. You cannot review your own PR.</li>
+  <li>A review records the commit it was given on. If the target's rule has <strong>Dismiss approvals when new commits are pushed</strong>, only approvals on the PR's current head count and a push removes older ones.</li>
+  <li><strong>Changes requested</strong> by anyone blocks merging into a protected branch until it is withdrawn.</li>
+  <li><strong>Required approvals</strong> (0 to 10 distinct people other than the author) are set per branch in <a href="branch-protection.html#rule-options">branch protection</a>.</li>
+</ul>
+
+<h2 id="drafts">Draft pull requests</h2>
+<p>Click <strong>Create draft</strong> on the New PR page (or send <code>"draft": true</code> to the API). A draft shows a grey <strong>Draft</strong> badge, can <strong>never</strong> be merged or queued (an admin cannot bypass this), and its assigned reviewers are recorded but not notified. When it is ready, the author or a Maintainer clicks <strong>Ready for review</strong>; <strong>Convert to draft</strong> goes back. A draft in the merge queue is removed. Webhook: <code>pull_request.updated</code> with action <code>ready_for_review</code> or <code>converted_to_draft</code>.</p>
+
+<h2 id="threads">Inline comments and threads</h2>
+<p>On the <strong>Files changed</strong> tab, click a line to comment on it. An inline comment starts a <strong>thread</strong>; <strong>Reply</strong> adds to it. Select several new-side lines for a multi-line comment (the API's <code>startLine</code>).</p>
+<ul>
+  <li><strong>Resolve</strong> or <strong>Unresolve</strong> a thread (PR author, thread author or Maintainer). Resolved threads collapse. The PR header counts unresolved threads.</li>
+  <li>A thread is marked <strong>Outdated</strong> when a later push changed its line. Each inline comment remembers the head commit and the text of the line it was made on.</li>
+  <li>The rule <strong>Require all threads resolved</strong> in branch protection blocks merging while any inline thread is unresolved.</li>
+</ul>
+
+<h2 id="suggestions">Suggested changes</h2>
+<p>In an inline comment on a new-side line, a fenced block opened with <code>suggestion</code> proposes replacement text for the commented line or lines. An empty block deletes them. <strong>Suggest a change</strong> in the comment box inserts a block prefilled with the line.</p>
+<pre><code>```suggestion
+const timeoutSeconds = 30;
+```</code></pre>
+<p>It renders as a small diff with <strong>Apply suggestion</strong>. Applying writes a commit to the source branch authored by the person who applied it, with the message "Apply suggestion from @user" and a <code>Co-authored-by</code> trailer for the suggester, and resolves the thread. <strong>Apply all suggestions</strong> commits every pending one in a single commit. Both are refused (nothing written) if the suggested lines changed since the comment or two suggestions overlap. The button appears only for people who may push to the source branch; the repository must not be archived.</p>
+
+<h2 id="code-owners">Code owners (CODEOWNERS)</h2>
+<p>A <code>CODEOWNERS</code> file on the <strong>target</strong> branch says who must look at which files. GitBench uses the first one it finds: <code>.gitbench/CODEOWNERS</code>, then <code>CODEOWNERS</code>, then <code>docs/CODEOWNERS</code>. The syntax is GitHub's: one rule per line, <code>pattern owner owner...</code>, <code>#</code> for comments, and the <strong>last matching rule wins</strong>. Patterns follow .gitignore rules (<code>*.md</code>, <code>/build/</code>, <code>docs/*</code>, <code>src/**/test.cs</code>). Negation (<code>!</code>) and <code>[ ]</code> classes are not supported and show as a warning.</p>
+<pre><code># .gitbench/CODEOWNERS
+*                @alice
+/docs/           @bob carol@example.com
+*.cs             @acme/backend
+/src/billing/    @dana @acme/finance</code></pre>
+<table>
+  <tr><th>Owner written as</th><th>Means</th></tr>
+  <tr><td><code>@username</code></td><td>That user</td></tr>
+  <tr><td><code>email@example.com</code></td><td>The user with that email</td></tr>
+  <tr><td><code>@group/path</code> (or a bare <code>@acme</code> that is not a username)</td><td>The group's <em>direct</em> members with Developer or higher</td></tr>
+</table>
+<ul>
+  <li>Owners of the changed files are added as reviewers when the PR is created (if they can review). The <strong>Files changed</strong> tab and the sidebar show the owners.</li>
+  <li>Owners who cannot see the project, and names that match no user or group, are ignored with a warning on the PR.</li>
+  <li>Branch protection option <strong>Require code owner approval</strong> blocks merging until each changed file that has owners is approved by one of them. Files owned only by the PR's author need no approval.</li>
+</ul>
+
+<h2 id="merge-box">The merge box and merge checks</h2>
+<p>The <strong>Merge</strong> section in the PR sidebar lists every check with its state, and the button is disabled while anything blocks. Checks come from:</p>
+<ul>
+  <li><strong>Draft</strong>: a draft can never merge.</li>
+  <li><strong>Conflicts</strong>: GitBench computes the merge in memory; conflicting files are listed and nothing is written.</li>
+  <li><strong>Approvals</strong>, <strong>Change requests</strong>, <strong>Threads</strong> and <strong>Code owners</strong>, from the target branch's <a href="branch-protection.html">protection rule</a>.</li>
+  <li><strong>External checks</strong> such as the CI pipeline, which block when pending or failed if the rule has <em>Require checks to pass</em>. A neutral result never blocks. Pipelines are described in <a href="ci.html">CI pipelines</a>.</li>
+  <li><strong>AI review</strong>: when enabled for the repository, unresolved blocker findings block merging (see <a href="ai-review-triage.html">AI review and triage</a>).</li>
+</ul>
+<p>An admin who is allowed to bypass sees <strong>Merge (bypass protection)</strong>; a bypassed merge is noted in the timeline and audit log (<code>pull_request.merged_bypassing_protection</code>). If the target branch uses a <a href="branch-protection.html#merge-queue">merge queue</a>, the button becomes <strong>Add to merge queue</strong>.</p>
+
+<h3 id="merge-strategies">Merge strategies</h3>
+<table>
+  <tr><th>Strategy</th><th>Result on the target</th></tr>
+  <tr><td><strong>Merge commit</strong></td><td>Keeps every commit and adds a two-parent merge commit. <strong>Fast-forward if possible</strong> moves the branch without a merge commit when the target has not moved.</td></tr>
+  <tr><td><strong>Squash</strong></td><td>One new commit with an editable message, authored by the PR's author, with <code>Co-authored-by</code> trailers for other commit authors. The default message is the title, number and commit list.</td></tr>
+  <tr><td><strong>Rebase</strong></td><td>The PR's commits are replayed onto the target and the target is fast-forwarded. Merge commits are dropped; a conflict refuses cleanly.</td></tr>
+</table>
+<p>Maintainers choose which strategies are allowed and which is the default under the repository's <strong>Settings, Pull requests</strong> (<code>/settings/merge</code>); at least one must stay allowed and the default must be one of them. The chosen strategy is recorded on the PR (<code>mergeStrategy</code>), in the activity ("squashed and merged...") and as a <code>Merge-Strategy:</code> trailer on merge and squash commits. Tick <strong>Delete source branch after merging</strong> to remove the source branch (never the default branch, and not for fork PRs); this needs the delete permission and is blocked if a rule forbids deleting that branch.</p>
+
+<h3 id="decline">Decline and reopen</h3>
+<p><strong>Decline</strong> closes a PR without merging; <strong>Reopen</strong> brings it back. The PR stores the source and target tips at merge or decline time, so its diff stays viewable after the source branch is deleted.</p>
+
+<h2 id="linked-issues">Linked issues</h2>
+<p>An issue key such as <code>WEB-3</code> in a PR title, in its source branch name, or in its commit messages links the PR to that issue. The PR lists its linked issues, and each issue's <strong>Development</strong> panel shows the branches, PRs and recent commits that mention it. Merging adds "merged pull request web-app#N into main" to each linked issue's activity.</p>
+<div class="note">GitBench does <strong>not</strong> close or transition an issue automatically when its PR merges (there are no "Closes WEB-3" keywords). To do that, use an <a href="automation.html">automation rule</a> with the trigger <em>Pull request merged</em>.</div>
+
+<h2 id="forks">Forks and cross-fork pull requests</h2>
+<p>To propose a change to a repository you cannot push to, <a href="repositories.html#forks">fork it</a>, push a branch to your fork, and click <strong>PR to upstream</strong> in the fork's header (<code>/p/{KEY}/repos/{slug}/fork-pull-request</code>). It can target any repository in the same fork network. You need <code>CreatePullRequest</code> in the fork's project and only <code>ViewProject</code> in the target. The PR belongs to the target repository and appears in its lists as <code>KEY/slug:branch</code>.</p>
+<ul>
+  <li><strong>How it works.</strong> The fork's branch is fetched into the target at <code>refs/pull/{n}/head</code>. Diffs, threads, checks, CODEOWNERS and merging all read that ref; nothing is written to the target's branches until merge. Later pushes to the fork move the ref, add a timeline entry, dismiss stale approvals where the rule asks, re-queue AI review, send a <code>pull_request.updated</code> webhook with action <code>synchronize</code>, and start the PR's pipeline.</li>
+  <li><strong>The author</strong> can comment, edit, draft, decline and reopen with only view access to the target. Reviewing and merging need the usual roles in the target. "Delete source branch" is not offered.</li>
+  <li><strong>Suggestions</strong> commit to the fork's branch, so <em>Apply suggestion</em> shows only for people who can push there.</li>
+  <li><strong>If the fork is deleted</strong> the PR stays open (source shown as "unknown repository:branch") and can still be reviewed and merged. Deleting the upstream leaves forks working, just unlinked.</li>
+</ul>
+<div class="warn"><strong>CI security.</strong> A fork PR's pipeline runs code from outside the project, so it gets <strong>no CI variables at all</strong> (protected or not), uses the unprotected cache scope, and waits until a Maintainer clicks <strong>Approve and run</strong> on the pipeline page. The approval covers that one pipeline; the next push waits again. Details: <a href="ci.html">CI pipelines</a>.</div>
+<p><strong>Sync fork</strong> and compare: <code>/p/{KEY}/repos/{slug}/compare/{base}...{head}</code> shows the commits and diff between two branches with a prefilled <strong>Create pull request</strong> button.</p>
+
+<h2 id="activity">Activity, notifications and webhooks</h2>
+<p>The Overview timeline records every event: comments, reviews, reviewer changes, draft toggles, title edits, pushes to fork PRs, merge queue actions, bypassed merges and the merge itself. Watchers (the author, reviewers, commenters) get in-app and email notifications according to their <a href="notifications.html">notification preferences</a>. Webhook events: <code>pull_request.opened</code>, <code>pull_request.updated</code> (edits, reviews, reopen, draft changes, fork syncs), <code>pull_request.merged</code>, <code>pull_request.declined</code>, <code>pull_request.commented</code>. Payloads carry <code>isCrossFork</code> and <code>sourceRepository</code>. See <a href="api.html">REST API and webhooks</a>.</p>
+
+<h2 id="api">API</h2>
+<table>
+  <tr><th>Endpoint</th><th>Notes</th></tr>
+  <tr><td><code>GET /api/v1/projects/{key}/pull-requests</code></td><td><code>?state=open|merged|declined|all</code>, <code>?repo=</code></td></tr>
+  <tr><td><code>GET .../repos/{slug}/pull-requests</code>, <code>.../{n}</code></td><td>List and get</td></tr>
+  <tr><td><code>POST .../repos/{slug}/pull-requests</code></td><td><code>title</code>, <code>sourceBranch</code>, <code>targetBranch</code>, <code>description</code>, <code>draft</code>, <code>sourceRepository</code> ("KEY/slug" for a cross-fork PR)</td></tr>
+  <tr><td><code>PATCH .../pull-requests/{n}</code></td><td><code>title</code>, <code>description</code>, <code>draft</code> (only present fields change)</td></tr>
+  <tr><td><code>POST .../pull-requests/{n}/merge</code></td><td>Optional body: <code>strategy</code> (<code>merge</code>, <code>squash</code>, <code>rebase</code>), <code>commitMessage</code> (squash), <code>deleteSourceBranch</code>, <code>fastForward</code>. <code>409</code> with <code>conflictPaths</code> if it cannot merge</td></tr>
+  <tr><td><code>GET/POST .../pull-requests/{n}/comments</code></td><td><code>path</code> + <code>line</code> (or <code>oldLine</code>) for inline; <code>parentId</code> to reply; <code>startLine</code> for multi-line</td></tr>
+  <tr><td><code>POST .../comments/{id}/resolve</code>, <code>/unresolve</code></td><td>Thread state</td></tr>
+  <tr><td><code>POST .../comments/{id}/apply-suggestion</code>, <code>POST .../apply-suggestions</code></td><td><code>409</code> if the lines changed; the second takes <code>{ "commentIds": [..] }</code></td></tr>
+  <tr><td><code>POST .../pull-requests/{n}/merge-queue</code> and friends</td><td>See <a href="branch-protection.html#queue-api">merge queue API</a></td></tr>
+  <tr><td><code>GET .../repos/{slug}/compare?base=&amp;head=</code></td><td>Commits and changed files</td></tr>
+</table>
+<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"WEB-12: faster list","sourceBranch":"feature/WEB-12-list","targetBranch":"main","draft":true}' \
+  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests
+
+curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"strategy":"squash","deleteSourceBranch":true}' \
+  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests/12/merge</code></pre>
+<p>There are no API endpoints for approving, requesting changes or editing reviewers; use the web UI. Comments carry <code>parentId</code>, <code>startLine</code>, <code>resolved</code>, <code>commitSha</code>, <code>hasSuggestion</code> and <code>appliedCommitSha</code>; pull requests carry <code>isDraft</code>, <code>mergeStrategy</code>, <code>isCrossFork</code> and <code>sourceRepository</code>.</p>

@@ -1,0 +1,138 @@
+<h1>Web editor and AI assistant</h1>
+<p class="lead">A VS Code-style editor in your browser, built on Monaco, with per-branch workspaces, a diff and commit flow, and an optional AI assistant that proposes edits you accept or reject.</p>
+
+<h2 id="opening">Opening the editor</h2>
+<p>The editor lives at <code>/p/{KEY}/repos/{slug}/edit/{branch}/{path}</code>. The branch is one URL segment, so <code>feature/x</code> is written <code>feature%2Fx</code>. You normally get there with the <strong>Open in editor</strong> button:</p>
+<ul>
+  <li>on a repository's Source page (opens the current branch and, if you are viewing a file, that file), or</li>
+  <li>on a pull request (opens its source branch; for a fork PR, the branch in the fork).</li>
+</ul>
+<p>Anyone who can view the project can open it. Editing and committing need the Developer role (<code>PushCode</code>). Viewers, archived repositories and <a href="repositories.html#pull-mirror">pull mirrors</a> get read-only mode: you can browse, search and chat with the assistant, but not edit, accept proposals or commit.</p>
+
+<h2 id="layout">Layout</h2>
+<ul>
+  <li><strong>Activity bar</strong> on the left: Explorer, Find in files, Source control.</li>
+  <li><strong>Explorer</strong>: the file tree, loaded one folder at a time from the branch with your working changes laid over it (A, M and R markers; deleted files disappear). Each row's menu has <strong>New file</strong>, <strong>Rename or move</strong> and <strong>Delete</strong>.</li>
+  <li><strong>Tabs</strong> across the top for open files, and the Monaco editor with language detection from the file name and extension.</li>
+  <li><strong>Status bar</strong>: branch, read-only state, number of changes, the AI backend, language, and line and column.</li>
+  <li><strong>Assistant</strong> docked on the right.</li>
+  <li><strong>Large and binary files</strong> (over 1 MB, or binary) open as a read-only message and cannot be edited, renamed or sent to the assistant.</li>
+</ul>
+
+<h3 id="shortcuts">Quick open, command palette and shortcuts</h3>
+<table>
+  <tr><th>Keys</th><th>Action</th></tr>
+  <tr><td>Ctrl/Cmd+P</td><td>Quick open: go to a file by fuzzy name</td></tr>
+  <tr><td>Ctrl/Cmd+Shift+P</td><td>Command palette: save, new file, commit, rebase, AI actions, ghost text and more</td></tr>
+  <tr><td>Ctrl/Cmd+Shift+F</td><td>Find in files</td></tr>
+  <tr><td>Ctrl/Cmd+S</td><td>Save now (saving is automatic anyway)</td></tr>
+  <tr><td>Ctrl/Cmd+Shift+L</td><td>Focus the assistant</td></tr>
+  <tr><td>Ctrl/Cmd+Enter</td><td>Send a chat message, or commit (in the commit message box)</td></tr>
+  <tr><td>F1</td><td>Monaco's own command palette (editor commands such as "Format Document")</td></tr>
+</table>
+<p><strong>Find in files</strong> runs <code>git grep</code> at the workspace's base commit for unchanged files, plus your working copies of changed files (same engine as <a href="code-tools.html#code-search">code search</a>).</p>
+
+<h2 id="workspaces">Workspaces per branch</h2>
+<p>Your edits are saved automatically (about 0.7 seconds after you stop typing, or with Ctrl/Cmd+S) into a <strong>workspace</strong> that is private to you and specific to one branch of one repository. A workspace stores added, modified, deleted and renamed files against a <strong>base commit</strong>, in the database. It survives reloads and restarts, and nobody else sees it. Saving a file back to exactly its base content drops that change. Nothing reaches the repository until you commit.</p>
+
+<h2 id="commit-flow">Diff and commit</h2>
+<ol class="steps">
+  <li>Open <strong>Source control</strong>. It lists your changes.</li>
+  <li>Click a change to see Monaco's side-by-side diff against the base. <strong>Discard</strong> a change to undo it (a rename is undone and the original comes back).</li>
+  <li>Type a commit message. Then either:
+    <ul>
+      <li><strong>Commit to {branch}</strong> writes one commit authored by you, or</li>
+      <li><strong>Commit to new branch &amp; open PR</strong> creates a new branch from the base, commits there and opens a pull request into the current branch. This is the way in when the branch is protected.</li>
+    </ul></li>
+</ol>
+<p>Committing follows the same rules as <code>git push</code>: it needs <code>PushCode</code>, is refused on archived repositories and pull mirrors, and honours <a href="branch-protection.html">branch protection</a> (a branch with "block direct pushes" refuses the commit and the editor offers the new-branch flow; creating the new branch is checked too). Only <code>refs/heads/...</code> is written, so protected tags are never touched. After a commit, push listeners run exactly as after a git push: CI pipelines, webhooks, smart commits, automation, stale-approval dismissal, AI review and mirroring. Commits are audited as <code>editor.commit</code>.</p>
+
+<h3 id="branch-moved">When the branch moved under you</h3>
+<p>If someone pushed after your base commit, files only they changed do not matter: you can still commit, on top of their work. If they changed files you also changed, use <strong>Update workspace (rebase)</strong>. GitBench merges each file three-way. Files that conflict are listed with a diff of the branch's version against yours; choose <strong>Keep mine</strong> or <strong>Take theirs</strong> for each.</p>
+
+<h2 id="ai-assistant">The AI assistant</h2>
+<p>The chat panel talks to Claude about the open branch. It knows the open file and your selection (toggle <strong>Open file &amp; selection</strong>), and you can attach files by typing <code>@path</code> in the message or with <strong>Attach a file</strong>. It streams its reply and shows each tool it uses.</p>
+<ul>
+  <li><strong>Tools</strong> (API backend): <code>list_files</code>, <code>read_file</code>, <code>search_code</code> (git grep at the workspace state) and <code>propose_edit</code> (full new content, a find-and-replace hunk, or delete). They see only your workspace: this repository and branch plus your uncommitted changes. Paths are validated (no <code>..</code>, absolute paths or <code>.git</code>).</li>
+  <li>If no backend is configured the panel says "AI isn't set up" and the AI menus are hidden. The editor itself works normally.</li>
+</ul>
+
+<h3 id="inline-actions">Inline actions</h3>
+<p>The <strong>AI actions</strong> menu above the editor (or the command palette) runs a ready-made prompt on your selection, or the whole file if nothing is selected:</p>
+<table>
+  <tr><th>Action</th><th>What it does</th></tr>
+  <tr><td><strong>Explain</strong></td><td>Explains what the code does, in the chat</td></tr>
+  <tr><td><strong>Refactor...</strong></td><td>Asks how you want it changed, then proposes the edit</td></tr>
+  <tr><td><strong>Add comments</strong></td><td>Proposes explanatory comments</td></tr>
+  <tr><td><strong>Write tests</strong></td><td>Proposes tests (typically in a new file)</td></tr>
+  <tr><td><strong>Fix</strong></td><td>Proposes a fix for a bug or problem in the selection</td></tr>
+</table>
+<p>They run through the same assistant, so changes come back as proposals.</p>
+
+<h3 id="proposals">Proposals: accept or reject</h3>
+<p><strong>Edits are never applied silently.</strong> Each proposed change appears in the chat as a card with <strong>Diff</strong>, <strong>Accept</strong> and <strong>Reject</strong> (plus Accept all and Reject all). Accepting puts the change into your workspace as an ordinary working change; it is <em>still not committed</em>, so you can review it in Source control. Accepting is refused if the file changed since the proposal was made. Accepting needs <code>PushCode</code>.</p>
+
+<h3 id="completions">Ghost-text completions</h3>
+<p>Monaco inline completions are <strong>off by default</strong>. Turn them on for the session with the <strong>Ghost text</strong> button in the status bar or the command palette. Requests are debounced (sent when you pause typing, with up to 6 KB of text before and 2 KB after the cursor) and rate limited. They work only with the API backend; with Claude Code the toggle is hidden because the CLI is too slow for them. Each completion is a small paid request, which is why they are off by default.</p>
+
+<h2 id="backends">Backends: Api, ClaudeCode or Auto</h2>
+<p><code>Ai:Editor:Backend</code> chooses the engine that answers the assistant:</p>
+<table>
+  <tr><th>Value</th><th>Meaning</th></tr>
+  <tr><td><code>Api</code></td><td>GitBench calls the Anthropic API itself with a tool-use loop, using the model in <code>Ai:Model</code> and the key from <code>ANTHROPIC_API_KEY</code> or <code>Ai:ApiKey</code></td></tr>
+  <tr><td><code>ClaudeCode</code></td><td>GitBench runs the <code>claude</code> command-line tool installed on the server, headless, in a sandboxed temporary folder</td></tr>
+  <tr><td><code>Auto</code> (default)</td><td>Claude Code if it is installed on the server, else the API if a key is configured, else AI is off</td></tr>
+</table>
+<p>Setting up keys and the overall AI features is covered in <a href="ai.html">AI overview and setup</a>.</p>
+
+<h3 id="claude-code-mode">How Claude Code mode is sandboxed</h3>
+<ol>
+  <li>Your workspace (the base commit plus your changes: text files up to 1 MB, at most <code>Ai:ClaudeCode:MaxFiles</code> files and <code>MaxBytes</code> in total) is written to a <strong>fresh temporary directory</strong> with mode 700. The repository's own Claude Code configuration (<code>.claude/</code>, <code>.mcp.json</code>) is <strong>not copied</strong>, so a repository cannot add hooks, permissions or MCP servers.</li>
+  <li><code>claude</code> runs there headless with the prompt on <strong>stdin</strong> (never on a command line or through a shell). Only the file tools <code>Read</code>, <code>Grep</code>, <code>Glob</code>, <code>Edit</code> and <code>Write</code> are allowed, confined to that directory; <code>Bash</code>, web fetch and search, notebooks and sub-agents are disabled. Permission mode is "don't ask" with prompts off, so anything not allowed is simply refused. It is also started with no MCP servers, no session persistence, no slash commands, and a turn limit. GitBench reads <code>claude --help</code> at startup and passes only the flags that version supports.</li>
+  <li>The environment is <strong>clean</strong>: none of the server's variables (API keys, connection strings, cloud credentials) are passed on. Only what Claude Code needs to find itself and its login: <code>HOME</code>, <code>USER</code>, <code>PATH</code>, locale and temp variables, <code>CLAUDE_CONFIG_DIR</code> and <code>CLAUDE_CODE_OAUTH_TOKEN</code> if set.</li>
+  <li>Text and tool calls stream into the chat panel. A run longer than <code>TimeoutSeconds</code> is stopped by killing the whole process tree.</li>
+  <li>When it finishes, the directory is compared with what was written. Every changed, added or deleted file becomes a <strong>pending proposal</strong>, exactly like the API backend. Nothing is applied automatically, and the directory is deleted.</li>
+  <li>At most <code>MaxConcurrent</code> runs at once (others wait up to 30 seconds), plus the per-user rate limit.</li>
+</ol>
+<p><strong>Setup:</strong> install Claude Code for the operating-system account GitBench runs as and sign it in once as that account (run <code>claude</code> interactively, or <code>claude setup-token</code> and set <code>CLAUDE_CODE_OAUTH_TOKEN</code>). The editor then uses <strong>that account's login or subscription</strong> for every user's requests, so usage, limits and billing are the server account's, not each person's.</p>
+
+<h3 id="config-keys">Configuration keys</h3>
+<pre><code>"Ai": {
+  "Editor": { "Backend": "Auto", "MaxToolCalls": 15, "MaxTokensPerTurn": 16000, "MaxOutputTokensPerRequest": 48000,
+              "RequestsPerMinute": 6, "CompletionsPerMinute": 20, "CompletionMaxTokens": 256 },
+  "ClaudeCode": { "Path": "claude", "Model": null, "TimeoutSeconds": 300, "MaxTurns": 15, "MaxConcurrent": 2,
+                  "MaxFiles": 5000, "MaxBytes": 52428800 }
+}</code></pre>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Ai:Editor:Backend</code></td><td><code>Auto</code></td><td><code>Api</code>, <code>ClaudeCode</code> or <code>Auto</code></td></tr>
+  <tr><td><code>Ai:Editor:MaxToolCalls</code></td><td>15</td><td>Tool calls per request (API backend)</td></tr>
+  <tr><td><code>Ai:Editor:MaxTokensPerTurn</code></td><td>16000</td><td>Output tokens per model turn</td></tr>
+  <tr><td><code>Ai:Editor:MaxOutputTokensPerRequest</code></td><td>48000</td><td>Output tokens per whole request</td></tr>
+  <tr><td><code>Ai:Editor:RequestsPerMinute</code></td><td>6</td><td>Chat and action requests per user</td></tr>
+  <tr><td><code>Ai:Editor:CompletionsPerMinute</code></td><td>20</td><td>Ghost-text requests per user</td></tr>
+  <tr><td><code>Ai:Editor:CompletionMaxTokens</code></td><td>256</td><td>Size of one completion</td></tr>
+  <tr><td><code>Ai:ClaudeCode:Path</code></td><td><code>claude</code></td><td>The executable (on <code>PATH</code> or a full path)</td></tr>
+  <tr><td><code>Ai:ClaudeCode:Model</code></td><td>none</td><td>Optional model passed to Claude Code</td></tr>
+  <tr><td><code>Ai:ClaudeCode:TimeoutSeconds</code></td><td>300</td><td>Kill a run after this long</td></tr>
+  <tr><td><code>Ai:ClaudeCode:MaxTurns</code></td><td>15</td><td>Turn cap (also enforced on the event stream)</td></tr>
+  <tr><td><code>Ai:ClaudeCode:MaxConcurrent</code></td><td>2</td><td>Simultaneous runs on the server</td></tr>
+  <tr><td><code>Ai:ClaudeCode:MaxFiles</code> / <code>MaxBytes</code></td><td>5000 / 50 MB</td><td>How much of your workspace is copied into the sandbox</td></tr>
+</table>
+<p>Changing any of these needs a restart. In environment-variable form they are written <code>Ai__Editor__Backend</code>, <code>Ai__ClaudeCode__Path</code> and so on (see <a href="configuration.html">Configuration reference</a>).</p>
+
+<h2 id="per-project">Per-project switch</h2>
+<p>Under <strong>Project settings, Web editor</strong> (<code>/p/{KEY}/settings</code>), the switch <strong>AI in the web editor (assistant, inline actions and completions)</strong> turns the AI parts on or off for that project. It is on by default whenever a backend is available. The editor itself is unaffected.</p>
+
+<h2 id="admin-ai">The /admin/ai status page</h2>
+<p>Site admins can open <code>/admin/ai</code>. It is read-only and shows whether the Anthropic API is configured (and which model), whether Claude Code is installed on the server (with its detected version and path), which backend is active, and the editor limits. <strong>Check again</strong> re-detects Claude Code after you install or log in to it. To change anything, edit the <code>Ai:*</code> configuration and restart. See <a href="admin.html">Administration</a>.</p>
+
+<h2 id="limits-cost">Limits, cost and security</h2>
+<ul>
+  <li><strong>Cost.</strong> Every chat message and inline action is billed as tokens: the cached system prompt, your message, the open file or selection, attachments and every file the assistant reads. One request can use up to 15 tool calls. Usage is logged per user and project (<code>editor.chat</code>, <code>editor.action.explain|refactor|comments|tests|fix</code>, <code>editor.complete</code>, with <code>.claude-code</code> variants). Turn the assistant off per project, or for the whole site by not configuring a backend.</li>
+  <li><strong>Who can do what.</strong> Reading the workspace and chatting need <code>ViewProject</code>; editing, accepting proposals and committing need <code>PushCode</code> on a writable repository. Workspaces are private to their owner.</li>
+  <li><strong>What the AI can see.</strong> Only the requesting user's workspace for this repository and branch. It cannot reach other repositories, the server's files or the network through GitBench, and cannot commit, push or call anything outside its tools.</li>
+  <li><strong>Untrusted content.</strong> File contents, search results, selections and attachments are wrapped in delimited blocks with a random boundary per request, and the system prompt tells the model they are data, never instructions. Whatever it proposes still has to be accepted by you, as a diff.</li>
+  <li><strong>Monaco and the page security policy.</strong> Monaco 0.52.2 ships inside GitBench and never loads from a CDN. Its web workers run from the site's own origin (<code>worker-src 'self'</code>); no <code>unsafe-eval</code> is needed. A trimmed build is used: TypeScript and JavaScript get syntax highlighting but not the full TypeScript language service.</li>
+</ul>
+<div class="note">The editor works only on branches (it commits to <code>refs/heads/...</code>). To edit a tag's content, create a branch from it first.</div>

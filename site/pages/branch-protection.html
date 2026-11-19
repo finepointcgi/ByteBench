@@ -1,0 +1,170 @@
+<h1>Branch protection and merge queue</h1>
+<p class="lead">Protect important branches and tags so changes arrive only through reviewed pull requests, and optionally merge through a queue that tests every pull request on top of the ones ahead of it.</p>
+
+<h2 id="rules">Branch protection rules</h2>
+<p>Rules are set per repository under <strong>Settings, Branch protection</strong> (<code>/p/{KEY}/repos/{slug}/settings/branches</code>). You need the Maintainer role or higher (<code>ManageRepositories</code>). Protected branches show a lock badge on the Branches page.</p>
+<ol class="steps">
+  <li>Open the repository, then <strong>Settings</strong>, then <strong>Branch protection</strong>.</li>
+  <li>Click <strong>Add rule</strong> and type a <strong>branch name pattern</strong>. The form lists the existing branches the pattern matches.</li>
+  <li>Choose the options below and optionally the default reviewers, then <strong>Create rule</strong>.</li>
+</ol>
+<h3 id="patterns">Patterns</h3>
+<p>A pattern is an exact branch name (<code>main</code>) or a glob. <code>*</code> and <code>?</code> stay inside one path segment (<code>release/*</code> matches <code>release/1.0</code> but not <code>release/1.0/hotfix</code>); <code>**</code> crosses <code>/</code>. Patterns cannot contain spaces or <code>..</code>, start or end with <code>/</code>, or start with <code>refs/</code>, and are at most 250 characters. There can be one rule per pattern.</p>
+<p>When several rules match a branch, the <strong>strictest</strong> setting of each option wins: the highest required approvals, and any rule that turns an option on turns it on.</p>
+
+<h3 id="rule-options">Every option</h3>
+<table>
+  <tr><th>Option</th><th>Default</th><th>Effect</th></tr>
+  <tr><td>Required approvals (0 to 10)</td><td>0</td><td>Merging needs this many distinct approvals from people other than the author</td></tr>
+  <tr><td>Block direct pushes</td><td>off</td><td>The branch changes only through PR merges. Pushes to it, and creating a matching branch by push, are refused</td></tr>
+  <tr><td>Block force pushes</td><td>off</td><td>Non-fast-forward updates are refused</td></tr>
+  <tr><td>Block deletion</td><td>off</td><td>Deleting the branch by push, on the Branches page, or via "delete source branch after merge" is refused</td></tr>
+  <tr><td>Require checks to pass</td><td>off</td><td>Any merge check (for example a pipeline) that is Pending or Failed blocks merging. Neutral never blocks</td></tr>
+  <tr><td>Dismiss approvals when new commits are pushed</td><td>off</td><td>Only approvals on the PR's current head count; a push removes older ones</td></tr>
+  <tr><td>Require all threads resolved</td><td>off</td><td>Any unresolved inline comment thread blocks merging</td></tr>
+  <tr><td>Require code owner approval</td><td>off</td><td>Each changed file with owners in <code>CODEOWNERS</code> needs an approval from one of them. See <a href="pull-requests.html#code-owners">Code owners</a></td></tr>
+  <tr><td>Allow admins to bypass</td><td>off</td><td>Site admins and project Owners are exempt from this rule. A bypassed merge is noted in the PR timeline and audit log</td></tr>
+  <tr><td>Require a merge queue</td><td>off</td><td>See <a href="#merge-queue">Merge queue</a></td></tr>
+  <tr><td>Default reviewers</td><td>none</td><td>Added to new PRs that target a matching branch (only people who can review are kept)</td></tr>
+</table>
+<p>"Changes requested" by anyone always blocks merging into a protected branch, whatever the options. A <strong>draft</strong> can never merge, with or without protection. Rules and their changes are recorded in the audit log as <code>branch_protection.created</code>, <code>.updated</code> and <code>.deleted</code>.</p>
+
+<h3 id="enforcement">Where rules are enforced</h3>
+<ul>
+  <li><strong>Git push over HTTP and SSH.</strong> Before git sees a push, GitBench reads the ref updates and refuses deletes, creates and direct pushes with a normal report, so git prints <code>! [remote rejected] main -> main (branch 'main' is protected: changes must go through a pull request)</code> and nothing is written. A force push can only be recognised once the data arrives, so for those branches a small <code>pre-receive</code> hook checks that the new commit descends from the old one (this needs git 2.31 or newer on the server).</li>
+  <li><strong>Branch creation and deletion</strong> in the UI and API.</li>
+  <li><strong>Pull request merges</strong>, direct and through the queue, which refuse with the list of reasons.</li>
+  <li><strong>The web editor</strong>: committing to a branch with "block direct pushes" is refused and the editor offers a new branch plus pull request instead (see <a href="web-editor.html">Web editor</a>).</li>
+</ul>
+
+<h3 id="push-rules">What about "push rules"?</h3>
+<p>GitBench has no separate "push rules" feature (no commit message regexes, file size or author checks at push time). What is checked on every push, by every route, is: branch protection, <a href="#protected-tags">protected tags</a>, tags used by a release (cannot be deleted), archived repositories, and pull mirrors (read-only). Two further things are refused when any rule exists: signed pushes (<code>git push --signed</code>) because they cannot be checked, and any push to <code>refs/merge-queue/</code>, which belongs to the merge queue.</p>
+
+<h3 id="admin-bypass">Admin bypass</h3>
+<p>Only rules with <strong>Allow admins to bypass</strong> can be bypassed, and only by site admins and project Owners. They then see <strong>Merge (bypass protection)</strong> on blocked PRs, can push directly, and (if the rule allows it) can merge directly into a branch that has a merge queue. Drafts cannot be bypassed. Deploy keys never bypass.</p>
+
+<h3 id="protected-variables">Protected CI variables</h3>
+<p>Branch protection also decides which pipelines see <strong>protected CI variables</strong> (<a href="ci.html">CI pipelines</a>). A protected variable reaches only pipelines whose branch matches a branch protection rule. Pull request pipelines run on the PR's source branch, so a PR from an unprotected branch never sees them, and a pipeline for a PR from a fork gets no variables at all. Merge queue pipelines run on a special ref but count as the target branch when it is safe: they must belong to an active queue entry, not come from a fork, and the person who queued the PR must still be allowed to merge in the project.</p>
+
+<h3 id="delete-source-branch">Delete source branch after merge</h3>
+<p>The merge box has <strong>Delete source branch after merging</strong>, and the queue has the same checkbox. It needs the Maintainer role, is not offered for the default branch or for fork PRs, and is refused if a rule with <strong>Block deletion</strong> matches the source branch.</p>
+
+<h2 id="protected-tags">Protected tags</h2>
+<p>Under <strong>Settings, Protected tags</strong> (<code>.../settings/tags</code>, Maintainer or Owner) a rule has a name pattern (exact, such as <code>v1.0.0</code>, or a glob such as <code>v*</code> or <code>release/**</code>) and:</p>
+<table>
+  <tr><th>Option</th><th>Default</th><th>Effect</th></tr>
+  <tr><td>Allowed to create</td><td>Maintainers and Owners</td><td>Or <strong>Developers and above</strong>. Deleting or moving a tag that is not blocked needs the same role</td></tr>
+  <tr><td>Block deletion</td><td>on</td><td>Nobody, Owners included, can delete a matching tag while the rule exists</td></tr>
+  <tr><td>Block moving</td><td>on</td><td>Nobody can move a matching tag to another commit (a forced tag push)</td></tr>
+</table>
+<p>The strictest matching rule wins. Enforcement covers git push over HTTP and SSH (a refused tag prints <code>! [remote rejected] v1.0 -> v1.0 (tag 'v1.0' is protected: only Maintainers and Owners can create it)</code>; deploy keys count as Developers), the Tags page, the release form and the API. Independently of any rule, a tag used by a release cannot be deleted. Audit events: <code>protected_tag.created</code>, <code>.updated</code>, <code>.deleted</code>. See also <a href="code-tools.html#tags">Releases and tags</a>.</p>
+
+<h2 id="required-checks">Required status checks and pipelines</h2>
+<p>Turn on <strong>Require checks to pass</strong> to make external checks gate merging. The merge box shows each check's state: Passed, Pending, Failed or Neutral. A CI pipeline on the PR's head is the usual check (<a href="ci.html">CI pipelines</a>), and other features register their own, for example the Night Owl scan (<a href="security-scanning.html">Security scanning</a>). Only Pending and Failed block. Without the option, the checks are shown but advisory.</p>
+<p>A typical setup for <code>main</code>: required approvals 1 or 2, block direct pushes, block force pushes, block deletion, require checks, dismiss stale approvals, and require threads resolved. Leave "Allow admins to bypass" off unless you need an emergency path.</p>
+
+<h2 id="merge-queue">The merge queue</h2>
+<h3 id="queue-why">What it is and why use it</h3>
+<p>When many pull requests are ready at once, each one can pass its own tests and still break the branch once the others land. A merge queue fixes this: it tests each pull request <strong>merged on top of the target and on top of every pull request ahead of it</strong>, then fast-forwards the target branch in order. The branch only ever moves to commits that were tested exactly as they will land.</p>
+
+<h3 id="queue-how">How it works</h3>
+<svg viewBox="0 0 720 250" role="img" aria-label="Merge queue: three pull requests are tested on stacked speculative commits, then the target fast-forwards" style="max-width:100%;height:auto">
+  <defs><marker id="mq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="10" y="20" width="110" height="46" rx="8" stroke="var(--line)"/>
+    <rect x="10" y="95" width="110" height="46" rx="8" stroke="var(--line)"/>
+    <rect x="10" y="170" width="110" height="46" rx="8" stroke="var(--line)"/>
+    <rect x="200" y="20" width="150" height="46" rx="8" stroke="var(--accent)"/>
+    <rect x="200" y="95" width="150" height="46" rx="8" stroke="var(--accent)"/>
+    <rect x="200" y="170" width="150" height="46" rx="8" stroke="var(--accent)"/>
+    <rect x="440" y="20" width="110" height="46" rx="8" stroke="var(--line)"/>
+    <rect x="440" y="95" width="110" height="46" rx="8" stroke="var(--line)"/>
+    <rect x="440" y="170" width="110" height="46" rx="8" stroke="var(--line)"/>
+    <rect x="610" y="20" width="100" height="196" rx="8" stroke="var(--accent)"/>
+  </g>
+  <g fill="currentColor" font-size="13" text-anchor="middle">
+    <text x="65" y="48">PR #1 (front)</text>
+    <text x="65" y="123">PR #2</text>
+    <text x="65" y="198">PR #3</text>
+    <text x="275" y="40">main + #1</text><text x="275" y="57" font-size="11">speculative commit</text>
+    <text x="275" y="115">main + #1 + #2</text><text x="275" y="132" font-size="11">speculative commit</text>
+    <text x="275" y="190">main + #1 + #2 + #3</text><text x="275" y="207" font-size="11">speculative commit</text>
+    <text x="495" y="48">pipeline</text><text x="495" y="123">pipeline</text><text x="495" y="198">pipeline</text>
+    <text x="660" y="105">target</text><text x="660" y="125">branch</text><text x="660" y="150" font-size="11">fast-forward</text><text x="660" y="165" font-size="11">to the furthest</text><text x="660" y="180" font-size="11">passed commit</text>
+  </g>
+  <g stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#mq-arrow)">
+    <path d="M120 43H198"/><path d="M120 118H198"/><path d="M120 193H198"/>
+    <path d="M350 43H438"/><path d="M350 118H438"/><path d="M350 193H438"/>
+    <path d="M550 118H608"/>
+  </g>
+  <text x="360" y="244" font-size="12" fill="currentColor" text-anchor="middle">Each speculative commit lives under refs/merge-queue/ and is built on the one before it.</text>
+</svg>
+<ol>
+  <li>A person with merge rights clicks <strong>Add to merge queue</strong> on a PR that passes every other check. The PR joins the end of its target branch's queue (each branch has its own queue).</li>
+  <li>GitBench builds a <strong>speculative commit</strong> for each of the first <em>batch size</em> entries: the target tip plus every entry ahead, merged with the configured method. It is stored under <code>refs/merge-queue/{branch}/{id}</code> and a pipeline runs on it.</li>
+  <li>When an entry's pipeline passes it is <strong>Passed</strong>. The furthest passed entry merges <em>together with every entry ahead of it</em> (its commit already contains them): the target is fast-forwarded to that commit, only if the target has not moved meanwhile, and each PR is closed as merged by whoever queued it. Webhooks, CI, smart commits and notifications run as for a normal push, and queue pipelines no longer needed are cancelled.</li>
+  <li>If the target moved, an entry ahead left, or the order changed, the affected entries are rebuilt automatically (their old pipelines are cancelled).</li>
+</ol>
+<p>Entry states: <strong>Queued</strong> (waiting, or waiting for a place in the train), <strong>Testing</strong> (pipeline running, or waiting for approval), <strong>Passed</strong>, and the final states <strong>Merged</strong>, <strong>Failed</strong> and <strong>Removed</strong>. Queues are re-evaluated on every event and at least every <code>MergeQueue:PollSeconds</code> seconds, and survive restarts: everything is derived from the database and the repository.</p>
+
+<h3 id="queue-settings">Turning it on and settings</h3>
+<p>In a branch protection rule, tick <strong>Require a merge queue</strong>. Merging into matching branches then happens only through the queue; "Merge" becomes "Add to merge queue" (and a direct API merge is refused with a message pointing to the queue).</p>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>Range</th><th>Effect</th></tr>
+  <tr><td>Max batch size</td><td>5</td><td>1 to 20</td><td>How many entries are built and tested at once (the length of the train). Entries beyond it wait as Queued</td></tr>
+  <tr><td>Merge method</td><td>repository default</td><td>merge, squash or rebase</td><td>Must be allowed in the repository's merge settings, otherwise the default is used</td></tr>
+  <tr><td>Require CI</td><td>on</td><td>on/off</td><td>On: a pipeline must pass on the speculative commit; a missing <code>.gitbench-ci.yml</code> or CI turned off removes the entry. Off: entries pass at once with no pipeline</td></tr>
+  <tr><td>Pipeline timeout (minutes)</td><td>60</td><td>1 to 1440</td><td>A running queue pipeline that has not finished by then fails its entry</td></tr>
+  <tr><td>Approval timeout (minutes)</td><td>1440</td><td>1 to 10080</td><td>How long a pipeline may sit on a manual job (an approval gate) before the entry is removed</td></tr>
+</table>
+<p>When several rules match a branch, the smallest batch size and timeouts win, CI is required if any rule requires it, and the merge method comes from the most specific rule that sets one (exact names before globs). Server settings: <code>MergeQueue:Enabled</code> (default <code>true</code>, runs the background processor) and <code>MergeQueue:PollSeconds</code> (default <code>15</code>).</p>
+<p>Queue pipelines pick their jobs as if they ran on the target branch, so <code>rules</code> and <code>only</code> in your CI file that select <code>main</code> will apply. Make sure at least one job runs there, or the queue reports that no job runs on the branch.</p>
+
+<h3 id="queue-using">Queueing a pull request</h3>
+<ol class="steps">
+  <li>Open the PR. The merge box shows the queue section with the merge method and settings.</li>
+  <li>Optionally tick <strong>Delete source branch after it merges</strong>.</li>
+  <li>Click <strong>Add to merge queue</strong>. You need the Maintainer role. The PR must be open, not a draft, merge cleanly, and pass every other merge check (approvals, threads, code owners, required checks, with admin bypass counting).</li>
+  <li>Follow progress on the PR ("#2 of 4 in the merge queue of main") or on the queue page <code>/p/{KEY}/repos/{slug}/merge-queue</code>, which updates live and lists active and recent entries per branch.</li>
+</ol>
+<ul>
+  <li><strong>Remove from queue</strong>: the PR's author or any Maintainer. Entries behind it are tested again without it.</li>
+  <li><strong>Move to front</strong>: Maintainers only (<code>ManageRepositories</code>). Everything behind the moved PR is rebuilt.</li>
+</ul>
+
+<h3 id="queue-failure">Failure and ejection</h3>
+<p>An entry is ejected (state Failed or Removed), its pipeline and speculative ref are cleaned up, the PR gets an activity line, the person who queued it gets a notification, and everything behind it is rebuilt without it. Reasons:</p>
+<ul>
+  <li>The queue pipeline failed, errored, was cancelled or skipped.</li>
+  <li>The pipeline did not finish within the pipeline timeout, or was not approved within the approval timeout.</li>
+  <li>The PR conflicts with the target plus the entries ahead of it.</li>
+  <li>New commits were pushed to the PR while queued (add it again when ready), or the source branch was deleted, or the PR was converted to a draft, closed or merged outside the queue.</li>
+  <li>The PR stopped meeting its merge checks (for example an approval was dismissed) just before merging.</li>
+  <li>The queue was turned off for the branch, the repository was archived, or the target branch disappeared.</li>
+  <li>CI is off or the CI file is missing while "Require CI" is on.</li>
+</ul>
+<p>A failed entry stays visible on the PR for a week with the reason and a link to the pipeline.</p>
+
+<h3 id="queue-approval">Manual approval gates in queue pipelines</h3>
+<p>If the queue pipeline reaches a manual job (see manual jobs in <a href="ci.html">CI pipelines</a>), the entry shows <strong>Waiting for approval</strong> and links to the pipeline. The pipeline timeout does not run while it waits; the approval timeout does. Once someone runs the manual job, the pipeline timeout starts over.</p>
+
+<h3 id="queue-batching">Batching in practice</h3>
+<p>With batch size 1 PRs are tested and merged one at a time. With a larger batch, PRs are tested in parallel on stacked commits, so throughput rises, and when a later PR passes it carries the earlier ones with it. If an entry in the middle fails, the entries behind it are rebuilt without it and tested again. Each pipeline uses CI runner capacity (<code>Ci:MaxConcurrentJobs</code>), so do not set the batch higher than your runners can serve.</p>
+
+<h3 id="queue-api">Merge queue API</h3>
+<table>
+  <tr><th>Endpoint</th><th>What</th></tr>
+  <tr><td><code>GET /api/v1/projects/{key}/repos/{slug}/merge-queue?branch=</code></td><td>Settings, active entries in order and recent ones (default branch if omitted)</td></tr>
+  <tr><td><code>GET .../pull-requests/{n}/merge-queue</code></td><td>A PR's active (or latest finished) entry; <code>404</code> if never queued</td></tr>
+  <tr><td><code>POST .../pull-requests/{n}/merge-queue</code></td><td>Add to the queue (Maintainer). <code>201</code>, or <code>422</code> with the reason</td></tr>
+  <tr><td><code>DELETE .../pull-requests/{n}/merge-queue</code></td><td>Remove (author or Maintainer). <code>204</code></td></tr>
+  <tr><td><code>POST .../pull-requests/{n}/merge-queue/move-to-front</code></td><td>Maintainers only</td></tr>
+</table>
+<p>An entry has <code>state</code> (<code>queued</code>, <code>testing</code>, <code>passed</code>, <code>merged</code>, <code>failed</code>, <code>removed</code>), <code>position</code>, <code>strategy</code>, <code>headSha</code>, <code>baseSha</code>, <code>speculativeSha</code>, <code>pipelineId</code>, <code>pipelineStatus</code> and <code>message</code>.</p>
+<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests/12/merge-queue
+
+curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  "https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/merge-queue?branch=main"</code></pre>
+<p>Audit events: <code>merge_queue.enqueued</code>, <code>merge_queue.enqueued_bypassing_protection</code>, <code>merge_queue.merged</code>, <code>merge_queue.failed</code>, <code>merge_queue.removed</code>, <code>merge_queue.moved_to_front</code>. Pipelines started by the queue have the trigger <code>MergeQueue</code>. There is no dedicated webhook for queue events; merged PRs send the normal <code>pull_request.merged</code> and the target's push event. The queue state shows in the admin system page (<a href="admin.html">Administration</a>).</p>
+<div class="note">Related: the PR side of the story is in <a href="pull-requests.html#merge-box">Pull requests</a>, and CI details in <a href="ci.html">CI pipelines</a>.</div>
