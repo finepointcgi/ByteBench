@@ -1,0 +1,253 @@
+<h1>Feature flags</h1>
+<p class="lead">Ship code switched off, turn it on per environment, target it at specific users or a percentage of them, and change it without redeploying.</p>
+
+<h2 id="concepts">Concepts</h2>
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td><b>Flag</b></td><td>A named switch owned by a <b>project</b> (not a repository), with a stable <b>key</b> such as <code>new-checkout</code>, a <b>type</b> and an <b>off value</b>.</td></tr>
+<tr><td><b>Environment</b></td><td>A place flags have their own state: <code>production</code>, <code>staging</code>, and so on. The same flag can be on in staging and off in production.</td></tr>
+<tr><td><b>State</b></td><td>A flag's setting in one environment: on or off, the <b>default value</b> served when on, and an ordered list of targeting <b>rules</b>.</td></tr>
+<tr><td><b>Rule</b></td><td>"If these conditions match (and the user falls in this percentage), serve this value."</td></tr>
+<tr><td><b>Segment</b></td><td>A named list of user ids that rules can target.</td></tr>
+<tr><td><b>SDK key</b></td><td>A read-only credential, per environment, that your application uses to ask GitBench what value a flag has for a given user.</td></tr>
+<tr><td><b>Context</b></td><td>Who you are evaluating for: a <code>userId</code> plus string attributes such as <code>plan=pro</code>.</td></tr>
+</table>
+<p>Find them at <b>Feature flags</b> in a project's sidebar, <code>/p/{KEY}/flags</code>; a single flag is at <code>/p/{KEY}/flags/{flagKey}</code>. Everyone who can view the project can read flags.</p>
+
+<h3 id="evaluation-order">How a value is chosen</h3>
+<ol>
+<li>If the flag is <b>off</b> in the environment: serve the flag's <b>off value</b> (reason <code>off</code>).</li>
+<li>Otherwise check the environment's <b>rules in order</b>; the <b>first matching rule</b> serves its own value (reason <code>rule</code>).</li>
+<li>If no rule matches: serve the environment's <b>default value</b> (reason <code>default</code>).</li>
+<li>An <b>archived</b> flag always serves its off value (reason <code>archived</code>).</li>
+</ol>
+
+<h2 id="create">Creating a flag</h2>
+<ol>
+<li>On the Flags page (Maintainer or higher) choose to create a flag: a <b>key</b> (lowercase letters, digits, <code>.</code>, <code>_</code>, <code>-</code>, up to 64, starting with a letter or digit; it can't change later because code refers to it), a <b>name</b> (up to 120), an optional description (up to 2000), a <b>type</b>, and the value to serve when on.</li>
+<li>The flag starts <b>off in every environment</b>. Toggle it in an environment when you're ready (Developer or higher).</li>
+<li>Optionally link it to <b>issues</b> of the project, so people can see which work the flag belongs to.</li>
+</ol>
+<h3 id="types">Types</h3>
+<table>
+<tr><th>Type</th><th>Values</th><th>Typical off value</th></tr>
+<tr><td><code>boolean</code></td><td><code>true</code> or <code>false</code></td><td><code>false</code></td></tr>
+<tr><td><code>string</code></td><td>Any text</td><td><code>""</code> or the old behaviour's name</td></tr>
+<tr><td><code>number</code></td><td>A finite number</td><td><code>0</code></td></tr>
+<tr><td><code>json</code></td><td>Any valid JSON (object, array, ...)</td><td><code>{}</code></td></tr>
+</table>
+<p>Every value (off value, default value, rule values) is checked against the flag's type and must be at most 4000 characters.</p>
+
+<h2 id="environments">Environments and the CI sync</h2>
+<p>Flag environments are listed from a mix of two sources: those a Maintainer adds on the Flags page, and the names of your <a href="environments.html">CI environments</a>. Whenever you open the Flags page (or call the API), any <code>environment:</code> name used by the project's pipelines that doesn't exist yet is <b>added automatically</b>, with every flag off in it. So if your pipeline deploys to <code>production</code> and <code>staging</code>, those environments already exist for flags, using the same names.</p>
+<ul>
+<li>A new environment starts every flag <b>off</b> and copies the default value the flag was created with.</li>
+<li>Deleting an environment removes its flag states and SDK keys (Maintainer or higher). It does <em>not</em> remove the CI environment.</li>
+<li>The sync only adds; it never deletes or renames. Names are limited to 64 characters.</li>
+</ul>
+
+<h2 id="rules">Targeting rules</h2>
+<p>A rule has any number of <b>conditions</b> (clauses), an optional <b>percentage</b> and a <b>value</b>. It matches when <b>all</b> conditions match (a rule with no conditions matches everyone) and, if a percentage is set, the user falls inside it. Up to 50 rules per flag per environment, 20 conditions per rule, 500 values per condition.</p>
+<h3 id="operators">Operators</h3>
+<table>
+<tr><th>Operator</th><th>Matches when</th></tr>
+<tr><td><code>equals</code></td><td>The attribute equals the (first) value. Case-insensitive.</td></tr>
+<tr><td><code>notEquals</code></td><td>The attribute is missing or differs from the value.</td></tr>
+<tr><td><code>in</code></td><td>The attribute equals any listed value.</td></tr>
+<tr><td><code>notIn</code></td><td>The attribute is missing or equals none of the values.</td></tr>
+<tr><td><code>contains</code></td><td>The attribute contains any listed text.</td></tr>
+<tr><td><code>startsWith</code></td><td>The attribute starts with any listed text.</td></tr>
+<tr><td><code>endsWith</code></td><td>The attribute ends with any listed text.</td></tr>
+<tr><td><code>inSegment</code></td><td>The context's <code>userId</code> is in any of the listed segments (values are segment keys; no attribute).</td></tr>
+<tr><td><code>notInSegment</code></td><td>The user id is in none of them.</td></tr>
+</table>
+<p>All comparisons are case-insensitive and attributes are always <b>strings</b>: there are no numeric greater-than comparisons or regular expressions. Positive operators (<code>equals</code>, <code>in</code>, <code>contains</code>, ...) don't match when the attribute is missing; negative ones (<code>notEquals</code>, <code>notIn</code>) do. The attribute name <code>userId</code> (also <code>key</code> and <code>user</code>) means the context's user id; anything else is looked up in the attributes.</p>
+
+<h3 id="rollouts">Percentage rollouts and stability</h3>
+<p>Set <b>percentage</b> (0 to 100, two decimals honoured) on a rule to serve it to only part of the users who match its conditions. Each user is put in a fixed "bucket" from 0 to 9999 by hashing <code>flagKey:ruleId:bucketValue</code> with SHA-256, and is in if the bucket is below <code>percentage x 100</code>. That gives these guarantees:</p>
+<ul>
+<li><b>Stable:</b> the same user always gets the same answer for the same rule.</li>
+<li><b>Only adds:</b> raising 10% to 25% keeps the original 10% in and adds more users, so nobody flips back and forth during a rollout.</li>
+<li><b>Independent per rule and flag:</b> users in the first 10% of one flag aren't automatically in the first 10% of another.</li>
+<li><b>Keep the rule id.</b> Changing a rule's <b>id</b> or the <b>bucket-by</b> attribute reshuffles who is included. The id is generated for you; edit it only deliberately.</li>
+<li>The default bucket attribute is <code>userId</code>. Use <code>bucketBy</code> to roll out per another attribute, for example an account id so everyone in the same company gets the same answer.</li>
+<li>A context with no value for the bucket attribute (an anonymous request) <b>never</b> matches a percentage rule.</li>
+</ul>
+<p>Hash definition, so you can evaluate locally: SHA-256 of the UTF-8 text <code>flagKey:ruleId:bucketValue</code>, first 8 bytes read as an unsigned little-endian integer, modulo 10000; the user is in when that is less than <code>round(percentage x 100)</code>.</p>
+
+<h3 id="rule-example">Example</h3>
+<p>For <code>new-checkout</code> in <code>production</code>: serve <code>true</code> to the beta segment, 20% of everyone on the pro plan, and the default (<code>false</code>) to the rest:</p>
+<pre><code>curl -X PUT https://gitbench.example.com/api/v1/projects/WEB/flags/new-checkout/environments/2 \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "defaultValue": false,
+    "rules": [
+      { "id": "beta", "description": "Beta testers",
+        "clauses": [ { "op": "inSegment", "values": ["beta-testers"] } ], "value": true },
+      { "id": "pro-20", "description": "20% of pro",
+        "clauses": [ { "attribute": "plan", "op": "equals", "values": ["pro"] } ],
+        "percentage": 20, "value": true }
+    ]
+  }'</code></pre>
+
+<h2 id="segments">Segments</h2>
+<p>A segment is a named list of <b>user ids</b> (strings, up to 200 characters each, up to 10,000 members): your beta testers, internal staff, a customer. Create one in the Segments section of the Flags page: a key, a name and the ids (one per line or comma separated). Reference it from a rule with <code>inSegment</code> or <code>notInSegment</code>. Editing needs Developer; <b>deleting</b> needs Maintainer and is refused while a rule uses it. Segments match only the context's <code>userId</code>, not other attributes.</p>
+
+<h2 id="sdk-keys">SDK keys</h2>
+<p>Create keys on the Flags page under <b>Environments and SDK keys</b> (Maintainer or higher): pick the environment, a name and a kind. The secret (<code>gbsdk_c_...</code> or <code>gbsdk_s_...</code>) is shown <b>once</b>; only a hash is stored. Keys can be rotated (the old secret stops working at once) and revoked. At most 20 active keys per environment. The list shows when each was last used.</p>
+<table>
+<tr><th>Kind</th><th>Can do</th><th>Use it in</th></tr>
+<tr><td><b>Client</b> (<code>gbsdk_c_</code>)</td><td>Evaluate flags and get their values. Can't see rules. May be sent as <code>?sdkKey=</code> (needed for browser <code>EventSource</code>, which can't set headers).</td><td>Browsers, mobile apps. It reveals only the values flags currently serve, but treat it as semi-public: don't put secrets in flag values.</td></tr>
+<tr><td><b>Server</b> (<code>gbsdk_s_</code>)</td><td>Everything a client key does, plus download <b>definitions</b> (rules and segments) for local evaluation, and the matching <code>ruleId</code> in results. Refused if sent in the URL.</td><td>Your backend only. Keep it secret.</td></tr>
+</table>
+<div class="warn">The client API accepts <b>only SDK keys</b>, never personal access tokens or browser sessions, and answers with <code>Access-Control-Allow-Origin: *</code> and no credentials. Evaluating happens on the GitBench server, so rules of a client key are never sent to the browser.</div>
+
+<h2 id="endpoints">Evaluation endpoints</h2>
+<p>All under <code>/api/v1/flags</code>. Send the key as <code>Authorization: Bearer gbsdk_...</code> or the <code>X-GitBench-SDK-Key</code> header. The context comes from query parameters (<code>user=ID</code> or <code>userId=ID</code> and <code>attr.NAME=value</code>) or a JSON body <code>{ "userId": "...", "attributes": { "plan": "pro" } }</code>. A context may have up to 50 attributes, values up to 500 characters.</p>
+<table>
+<tr><th>Endpoint</th><th>Purpose</th><th>Key</th></tr>
+<tr><td><code>GET /evaluate?flag=KEY&amp;user=ID&amp;attr.plan=pro</code><br><code>POST /evaluate</code> (body adds <code>"flag"</code>)</td><td>One flag. 404 if the environment has no such flag.</td><td>client or server</td></tr>
+<tr><td><code>GET /evaluate-all</code><br><code>POST /evaluate-all</code></td><td>Every active flag of the environment for a context.</td><td>client or server</td></tr>
+<tr><td><code>GET /stream</code></td><td>Server-sent events: the same body as evaluate-all, re-sent whenever something changes.</td><td>client or server</td></tr>
+<tr><td><code>GET /definitions</code></td><td>Rules and segments for local evaluation.</td><td>server only (403 for client keys)</td></tr>
+</table>
+
+<h3 id="curl">With curl</h3>
+<pre><code># one flag for user 42 on the pro plan
+curl -s "https://gitbench.example.com/api/v1/flags/evaluate?flag=new-checkout&amp;user=42&amp;attr.plan=pro" \
+  -H "Authorization: Bearer $GITBENCH_SDK_KEY"
+# {"key":"new-checkout","type":"boolean","value":true,"reason":"rule","ruleId":null,"version":17}
+
+# everything, with a JSON context
+curl -s -X POST https://gitbench.example.com/api/v1/flags/evaluate-all \
+  -H "Authorization: Bearer $GITBENCH_SDK_KEY" -H "Content-Type: application/json" \
+  -d '{"userId":"42","attributes":{"plan":"pro","country":"DE"}}'
+# {"version":17,"environment":"production","flags":{"new-checkout":{"key":"new-checkout","type":"boolean","value":true,"reason":"rule"}, ...}}</code></pre>
+<p><code>ruleId</code> is included (and non-null) only for server keys. <code>reason</code> is <code>off</code>, <code>rule</code>, <code>default</code> or <code>archived</code>.</p>
+
+<h3 id="etags">ETags and polling</h3>
+<p>Every evaluate and definitions response carries a strong <code>ETag</code> and <code>Cache-Control: private, no-cache</code>. Send the ETag back as <code>If-None-Match</code>; while nothing that affects the answer has changed you get <b>304 Not Modified</b> with no body. That makes polling cheap:</p>
+<pre><code>curl -i "https://gitbench.example.com/api/v1/flags/evaluate-all?user=42" \
+  -H "Authorization: Bearer $GITBENCH_SDK_KEY" -H 'If-None-Match: "3f9a0c..."'</code></pre>
+<p>The <code>version</code> in the body is the environment's change counter; it goes up whenever a flag, rule, segment or value that decides evaluation here changes.</p>
+
+<h3 id="stream">Live updates (stream)</h3>
+<p><code>GET /stream</code> keeps the connection open and sends an <code>event: flags</code> message first, then another each time the evaluated result for that context changes, with a 20-second keep-alive comment. The connection ends if the key is revoked or rotated. Clients should reconnect on error (the server suggests <code>retry: 3000</code>). A single server holds at most 1000 open streams (extra ones get 503).</p>
+
+<h3 id="definitions">Definitions (local evaluation)</h3>
+<p>A server key can fetch <code>GET /definitions</code>: each flag's type, <code>enabled</code>, <code>offValue</code>, <code>defaultValue</code> and <code>rules</code>, plus all <code>segments</code> (key to member ids) and a <code>hashing</code> note. Use it to evaluate in-process without a network call per check, re-fetching with <code>If-None-Match</code>. Follow the evaluation order and hashing above exactly to get identical answers.</p>
+
+<h2 id="csharp">C# example</h2>
+<pre><code>using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+
+public sealed class FlagClient(HttpClient http)
+{
+    // new HttpClient { BaseAddress = new("https://gitbench.example.com/") }
+    // with DefaultRequestHeaders.Authorization = new("Bearer", sdkKey)
+
+    public async Task&lt;bool&gt; IsOnAsync(string flag, string userId, string plan)
+    {
+        var url = $"api/v1/flags/evaluate?flag={Uri.EscapeDataString(flag)}&amp;user={Uri.EscapeDataString(userId)}&amp;attr.plan={Uri.EscapeDataString(plan)}";
+        using var res = await http.GetAsync(url);
+        if (!res.IsSuccessStatusCode) return false;   // fail closed: treat errors as "off"
+        using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+        return doc.RootElement.GetProperty("value").GetBoolean();
+    }
+}
+
+// usage
+if (await flags.IsOnAsync("new-checkout", user.Id, user.Plan)) { /* new path */ }</code></pre>
+<p>Cache results briefly in your application (or use <code>If-None-Match</code>) rather than calling on every request, and always choose a safe fallback for when the call fails.</p>
+
+<h2 id="javascript">JavaScript example</h2>
+<pre><code>// Browser, with a CLIENT key
+const base = "https://gitbench.example.com/api/v1/flags";
+const sdkKey = "gbsdk_c_...";            // client key only: never ship a server key to a browser
+const ctx = new URLSearchParams({ user: "42", "attr.plan": "pro" });
+
+// one-off
+const res = await fetch(`${base}/evaluate-all?${ctx}`, { headers: { Authorization: `Bearer ${sdkKey}` } });
+const { flags } = await res.json();
+if (flags["new-checkout"]?.value) showNewCheckout();
+
+// live updates: EventSource can't set headers, so a client key goes in the query
+const es = new EventSource(`${base}/stream?${ctx}&amp;sdkKey=${sdkKey}`);
+es.addEventListener("flags", (e) =&gt; {
+  const { flags } = JSON.parse(e.data);
+  render(flags["new-checkout"]?.value === true);
+});</code></pre>
+<pre><code>// Node, with a SERVER key and cheap polling via ETag
+let etag = null, flags = {};
+async function refresh() {
+  const res = await fetch("https://gitbench.example.com/api/v1/flags/evaluate-all?user=42", {
+    headers: { Authorization: `Bearer ${process.env.GITBENCH_SDK_KEY}`, ...(etag ? { "If-None-Match": etag } : {}) },
+  });
+  if (res.status === 304) return flags;
+  etag = res.headers.get("ETag");
+  flags = (await res.json()).flags;
+  return flags;
+}</code></pre>
+
+<h2 id="stale">Stale flags</h2>
+<p>Old flags are clutter and risk. GitBench tracks when each flag last <b>changed</b> and when an SDK last <b>evaluated</b> it (recorded at most about once an hour per flag and environment). A flag that has neither changed nor been evaluated for the chosen number of days (default <b>30</b>, adjustable with "Stale after (days)" on the page) is marked <b>stale</b>. Clean up by removing the flag from code, then <b>archive</b> it (kept, but always serves its off value and can't be edited until restored) or delete it. Via API: <code>GET /api/v1/projects/{key}/flags/_stale?days=45</code>.</p>
+
+<h2 id="history">History and audit</h2>
+<p>Every change is written to the flag's <b>history</b> (who, when, old and new value, which environment): created, toggled, default value, off value, rules, details, issues, archived, unarchived. See it on the flag's page or with <code>GET /api/v1/projects/{key}/flags/{flagKey}/history</code>. The same changes are in the project <a href="admin.html">audit log</a> (<code>flag.created</code>, <code>flag.toggled</code>, <code>flag.rules_changed</code>, <code>flag.default_changed</code>, <code>flag.off_value_changed</code>, <code>flag.updated</code>, <code>flag.archived</code>, <code>flag.unarchived</code>, <code>flag.deleted</code>, plus <code>flag.environment_created</code>, <code>flag.environment_deleted</code>, <code>flag.sdk_key_created</code>, <code>flag.segment_created</code>, <code>flag.segment_updated</code>, <code>flag.segment_deleted</code> and key rotation and revocation events). Deleting a flag removes its history, but the audit log keeps the record.</p>
+
+<h2 id="webhook">Webhook: flag.changed</h2>
+<p>Subscribe a <a href="api.html">webhook</a> to <code>flag.changed</code> to learn when a flag is created, toggled, edited, archived or deleted (for example to post to chat or invalidate a cache).</p>
+<pre><code>{
+  "event": "flag.changed",
+  "flag": { "id": 5, "key": "new-checkout", "name": "New checkout", "type": "boolean", "archived": false },
+  "environment": { "id": 2, "name": "production" },
+  "change": { "kind": "toggled", "oldValue": "off", "newValue": "on" },
+  "url": "https://gitbench.example.com/p/WEB/flags/new-checkout"
+}</code></pre>
+<p><code>environment</code> is <code>null</code> for changes that aren't per environment (details, off value, archive). <code>kind</code> is one of <code>created</code>, <code>toggled</code>, <code>default_value</code>, <code>off_value</code>, <code>rules</code>, <code>details</code>, <code>issues</code>, <code>archived</code>, <code>unarchived</code>. Values are clipped to 2000 characters.</p>
+
+<h2 id="permissions">Permissions</h2>
+<table>
+<tr><th>Action</th><th>Role</th></tr>
+<tr><td>View flags, history, stale list</td><td>Viewer</td></tr>
+<tr><td>Toggle, change default/off values, edit rules and details, edit segments (<b>ToggleFlags</b>)</td><td>Developer or higher</td></tr>
+<tr><td>Create, delete, archive and restore flags; add/delete environments; delete segments; create, rotate, revoke and list SDK keys (<b>ManageFlags</b>)</td><td>Maintainer or higher</td></tr>
+</table>
+
+<h2 id="management-api">Management API</h2>
+<p>Authenticated with a personal access token, under <code>/api/v1/projects/{key}</code> (see <a href="api.html">REST API and webhooks</a>). Not to be confused with the SDK key endpoints above.</p>
+<table>
+<tr><th>Request</th><th>Purpose</th></tr>
+<tr><td><code>GET /flags</code>, <code>POST /flags</code></td><td>List (<code>?archived=true</code> includes archived) and create (<code>{ "key", "name", "description", "type", "defaultValue", "offValue" }</code>).</td></tr>
+<tr><td><code>GET/PATCH/DELETE /flags/{flagKey}</code></td><td>Read, change name/description/issue numbers/off value, delete.</td></tr>
+<tr><td><code>POST /flags/{flagKey}/archive</code>, <code>/unarchive</code></td><td>Archive or restore.</td></tr>
+<tr><td><code>PUT /flags/{flagKey}/environments/{environmentId}</code></td><td>Set <code>enabled</code>, <code>defaultValue</code> and/or <code>rules</code> in one environment.</td></tr>
+<tr><td><code>GET /flags/{flagKey}/history</code>, <code>GET /flags/_stale</code></td><td>History and stale flags.</td></tr>
+<tr><td><code>GET/POST /flag-environments</code>, <code>DELETE /flag-environments/{id}</code></td><td>Environments.</td></tr>
+<tr><td><code>GET /flag-segments</code>, <code>PUT/DELETE /flag-segments/{segmentKey}</code></td><td>Segments (<code>{ "name", "description", "members": [...] }</code>).</td></tr>
+<tr><td><code>GET/POST /flag-sdk-keys</code>, <code>POST .../{id}/rotate</code>, <code>DELETE .../{id}</code></td><td>SDK keys. Create takes <code>{ "environmentId", "name", "kind": "client|server" }</code>; the secret is in the create/rotate response only.</td></tr>
+</table>
+<pre><code>curl -X POST https://gitbench.example.com/api/v1/projects/WEB/flags \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"key":"new-checkout","name":"New checkout","type":"boolean","defaultValue":true,"offValue":false}'
+
+curl -X POST https://gitbench.example.com/api/v1/projects/WEB/flag-sdk-keys \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"environmentId":2,"name":"web frontend","kind":"client"}'</code></pre>
+
+<h2 id="limits">Limits at a glance</h2>
+<table>
+<tr><th>Item</th><th>Limit</th></tr>
+<tr><td>Flag key / name / description</td><td>64 / 120 / 2000 characters</td></tr>
+<tr><td>Value</td><td>4000 characters</td></tr>
+<tr><td>Rules per flag per environment</td><td>50</td></tr>
+<tr><td>Conditions per rule / values per condition</td><td>20 / 500</td></tr>
+<tr><td>Rule id / description</td><td>40 / 200 characters</td></tr>
+<tr><td>Segment members</td><td>10,000, each up to 200 characters</td></tr>
+<tr><td>Active SDK keys per environment</td><td>20</td></tr>
+<tr><td>Context attributes / value length</td><td>50 / 500 characters</td></tr>
+<tr><td>Open streams per server</td><td>1000</td></tr>
+</table>
+<p>There are no <code>Flags:*</code> configuration keys; flags are always available, and the client endpoints share the general <code>RateLimiting</code> settings (see <a href="admin.html">Administration</a>).</p>

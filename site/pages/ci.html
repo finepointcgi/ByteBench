@@ -1,0 +1,432 @@
+<h1>CI pipelines</h1>
+<p class="lead">Put a <code>.gitbench-ci.yml</code> in a repository and GitBench runs its jobs in Docker containers on the server: on every push, on pull requests, on a schedule, or by hand.</p>
+
+<div class="note"><b>Different from GitLab CI.</b> GitBench's format is small on purpose. There are <b>no stages</b> (order comes from <code>needs</code>), no <code>script</code>/<code>before_script</code>/<code>after_script</code> keys (a job has <code>steps</code>), no <code>services</code>, no <code>retry</code>, no per-job <code>timeout</code> or <code>variables</code>, no <code>extends</code>, no <code>trigger</code> and no <code>include</code> of files (only built-in templates). The sections below say what exists, what is not there, and the usual replacement.</div>
+
+<h2 id="quick-start">Quick start</h2>
+<p>Create <code>.gitbench-ci.yml</code> at the <b>root</b> of the repository (the name and location are fixed), commit it and push. A pipeline appears on the repository's <b>Pipelines</b> tab.</p>
+<pre><code>jobs:
+  build:
+    steps:
+      - name: Say hello
+        run: echo "Hello from $GITBENCH_JOB on $GITBENCH_REF"</code></pre>
+<p>Without an <code>image</code> the job runs in <code>alpine:3.20</code>. Everything you need to know to read and write the file is on this page; the sections build from the file layout to security.</p>
+
+<h2 id="file-reference">The file format</h2>
+<p>The file is YAML. <b>Unknown keys are errors</b> so typos are caught: the pipeline is created in the <b>Error</b> state with a message such as <code>invalid YAML at line 4, column 5: Property 'stepz' not found</code>. The whole file may be at most 64 KB, with at most 20 jobs and 50 steps per job.</p>
+<pre><code>image: alpine:3.20             # default image for every job (default alpine:3.20)
+include: [nightowl]            # built-in job templates (see "include")
+on:                            # which pushes/PRs start a pipeline automatically
+  branches: [main, "feature/*"]
+  pull_requests: true
+jobs:
+  &lt;job-name&gt;:
+    image: ...                 # per-job image
+    needs: [other-job]         # dependency graph
+    when: on_success | manual
+    allow_failure: true | false
+    only: [main, "release/*"]  # or rules (not both)
+    rules: [ { branches: [main], when: manual } ]
+    cache:     { key: ..., paths: [...] }
+    artifacts: { paths: [...], expire_in: 7d, when: on_success, reports: { ... } }
+    environment: { name: production, url: https://..., action: start|stop }
+    pages: true | false | dist | { path: dist, review: true, expire_in: 3d }
+    publish: dist              # alias for pages: { path: dist }
+    steps:
+      - name: Optional label
+        run: shell commands</code></pre>
+
+<h3 id="top-level-keys">Top-level keys</h3>
+<table>
+<tr><th>Key</th><th>Meaning</th></tr>
+<tr><td><code>image</code></td><td>Default Docker image for jobs that don't set one. Default <code>alpine:3.20</code>. Names are validated (letters, digits and <code>._/:@-</code>, must not start with <code>-</code>).</td></tr>
+<tr><td><code>include</code></td><td>A template name or list of names. The only built-in template is <code>nightowl</code>. See <a href="#include">include</a>.</td></tr>
+<tr><td><code>on.branches</code></td><td>Branch patterns that start a pipeline on push. Omitted means every branch. <code>*</code> matches within one path segment, <code>**</code> across segments (<code>feature/*</code> matches <code>feature/x</code> but not <code>feature/x/y</code>).</td></tr>
+<tr><td><code>on.pull_requests</code></td><td>Default <code>true</code>: a pull request's source head gets a pipeline even if its branch isn't in <code>on.branches</code>. <code>false</code> disables that.</td></tr>
+<tr><td><code>jobs</code></td><td>Required map of job name to job. Names use letters, digits, <code>_</code>, <code>.</code>, <code>-</code>, up to 64 characters, starting with a letter or digit.</td></tr>
+</table>
+
+<h3 id="job-keys">Job keys</h3>
+<table>
+<tr><th>Key</th><th>Meaning</th></tr>
+<tr><td><code>steps</code></td><td><b>Required.</b> A list of <code>{ name?, run }</code>. <code>run</code> is required; <code>name</code> defaults to the first line of the command.</td></tr>
+<tr><td><code>image</code></td><td>Image for this job (all steps).</td></tr>
+<tr><td><code>needs</code></td><td>Jobs that must pass first. See <a href="#needs">needs</a>.</td></tr>
+<tr><td><code>when</code></td><td><code>on_success</code> (default) or <code>manual</code>. Anything else (<code>always</code>, <code>on_failure</code>, <code>delayed</code>) is an error.</td></tr>
+<tr><td><code>allow_failure</code></td><td>A failure doesn't fail the pipeline and doesn't skip jobs that need it. Default <code>false</code>, but <code>true</code> for manual jobs.</td></tr>
+<tr><td><code>only</code> / <code>rules</code></td><td>Branch filters; see <a href="#rules">rules, only and when</a>. Using both is an error.</td></tr>
+<tr><td><code>artifacts</code>, <code>cache</code></td><td>See <a href="#artifacts">artifacts</a> and <a href="#cache">cache</a>.</td></tr>
+<tr><td><code>environment</code></td><td>Records a deployment. Covered on <a href="environments.html">Environments and deployments</a>.</td></tr>
+<tr><td><code>pages</code> / <code>publish</code></td><td>Publishes a static site. Covered on <a href="pages.html">Static sites (Pages)</a>.</td></tr>
+</table>
+
+<h3 id="not-supported">What the format does not have</h3>
+<table>
+<tr><th>You might look for</th><th>In GitBench</th></tr>
+<tr><td><code>stages:</code> and a job's <code>stage</code></td><td>Not supported. Use <code>needs</code>: a job without <code>needs</code> starts immediately, one with <code>needs</code> waits for them. A "stage" is just a set of jobs that need the previous set.</td></tr>
+<tr><td><code>script</code>, <code>before_script</code>, <code>after_script</code></td><td>Use <code>steps</code>. Put setup in the first step. There is no after-script that runs on failure; later steps are skipped once a step fails.</td></tr>
+<tr><td>File-level or job-level <code>variables:</code></td><td>Not supported. Use <a href="#variables">CI variables</a> in the UI, set values in the <code>run</code> text itself, or schedule variables.</td></tr>
+<tr><td><code>services:</code> (sidecar containers)</td><td>Not supported, and jobs get no Docker daemon, so they can't start containers either. Use an image that bundles what you need, or install it in a step.</td></tr>
+<tr><td><code>retry:</code>, <code>timeout:</code></td><td>Not supported per job. The server-wide <code>Ci:JobTimeoutMinutes</code> applies. A person can <b>Retry</b> a finished job on the pipeline page.</td></tr>
+<tr><td><code>trigger:</code>, <code>extends:</code>, <code>include: { local/remote }</code></td><td>Not supported.</td></tr>
+<tr><td><code>when: always</code>, <code>on_failure</code>, <code>delayed</code></td><td>Not supported for jobs. (<code>artifacts.when</code> does accept <code>on_failure</code> and <code>always</code>.)</td></tr>
+</table>
+
+<h2 id="images-steps">Images and steps</h2>
+<p>Each job gets a fresh export of the commit's files, mounted at <code>/workspace</code>, which is also the working directory. Each <em>step</em> runs in its own container:</p>
+<pre><code>docker run --rm --entrypoint sh &lt;image&gt; -e -c "&lt;run&gt;"</code></pre>
+<ul>
+<li>The image must therefore contain <code>sh</code>. A multi-line <code>run</code> stops at its first failing command (<code>-e</code>).</li>
+<li>Steps of one job share the <code>/workspace</code> folder, so files written by step 1 are there for step 2, but nothing else carries over: installed packages, exported variables and <code>cd</code> do not. Install tools and use them in the <em>same</em> step.</li>
+<li>The first failing step fails the job and the job's remaining steps are <b>Skipped</b>.</li>
+<li>The log is streamed to the pipeline page about once a second. Each step's log is capped at about 1 MB (<code>Ci:MaxLogChars</code>).</li>
+</ul>
+<pre><code>jobs:
+  test:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    steps:
+      - name: Restore
+        run: dotnet restore
+      - name: Test
+        run: |
+          dotnet test --no-restore \
+            --logger "trx;LogFileName=results.trx"</code></pre>
+
+<h2 id="needs">Job dependencies (needs)</h2>
+<p><code>needs: [a, b]</code> makes a job wait for <code>a</code> and <code>b</code>. Jobs without <code>needs</code> run in parallel (limited by <code>Ci:MaxConcurrentJobs</code>). A job also gets the <b>artifacts</b> of every job it needs, extracted into its workspace before its first step.</p>
+<ul>
+<li>A job whose needed job failed (without <code>allow_failure</code>) or was skipped is <b>skipped</b>.</li>
+<li>Needing an undefined job, itself, or a cycle is an error (<code>The 'needs' of these jobs form a cycle: a → b → a</code>).</li>
+<li>If <code>rules</code> or <code>only</code> leave out a job on the branch being run, any job that needs it makes the pipeline an Error for that branch. Give the dependent job the same rule.</li>
+</ul>
+<p>The pipeline page draws this as a graph: jobs in columns by <code>needs</code> depth, a line from each need, each job showing status, duration and environment. Click a job for its log; <b>▶</b> runs a manual job and <b>↻</b> retries a finished one.</p>
+
+<svg viewBox="0 0 640 200" role="img" aria-label="Pipeline graph: build feeds lint-free test and package jobs, then a manual deploy" style="max-width:100%;height:auto" font-family="system-ui,sans-serif" font-size="13">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)">
+    <path d="M130 100H180"/><path d="M130 100C155 100 155 50 180 50"/><path d="M130 100C155 100 155 150 180 150"/>
+    <path d="M300 50H350"/><path d="M300 150C325 150 325 110 350 110"/><path d="M300 50C325 50 325 90 350 90"/><path d="M470 100H520"/>
+  </g>
+  <g stroke="var(--line)" stroke-width="1.5" fill="var(--soft)">
+    <rect x="20" y="80" width="110" height="40" rx="8"/><rect x="180" y="30" width="120" height="40" rx="8"/>
+    <rect x="180" y="80" width="120" height="40" rx="8"/><rect x="180" y="130" width="120" height="40" rx="8"/>
+    <rect x="350" y="80" width="120" height="40" rx="8"/><rect x="520" y="80" width="100" height="40" rx="8" stroke="var(--accent)" stroke-dasharray="5 3"/>
+  </g>
+  <g fill="currentColor" text-anchor="middle">
+    <text x="75" y="105">build</text><text x="240" y="55">unit-tests</text><text x="240" y="105">lint</text><text x="240" y="155">package</text>
+    <text x="410" y="105">integration</text><text x="570" y="105">deploy</text>
+    <text x="570" y="140" font-size="11" fill="var(--accent)">manual</text>
+  </g>
+  <text x="75" y="20" font-size="11" fill="currentColor" text-anchor="middle">needs depth 0</text>
+  <text x="240" y="195" font-size="11" fill="currentColor" text-anchor="middle">depth 1</text>
+  <text x="410" y="195" font-size="11" fill="currentColor" text-anchor="middle">depth 2</text>
+  <text x="570" y="195" font-size="11" fill="currentColor" text-anchor="middle">depth 3</text>
+</svg>
+<p class="foot">The graph the pipeline page draws for a file where unit-tests, lint and package need build, integration needs unit-tests and package, and deploy needs integration.</p>
+
+<h2 id="rules">Rules, only and when</h2>
+<ul>
+<li><code>only: [main, "release/*"]</code> creates the job only on matching branches.</li>
+<li><code>rules</code> is a list of <code>{ branches, when }</code> (up to 20). The <b>first</b> rule whose <code>branches</code> match decides (no <code>branches</code> matches every branch). <code>when</code> is <code>on_success</code>, <code>manual</code> or <code>never</code>; <code>never</code> leaves the job out, and an omitted <code>when</code> keeps the job's own. If no rule matches, the job is not created.</li>
+<li>If no job at all is left for a branch, pushes don't create a pipeline and <b>Run pipeline</b> says so.</li>
+<li>Rules match <b>branch names only</b>. There are no conditions on variables, changed files or the pipeline source. For a pull request pipeline the "branch" is the pull request's source branch.</li>
+</ul>
+<pre><code>jobs:
+  preview:
+    rules:
+      - { branches: [main], when: never }        # not on main
+      - { branches: ["feature/**"], when: manual } # click to run on feature branches
+      - { when: on_success }                      # everything else: automatic
+    steps: [ { run: ./preview.sh } ]</code></pre>
+
+<h3 id="manual-jobs">Manual jobs</h3>
+<p>A job with <code>when: manual</code> (or a rule that says so) waits in <b>Manual</b> once its needs pass, until someone with <b>PushCode</b> (Developer or higher) clicks ▶ on the pipeline page. Jobs that need it wait too.</p>
+<ul>
+<li>With <code>allow_failure: true</code> (the default for manual jobs) a waiting manual job does not block: the pipeline finishes as <b>Passed</b> and the job can still be run later.</li>
+<li>With <code>allow_failure: false</code> the pipeline stays <b>Manual</b> (blocked). The merge check reports it as pending, and no <code>pipeline.completed</code> webhook or failure notification is sent until it really finishes.</li>
+<li>Jobs that deploy to a <a href="environments.html#protected">protected environment</a> wait for approval regardless of <code>allow_failure</code>.</li>
+</ul>
+
+<h2 id="variables">Variables and secrets</h2>
+<h3 id="predefined-variables">Predefined variables</h3>
+<p>Steps always get these, set by GitBench (you cannot override them: the names <code>CI</code> and <code>GITBENCH_*</code> are reserved for CI variables):</p>
+<table>
+<tr><th>Variable</th><th>Value</th></tr>
+<tr><td><code>CI</code>, <code>GITBENCH_CI</code></td><td><code>true</code></td></tr>
+<tr><td><code>GITBENCH_PIPELINE_ID</code></td><td>The pipeline's numeric id.</td></tr>
+<tr><td><code>GITBENCH_JOB</code></td><td>The job name.</td></tr>
+<tr><td><code>GITBENCH_REF</code></td><td>The branch (for a fork pull request <code>refs/pull/{n}/head</code>; for a merge queue run <code>refs/merge-queue/...</code>).</td></tr>
+<tr><td><code>GITBENCH_COMMIT_SHA</code></td><td>The commit being built.</td></tr>
+<tr><td><code>GITBENCH_REPOSITORY</code></td><td><code>KEY/slug</code>, such as <code>WEB/web-app</code>.</td></tr>
+<tr><td><code>GITBENCH_PIPELINE_SOURCE</code>, <code>CI_PIPELINE_SOURCE</code></td><td><code>push</code>, <code>pull_request</code>, <code>manual</code>, <code>retry</code>, <code>schedule</code> or <code>mergequeue</code>.</td></tr>
+<tr><td><code>CI_ENVIRONMENT_NAME</code>, <code>CI_ENVIRONMENT_URL</code></td><td>Only for jobs with an <code>environment:</code> (the URL only if one is set).</td></tr>
+<tr><td><code>GITBENCH_JOB_TOKEN</code>, <code>GITBENCH_REGISTRY_PASSWORD</code></td><td>A short-lived token (<code>gbj_...</code>) for the project's <a href="packages.html">package and container registry</a>. It only works while the job is running. Masked in logs.</td></tr>
+<tr><td><code>GITBENCH_REGISTRY</code>, <code>GITBENCH_REGISTRY_IMAGE</code>, <code>GITBENCH_REGISTRY_USER</code>, <code>GITBENCH_NUGET_SOURCE_URL</code>, <code>GITBENCH_NPM_REGISTRY_URL</code></td><td>Registry addresses and the user name to pair with the token. Only set when the site's public base URL is known (<code>PublicBaseUrl</code> or after the first request).</td></tr>
+</table>
+
+<h3 id="ci-variables">CI variables (secrets)</h3>
+<p>Secret values are managed in the UI, not in the YAML: <b>project</b> variables under <b>Project settings → CI variables</b> (<code>/p/{KEY}/settings#ci-variables</code>) and <b>repository</b> variables under <b>Repository → Settings → CI variables</b> (<code>/p/{KEY}/repos/{slug}/settings/ci-variables</code>). Managing them needs <b>Maintainer</b> or higher (ManageRepositories).</p>
+<ul>
+<li>Names: letters, digits and underscores, not starting with a digit, up to 100 characters; <code>CI</code> and <code>GITBENCH_*</code> are reserved. Values: a single line, up to 10,000 characters.</li>
+<li>Values are encrypted at rest (ASP.NET Core Data Protection) and are never shown again after saving. If the server's Data Protection keys change, a value can't be decrypted: the log says which variable was skipped and you save it again.</li>
+<li>A repository variable overrides a project variable of the same name.</li>
+<li>They reach the container through a mode-600 env file outside the workspace, never on the <code>docker</code> command line.</li>
+<li><b>Masking:</b> every secret value of four characters or more is replaced by <code>***</code> in step logs, including values split across output chunks. Shorter values are not masked. Masking is a safety net, not a guarantee: a step that prints a secret in a transformed form (base64, reversed) is not caught.</li>
+<li>The log lists the <em>names</em> of the variables the job received, never the values.</li>
+</ul>
+
+<h3 id="protected-variables">Protected variables</h3>
+<p>Mark a variable <b>Protected</b> and it only reaches pipelines on a <a href="branch-protection.html">protected branch</a>. For a pull request pipeline the <em>source</em> branch must be protected, so a feature branch never sees deploy keys. A merge queue pipeline counts as running on its target branch only if the PR isn't from a fork and the person who queued it can merge pull requests. The log notes how many protected variables were withheld.</p>
+<div class="warn"><b>Fork pull requests get no variables at all</b>, protected or not, because the code comes from outside the project.</div>
+
+<h3 id="schedule-variables">Pipeline (schedule) variables</h3>
+<p>The only per-run variables are those a <a href="#schedules">schedule</a> carries. They are <b>not secret</b> (Maintainers can read them), override CI variables of the same name, and go through the same env file. A fork pull request pipeline never carries them.</p>
+
+<h2 id="artifacts">Artifacts</h2>
+<pre><code>jobs:
+  build:
+    steps: [ { run: dotnet publish -o out } ]
+    artifacts:
+      paths: [out/, "*.log"]   # folders (trailing /), files or globs, relative to /workspace
+      expire_in: 7d            # 30m, 12h, 7d, 2w, 3mo, 1y, never. Default 30d
+      when: on_success         # on_success (default), on_failure, always
+      reports:                 # optional, see Security scanning
+        sarif: results.sarif</code></pre>
+<ul>
+<li>After the job's steps, if <code>when</code> matches the result, the files are zipped and stored under <code>Ci:ArtifactsRoot</code>. Over <code>Ci:MaxArtifactBytes</code> (100 MB) nothing is stored and the job <b>fails</b>.</li>
+<li>Paths can't contain <code>..</code> or be absolute (up to 50 paths). <b>Symbolic links are never followed or stored</b>; the log names each one skipped.</li>
+<li>Jobs that <code>needs</code> this job get the files extracted into their workspace before their first step. Extraction refuses names with <code>..</code>, absolute paths and anything that would be written through a symlink.</li>
+<li>The pipeline page lists artifacts with <b>Download</b> (the zip), <b>Browse</b> (file list, each file downloads) and <b>Keep</b> (pin past expiry; PushCode). Downloads need ViewProject and are always served as <code>application/octet-stream</code> attachments with a sandboxing CSP.</li>
+<li>An hourly cleanup deletes expired, un-kept artifacts.</li>
+<li><code>reports</code> accepts only the types <code>nightowl</code> and <code>sarif</code>, each naming one file (no globs). GitBench reads them into <a href="security-scanning.html">Security scanning</a>. There is no JUnit/test report type.</li>
+</ul>
+
+<h2 id="cache">Cache</h2>
+<pre><code>jobs:
+  build:
+    image: node:22
+    cache:
+      key: "npm-{{ hashFiles('package-lock.json') }}"   # default key is "default"
+      paths: [node_modules/]
+    steps: [ { run: npm ci &amp;&amp; npm run build } ]</code></pre>
+<ul>
+<li>Keys may contain letters, digits, <code>.</code>, <code>_</code>, <code>-</code> and <code>{{ hashFiles('glob', ...) }}</code>, which becomes a hash of the matching files' names and contents in the fresh checkout.</li>
+<li>The cache with that key is extracted before the first step. After the job <b>passes</b> the paths are zipped and replace that key's cache. A failed job does not save a cache. There are no fallback keys: if the exact key misses, the job starts cold.</li>
+<li>Limits: <code>Ci:MaxCacheBytes</code> (500 MB) per cache and <code>Ci:CacheBytesPerRepository</code> (2 GB) per repository; the least recently used are evicted.</li>
+<li><b>Two scopes.</b> Pipelines on a protected branch read and write only the <em>protected</em> cache; everything else (other branches, pull requests) uses the <em>unprotected</em> one. This stops someone pushing a branch that poisons <code>node_modules</code> for the next <code>main</code> pipeline, which may hold deploy secrets. The log says which scope was used.</li>
+</ul>
+
+<h2 id="include">include (the Night Owl template)</h2>
+<p><code>include: [nightowl]</code> (or <code>include: nightowl</code>) adds a built-in job named <code>nightowl</code>. A job of the same name in your file replaces it. No other templates exist; any other name is an error listing the available ones. Details, variables and the runner-image requirement are on <a href="security-scanning.html">Security scanning</a>.</p>
+<pre><code>include: [nightowl]
+jobs:
+  build:
+    steps: [ { run: ./build.sh } ]</code></pre>
+
+<h2 id="triggers">What starts a pipeline</h2>
+<table>
+<tr><th>Trigger</th><th><code>CI_PIPELINE_SOURCE</code></th><th>Details</th></tr>
+<tr><td>Push</td><td><code>push</code></td><td>For each branch the push created or moved, if it matches <code>on.branches</code> (or all branches when omitted). Deleted branches are skipped. A merge done in GitBench counts as a push to the target branch.</td></tr>
+<tr><td>Pull request</td><td><code>pull_request</code></td><td>Opening a PR (or updating its source) runs a pipeline for the source head if <code>on.pull_requests</code> isn't <code>false</code>, unless that commit already has one on that branch (it is then linked to the PR instead).</td></tr>
+<tr><td>Fork pull request</td><td><code>pull_request</code></td><td>Same, but the pipeline waits for approval and gets no variables. See <a href="#forks">below</a>.</td></tr>
+<tr><td>Merge queue</td><td><code>mergequeue</code></td><td>The <a href="branch-protection.html">merge queue</a> tests the merge result on a temporary <code>refs/merge-queue/...</code> ref with its own pipeline. Jobs are chosen by <code>rules</code> as if the run were on the target branch.</td></tr>
+<tr><td>Schedule</td><td><code>schedule</code></td><td>A cron schedule fires, see <a href="#schedules">Schedules</a>.</td></tr>
+<tr><td>Manual</td><td><code>manual</code></td><td><b>Run pipeline</b> on the Pipelines tab runs any branch's tip and ignores <code>on.branches</code>. Needs PushCode.</td></tr>
+<tr><td>Retry</td><td><code>retry</code></td><td><b>Re-run</b> runs the same commit again (PushCode).</td></tr>
+</table>
+<p>A commit runs automatically <b>at most once per branch</b>. Push detection works by comparing branch tips, so a branch created in the UI is picked up by the next push. If <code>.gitbench-ci.yml</code> is missing at a commit, nothing runs. Setting <code>Ci:Enabled</code> to <code>false</code> turns off every trigger and the Run button.</p>
+
+<h2 id="statuses">Statuses, retries and timeouts</h2>
+<ul>
+<li>A pipeline is <b>Queued, Running, Passed, Failed, Canceled, Error</b> or <b>Manual</b> (blocked on a manual job). Jobs and steps can also be <b>Skipped</b>. Error means the file was invalid or Docker was unavailable.</li>
+<li><b>Retry</b> on a finished job runs it again inside the same pipeline, replacing its logs and artifacts (PushCode). There is no automatic retry.</li>
+<li><b>Timeout:</b> every job is killed after <code>Ci:JobTimeoutMinutes</code> (default 20); it is the same for all jobs.</li>
+<li><b>Cancel</b> stops a running pipeline (PushCode).</li>
+<li>When a pipeline fails or errors, whoever triggered it gets a notification. The <code>pipeline.completed</code> webhook fires when it finishes.</li>
+<li>After a server restart, pipelines that were running are marked Error; queued ones run again; leftover containers and workspaces from this instance are removed.</li>
+</ul>
+
+<h2 id="schedules">Schedules (cron)</h2>
+<p><b>Pipelines → Schedules</b> (<code>/p/{KEY}/repos/{slug}/pipelines/schedules</code>, Maintainer+) lists, creates, edits, deletes and runs schedules.</p>
+<ul>
+<li>A schedule has a description, a branch, variables and a 5-field cron expression in <b>UTC</b>: <code>minute hour day-of-month month day-of-week</code>. Fields take <code>*</code>, numbers, ranges, steps (<code>*/15</code>), lists and names (<code>mon-fri</code>, <code>jan</code>). <code>@hourly</code>, <code>@daily</code> (<code>@midnight</code>), <code>@weekly</code>, <code>@monthly</code>, <code>@yearly</code> (<code>@annually</code>) also work. If both day-of-month and day-of-week are restricted, either matching is enough (classic cron).</li>
+<li><code>CiScheduleRunner</code> checks every 30 seconds and starts each due schedule on the branch's tip with <code>CI_PIPELINE_SOURCE=schedule</code>. Disable all schedules with <code>Ci:SchedulesEnabled=false</code>.</li>
+<li>The pipeline runs as the schedule's <b>owner</b> (the last person who saved it). If the owner can no longer push, the schedule records an error and a Maintainer saves it to take it over.</li>
+<li>Runs missed while the server was down happen once, then the schedule moves on. <b>Run now</b> runs it immediately as you.</li>
+<li>Audit events: <code>pipeline_schedule.created</code>, <code>.updated</code>, <code>.deleted</code>.</li>
+</ul>
+<pre><code># nightly at 02:30 UTC on weekdays
+30 2 * * mon-fri</code></pre>
+
+<h2 id="forks">Fork pull requests</h2>
+<p>A pull request from a <a href="pull-requests.html">fork</a> runs code from outside the project, so its pipeline is created <b>Queued but waiting for approval</b>. A Maintainer (or higher, anyone who can merge pull requests) clicks <b>Approve and run</b> on the pipeline page. Approval covers that one pipeline; the next push to the fork waits again. Even once approved the pipeline gets <b>no CI variables</b>, never publishes <a href="pages.html">Pages</a> sites, and carries no schedule variables.</p>
+
+<h2 id="docker-security">Docker requirement and security model</h2>
+<p>The server needs the <code>docker</code> CLI with a reachable daemon. If it can't connect, pipelines end in <b>Error</b> with "Docker is not available on the server". When GitBench itself runs in a container (see <a href="production.html">Production setup</a>), the daemon must be able to mount <code>Ci:WorkDirectory</code>.</p>
+<div class="warn"><b>Pipelines run arbitrary code from the repository on the server host, inside Docker.</b> Anyone who can push (Developer or higher) can run any command in any image. Treat PushCode as "can run code on the CI host". Docker isolation is not a hard security boundary.</div>
+<ul>
+<li>The docker CLI is always started with an argument list, never a shell string; image names are validated so they can't be read as flags.</li>
+<li>Containers never get the Docker socket, the host's environment variables or any GitBench secret. They get the <code>GITBENCH_*</code> variables, the allowed CI variables and the job token.</li>
+<li>Containers run with <code>--security-opt no-new-privileges</code>, memory, CPU and PID limits, a timeout and <code>--rm</code>, as the image's user (often root inside the container).</li>
+<li>Only the exported workspace is mounted. Symlinks in the repository are created after every regular file so nothing is written through them. Submodules aren't fetched.</li>
+<li>Containers have network access by default (<code>bridge</code>). On a shared or exposed server use <code>Ci:Network: none</code>, rootless Docker or a separate CI host, and let only trusted people push.</li>
+</ul>
+<p>GitBench has no separate runner agents: the server itself runs jobs. There are no runner tags or per-runner registration.</p>
+
+<h2 id="concurrency">Configuration (Ci:*)</h2>
+<p>Set these in <code>appsettings.json</code> (section <code>Ci</code>) or environment variables such as <code>Ci__MaxConcurrentJobs=4</code>. The shipped <code>appsettings.json</code> sets only the first six; the rest take their code defaults. Restart to apply. See also the <a href="configuration.html">Configuration reference</a>.</p>
+<table>
+<tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>Enabled</code></td><td><code>true</code></td><td>Turns off every trigger and the Run button.</td></tr>
+<tr><td><code>MaxConcurrentJobs</code></td><td><code>2</code></td><td>Jobs that run at once across all pipelines. The main throughput limit; jobs beyond it wait.</td></tr>
+<tr><td><code>JobTimeoutMinutes</code></td><td><code>20</code></td><td>A job is killed after this long.</td></tr>
+<tr><td><code>Network</code></td><td><code>bridge</code></td><td><code>docker run --network</code>. <code>none</code> blocks network access (the Night Owl install step and package registry then can't be reached).</td></tr>
+<tr><td><code>Memory</code> / <code>Cpus</code></td><td><code>2g</code> / <code>2</code></td><td><code>--memory</code> / <code>--cpus</code> per step container. Empty means no limit.</td></tr>
+<tr><td><code>PidsLimit</code></td><td><code>1024</code></td><td><code>--pids-limit</code>; <code>0</code> for none.</td></tr>
+<tr><td><code>DockerExecutable</code></td><td><code>docker</code></td><td>Path of the docker CLI.</td></tr>
+<tr><td><code>WorkDirectory</code></td><td><code>{temp}/gitbench-ci/{instance}</code></td><td>Where workspaces are exported. Docker must be able to mount it.</td></tr>
+<tr><td><code>MaxLogChars</code></td><td>1,048,576</td><td>Per-step log cap. The page shows the last 200 KB; <b>Raw log</b> has everything stored.</td></tr>
+<tr><td><code>ArtifactsRoot</code> / <code>CacheRoot</code></td><td><code>{ContentRoot}/ci-artifacts</code> / <code>ci-cache</code></td><td>Where zips are stored. Back up the artifacts folder with the database.</td></tr>
+<tr><td><code>MaxArtifactBytes</code></td><td>100 MB</td><td>Largest artifact per job.</td></tr>
+<tr><td><code>MaxCacheBytes</code> / <code>CacheBytesPerRepository</code></td><td>500 MB / 2 GB</td><td>Single cache / total per repository.</td></tr>
+<tr><td><code>SchedulesEnabled</code></td><td><code>true</code></td><td>Run <a href="#schedules">schedules</a>.</td></tr>
+</table>
+
+<h2 id="permissions">Permissions</h2>
+<table>
+<tr><th>Action</th><th>Role</th></tr>
+<tr><td>View pipelines, logs, artifacts, environments</td><td>Viewer (ViewProject)</td></tr>
+<tr><td>Run pipeline, Re-run, Cancel, run a manual job, Retry, Keep artifact</td><td>Developer (PushCode)</td></tr>
+<tr><td>Approve a fork pull request's pipeline</td><td>Maintainer (merge permission)</td></tr>
+<tr><td>Manage CI variables, schedules</td><td>Maintainer (ManageRepositories)</td></tr>
+</table>
+<p>Pipelines are shown at <code>/p/{KEY}/repos/{slug}/pipelines</code> and <code>.../pipelines/{id}</code>. The latest pipeline on a pull request's head is a <a href="branch-protection.html">merge check</a>: Passed, Pending (queued, running, manual-blocked, or none yet) or Failed. It reports nothing if the head has no <code>.gitbench-ci.yml</code>.</p>
+
+<h2 id="examples">Example pipelines</h2>
+
+<h3 id="example-dotnet">1. .NET build, test and publish with a cache</h3>
+<pre><code>image: mcr.microsoft.com/dotnet/sdk:10.0
+on:
+  branches: [main, "release/*"]
+  pull_requests: true
+jobs:
+  build:
+    cache:
+      key: "nuget-{{ hashFiles('**/*.csproj') }}"
+      paths: [.nuget/]
+    steps:
+      - name: Restore and build
+        run: |
+          export NUGET_PACKAGES="$PWD/.nuget"
+          dotnet restore
+          dotnet build -c Release --no-restore
+    artifacts:
+      paths: [src/App/bin/Release/]
+      expire_in: 3d
+  test:
+    needs: [build]
+    steps:
+      - name: Test
+        run: dotnet test -c Release
+  publish:
+    needs: [test]
+    only: [main]
+    artifacts:
+      paths: [out/]
+      expire_in: 30d
+    steps:
+      - run: dotnet publish src/App -c Release -o out</code></pre>
+<p>Note that <code>test</code> receives <code>build</code>'s artifacts, so it can reuse the compiled output, while the NuGet cache keeps restores fast across pipelines.</p>
+
+<h3 id="example-node-deploy">2. Node app with a manual production deploy</h3>
+<pre><code>jobs:
+  install-and-test:
+    image: node:22
+    cache:
+      key: "npm-{{ hashFiles('package-lock.json') }}"
+      paths: [node_modules/]
+    steps:
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+    artifacts:
+      paths: [dist/]
+  lint:
+    image: node:22
+    allow_failure: true            # report but don't block
+    steps: [ { run: npx eslint . } ]
+  deploy-staging:
+    needs: [install-and-test]
+    only: [main]
+    environment: { name: staging, url: "https://staging.example.com" }
+    steps:
+      - run: ./scripts/deploy.sh staging dist/
+  deploy-production:
+    needs: [deploy-staging]
+    only: [main]
+    when: manual
+    allow_failure: false           # the pipeline stays "Manual" until someone runs it
+    environment: { name: production, url: "https://example.com" }
+    steps:
+      - run: ./scripts/deploy.sh production dist/</code></pre>
+<p>Put a deploy key in a <b>protected</b> CI variable (for example <code>DEPLOY_KEY</code>) so only <code>main</code> pipelines can read it, and mark <code>production</code> as a protected environment to require approval (see <a href="environments.html">Environments</a>).</p>
+
+<h3 id="example-docker-push">3. Build and push a container image to the project registry</h3>
+<pre><code>jobs:
+  package:
+    image: gcr.io/kaniko-project/executor:debug   # example: any image that can build images without a Docker daemon
+    only: [main]
+    steps:
+      - name: Build and push
+        run: |
+          mkdir -p /kaniko/.docker
+          AUTH=$(printf '%s:%s' "$GITBENCH_REGISTRY_USER" "$GITBENCH_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+          printf '{"auths":{"%s":{"auth":"%s"}}}' "$GITBENCH_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+          /kaniko/executor --context /workspace --dockerfile /workspace/Dockerfile \
+            --destination "$GITBENCH_REGISTRY_IMAGE/web:$GITBENCH_COMMIT_SHA"</code></pre>
+<p>Jobs get no Docker daemon, so <code>docker build</code> is not available inside a step; a daemonless builder such as Kaniko is one option. The job token only works for the project's own registry and only while the job runs. This example needs <code>Ci:Network</code> to allow reaching the registry, and Kaniko's behaviour with your registry's TLS settings is yours to verify. See <a href="packages.html">Package and container registry</a>.</p>
+
+<h3 id="example-nightly">4. Nightly security scan plus a docs site</h3>
+<pre><code>include: [nightowl]
+on:
+  branches: [main]
+jobs:
+  nightowl:                                   # same name: replaces the template
+    image: registry.example.com/ci/nightowl-runner:1.0
+    artifacts:
+      when: always
+      paths: [nightowl.md]
+      reports: { nightowl: nightowl.json, sarif: nightowl.sarif }
+    steps:
+      - name: Night Owl scan
+        run: nightowl scan . --no-update --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md
+  pages:                                      # a job named "pages" publishes ./public on main
+    image: python:3.13-alpine
+    steps:
+      - run: python3 tools/build_docs.py      # writes ./public
+</code></pre>
+<p>Then add a <a href="#schedules">schedule</a> (<code>0 3 * * *</code>) on <code>main</code> so the scan also runs when nobody pushes. See <a href="security-scanning.html">Security scanning</a> and <a href="pages.html">Static sites</a>.</p>
+
+<h3 id="example-fanout">5. Matrix-like fan-out without a matrix</h3>
+<p>There is no <code>matrix</code> key; write one job per variant, or loop in a step:</p>
+<pre><code>jobs:
+  test-net8:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    steps: [ { run: dotnet test } ]
+  test-net10:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    steps: [ { run: dotnet test } ]
+  all-green:
+    needs: [test-net8, test-net10]
+    steps: [ { run: echo "both passed" } ]</code></pre>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<tr><th>Symptom</th><th>Cause</th></tr>
+<tr><td>Pipeline is <b>Error</b> immediately</td><td>The YAML is invalid (read the message on the pipeline page) or Docker isn't reachable.</td></tr>
+<tr><td>No pipeline after a push</td><td>No <code>.gitbench-ci.yml</code> at that commit, the branch isn't in <code>on.branches</code> and has no open PR, every job's rules excluded the branch, the commit already ran on that branch, or <code>Ci:Enabled</code> is off.</td></tr>
+<tr><td>Pipeline sits Queued</td><td>All <code>Ci:MaxConcurrentJobs</code> slots are busy, or it is a fork PR waiting for approval.</td></tr>
+<tr><td>A secret is empty in a job</td><td>The variable is protected and the branch isn't, or it's a fork PR pipeline, or its value couldn't be decrypted (check the notes at the top of the first step's log).</td></tr>
+<tr><td><code>command not found</code> in a later step</td><td>Each step is a new container: install tools in the step that uses them.</td></tr>
+</table>
+<p>Related: <a href="environments.html">Environments</a>, <a href="packages.html">Packages</a>, <a href="pages.html">Pages</a>, <a href="security-scanning.html">Security scanning</a>, <a href="api.html">REST API and webhooks</a>.</p>

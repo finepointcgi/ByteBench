@@ -1,0 +1,177 @@
+<h1>Security scanning</h1>
+<p class="lead">Run Night Owl (or any SARIF tool) in a CI job and GitBench turns its report into findings you can triage, track over time and use as a pull request check.</p>
+
+<h2 id="what-is-night-owl">What Night Owl is</h2>
+<p><b>Night Owl</b> is a separate open-source scanner: <a href="https://github.com/finepointcgi/Night-Owl">github.com/finepointcgi/Night-Owl</a>, with documentation at <a href="https://finepointcgi.github.io/Night-Owl/">finepointcgi.github.io/Night-Owl</a>. It covers dependency vulnerabilities (SCA), licenses, static analysis (SAST), secrets, infrastructure-as-code, container images and code quality, by driving engines such as syft, osv-scanner, gitleaks, opengrep, trivy and lizard.</p>
+<p>GitBench does <b>not</b> bundle or run Night Owl itself. It integrates through Night Owl's command line and report formats only: a CI job runs <code>nightowl scan</code>, writes a JSON report (and SARIF), and GitBench reads those files after the job. Reports from other tools work too if they produce <b>SARIF 2.1</b>.</p>
+
+<h2 id="quick-start">Quick start</h2>
+<pre><code>include: [nightowl]
+jobs:
+  build:
+    steps: [ { run: ./build.sh } ]</code></pre>
+<p>With <code>include: [nightowl]</code> GitBench adds a built-in job named <code>nightowl</code> (see <a href="ci.html#include">include</a>). It installs the Night Owl release using Night Owl's checksum-verifying <code>install.sh</code> and runs:</p>
+<pre><code>nightowl scan "${NIGHTOWL_PATH:-.}" [--fail-on $NIGHTOWL_FAIL_ON] --no-update \
+  --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md ${NIGHTOWL_ARGS:-}</code></pre>
+<div class="warn"><b>The stock template alone will not scan.</b> Night Owl runs its engines from local binaries or pinned container images, and <b>GitBench jobs never get a Docker daemon</b>. On the default <code>alpine</code> image the job stops immediately with "This image has no scan engines" (exit 2) instead of failing deep inside the scan. To scan for real you need a <b>runner image</b> that has the <code>nightowl</code> CLI and its engines on <code>PATH</code> (next section).</div>
+
+<h2 id="runner-image">The runner image requirement</h2>
+<ol>
+<li>Build an image once that contains the <code>nightowl</code> CLI and the engines you want (<code>syft</code>, <code>osv-scanner</code>, <code>gitleaks</code>, <code>opengrep</code>, <code>trivy</code>, <code>lizard</code>; see <code>engines/</code> in the Night Owl repository for how each is pinned). Run <code>nightowl update</code> at build time to bake in rule and advisory data.</li>
+<li>Push it to a registry. The project's own <a href="packages.html">container registry</a> works.</li>
+<li>Override the template job with your image. The template skips its install step when <code>nightowl</code> is already on <code>PATH</code>, so the override is the template's script with one changed line:</li>
+</ol>
+<pre><code>include: [nightowl]          # optional once you define the job yourself
+jobs:
+  nightowl:                  # same name: replaces the template job
+    image: gitbench.example.com/sec/nightowl-runner:1.0
+    artifacts:
+      when: always
+      paths: [nightowl.md]
+      reports: { nightowl: nightowl.json, sarif: nightowl.sarif }
+    steps:
+      - name: Night Owl scan
+        run: nightowl scan . --no-update --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md</code></pre>
+<p>Without the install step the job needs no network, so it also works with <code>Ci:Network: none</code>. A failing quality gate makes the scan exit 1 and the job fail, but the report is still read because artifacts are collected <code>when: always</code>. Repository <b>Settings → Security</b> shows the template's YAML to copy.</p>
+
+<h2 id="variables">NIGHTOWL_* variables</h2>
+<p>Set these as <a href="ci.html#ci-variables">CI variables</a> (repository or project) to tune the built-in job. They are plain environment variables read by its script, so they do nothing in a job you wrote yourself unless you use them.</p>
+<table>
+<tr><th>Variable</th><th>Effect</th></tr>
+<tr><td><code>NIGHTOWL_FAIL_ON</code></td><td><code>critical</code>, <code>high</code>, <code>medium</code>, <code>low</code> or <code>none</code>: fail the job at that severity. Empty means use <code>.nightowl/policy.yml</code> from the repository.</td></tr>
+<tr><td><code>NIGHTOWL_PATH</code></td><td>What to scan. Default <code>.</code> (the whole workspace).</td></tr>
+<tr><td><code>NIGHTOWL_ARGS</code></td><td>Extra <code>nightowl scan</code> options, e.g. <code>--engines opengrep,gitleaks</code>.</td></tr>
+<tr><td><code>NIGHTOWL_VERSION</code></td><td>Release to install (passed through to Night Owl's installer environment).</td></tr>
+<tr><td><code>NIGHTOWL_REPO</code></td><td>Where to fetch the installer from. Default <code>finepointcgi/Night-Owl</code>.</td></tr>
+</table>
+
+<h2 id="reports">Report artifacts</h2>
+<p>Any job can publish reports, not just <code>nightowl</code>:</p>
+<pre><code>jobs:
+  sast:
+    image: registry.example.com/ci/semgrep:latest
+    artifacts:
+      when: always
+      reports:
+        sarif: results.sarif        # nightowl: and sarif: are the supported types
+    steps:
+      - run: semgrep scan --sarif --output results.sarif</code></pre>
+<ul>
+<li>Report types: <code>nightowl</code> (Night Owl's JSON) and <code>sarif</code> (SARIF 2.1). Each names one file, with no wildcards. The files are added to the job's artifact paths automatically.</li>
+<li>After the job runs, <b>passed or failed</b>, the runner reads each file from the workspace (never through a symlink, at most <b>32 MB</b>), and the job log says what was read or why it wasn't.</li>
+<li>If a job provides both, the Night Owl JSON is used (it has packages, fixed versions, path context and its own triage); the SARIF from that job is kept only as an artifact.</li>
+<li>Each scan is tied to the pipeline, job, branch and commit.</li>
+</ul>
+
+<h3 id="finding-model">How findings are read</h3>
+<p>Each finding keeps Night Owl's <b>fingerprint</b> (its finding id, or <code>partialFingerprints["nightowl/v1"]</code> in its SARIF), a severity (critical, high, medium, low, info), a category (SCA dependency, license, SAST, secret, IaC, container, DAST, quality), the rule or advisory id, aliases (CVE/GHSA), the package, version and fixed versions, file and line, the message, the engines that reported it and the path context. For SARIF from other tools the first partial fingerprint is used, else one derived from rule, path, snippet or line; severity comes from <code>security-severity</code> (CVSS bands) or the SARIF level. Duplicates with the same fingerprint merge, keeping the highest severity and every engine.</p>
+
+<h2 id="security-tab">The Security tab</h2>
+<p>Open <b>Repository → Security</b>: <code>/p/{KEY}/repos/{slug}/security</code> (Viewer or higher). It shows the latest scanned pipeline of the default branch (use the branch picker or <code>?branch=</code>):</p>
+<ul>
+<li>Open counts by severity and a trend chart of open findings per scan.</li>
+<li>Filters: status (open, dismissed, all), minimum severity, category and free text.</li>
+<li><code>?finding={fingerprint}</code> opens a finding: description, package and fix versions, location (linked to the source at the scanned commit), aliases, engines, where it was first and last seen, and its triage history.</li>
+<li>If <code>NightOwl:DashboardUrl</code> is set, a link to your Night Owl dashboard appears on the Security pages.</li>
+</ul>
+
+<h2 id="triage">Triage</h2>
+<p>Developers and above (PushCode) can decide what a finding means. Decisions are keyed by <b>fingerprint per repository</b>, so they carry across scans and branches.</p>
+<table>
+<tr><th>State</th><th>Counts as open?</th><th>Notes</th></tr>
+<tr><td><b>New</b> (no decision)</td><td>Yes</td><td>Reopening a finding removes its decision.</td></tr>
+<tr><td><b>Confirmed</b></td><td>Yes</td><td>A real problem someone owns.</td></tr>
+<tr><td><b>False positive</b></td><td>No</td><td>A <b>reason is required</b>. Optional expiry.</td></tr>
+<tr><td><b>Accepted risk</b></td><td>No</td><td>A <b>reason is required</b>. Optional expiry.</td></tr>
+<tr><td><b>Fixed</b></td><td>No</td><td>Available through the API and imported files.</td></tr>
+</table>
+<ul>
+<li><b>Expiry:</b> a decision with an expiry date (must be in the future when set) stops applying after it; the finding becomes open again automatically. Use this for "accepted until the next upgrade".</li>
+<li>Only open findings count in the trend, the pull request comparison, the merge check and alerts. This matches Night Owl's own quality gate.</li>
+<li>A decision carried by the report itself (from the repository's <code>.nightowl/triage.json</code> at scan time) applies too; <b>GitBench's own decision wins</b> over it.</li>
+</ul>
+<h3 id="triage-json">triage.json import and export</h3>
+<p>Night Owl keeps shared decisions in <code>.nightowl/triage.json</code>. GitBench reads and writes the same format:</p>
+<pre><code>[
+  { "findingId": "3f2a9c...", "state": "accepted-risk", "reason": "Not reachable in our build",
+    "by": "alice", "at": "2026-11-01T10:00:00+00:00", "expires": "2027-01-01T00:00:00+00:00",
+    "title": "lodash prototype pollution" }
+]</code></pre>
+<ul>
+<li><b>Export triage</b> (Security tab) downloads GitBench's decisions in this shape. Commit the file to the repository so <code>nightowl scan</code> in CI, and developers running it locally, see the same decisions.</li>
+<li><b>Import triage</b> (Maintainer or higher) reads the file from the default branch, or a pasted one. Each decision replaces GitBench's decision for that fingerprint; <code>"new"</code> removes it. States are <code>false-positive</code>, <code>accepted-risk</code>, <code>confirmed</code>, <code>fixed</code> or <code>new</code>; every decision needs a <code>findingId</code> of at most 64 characters, and a bad file is rejected whole.</li>
+</ul>
+
+<h2 id="pull-requests">Pull requests and the merge check</h2>
+<p>A pull request has a <b>Security</b> tab comparing the head commit's latest scan with the target branch's latest scan: <b>new</b> open findings the PR adds and <b>fixed</b> ones it removes, plus the unchanged count. If the head hasn't been scanned yet it says the scan is pending.</p>
+<p>In <b>Repository → Settings → Security</b> (<code>/p/{KEY}/repos/{slug}/settings/security</code>, Maintainer or higher) turn on the <b>Security merge check</b> and choose a severity (default high):</p>
+<table>
+<tr><th>Result</th><th>When</th></tr>
+<tr><td>Failed</td><td>The PR adds open findings at or above the threshold ("2 new findings at or above high").</td></tr>
+<tr><td>Passed</td><td>No new findings at or above it (it also reports how many new ones are below, and how many are fixed).</td></tr>
+<tr><td>Pending</td><td>A pipeline for the head is still running.</td></tr>
+<tr><td>Neutral</td><td>The head has no security report (add <code>include: [nightowl]</code>).</td></tr>
+</table>
+<p>The check only blocks merging if <a href="branch-protection.html">branch protection</a> has "require checks to pass" on the target branch, like every other merge check.</p>
+
+<h2 id="alerts">Alerts and the webhook</h2>
+<p>When a scan of the <b>default branch</b> has open findings at or above the repository's <b>alert severity</b> (Settings → Security, default high) that the previous scan didn't have, GitBench:</p>
+<ul>
+<li>notifies the project's Maintainers and Owners, and whoever triggered the pipeline (notification kind "security findings", in the Pipelines preference group, see <a href="notifications.html">Notifications</a>);</li>
+<li>sends the <code>security.new_findings</code> webhook to hooks subscribed to it.</li>
+</ul>
+<pre><code>{
+  "event": "security.new_findings",
+  "repository": { "id": 3, "slug": "web-app", "name": "Web App", "defaultBranch": "main" },
+  "pipeline": { "id": 118, "ref": "main", "commitSha": "9f2c1e0...", "url": "https://gitbench.example.com/p/WEB/repos/web-app/pipelines/118" },
+  "threshold": "high",
+  "findings": [ { "fingerprint": "3f2a9c...", "severity": "critical", "category": "sca", "ruleId": "GHSA-xxxx",
+                  "title": "lodash prototype pollution",
+                  "package": { "name": "lodash", "version": "4.17.20", "fixedVersions": "4.17.21" },
+                  "file": "package-lock.json", "line": null, "url": "https://gitbench.example.com/p/WEB/repos/web-app/security?finding=3f2a9c..." } ],
+  "total": 1,
+  "url": "https://gitbench.example.com/p/WEB/repos/web-app/security"
+}</code></pre>
+<p>At most 100 findings are listed; <code>total</code> is the full count. The usual envelope fields (delivery id, timestamp, project, sender) are added; see <a href="api.html">REST API and webhooks</a>.</p>
+
+<h2 id="api">REST API</h2>
+<p>Under <code>/api/v1/projects/{key}/repos/{slug}</code>. Reads need ViewProject.</p>
+<table>
+<tr><th>Request</th><th>Purpose</th></tr>
+<tr><td><code>GET /security/findings</code></td><td>Findings of the latest scan. Query: <code>branch</code>, <code>state</code> (<code>open</code> default, <code>dismissed</code>, <code>all</code>), <code>severity</code> (minimum: critical, high, medium, low, info), <code>category</code> (sca, license, sast, secret, iac, container, dast, quality), <code>q</code>. Paged.</td></tr>
+<tr><td><code>GET /security/findings/{fingerprint}</code></td><td>One finding.</td></tr>
+<tr><td><code>POST /security/findings/{fingerprint}/triage</code></td><td>Body <code>{ "state": "accepted-risk", "reason": "...", "expires": "2027-01-01T00:00:00Z" }</code>. Developer+. State is <code>false-positive</code>, <code>accepted-risk</code>, <code>confirmed</code>, <code>fixed</code> or <code>new</code>.</td></tr>
+<tr><td><code>GET /security/scans</code>, <code>GET /security/trend</code></td><td>Scan list (newest first, <code>branch</code> filter) and open findings by severity per pipeline (<code>take</code> default 30).</td></tr>
+<tr><td><code>GET /security/triage</code>, <code>POST /security/triage</code></td><td>Export, or import (Maintainer+, body is the triage.json array).</td></tr>
+<tr><td><code>GET /pull-requests/{number}/security</code></td><td>New and fixed findings of a pull request.</td></tr>
+</table>
+<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  "https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/security/findings?severity=high&amp;state=open"
+
+curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"state":"false-positive","reason":"Test fixture, never shipped"}' \
+  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/security/findings/3f2a9c.../triage</code></pre>
+
+<h2 id="config">Configuration</h2>
+<table>
+<tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>NightOwl:DashboardUrl</code></td><td>(none)</td><td>Absolute http(s) URL of a Night Owl dashboard (<code>NightOwl.Web</code>). When set, a link appears on the Security pages. Invalid or non-http(s) values are ignored.</td></tr>
+</table>
+<p>Per-repository options (merge check on/off and severity, alert severity) live in <b>Settings → Security</b>. Audit events: <code>security.finding_triaged</code>, <code>security.triage_imported</code>, <code>repository.security_settings_changed</code>.</p>
+
+<h2 id="example">Complete example: scan on every push, gate pull requests</h2>
+<pre><code>include: [nightowl]
+on:
+  branches: [main]
+  pull_requests: true
+jobs:
+  nightowl:
+    image: gitbench.example.com/sec/nightowl-runner:1.0
+    artifacts:
+      when: always
+      paths: [nightowl.md]
+      reports: { nightowl: nightowl.json, sarif: nightowl.sarif }
+    steps:
+      - name: Night Owl scan
+        run: nightowl scan . --no-update --fail-on high --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md</code></pre>
+<p>Then in Settings → Security enable the merge check at <b>high</b>, and add a <a href="ci.html#schedules">nightly schedule</a> on <code>main</code> so new advisories against old dependencies still produce alerts when nobody pushes. Related: <a href="ci.html">CI pipelines</a>, <a href="branch-protection.html">Branch protection</a>.</p>

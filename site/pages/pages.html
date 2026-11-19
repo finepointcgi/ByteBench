@@ -1,0 +1,122 @@
+<h1>Static sites (Pages)</h1>
+<p class="lead">Publish a folder of HTML, CSS and JavaScript from a CI job as your repository's website, with versions you can roll back and temporary review sites for branches.</p>
+
+<h2 id="quick-start">Quick start</h2>
+<p>Add a job named <code>pages</code> to <a href="ci.html"><code>.gitbench-ci.yml</code></a> that leaves its files in <code>public/</code>, and push to the default branch:</p>
+<pre><code>jobs:
+  pages:
+    image: python:3.13-alpine
+    steps:
+      - run: mkdir -p public &amp;&amp; echo '&lt;h1&gt;Hello&lt;/h1&gt;' &gt; public/index.html</code></pre>
+<p>When the job <b>passes</b>, the site is live. Open it from the <b>Site</b> button in the repository header, or from <b>Repository → Settings → Pages</b> (<code>/p/{KEY}/repos/{slug}/settings/pages</code>). By default only people who can view the project can open it.</p>
+
+<h2 id="keyword">The pages job keyword</h2>
+<p>Any of these forms turns a job into a publishing job. It publishes after its steps succeed, so build the site in the steps.</p>
+<table>
+<tr><th>Form</th><th>Meaning</th></tr>
+<tr><td>A job <b>named</b> <code>pages</code></td><td>Implicitly publishes <code>public/</code>.</td></tr>
+<tr><td><code>pages: true</code></td><td>Publishes <code>public/</code> from any job name.</td></tr>
+<tr><td><code>pages: dist</code></td><td>Publishes the folder <code>dist/</code>.</td></tr>
+<tr><td><code>publish: dist</code></td><td>Alias for <code>pages: { path: dist }</code>. Using both <code>pages</code> and <code>publish</code> is an error.</td></tr>
+<tr><td><code>pages: { path: dist, review: true, expire_in: 3d }</code></td><td>Full form. <code>path</code> defaults to <code>public</code>; <code>review</code> allows review sites; <code>expire_in</code> (e.g. <code>12h</code>, <code>3d</code>, <code>2w</code>) sets how long a review site lives.</td></tr>
+<tr><td><code>pages: false</code></td><td>Switches off the implicit publishing of a job named <code>pages</code>.</td></tr>
+</table>
+<p>The folder must be a plain relative path (no <code>*</code> or <code>?</code>, no <code>..</code>) and must not be, or sit inside, a symbolic link. Unknown keys inside the mapping are errors (<code>use path, review or expire_in</code>).</p>
+<div class="note">A Pages job does not need <code>artifacts</code>: GitBench reads the folder straight from the job's workspace. It runs after the job's steps, cache and artifacts are handled. If publishing fails (folder missing, empty, over a limit, unsafe contents) the <b>job fails</b> with an explanation in its log. If the job simply isn't allowed to publish (see below), it passes and the log says why nothing was published.</div>
+
+<h2 id="when-published">Which pipelines publish</h2>
+<ul>
+<li><b>Default branch</b> (and not a pull request pipeline): replaces the main site.</li>
+<li><b>Any other branch or a pull request pipeline</b>: only with <code>review: true</code> on the job, and only if review sites are allowed on the server (<code>Pages:ReviewSites</code>) and for the repository. Otherwise nothing is published and the log says so.</li>
+<li><b>Fork pull request pipelines never publish.</b></li>
+<li>If the repository's Pages are disabled in settings, or <code>Pages:Enabled</code> is false on the server, jobs pass without publishing.</li>
+</ul>
+
+<h2 id="review-sites">Review sites</h2>
+<p>With <code>review: true</code>, a feature branch's pipeline publishes to its own address and the site <b>expires</b> automatically (default 7 days, from the repository's Pages settings, or the job's <code>expire_in</code>; the setting accepts 1 to 365 days). Each branch gets a name made of lowercase letters, digits and <code>-</code>; names that change or get too long get a short hash so two branches never collide. Review sites keep only their last 2 versions.</p>
+<pre><code>jobs:
+  pages:
+    steps: [ { run: ./build-site.sh } ]
+    pages: { path: public, review: true, expire_in: 3d }</code></pre>
+
+<h2 id="urls">Where the site lives</h2>
+<table>
+<tr><th>Mode</th><th>Main site</th><th>Review site</th></tr>
+<tr><td><b>Path mode</b> (always available unless disabled)</td><td><code>https://gitbench.example.com/pages/WEB/web-app/</code></td><td><code>https://gitbench.example.com/pages/WEB/web-app/-/r/feature-login/</code></td></tr>
+<tr><td><b>Host mode</b> (when <code>Pages:BaseDomain</code> is set)</td><td><code>https://web-app.web.pages.example.com/</code></td><td><code>https://feature-login.web-app.web.pages.example.com/</code></td></tr>
+</table>
+<p>Host mode is <code>{slug}.{key}.{BaseDomain}</code> (project key lowercased). It needs <b>wildcard DNS and a wildcard TLS certificate</b> for <code>*.*.pages.example.com</code> pointing at GitBench (a reverse proxy usually does this), because each site gets its own origin. Repository slugs containing <code>.</code> or <code>_</code> are not valid host names and stay path-only. Set <code>Pages:PathModeEnabled=false</code> to serve <em>only</em> dedicated hosts.</p>
+<p>Behaviour of the server: <code>index.html</code> for folders, clean URLs (<code>/about</code> serves <code>about.html</code>), <code>404.html</code> when present, optional single-page-app fallback, <code>ETag</code>/<code>If-None-Match</code>, byte <code>Range</code> requests and <code>HEAD</code>. The top-level folder named <code>-</code> is reserved in path mode.</p>
+
+<h2 id="visibility">Who can open a site</h2>
+<table>
+<tr><th>Setting</th><th>Meaning</th></tr>
+<tr><td><b>Members</b> (default)</td><td>Everyone who can view the project, signed in. Checked on every request, so removing a member ends their access at once.</td></tr>
+<tr><td><b>Public</b></td><td>Anyone on the internet, no sign-in. Only a project <b>Owner</b> can switch to it, and <code>Pages:AllowPublic=false</code> forbids it for the whole server.</td></tr>
+</table>
+<p>Other settings on the Pages settings page (Maintainer or Owner): enable or disable Pages for the repository, what unknown addresses do (<b>show the site's 404.html</b>, or <b>always a plain 404</b>), a <b>single-page-app</b> option (serve <code>index.html</code> for paths without a file extension), whether review sites are allowed and for how many days, and <b>Delete site</b>.</p>
+<p>A signed-in person who can see the project but not the site gets a 404; an anonymous visitor to a members-only site is sent to sign in, which reveals that the address exists.</p>
+<p><b>How sign-in works for members-only sites.</b> On a dedicated host, an unauthenticated visitor is bounced to GitBench's sign-in, which hands back a one-minute signed code; the site's host then sets its own host-only <code>gb_pages</code> cookie that lasts <code>Pages:HostCookieHours</code> (8). In path mode, a visit with the GitBench cookie is redirected to a URL containing a signed token (<code>/-/t/{token}/...</code>, valid <code>Pages:PathTokenMinutes</code>, 60) because the sandbox below prevents sub-requests from carrying cookies; relative links keep working but don't share that link publicly, it grants access until it expires.</p>
+
+<h2 id="security">Why sites can't hurt GitBench (plain terms)</h2>
+<p>A Pages site is whatever HTML and JavaScript someone pushed. If it ran with GitBench's privileges it could read other people's cookies or call the API as them. GitBench prevents that in two ways, depending on mode:</p>
+<ul>
+<li><b>Host mode:</b> each site has its own host name, so the browser's normal same-origin rules already keep it apart from GitBench. GitBench's sign-in cookie is never sent to site hosts and is ignored there. Put <code>Pages:BaseDomain</code> on a registrable domain (or a Public Suffix List entry) <b>different from GitBench's</b> so one site can't set cookies for the others or for GitBench.</li>
+<li><b>Path mode:</b> the site shares GitBench's address, so every response carries <code>Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...</code> <b>without</b> <code>allow-same-origin</code>. The page runs in an "opaque origin": scripts work, but they can't read GitBench cookies or storage or call its API as you. The side effect is that a site's own <code>localStorage</code>, cookies and same-origin requests <b>don't work in path mode</b>. Use host mode for sites that need them.</li>
+<li>Always: <code>X-Content-Type-Options: nosniff</code>, a restrictive <code>Permissions-Policy</code>, and no <code>Set-Cookie</code> from GitBench except the host sign-in cookie. Pages responses set their own full header set; GitBench's own CSP is unchanged.</li>
+<li>Uploads are checked: the whole archive is refused for <code>..</code>, absolute, drive-letter or backslash names, symlinks and other non-regular entries, duplicates (also by case), and file/folder name clashes. Symlinks in the workspace are skipped and nothing is ever served through a link.</li>
+</ul>
+
+<h2 id="versions">Versions and rollback</h2>
+<p>Each successful publish is a numbered <b>version</b>. A deployment is packed, unpacked into a staging folder, renamed, and only then made current with one database save, so visitors see the old site or the new one, never a half-written one. A failed deployment leaves the live site untouched.</p>
+<ul>
+<li>The last <code>Pages:KeepVersions</code> (default 10) main-site versions are kept; review sites keep 2.</li>
+<li>On the Pages settings page, the <b>Deployments</b> list shows each version with its commit, branch, file count and size. <b>Roll back to this</b> makes an older version live again (Maintainer or Owner). Rolled-back versions are labelled.</li>
+<li>Audit events: <code>pages.deployed</code>, <code>pages.rolled_back</code>, <code>pages.settings_updated</code>, <code>pages.deleted</code>.</li>
+<li>Webhook <code>pages.deployed</code> (also for rollbacks): <code>site: { url, visibility, slot }</code> and <code>deployment: { id, version, slot, ref, commitSha, fileCount, sizeBytes, isRollback, pipelineId, jobId, createdAt, expiresAt }</code>. Whoever triggered the pipeline also gets a "Pages deployed" notification.</li>
+</ul>
+
+<h2 id="config">Configuration (Pages:*)</h2>
+<table>
+<tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>Enabled</code></td><td><code>true</code></td><td>Master switch: when false nothing is deployed or served.</td></tr>
+<tr><td><code>Root</code></td><td><code>{ContentRoot}/pages</code></td><td>Storage: <code>{Root}/{repositoryId}/{32 hex}/</code> per deployment. Back it up with the database.</td></tr>
+<tr><td><code>BaseDomain</code></td><td>(empty)</td><td>Turns on host mode, e.g. <code>pages.example.com</code>.</td></tr>
+<tr><td><code>PathModeEnabled</code></td><td><code>true</code></td><td>Serve <code>/pages/...</code> on the GitBench host. Set false (with BaseDomain) to serve only dedicated hosts.</td></tr>
+<tr><td><code>MaxSiteBytes</code></td><td>100 MB</td><td>Largest site, uncompressed.</td></tr>
+<tr><td><code>MaxFileBytes</code></td><td>50 MB</td><td>Largest single file.</td></tr>
+<tr><td><code>MaxFiles</code></td><td><code>10000</code></td><td>Most files in a site.</td></tr>
+<tr><td><code>KeepVersions</code></td><td><code>10</code></td><td>Versions kept for rollback (at least 1).</td></tr>
+<tr><td><code>ReviewSites</code></td><td><code>true</code></td><td>Allow review sites at all.</td></tr>
+<tr><td><code>AllowPublic</code></td><td><code>true</code></td><td>Allow repositories to set a site to Public. False: every site needs a project member.</td></tr>
+<tr><td><code>PathTokenMinutes</code></td><td><code>60</code></td><td>Validity of members-only path-mode links.</td></tr>
+<tr><td><code>HostCookieHours</code></td><td><code>8</code></td><td>Lifetime of the members-only cookie on dedicated hosts.</td></tr>
+</table>
+<p>Example with host mode on (as environment variables: <code>Pages__BaseDomain</code>, and so on):</p>
+<pre><code>"Pages": {
+  "BaseDomain": "pages.example.com",
+  "AllowPublic": false,
+  "KeepVersions": 20
+}</code></pre>
+<p>Also set <code>PublicBaseUrl</code> so links in the UI and webhooks are absolute; the scheme and port of a dedicated host follow it.</p>
+
+<h2 id="permissions">Permissions</h2>
+<table>
+<tr><th>Action</th><th>Role</th></tr>
+<tr><td>Open a members-only site</td><td>Viewer or higher</td></tr>
+<tr><td>Publish (by a passing pipeline)</td><td>Whoever can run the pipeline (Developer pushes, or a Maintainer approving a protected run)</td></tr>
+<tr><td>Change settings, roll back, delete the site</td><td>Maintainer (ManageRepositories)</td></tr>
+<tr><td>Make a site Public</td><td>Owner</td></tr>
+</table>
+<p>There is no separate REST API for Pages; configure through the UI and the CI file.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<tr><th>Log line or symptom</th><th>Cause</th></tr>
+<tr><td>"not published: 'feature-x' is not the default branch"</td><td>Add <code>review: true</code> to the job, or merge to the default branch.</td></tr>
+<tr><td>"folder 'public' was not found in the workspace (or is a symbolic link)"</td><td>Your steps didn't create the folder, or it is a symlink. The job fails.</td></tr>
+<tr><td>"not published: ... limit"</td><td>Over <code>MaxFiles</code>, <code>MaxSiteBytes</code> or <code>MaxFileBytes</code>.</td></tr>
+<tr><td>Site's login or storage doesn't work in path mode</td><td>The sandbox blocks cookies and <code>localStorage</code>. Enable host mode.</td></tr>
+<tr><td>404 for a signed-in colleague</td><td>They can't view the project, or Pages is disabled for the repository.</td></tr>
+</table>
+<p>See also: <a href="ci.html">CI pipelines</a>, <a href="production.html">Production setup</a> (reverse proxy and wildcard certificates).</p>
