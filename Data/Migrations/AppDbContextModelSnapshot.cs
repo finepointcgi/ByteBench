@@ -764,12 +764,20 @@ namespace GitBench.Data.Migrations
                     b.Property<DateTime?>("EditedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsPublicReply")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ServiceDeskContactId")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
                     b.HasIndex("IssueId");
+
+                    b.HasIndex("ServiceDeskContactId");
 
                     b.HasIndex("AuthorId", "CreatedAt");
 
@@ -3394,6 +3402,190 @@ namespace GitBench.Data.Migrations
                     b.ToTable("SecurityTriages");
                 });
 
+            modelBuilder.Entity("GitBench.Data.ServiceDeskContact", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("ServiceDeskContacts");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ServiceDeskMessage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("CommentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MessageId")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TicketId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId");
+
+                    b.HasIndex("TicketId");
+
+                    b.ToTable("ServiceDeskMessages");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ServiceDeskSettings", b =>
+                {
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AutoReplyEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AutoReplyTemplate")
+                        .HasMaxLength(10000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CustomAddress")
+                        .HasMaxLength(254)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DefaultAssigneeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DefaultIssueType")
+                        .HasColumnType("INTEGER");
+
+                    b.PrimitiveCollection<string>("DefaultLabelIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FormIntro")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IssueTemplate")
+                        .HasMaxLength(10000)
+                        .HasColumnType("TEXT");
+
+                    b.PrimitiveCollection<string>("NotifyStatusIds")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("PublicFormEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ResponseTargetHours")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ProjectId");
+
+                    b.HasIndex("CustomAddress")
+                        .IsUnique();
+
+                    b.HasIndex("DefaultAssigneeId");
+
+                    b.ToTable("ServiceDeskSettings");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ServiceDeskTicket", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ContactId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FirstResponseAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InitialMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastAgentReplyAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastRequesterActivityAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReplyToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TrackingToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContactId");
+
+                    b.HasIndex("IssueId")
+                        .IsUnique();
+
+                    b.HasIndex("ReplyToken")
+                        .IsUnique();
+
+                    b.HasIndex("TrackingToken")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "LastRequesterActivityAt");
+
+                    b.ToTable("ServiceDeskTickets");
+                });
+
             modelBuilder.Entity("GitBench.Data.Snippet", b =>
                 {
                     b.Property<int>("Id")
@@ -4343,6 +4535,11 @@ namespace GitBench.Data.Migrations
                         .HasForeignKey("IssueId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("GitBench.Data.ServiceDeskContact", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceDeskContactId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Author");
                 });
@@ -5353,6 +5550,56 @@ namespace GitBench.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ServiceDeskMessage", b =>
+                {
+                    b.HasOne("GitBench.Data.ServiceDeskTicket", "Ticket")
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ServiceDeskSettings", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("DefaultAssigneeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.ServiceDeskTicket", b =>
+                {
+                    b.HasOne("GitBench.Data.ServiceDeskContact", "Contact")
+                        .WithMany()
+                        .HasForeignKey("ContactId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Contact");
+
+                    b.Navigation("Issue");
                 });
 
             modelBuilder.Entity("GitBench.Data.Snippet", b =>
