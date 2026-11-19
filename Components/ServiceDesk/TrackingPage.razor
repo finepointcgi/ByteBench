@@ -1,0 +1,105 @@
+@page "/desk/t/{Token}"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@using System.ComponentModel.DataAnnotations
+@using GitBench.Services.ServiceDesk
+@inject ServiceDeskService Desk
+@inject ServiceDeskIntake Intake
+@inject NavigationManager Nav
+
+@* A requester's view of their request: status, their messages and public replies. Internal comments and activity are
+   never shown. The unguessable token in the URL is the only credential. *@
+
+<PageTitle>@(view?.IssueKey ?? "Request") · Support</PageTitle>
+<HeadContent><meta name="referrer" content="no-referrer" /><meta name="robots" content="noindex" /></HeadContent>
+
+<div class="desk-page">
+@if (view == null)
+{
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Request not found</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">This link is invalid. Check that you copied the whole link from your email.</MudText>
+}
+else
+{
+    @if (Created == 1)
+    {
+        <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert">Thanks, we've received your request. Bookmark this page to follow it.</MudAlert>
+    }
+    @if (Replied == 1) { <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert">Your message was added.</MudAlert> }
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">@view.ProjectName · @view.IssueKey</MudText>
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">@view.Title</MudText>
+    <div class="desk-status">
+        <span class="desk-badge @(view.IsClosed ? "desk-badge-closed" : "")">@view.Status</span>
+        <span class="mud-text-secondary">Opened @view.CreatedAt.ToString("MMM d, yyyy") by @view.RequesterName</span>
+    </div>
+
+    <div class="desk-thread">
+        @if (!string.IsNullOrWhiteSpace(view.InitialMessage))
+        {
+            <div class="desk-msg desk-msg-requester">
+                <div class="desk-msg-head"><b>@view.RequesterName</b> <span class="mud-text-secondary">@view.CreatedAt.ToString("MMM d, HH:mm") UTC</span></div>
+                <div class="markdown">@Display.Markdown(view.InitialMessage)</div>
+            </div>
+        }
+        @foreach (var e in view.Entries)
+        {
+            <div class="desk-msg @(e.FromRequester ? "desk-msg-requester" : "desk-msg-agent")">
+                <div class="desk-msg-head"><b>@e.Author</b> @if (!e.FromRequester) { <span class="desk-team">support</span> } <span class="mud-text-secondary">@e.CreatedAt.ToString("MMM d, HH:mm") UTC</span></div>
+                <div class="markdown">@Display.Markdown(e.Body)</div>
+            </div>
+        }
+    </div>
+
+    @if (view.CanReply)
+    {
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">@error</MudAlert> }
+        <EditForm Model="Input" FormName="desk-reply" OnValidSubmit="Reply" method="post">
+            <DataAnnotationsValidator />
+            <div class="gb-field">
+                <label class="gb-field-label" for="desk-reply">Add a message</label>
+                <InputTextArea id="desk-reply" class="gb-input desk-textarea" @bind-Value="Input!.Body" rows="4" maxlength="20000" />
+                <ValidationMessage For="() => Input!.Body" />
+            </div>
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Send</MudButton>
+        </EditForm>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">You can also reply to any email about this request.</MudText>
+    }
+}
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+    [SupplyParameterFromQuery] private int? Created { get; set; }
+    [SupplyParameterFromQuery] private int? Replied { get; set; }
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private InputModel? Input { get; set; }
+
+    private TrackingView? view;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        HttpContext.Response.Headers.CacheControl = "no-store";
+        HttpContext.Response.Headers["X-Robots-Tag"] = "noindex";
+        view = await Desk.GetTrackingViewAsync(Token);
+    }
+
+    private async Task Reply()
+    {
+        if (view == null) return;
+        var result = await Intake.ReplyFromTrackingPageAsync(Token, Input!.Body, HttpContext.Connection.RemoteIpAddress?.ToString());
+        if (result.Accepted)
+        {
+            Nav.NavigateTo($"/desk/t/{Token}?replied=1");
+            return;
+        }
+        error = result.Reason;
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Write a message first."), MaxLength(20000)] public string Body { get; set; } = "";
+    }
+}

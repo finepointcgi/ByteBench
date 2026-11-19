@@ -1,0 +1,17 @@
+From: %FROMNAME% <%FROM%>
+To: %TO%
+Subject: Re: [%KEY%] The printer on floor 3 is on fire
+Date: Wed, 18 Nov 2026 11:30:00 +0000
+Message-ID: <%MSGID%>
+In-Reply-To: <%INREPLYTO%>
+References: <%INREPLYTO%>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+It is still smoking, but the noise has stopped.
+
+On Wed, Nov 18, 2026 at 10:00 AM Service Desk <desk@desk.test> wrote:
+> ##- Please type your reply above this line -##
+>
+> Thanks for getting in touch.
+> We'll get back to you soon.

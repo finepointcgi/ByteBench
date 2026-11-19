@@ -27,7 +27,16 @@ internal static class MimeBuilder
         msg.To.Add(new MailboxAddress(m.ToName ?? "", m.To));
         msg.Subject = m.Subject;
         msg.Date = DateTimeOffset.UtcNow;
-        foreach (var (name, value) in m.Headers) msg.Headers.Add(name, value);
+        foreach (var (name, value) in m.Headers)
+        {
+            // Threading headers (service desk replies) replace MimeKit's own rather than being added twice.
+            if (name.Equals("Message-Id", StringComparison.OrdinalIgnoreCase)) msg.MessageId = value.Trim('<', '>', ' ');
+            else if (name.Equals("In-Reply-To", StringComparison.OrdinalIgnoreCase)) msg.InReplyTo = value.Trim('<', '>', ' ');
+            else if (name.Equals("References", StringComparison.OrdinalIgnoreCase))
+                foreach (var id in value.Split(' ', StringSplitOptions.RemoveEmptyEntries)) msg.References.Add(id.Trim('<', '>'));
+            else if (name.Equals("Reply-To", StringComparison.OrdinalIgnoreCase)) msg.ReplyTo.Add(MailboxAddress.Parse(value));
+            else msg.Headers.Add(name, value);
+        }
         msg.Body = new BodyBuilder { HtmlBody = m.Html, TextBody = m.Text }.ToMessageBody();
         return msg;
     }

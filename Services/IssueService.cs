@@ -120,7 +120,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     public async Task<List<User>> GetUsersAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName && u.UserName != Automation.AutomationBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // bots are not assignable
+        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName && u.UserName != Automation.AutomationBot.UserName && u.UserName != ServiceDesk.ServiceDeskBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // bots are not assignable
     }
 
     // ---------- Issues ----------
@@ -298,11 +298,15 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await MoveOnBoardAsync(issueId, target.Id, beforeIssueId, actorId);
     }
 
-    public async Task<Comment> AddCommentAsync(int issueId, int authorId, string body)
+    public Task<Comment> AddCommentAsync(int issueId, int authorId, string body) => AddCommentAsync(issueId, authorId, body, null);
+
+    /// <param name="init">Sets extra fields before saving (service desk: requester, public reply).</param>
+    public async Task<Comment> AddCommentAsync(int issueId, int authorId, string body, Action<Comment>? init)
     {
         await access.RequireForIssueAsync(issueId, Permission.Comment, authorId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var c = new Comment { IssueId = issueId, AuthorId = authorId, Body = body };
+        init?.Invoke(c);
         db.Comments.Add(c);
         await db.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.UpdatedAt, DateTime.UtcNow));
         await db.SaveChangesAsync();

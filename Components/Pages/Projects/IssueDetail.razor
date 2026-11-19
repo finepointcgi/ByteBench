@@ -9,6 +9,7 @@
 @inject ProjectAccess Access
 @inject LinkedWorkService LinkedWork
 @inject WorkflowService Workflows
+@inject GitBench.Services.ServiceDesk.ServiceDeskService Desk
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -117,8 +118,25 @@ else if (issue != null && project != null)
                     {
                         <MudPaper Outlined="true" Class="id-card" @key="(1, c.Id)">
                             <div class="id-card-head">
-                                <Avatar User="c.Author" Size="22" Link /> <UserLink User="c.Author" />
-                                <span class="id-muted id-small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
+                                @if (c.ServiceDeskContactId != null && desk != null)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Outlined.Email" Size="Size.Small" Class="mud-text-secondary" />
+                                    <b>@(desk.RequesterNames.GetValueOrDefault(c.Id) ?? "Requester")</b>
+                                    <span class="id-muted id-small">requester · wrote @Display.Ago(c.CreatedAt)</span>
+                                }
+                                else
+                                {
+                                    <Avatar User="c.Author" Size="22" Link /> <UserLink User="c.Author" />
+                                    <span class="id-muted id-small">commented @Display.Ago(c.CreatedAt)@(c.EditedAt != null ? " · edited" : "")</span>
+                                }
+                                @if (c.IsPublicReply)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined" Class="ma-0" title="Emailed to the requester and shown on their tracking page">Reply to requester</MudChip>
+                                }
+                                else if (desk != null && c.ServiceDeskContactId == null)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0" title="Not visible to the requester">Internal</MudChip>
+                                }
                                 @if (CanModerate(c) && editingCommentId != c.Id)
                                 {
                                     <span class="ml-auto d-flex">
@@ -160,11 +178,26 @@ else if (issue != null && project != null)
             @if (perms.Can(Permission.Comment))
             {
             <MudPaper Outlined="true" Class="id-card mt-3">
-                <div class="id-card-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b></div>
+                <div class="id-card-head"><Avatar User="Me.User" Size="22" /> <b>Add a comment</b>
+                    @if (desk != null)
+                    {
+                        <MudToggleGroup T="bool" @bind-Value="replyToRequester" Size="Size.Small" Class="ml-auto" Outlined="true" aria-label="Comment mode">
+                            <MudToggleItem Value="false">Internal comment</MudToggleItem>
+                            <MudToggleItem Value="true">Reply to requester</MudToggleItem>
+                        </MudToggleGroup>
+                    }
+                </div>
                 <div class="id-card-body">
-                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="Leave a comment…" AttachToIssueId="issue.Id" ProjectId="issue.ProjectId" AttachFromComment />
+                    @if (desk != null && replyToRequester)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                            @if (desk.EmailEnabled) { <span>This reply is emailed to <b>@desk.Ticket.Contact.DisplayName</b> and shown on their tracking page.</span> }
+                            else { <span>Email is turned off for this site: the reply is shown on the requester's tracking page but not emailed.</span> }
+                        </MudAlert>
+                    }
+                    <MarkdownEditor @ref="commentEditor" @bind-Value="newComment" Rows="4" Placeholder="@(desk != null && replyToRequester ? "Reply to the requester…" : "Leave a comment…")" AttachToIssueId="issue.Id" ProjectId="issue.ProjectId" AttachFromComment />
                     <div class="mt-2 d-flex flex-wrap gap-2">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(newComment)" OnClick="AddComment">Comment</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@string.IsNullOrWhiteSpace(newComment)" OnClick="AddComment">@(desk != null && replyToRequester ? "Send reply" : "Comment")</MudButton>
                         @if (!issue.Status.IsClosed() && CanEdit && CloseTarget != null)
                         {
                             <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CheckCircle" OnClick="CommentAndClose">
@@ -253,6 +286,7 @@ else if (issue != null && project != null)
                 <GitBench.Components.Fields.IssueFieldsPanel Issue="issue" />
                 <GitBench.Components.Workbench.WorkbenchIssuePanel Issue="issue" Project="project" Perms="perms" />
                 <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
+                @if (desk != null) { <GitBench.Components.ServiceDesk.ServiceDeskIssuePanel Info="desk" /> }
                 <div class="id-reporter">
                     <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName Link /></div>
                     <div>Created @issue.CreatedAt.ToLocalTime().ToString("g")</div>
@@ -304,6 +338,8 @@ else if (issue != null && project != null)
     private string? descDraft, newComment, commentEditDraft;
     private int? editingCommentId;
     private MarkdownEditor? commentEditor;
+    private GitBench.Services.ServiceDesk.ServiceDeskIssueInfo? desk; // set when the issue came in through the service desk
+    private bool replyToRequester;
 
     private IEnumerable<object> Timeline => issue!.Comments.Select(c => (when: c.CreatedAt, item: (object)c))
         .Concat(issue.Activities.Where(a => a.Text != "created this issue").Select(a => (when: a.CreatedAt, item: (object)a)))
@@ -334,6 +370,7 @@ else if (issue != null && project != null)
         {
             watching = await Notifications.IsWatchingIssueAsync(Me.Id, issue.Id);
             watcherCount = await Notifications.CountIssueWatchersAsync(issue.Id);
+            desk = await Desk.GetIssueInfoAsync(issue.Id);
         }
     }
 
@@ -485,17 +522,22 @@ else if (issue != null && project != null)
     private async Task AddComment()
     {
         if (string.IsNullOrWhiteSpace(newComment)) return;
-        if (!await Guard(() => Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
+        // Only "Reply to requester" ever emails a service desk requester; ordinary comments stay internal.
+        var sendToRequester = desk != null && replyToRequester;
+        if (!await Guard(() => sendToRequester ? (Task)Desk.ReplyToRequesterAsync(issue!.Id, newComment.Trim()) : Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
         newComment = null;
+        replyToRequester = false;
         commentEditor?.ShowWrite();
         await Reload();
     }
 
     private async Task CommentAndClose()
     {
+        var sendToRequester = desk != null && replyToRequester;
         if (!string.IsNullOrWhiteSpace(newComment)
-            && !await Guard(() => Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
+            && !await Guard(() => sendToRequester ? (Task)Desk.ReplyToRequesterAsync(issue!.Id, newComment.Trim()) : Issues.AddCommentAsync(issue!.Id, Me.Id, newComment.Trim()))) return;
         newComment = null;
+        replyToRequester = false;
         if (CloseTarget is { } close) await SetWorkflowStatus(close.Id);
         else await SetStatus(IssueStatus.Done);
     }

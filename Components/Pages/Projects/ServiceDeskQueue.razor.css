@@ -1,0 +1,6 @@
+.sdq-scroll { overflow-x: auto; }
+.sdq-title { font-weight: 500; color: var(--mud-palette-text-primary); text-decoration: none; }
+.sdq-title:hover { text-decoration: underline; }
+.sdq-small { font-size: .75rem; }
+.sdq-overdue td:first-child { box-shadow: inset 3px 0 0 var(--mud-palette-error); }
+.nowrap { white-space: nowrap; }

@@ -11,7 +11,7 @@ namespace GitBench.Services.Webhooks;
 /// (<see cref="Automation.AutomationQueue"/>), so every call site feeds both.
 /// </summary>
 public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookDispatcher dispatcher, PublicBaseUrl baseUrl, ILogger<WebhookNotifier> log,
-    Automation.AutomationQueue automation)
+    Automation.AutomationQueue automation, ServiceDesk.ServiceDeskStatusQueue serviceDeskStatus)
 {
     // ----- Issues -----
 
@@ -27,6 +27,8 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
     {
         if (fields is { Fields: not Automation.IssueField.None })
             automation.Enqueue(new(Automation.AutomationEventKind.IssueUpdated, actorId) { IssueId = issueId, Changes = fields });
+        if (fields != null && fields.Fields.HasFlag(Automation.IssueField.Status))
+            serviceDeskStatus.Enqueue(issueId, fields.ToStatusId); // may email a service desk requester
         return IssueEventAsync(WebhookEventNames.IssueUpdated, issueId, actorId, change: change, fields: fields?.Fields);
     }
 

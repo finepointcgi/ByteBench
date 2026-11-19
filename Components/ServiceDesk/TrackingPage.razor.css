@@ -1,0 +1,10 @@
+.desk-page ::deep .desk-textarea { resize: vertical; min-height: 90px; }
+.desk-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 18px; font-size: .875rem; }
+.desk-badge { padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: .8125rem;
+    background: rgba(var(--mud-palette-primary-rgb), .14); color: var(--mud-palette-primary); }
+.desk-badge-closed { background: rgba(var(--mud-palette-success-rgb), .16); color: var(--mud-palette-success-darken); }
+.desk-thread { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+.desk-msg { border: 1px solid var(--mud-palette-lines-default); border-radius: 8px; padding: 10px 14px; overflow-wrap: anywhere; }
+.desk-msg-agent { border-left: 3px solid var(--mud-palette-primary); }
+.desk-msg-head { font-size: .8125rem; margin-bottom: 4px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.desk-team { font-size: .6875rem; text-transform: uppercase; letter-spacing: .04em; color: var(--mud-palette-primary); }

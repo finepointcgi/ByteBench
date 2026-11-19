@@ -1,0 +1,109 @@
+@page "/desk/{Key}"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@using System.ComponentModel.DataAnnotations
+@using GitBench.Services.ServiceDesk
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ServiceDeskIntake Intake
+@inject NavigationManager Nav
+
+@* The public request form: static SSR, so the form post carries an antiforgery token (CSRF) and works without JavaScript.
+   Submissions are rate limited per client IP and per address; a hidden honeypot field catches simple bots. *@
+
+<PageTitle>@(project?.Name ?? "Request") · Support</PageTitle>
+
+<div class="desk-page">
+@if (project == null || settings == null)
+{
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Not available</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">This request form doesn't exist or isn't accepting requests.</MudText>
+}
+else if (honeypotHit)
+{
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Thanks</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">We've received your request.</MudText>
+}
+else
+{
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Contact @project.Name</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">
+        @(settings.FormIntro ?? "Tell us what you need. We'll reply by email, and you'll get a link to follow your request.")
+    </MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">@error</MudAlert> }
+
+    <EditForm Model="Input" FormName="desk-request" OnValidSubmit="Submit" method="post">
+        <DataAnnotationsValidator />
+        <div class="gb-field">
+            <label class="gb-field-label" for="desk-name">Your name</label>
+            <InputText id="desk-name" class="gb-input" @bind-Value="Input!.Name" autocomplete="name" maxlength="100" />
+            <ValidationMessage For="() => Input!.Name" />
+        </div>
+        <div class="gb-field">
+            <label class="gb-field-label" for="desk-email">Email</label>
+            <InputText id="desk-email" type="email" class="gb-input" @bind-Value="Input!.Email" autocomplete="email" maxlength="254" />
+            <ValidationMessage For="() => Input!.Email" />
+        </div>
+        <div class="gb-field">
+            <label class="gb-field-label" for="desk-subject">Subject</label>
+            <InputText id="desk-subject" class="gb-input" @bind-Value="Input!.Subject" maxlength="200" />
+            <ValidationMessage For="() => Input!.Subject" />
+        </div>
+        <div class="gb-field">
+            <label class="gb-field-label" for="desk-body">How can we help?</label>
+            <InputTextArea id="desk-body" class="gb-input desk-textarea" @bind-Value="Input!.Body" rows="7" maxlength="20000" />
+            <ValidationMessage For="() => Input!.Body" />
+        </div>
+        @* Honeypot: hidden from people (and screen readers); bots that fill every field give themselves away. *@
+        <div class="desk-hp" aria-hidden="true">
+            <label for="desk-website">Website</label>
+            <InputText id="desk-website" @bind-Value="Input!.Website" tabindex="-1" autocomplete="off" />
+        </div>
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Send request</MudButton>
+    </EditForm>
+}
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private InputModel? Input { get; set; }
+
+    private Project? project;
+    private ServiceDeskSettings? settings;
+    private string? error;
+    private bool honeypotHit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var key = (Key ?? "").ToUpperInvariant();
+        project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Key == key);
+        settings = project == null ? null
+            : await db.ServiceDeskSettings.AsNoTracking().FirstOrDefaultAsync(s => s.ProjectId == project.Id && s.Enabled && s.PublicFormEnabled);
+    }
+
+    private async Task Submit()
+    {
+        if (project == null || settings == null) return;
+        if (!string.IsNullOrEmpty(Input!.Website)) { honeypotHit = true; return; }
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var result = await Intake.SubmitFormAsync(project.Key, Input.Name, Input.Email, Input.Subject, Input.Body, ip);
+        if (result.Outcome == InboundOutcome.Created && result.TrackingToken != null)
+        {
+            Nav.NavigateTo($"/desk/t/{result.TrackingToken}?created=1");
+            return;
+        }
+        error = result.Reason == "not available" ? "This form isn't accepting requests." : result.Reason;
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Enter your name."), MaxLength(100)] public string Name { get; set; } = "";
+        [Required(ErrorMessage = "Enter your email address."), EmailAddress(ErrorMessage = "Enter a valid email address."), MaxLength(254)] public string Email { get; set; } = "";
+        [Required(ErrorMessage = "Enter a subject."), MaxLength(200)] public string Subject { get; set; } = "";
+        [Required(ErrorMessage = "Describe your request."), MaxLength(20000)] public string Body { get; set; } = "";
+        public string? Website { get; set; }
+    }
+}

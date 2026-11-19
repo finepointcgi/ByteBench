@@ -1,0 +1,6 @@
+.sd-page ::deep .sd-narrow { max-width: 760px; }
+.sd-page ::deep .sd-title { font-weight: 600; margin-bottom: 12px; }
+.sd-page ::deep .sd-field { flex: 1 1 220px; max-width: 320px; }
+.sd-addresses { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: .875rem; }
+.sd-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.sd-statuses { display: flex; flex-wrap: wrap; gap: 0 16px; }

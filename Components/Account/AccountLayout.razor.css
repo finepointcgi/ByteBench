@@ -9,6 +9,7 @@
 
 .auth-shell ::deep .auth-card { width: 100%; max-width: 420px; padding: 28px; }
 .auth-shell ::deep .auth-card:has(.profile-page) { max-width: 600px; }
+.auth-shell ::deep .auth-card:has(.desk-page) { max-width: 680px; }
 
 /* Shared look for the static-SSR account forms: plain inputs styled like MudBlazor's outlined fields. */
 .auth-shell ::deep .auth-title { margin-bottom: 4px; }

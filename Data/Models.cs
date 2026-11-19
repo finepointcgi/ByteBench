@@ -97,7 +97,7 @@ public partial class Milestone
     public List<Issue> Issues { get; set; } = [];
 }
 
-public class Comment
+public partial class Comment
 {
     public int Id { get; set; }
     public int IssueId { get; set; }
@@ -2216,4 +2216,98 @@ public partial class Notification
 {
     /// <summary>True while this notification still has to be sent as a Slack DM.</summary>
     public bool ChatPending { get; set; }
+}
+
+// ----- Service desk -----
+
+/// <summary>
+/// Per-project service desk settings (Maintainer+; Services/ServiceDesk). People without accounts file issues by email
+/// (<c>desk+&lt;key&gt;@…</c> or <see cref="CustomAddress"/>) or the public form. No row means the service desk is off.
+/// </summary>
+public class ServiceDeskSettings
+{
+    public int ProjectId { get; set; }
+    public bool Enabled { get; set; }
+    /// <summary>The public request form at <c>/desk/{KEY}</c>.</summary>
+    public bool PublicFormEnabled { get; set; } = true;
+    /// <summary>An extra address that also reaches this project (e.g. <c>support@example.com</c> forwarded to the inbound mailbox). Lower-case.</summary>
+    [MaxLength(254)] public string? CustomAddress { get; set; }
+    public IssueType DefaultIssueType { get; set; } = IssueType.Task;
+    public List<int> DefaultLabelIds { get; set; } = [];
+    public int? DefaultAssigneeId { get; set; }
+    /// <summary>The new issue's description. Placeholders: <c>{{body}}</c>, <c>{{requester}}</c>, <c>{{email}}</c>, <c>{{subject}}</c>.</summary>
+    [MaxLength(10000)] public string? IssueTemplate { get; set; }
+    public bool AutoReplyEnabled { get; set; } = true;
+    /// <summary>The auto-reply's text. Placeholders: <c>{{requester}}</c>, <c>{{key}}</c>, <c>{{subject}}</c>, <c>{{tracking_url}}</c>.</summary>
+    [MaxLength(10000)] public string? AutoReplyTemplate { get; set; }
+    /// <summary>Workflow statuses that email the requester when an issue moves into them.</summary>
+    public List<int> NotifyStatusIds { get; set; } = [];
+    /// <summary>The queue flags requests waiting on the team longer than this ("SLA-ish").</summary>
+    [Range(1, 24 * 30)] public int ResponseTargetHours { get; set; } = 24;
+    /// <summary>Text shown at the top of the public request form.</summary>
+    [MaxLength(2000)] public string? FormIntro { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Someone outside GitBench who files requests: an email address and a name, never a user account.</summary>
+public class ServiceDeskContact
+{
+    public int Id { get; set; }
+    /// <summary>Lower-case address.</summary>
+    [Required, MaxLength(254)] public string Email { get; set; } = "";
+    [MaxLength(200)] public string? Name { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Email : Name!;
+}
+
+public enum ServiceDeskSource { Email, Form }
+
+/// <summary>An issue filed through the service desk: who asked, and the tokens that let them reply and follow it.</summary>
+public class ServiceDeskTicket
+{
+    public int Id { get; set; }
+    public int IssueId { get; set; }
+    public Issue Issue { get; set; } = null!;
+    public int ProjectId { get; set; }
+    public int ContactId { get; set; }
+    public ServiceDeskContact Contact { get; set; } = null!;
+    public ServiceDeskSource Source { get; set; }
+    /// <summary>Random, in the reply address (<c>desk+r-&lt;token&gt;@…</c>): mail sent there becomes a comment.</summary>
+    [Required, MaxLength(64)] public string ReplyToken { get; set; } = "";
+    /// <summary>Random, in the tracking link (<c>/desk/t/&lt;token&gt;</c>) that shows status and public replies without signing in.</summary>
+    [Required, MaxLength(64)] public string TrackingToken { get; set; } = "";
+    [MaxLength(300)] public string Subject { get; set; } = "";
+    /// <summary>The requester's first message as received (shown on the tracking page; the issue description may be edited).</summary>
+    public string? InitialMessage { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastRequesterActivityAt { get; set; } = DateTime.UtcNow;
+    public DateTime? FirstResponseAt { get; set; }
+    public DateTime? LastAgentReplyAt { get; set; }
+
+    /// <summary>The requester spoke last (or nobody has answered yet).</summary>
+    public bool WaitingOnUs => LastAgentReplyAt == null || LastRequesterActivityAt > LastAgentReplyAt;
+}
+
+public enum ServiceDeskDirection { Inbound, Outbound }
+
+/// <summary>An email in a ticket's thread, by RFC 5322 Message-ID: replies are threaded by In-Reply-To/References, and duplicates are dropped.</summary>
+public class ServiceDeskMessage
+{
+    public int Id { get; set; }
+    public int TicketId { get; set; }
+    public ServiceDeskTicket Ticket { get; set; } = null!;
+    public ServiceDeskDirection Direction { get; set; }
+    /// <summary>Without angle brackets.</summary>
+    [Required, MaxLength(500)] public string MessageId { get; set; } = "";
+    public int? CommentId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public partial class Comment
+{
+    /// <summary>Written by this service desk requester (the author is then the Service Desk bot).</summary>
+    public int? ServiceDeskContactId { get; set; }
+    /// <summary>A "reply to requester": emailed to the requester and shown on the tracking page. Other comments are internal.</summary>
+    public bool IsPublicReply { get; set; }
 }

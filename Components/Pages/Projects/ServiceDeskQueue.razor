@@ -1,0 +1,136 @@
+@page "/p/{Key}/service-desk"
+@using GitBench.Services.ServiceDesk
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject ServiceDeskService Desk
+@inject LiveEvents Live
+@implements IDisposable
+
+<PageTitle>Service desk · @project?.Name</PageTitle>
+
+<div class="sdq-page">
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !perms.Can(Permission.Comment))
+{
+    <Forbidden Message="The service desk queue is for project Developers and above." BackHref="@($"/p/{Key}/issues")" />
+}
+else if (project != null)
+{
+    <div class="page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Service desk</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                @project.Name
+                @if (enabled) { <span> · <code>@Desk.Addresses.ForProject(project.Key)</code> · <a href="@($"/desk/{project.Key}")" target="_blank" rel="noopener">public form</a></span> }
+            </MudText>
+        </div>
+        @if (perms.Role >= ProjectRole.Maintainer)
+        {
+            <MudButton Href="@($"/p/{project.Key}/settings/service-desk")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Settings">Settings</MudButton>
+        }
+    </div>
+    @if (!enabled)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            The service desk is off for this project, so no new requests come in.
+            @if (perms.Role >= ProjectRole.Maintainer) { <a href="@($"/p/{project.Key}/settings/service-desk")">Turn it on</a> }
+        </MudAlert>
+    }
+
+    <MudChipSet T="ServiceDeskQueueFilter" SelectedValue="filter" SelectedValueChanged="SetFilter" SelectionMode="SelectionMode.SingleSelection" CheckMark="false" Class="mb-3">
+        <MudChip Value="ServiceDeskQueueFilter.WaitingOnUs" Variant="Variant.Outlined" SelectedColor="Color.Primary" Size="Size.Small">Waiting on us</MudChip>
+        <MudChip Value="ServiceDeskQueueFilter.Unanswered" Variant="Variant.Outlined" SelectedColor="Color.Primary" Size="Size.Small">Unanswered</MudChip>
+        <MudChip Value="ServiceDeskQueueFilter.Open" Variant="Variant.Outlined" SelectedColor="Color.Primary" Size="Size.Small">Open</MudChip>
+        <MudChip Value="ServiceDeskQueueFilter.Closed" Variant="Variant.Outlined" SelectedColor="Color.Primary" Size="Size.Small">Closed</MudChip>
+        <MudChip Value="ServiceDeskQueueFilter.All" Variant="Variant.Outlined" SelectedColor="Color.Primary" Size="Size.Small">All</MudChip>
+    </MudChipSet>
+
+    @if (rows.Count == 0)
+    {
+        <div class="gb-empty-state">
+            <MudIcon Class="mud-text-secondary" Icon="@Icons.Material.Outlined.SupportAgent" Size="Size.Large" />
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">No requests here.</MudText>
+        </div>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="sdq-scroll">
+            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+                <thead>
+                    <tr><th>Request</th><th>Requested by</th><th>Status</th><th>Assignee</th><th>Waiting</th><th>Last reply</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in rows)
+                    {
+                        <tr @key="r.IssueId" class="@(r.Overdue ? "sdq-overdue" : "")">
+                            <td>
+                                <a href="@($"/p/{project.Key}/issues/{r.Number}")" class="sdq-title"><span class="mono">@r.Key</span> @r.Title</a>
+                                <div class="mud-text-secondary sdq-small">via @(r.Source == ServiceDeskSource.Form ? "form" : "email") · opened @Display.Ago(r.CreatedAt)</div>
+                            </td>
+                            <td><div>@r.RequesterName</div><div class="mud-text-secondary sdq-small">@r.RequesterEmail</div></td>
+                            <td>@r.Status</td>
+                            <td>@(r.Assignee?.DisplayName ?? "—")</td>
+                            <td class="nowrap">
+                                @if (r.WaitingOnUs)
+                                {
+                                    <span title="The requester is waiting for an answer">@Waiting(r.LastRequesterActivityAt)</span>
+                                    @if (r.Overdue) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="ml-1">overdue</MudChip> }
+                                }
+                                else { <span class="mud-text-secondary">on requester</span> }
+                            </td>
+                            <td class="nowrap">@(r.LastAgentReplyAt is { } at ? Display.Ago(at) : "never")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
+}
+</div>
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private bool notFound, enabled;
+    private ServiceDeskQueueFilter filter = ServiceDeskQueueFilter.WaitingOnUs;
+    private List<ServiceDeskQueueRow> rows = [];
+    private IDisposable? sub;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        if (!perms.Can(Permission.Comment)) return;
+        enabled = await Desk.IsEnabledAsync(project.Id);
+        await Load();
+    }
+
+    private async Task Load() => rows = await Desk.GetQueueAsync(project!.Id, filter);
+
+    private async Task SetFilter(ServiceDeskQueueFilter f)
+    {
+        filter = f;
+        await Load();
+    }
+
+    private static string Waiting(DateTime since)
+    {
+        var d = DateTime.UtcNow - since;
+        return d.TotalMinutes < 60 ? $"{Math.Max(1, (int)d.TotalMinutes)}m" : d.TotalHours < 48 ? $"{(int)d.TotalHours}h" : $"{(int)d.TotalDays}d";
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<IssueChanged>(e => project?.Id != e.ProjectId || !perms.Can(Permission.Comment) ? Task.CompletedTask
+            : InvokeAsync(async () => { await Load(); StateHasChanged(); }));
+    }
+
+    public void Dispose() => sub?.Dispose();
+}
