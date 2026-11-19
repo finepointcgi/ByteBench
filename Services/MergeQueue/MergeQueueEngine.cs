@@ -74,10 +74,13 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var entries = await db.MergeQueueEntries
             .Include(e => e.PullRequest).ThenInclude(p => p.Repository).ThenInclude(r => r.Project)
-            .Include(e => e.EnqueuedBy).Include(e => e.Pipeline)
+            .Include(e => e.EnqueuedBy)
             .Where(e => e.RepositoryId == repositoryId && e.TargetBranch == branch
                         && (e.State == MergeQueueEntryState.Queued || e.State == MergeQueueEntryState.Testing || e.State == MergeQueueEntryState.Passed))
             .OrderBy(e => e.Position).ThenBy(e => e.Id).AsSplitQuery().ToListAsync(ct);
+        // Pipelines are read untracked: entries only ever change their PipelineId.
+        var pipelineIds = entries.Where(e => e.PipelineId != null).Select(e => e.PipelineId!.Value).ToList();
+        var pipelines = await db.Pipelines.AsNoTracking().Where(p => pipelineIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         var dropped = new List<Dropped>();
         var now = DateTime.UtcNow;
         var merged = false;
@@ -138,7 +141,7 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
             var consistent = e.State is MergeQueueEntryState.Testing or MergeQueueEntryState.Passed && e.BaseSha == expected && e.SpeculativeSha != null;
             if (consistent && e.State == MergeQueueEntryState.Testing)
             {
-                switch (Evaluate(e, config, now))
+                switch (Evaluate(e, e.PipelineId is { } pid ? pipelines.GetValueOrDefault(pid) : null, config, now))
                 {
                     case (Verdict.Passed, _):
                         e.State = MergeQueueEntryState.Passed;
@@ -204,10 +207,9 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
 
     private enum Verdict { Pending, Passed, Failed, Retry }
 
-    private static (Verdict, string?) Evaluate(MergeQueueEntry e, MergeQueueConfig config, DateTime now)
+    private static (Verdict, string?) Evaluate(MergeQueueEntry e, Pipeline? p, MergeQueueConfig config, DateTime now)
     {
-        if (e.PipelineId == null || e.Pipeline == null) return config.RequireCi ? (Verdict.Retry, null) : (Verdict.Passed, null);
-        var p = e.Pipeline;
+        if (p == null) return config.RequireCi ? (Verdict.Retry, null) : (Verdict.Passed, null);
         switch (p.Status)
         {
             case PipelineStatus.Passed: return (Verdict.Passed, null);
@@ -247,7 +249,6 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
                 dedupe: false, ct, forkPullRequest: pr.IsCrossFork, approvedById: pr.IsCrossFork ? e.EnqueuedById : null, rulesBranch: branch);
             if (id == null) return "No pipeline could be started for the merged result.";
             e.PipelineId = id;
-            e.Pipeline = null;
             e.State = MergeQueueEntryState.Testing;
             return null;
         }
@@ -261,7 +262,6 @@ public sealed class MergeQueueEngine(IDbContextFactory<AppDbContext> dbFactory, 
         e.State = MergeQueueEntryState.Queued;
         e.BaseSha = e.SpeculativeSha = null;
         e.PipelineId = null;
-        e.Pipeline = null;
         e.TestingSince = null;
         e.Message = message;
         e.UpdatedAt = DateTime.UtcNow;

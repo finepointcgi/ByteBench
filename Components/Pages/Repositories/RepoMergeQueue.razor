@@ -1,0 +1,204 @@
+@page "/p/{Key}/repos/{Slug}/merge-queue"
+@inherits RepoPageBase
+@using GitBench.Services.MergeQueue
+@inject MergeQueueService Queues
+@inject ProjectAccess Access
+@inject LiveEvents Live
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@implements IDisposable
+
+<PageTitle>Merge queue · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="prs" />
+
+    <div class="mq-header">
+        <div class="gb-min0">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Train" /> Merge queue</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                Each queued pull request is tested merged with its target and every pull request ahead of it, on a speculative
+                commit under <code>refs/merge-queue/</code>. When it passes, the target is fast-forwarded to that commit, in order.
+            </MudText>
+        </div>
+        @if (branches.Count > 1)
+        {
+            <MudSelect T="string" Value="branch" ValueChanged="SelectBranch" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       OuterClass="gb-ref-select gb-mono-input mq-branch" aria-label="Target branch">
+                @foreach (var b in branches) { <MudSelectItem T="string" Value="@b"><span class="mono">@b</span></MudSelectItem> }
+            </MudSelect>
+        }
+    </div>
+
+    @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+    @if (view == null || branch == null)
+    {
+        <div class="empty">
+            No branch of this repository uses a merge queue.
+            @if (perms.Can(Permission.ManageRepositories)) { <span>Turn it on in a <a href="@RepoUrls.BranchProtection(Repo)">branch protection rule</a>.</span> }
+        </div>
+    }
+    else
+    {
+        <div class="mq-config muted small mb-2">
+            @if (view.Config != null)
+            {
+                <span><span class="mono">@branch</span> · @MergeStrategySettings.Label(view.Config.StrategyFor(Repo)) · @view.Config.Describe · timeout @view.Config.TimeoutMinutes min (rule @view.Config.Patterns)</span>
+            }
+            else
+            {
+                <span>The merge queue of <span class="mono">@branch</span> is turned off; remaining entries are removed.</span>
+            }
+        </div>
+
+        <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">Queued (@view.Active.Count)</MudText>
+        <div class="gb-rows mb-5">
+            @if (view.Active.Count == 0)
+            {
+                <div class="empty">The queue is empty.</div>
+            }
+            @for (var i = 0; i < view.Active.Count; i++)
+            {
+                var e = view.Active[i];
+                var position = i + 1;
+                <div class="gb-row mq-row" @key="e.Id">
+                    <div class="mq-pos" title="Position in the queue">@position</div>
+                    <div class="gb-row-main">
+                        <div class="gb-row-title">
+                            <a href="@RepoUrls.PullRequest(Repo, e.PullRequest.Number)">#@e.PullRequest.Number</a> @e.PullRequest.Title
+                        </div>
+                        <div class="gb-row-meta">
+                            <span class="mq-state mq-@e.State.ToString().ToLowerInvariant()">@StateLabel(e)</span>
+                            @if (e.Pipeline is { } p)
+                            {
+                                <span> · <PipelineStatusIcon Status="p.Status" Href="@PipelineUrls.Detail(Repo, p.Id)" Title="@($"Pipeline #{p.Id}")" /> <a href="@PipelineUrls.Detail(Repo, p.Id)">#@p.Id</a></span>
+                            }
+                            @if (e.SpeculativeSha != null) { <span> · <a class="sha-pill" href="@RepoUrls.Commit(Repo, e.SpeculativeSha)">@e.SpeculativeSha[..7]</a></span> }
+                            · by @e.PullRequest.Author.DisplayName, queued by @e.EnqueuedBy.DisplayName @Display.Ago(e.CreatedAt)
+                            @if (e.Message != null) { <span> · @e.Message</span> }
+                        </div>
+                    </div>
+                    <div class="gb-row-right">
+                        @if (perms.Can(Permission.ManageRepositories) && position > 1)
+                        {
+                            <MudTooltip Text="Move to the front">
+                                <MudIconButton Icon="@Icons.Material.Outlined.VerticalAlignTop" Size="Size.Small" Variant="Variant.Outlined" Disabled="@busy"
+                                               aria-label="@($"Move #{e.PullRequest.Number} to the front")" OnClick="() => MoveToFront(e)" />
+                            </MudTooltip>
+                        }
+                        @if (perms.Can(Permission.MergePullRequest) || e.PullRequest.AuthorId == Me.Id)
+                        {
+                            <MudTooltip Text="Remove from the queue">
+                                <MudIconButton Icon="@Icons.Material.Outlined.RemoveCircleOutline" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined" Disabled="@busy"
+                                               aria-label="@($"Remove #{e.PullRequest.Number} from the queue")" OnClick="() => Remove(e)" />
+                            </MudTooltip>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">Recently finished</MudText>
+        <div class="gb-rows">
+            @if (view.Recent.Count == 0)
+            {
+                <div class="empty">Nothing has left the queue yet.</div>
+            }
+            @foreach (var e in view.Recent)
+            {
+                <div class="gb-row mq-row" @key="e.Id">
+                    <MudIcon Icon="@(e.State == MergeQueueEntryState.Merged ? Icons.Material.Filled.Merge : Icons.Material.Outlined.RemoveCircleOutline)"
+                             Color="@(e.State == MergeQueueEntryState.Merged ? Color.Success : e.State == MergeQueueEntryState.Failed ? Color.Error : Color.Default)" Size="Size.Small" />
+                    <div class="gb-row-main">
+                        <div class="gb-row-title">
+                            <a href="@RepoUrls.PullRequest(Repo, e.PullRequest.Number)">#@e.PullRequest.Number</a> @e.PullRequest.Title
+                        </div>
+                        <div class="gb-row-meta">
+                            <span class="mq-state mq-@e.State.ToString().ToLowerInvariant()">@e.State</span>
+                            @if (e.Pipeline is { } p) { <span> · <a href="@PipelineUrls.Detail(Repo, p.Id)">pipeline #@p.Id</a></span> }
+                            @if (e.FinishedAt is { } at) { <span> · @Display.Ago(at)</span> }
+                            @if (e.Message != null) { <span> · @e.Message</span> }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "branch")] public string? BranchQuery { get; set; }
+
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<string> branches = [];
+    private string? branch;
+    private MergeQueueView? view;
+    private bool busy;
+    private IDisposable? queueSub, pipelineSub;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        branches = await Queues.BranchesAsync(Repo);
+        branch = BranchQuery is { Length: > 0 } q ? q : branches.FirstOrDefault();
+        if (branch != null && !branches.Contains(branch)) branches.Insert(0, branch);
+        await Load();
+    }
+
+    private async Task Load() => view = branch == null ? null : await Queues.ViewAsync(Repo!, branch);
+
+    private void SelectBranch(string b) => Nav.NavigateTo(MergeQueueUrls.Queue(Repo!, b));
+
+    private static string StateLabel(MergeQueueEntry e) => e.State switch
+    {
+        MergeQueueEntryState.Queued => "Waiting",
+        MergeQueueEntryState.Testing => "Testing",
+        MergeQueueEntryState.Passed => "Passed, merging next",
+        _ => e.State.ToString(),
+    };
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender) return;
+        queueSub = Live.Subscribe<MergeQueueChanged>(e => Repo == null || e.RepositoryId != Repo.Id || e.TargetBranch != branch ? Task.CompletedTask : Refresh());
+        pipelineSub = Live.Subscribe<PipelineChanged>(e =>
+            view != null && view.Active.Any(a => a.PipelineId == e.PipelineId) ? Refresh() : Task.CompletedTask);
+    }
+
+    private Task Refresh() => InvokeAsync(async () =>
+    {
+        await Load();
+        StateHasChanged();
+    });
+
+    private async Task MoveToFront(MergeQueueEntry e) => await Act(() => Queues.MoveToFrontAsync(e.PullRequestId, Me.Id), $"Moved #{e.PullRequest.Number} to the front.");
+
+    private async Task Remove(MergeQueueEntry e)
+    {
+        if (!await Dialogs.ConfirmAsync("Remove from merge queue", $"Remove #{e.PullRequest.Number} from the merge queue?")) return;
+        await Act(() => Queues.DequeueAsync(e.PullRequestId, Me.Id), $"Removed #{e.PullRequest.Number} from the queue.");
+    }
+
+    private async Task Act(Func<Task> action, string done)
+    {
+        busy = true;
+        Error = null;
+        try
+        {
+            await action();
+            Snackbar.Add(done, Severity.Success);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    public void Dispose() { queueSub?.Dispose(); pipelineSub?.Dispose(); }
+}

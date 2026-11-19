@@ -10,6 +10,7 @@
 @inject ReviewerService Reviewers
 @inject CurrentUser Me
 @inject RepositorySettingsService RepoSettings
+@inject GitBench.Services.MergeQueue.MergeQueueService MergeQueues
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -61,6 +62,11 @@ else if (project != null)
                     <MudSelectItem T="string" Value="@("")">All repositories</MudSelectItem>
                     @foreach (var r in repos) { <MudSelectItem T="string" Value="@r.Repository.Slug">@r.Repository.Name</MudSelectItem> }
                 </MudSelect>
+            }
+            @if (scopedRepo != null && queueBranches.Count > 0)
+            {
+                <MudButton Href="@GitBench.Services.MergeQueue.MergeQueueUrls.Queue(scopedRepo)" Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.Train" Class="gb-nowrap">Merge queue</MudButton>
             }
             @if (repos.Count > 0 && canCreate)
             {
@@ -127,6 +133,8 @@ else if (project != null)
 
     private PullRequestState CurrentState => Enum.TryParse<PullRequestState>(State, true, out var s) ? s : PullRequestState.Open;
 
+    private List<string> queueBranches = [];
+
     protected override async Task OnParametersSetAsync()
     {
         project = await Issues.GetProjectAsync(Key);
@@ -140,6 +148,7 @@ else if (project != null)
         if (notFound) return;
 
         repos = await Repos.GetRepositoriesAsync(project!.Id);
+        queueBranches = scopedRepo != null ? await MergeQueues.BranchesAsync(scopedRepo) : [];
         canCreate = await Access.CanAsync(project.Id, Permission.CreatePullRequest);
         var repoId = scopedRepo?.Id ?? repos.FirstOrDefault(r => r.Repository.Slug == RepoFilter)?.Repository.Id;
         prs = await PRs.ListAsync(project.Id, CurrentState, repoId);

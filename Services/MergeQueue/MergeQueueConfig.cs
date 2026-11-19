@@ -40,3 +40,10 @@ public sealed record MergeQueueConfig(int MaxBatch, bool RequireCi, MergeStrateg
 
     public string Describe => $"up to {MaxBatch} tested at once" + (RequireCi ? ", pipeline must pass" : ", no pipeline required");
 }
+
+/// <summary>Page URLs of the merge queue.</summary>
+public static class MergeQueueUrls
+{
+    public static string Queue(Repository r, string? branch = null) =>
+        Git.RepoUrls.Base(r) + "/merge-queue" + (branch == null ? "" : "?branch=" + Uri.EscapeDataString(branch));
+}

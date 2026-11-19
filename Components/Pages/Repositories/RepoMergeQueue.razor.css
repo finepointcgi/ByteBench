@@ -1,0 +1,16 @@
+.mq-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+.mq-header .gb-min0 { flex: 1 1 320px; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+.mq-row { align-items: flex-start; }
+.mq-pos {
+    min-width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 600; background: var(--mud-palette-action-default-hover);
+}
+.mq-state { font-weight: 600; }
+.mq-testing { color: var(--mud-palette-info); }
+.mq-passed, .mq-merged { color: var(--mud-palette-success); }
+.mq-failed { color: var(--mud-palette-error); }
+@media (max-width: 600px) {
+    .mq-row { flex-wrap: wrap; }
+    .gb-row-right { width: 100%; justify-content: flex-end; }
+}

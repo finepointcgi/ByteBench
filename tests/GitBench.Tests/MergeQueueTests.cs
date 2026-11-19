@@ -386,6 +386,30 @@ public class MergeQueueTests(MergeQueueApp app) : IClassFixture<MergeQueueApp>
     }
 
     [Fact]
+    public async Task The_api_adds_lists_and_removes_entries()
+    {
+        var h = H();
+        await h.SetupAsync(maxBatch: 2);
+        var pr = await h.PullRequestAsync("api1");
+        var key = app.ProjectKey(h.Repo.ProjectId);
+        var url = $"/api/v1/projects/{key}/repos/{h.Repo.Slug}/pull-requests/{pr.Number}/merge-queue";
+
+        using var bob = await app.ApiClientAsync("bob");
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await bob.PostAsync(url, null)).StatusCode);
+        using var carol = await app.ApiClientAsync("carol");
+        var created = await carol.PostAsync(url, null);
+        Assert.Equal(System.Net.HttpStatusCode.Created, created.StatusCode);
+        Assert.Contains("\"state\":\"queued\"", await created.Content.ReadAsStringAsync());
+        await h.ProcessAsync();
+
+        var queue = await carol.GetStringAsync($"/api/v1/projects/{key}/repos/{h.Repo.Slug}/merge-queue?branch=main");
+        Assert.Contains("\"state\":\"testing\"", queue);
+        Assert.Contains("\"position\":1", queue);
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await bob.DeleteAsync(url)).StatusCode); // the author may remove it
+        Assert.Equal(MergeQueueEntryState.Removed, h.Entry(pr).State);
+    }
+
+    [Fact]
     public async Task Conflicts_with_the_entries_ahead_eject_the_entry()
     {
         var h = H();

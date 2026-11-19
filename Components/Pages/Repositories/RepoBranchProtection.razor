@@ -5,6 +5,7 @@
 @inject ProjectAccess Access
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
+@using GitBench.Services.MergeQueue
 
 <PageTitle>Branch protection · @Repo?.Name</PageTitle>
 
@@ -31,7 +32,7 @@ else if (Repo != null)
             <MudText Class="mud-text-secondary" Typo="Typo.body2">
                 Rules apply to branches whose name matches the pattern: an exact name such as <code>main</code>, or a glob such as
                 <code>release/*</code> (<code>*</code> and <code>?</code> stay within one path segment, <code>**</code> matches across <code>/</code>).
-                When several rules match a branch, the strictest setting of each wins. They are enforced on git push, branch creation and deletion, and pull request merges.
+                When several rules match a branch, the strictest setting of each wins. They are enforced on git push, branch creation and deletion, and pull request merges. A rule can also require a merge queue.
             </MudText>
         </div>
         @if (draft == null)
@@ -85,6 +86,38 @@ else if (Repo != null)
                     </MudCheckBox>
                 </MudItem>
                 <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="draft.MergeQueueEnabled" Color="Color.Primary" Dense="true">
+                        <b>Require a merge queue</b> <span class="muted small">("Merge" becomes "Add to merge queue": each pull request is tested merged with the target and every pull request ahead of it, then merged in order)</span>
+                    </MudCheckBox>
+                    @if (draft.MergeQueueEnabled)
+                    {
+                        <MudGrid Spacing="2" Class="mt-1">
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int" Label="Max batch size" @bind-Value="draft.MergeQueueMaxBatch" Min="1" Max="20" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 HelperText="Entries built and tested at once" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudSelect T="string" Label="Merge method" Value="@(draft.MergeQueueStrategy?.ToString() ?? "")" ValueChanged="SetQueueStrategy"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" HelperText="Must be allowed in merge settings">
+                                    <MudSelectItem T="string" Value="@("")">Repository default (@MergeStrategySettings.Label(MergeStrategySettings.Default(Repo)))</MudSelectItem>
+                                    @foreach (var st in MergeStrategySettings.AllowedList(Repo))
+                                    {
+                                        <MudSelectItem T="string" Value="@st.ToString()">@MergeStrategySettings.Label(st)</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int" Label="Pipeline timeout (minutes)" @bind-Value="draft.MergeQueueTimeoutMinutes" Min="1" Max="1440" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudCheckBox T="bool" @bind-Value="draft.MergeQueueRequireCi" Color="Color.Primary" Dense="true">
+                                    <b>Require CI</b> <span class="muted small">(a pipeline must pass on the merged result)</span>
+                                </MudCheckBox>
+                            </MudItem>
+                        </MudGrid>
+                    }
+                </MudItem>
+                <MudItem xs="12">
                     <span class="gb-section-label">Default reviewers <span class="muted small">(added to new pull requests that target a matching branch)</span></span>
                     <div class="d-flex flex-wrap gap-3">
                         @foreach (var u in candidates)
@@ -120,6 +153,10 @@ else if (Repo != null)
                     </div>
                 </div>
                 <div class="gb-row-right">
+                    @if (r.MergeQueueEnabled && matching.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Train" Href="@MergeQueueUrls.Queue(Repo, matching[0])">Queue</MudButton>
+                    }
                     <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="() => StartEdit(r)">Edit</MudButton>
                     <MudTooltip Text="Delete rule">
                         <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
@@ -166,6 +203,8 @@ else if (Repo != null)
         if (r.DismissStaleApprovals) yield return "stale approvals dismissed";
         if (r.RequireThreadResolution) yield return "threads must be resolved";
         if (r.RequireCodeOwnerApproval) yield return "code owners must approve";
+        if (r.MergeQueueEnabled)
+            yield return $"merge queue (batch {r.MergeQueueMaxBatch}{(r.MergeQueueRequireCi ? ", CI required" : "")}{(r.MergeQueueStrategy is { } qs ? ", " + MergeStrategySettings.Label(qs).ToLowerInvariant() : "")})";
         if (r.AllowAdminBypass) yield return "admins can bypass";
         if (r.DefaultReviewerIds.Count > 0)
             yield return "default reviewers: " + string.Join(", ", candidates.Where(u => r.DefaultReviewerIds.Contains(u.Id)).Select(u => u.DisplayName));
@@ -186,8 +225,13 @@ else if (Repo != null)
             BlockForcePushes = r.BlockForcePushes, BlockDeletion = r.BlockDeletion, RequireChecksToPass = r.RequireChecksToPass,
             DismissStaleApprovals = r.DismissStaleApprovals, AllowAdminBypass = r.AllowAdminBypass, DefaultReviewerIds = [.. r.DefaultReviewerIds],
             RequireThreadResolution = r.RequireThreadResolution, RequireCodeOwnerApproval = r.RequireCodeOwnerApproval,
+            MergeQueueEnabled = r.MergeQueueEnabled, MergeQueueMaxBatch = r.MergeQueueMaxBatch, MergeQueueRequireCi = r.MergeQueueRequireCi,
+            MergeQueueStrategy = r.MergeQueueStrategy, MergeQueueTimeoutMinutes = r.MergeQueueTimeoutMinutes,
         };
     }
+
+    private void SetQueueStrategy(string value) =>
+        draft!.MergeQueueStrategy = Enum.TryParse<MergeStrategy>(value, out var st) ? st : null;
 
     private void ToggleReviewer(int id, bool on)
     {
