@@ -1,0 +1,190 @@
+@page "/admin/system"
+@using GitBench.Services.Attachments
+@using GitBench.Services.Hosting
+@inject CurrentUser Me
+@inject SystemInfoService Info
+
+@* Read-only operations overview for site administrators: version, database, storage, queues, health, hosting checks, backups. *@
+
+<PageTitle>System · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can see the system status." />
+}
+else
+{
+    <div class="page-header mb-4 d-flex align-center">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">System</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                How this GitBench is running. Settings are read-only here: change <code>appsettings</code> or environment variables and restart.
+            </MudText>
+        </div>
+        <span class="flex-grow-1"></span>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Refresh" Disabled="@busy" OnClick="() => LoadAsync(true)">Refresh</MudButton>
+    </div>
+
+    @if (snap == null)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Server</MudText>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    <tr><td>Version</td><td class="mono" data-testid="sys-version">@snap.Version</td></tr>
+                    <tr><td>Runtime</td><td>@snap.Runtime on @snap.Os</td></tr>
+                    <tr><td>Environment</td><td>@snap.Environment</td></tr>
+                    <tr><td>Started</td><td>@snap.StartedUtc.ToLocalTime().ToString("g") (up @Uptime(snap.StartedUtc))</td></tr>
+                    <tr><td>Memory</td><td>@AttachmentFormat.Size(snap.WorkingSetBytes) working set</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Database</MudText>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    <tr><td>Provider</td><td data-testid="sys-provider">@snap.Database.Provider</td></tr>
+                    <tr><td>Target</td><td class="mono">@snap.Database.Target</td></tr>
+                    <tr><td>Server version</td><td>@(snap.Database.ServerVersion ?? "unknown")</td></tr>
+                    <tr><td>Size</td><td>@(snap.Database.SizeBytes is { } s ? AttachmentFormat.Size(s) : "unknown")</td></tr>
+                    <tr><td>Migrations</td><td>@snap.Database.Applied applied, @snap.Database.Pending pending @(snap.Database.LatestMigration is { } m ? $"(latest {m})" : "")</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Health</MudText>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    @foreach (var h in snap.Health)
+                    {
+                        <tr>
+                            <td>@h.Name</td>
+                            <td><MudChip T="string" Size="Size.Small" Color="@(h.Status == "Healthy" ? Color.Success : h.Status == "Degraded" ? Color.Warning : Color.Error)">@h.Status</MudChip></td>
+                            <td>@h.Description</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">The same checks as <code>/health/ready</code>.</MudText>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Storage</MudText>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <thead><tr><th>Folder</th><th>Path</th><th class="text-right">Files</th><th class="text-right">Size</th></tr></thead>
+                <tbody>
+                    @foreach (var e in snap.Storage)
+                    {
+                        <tr>
+                            <td>@e.Name</td>
+                            <td class="mono">@e.Path</td>
+                            @if (e.Exists)
+                            {
+                                <td class="text-right">@e.Files.ToString("N0")@(e.Truncated ? "+" : "")</td>
+                                <td class="text-right">@AttachmentFormat.Size(e.Bytes)@(e.Truncated ? "+" : "")</td>
+                            }
+                            else
+                            {
+                                <td colspan="2" class="text-right mud-text-secondary">not created yet</td>
+                            }
+                        </tr>
+                    }
+                    <tr><td><b>Total</b></td><td></td><td class="text-right">@snap.Storage.Sum(e => e.Files).ToString("N0")</td><td class="text-right"><b>@AttachmentFormat.Size(snap.Storage.Sum(e => e.Bytes))</b></td></tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">Measured on demand and cached for a minute. Package registry details: <MudLink Href="/admin/packages">Packages</MudLink>.</MudText>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Queues</MudText>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <thead><tr><th>Queue</th><th class="text-right">Waiting</th><th class="text-right">Active</th><th class="text-right">Failed (24 h)</th></tr></thead>
+                <tbody>
+                    @foreach (var q in snap.Queues)
+                    {
+                        <tr title="@q.Description">
+                            <td>@q.Name<div class="mud-text-secondary" style="font-size:.75rem">@q.Description</div></td>
+                            <td class="text-right">@q.Waiting.ToString("N0")</td>
+                            <td class="text-right">@q.Active.ToString("N0")</td>
+                            <td class="text-right">@(q.Failed24h > 0 ? q.Failed24h.ToString("N0") : "0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h2">Backups</MudText>
+                <span class="flex-grow-1"></span>
+                <MudButton Href="/admin/backups" Size="Size.Small" Variant="Variant.Outlined">Manage backups</MudButton>
+            </div>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    <tr><td>Schedule</td><td data-testid="sys-backup-schedule">@(snap.Backups.ScheduleEnabled ? "On (Backup:Enabled)" : "Off")</td></tr>
+                    <tr><td>Folder</td><td class="mono">@snap.Backups.Directory</td></tr>
+                    <tr><td>Archives</td><td>@snap.Backups.Count (@AttachmentFormat.Size(snap.Backups.TotalBytes))</td></tr>
+                    <tr><td>Last success</td><td>@(snap.Backups.Last.LastSuccessUtc is { } t ? $"{t.ToLocalTime():g}: {snap.Backups.Last.LastFile} ({AttachmentFormat.Size(snap.Backups.Last.LastBytes)}, {snap.Backups.Last.LastTrigger})" : "never")</td></tr>
+                    @if (snap.Backups.Last.LastError != null)
+                    {
+                        <tr><td>Last error</td><td class="mud-error-text">@snap.Backups.Last.LastAttemptUtc?.ToLocalTime().ToString("g"): @snap.Backups.Last.LastError</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Hosting checks</MudText>
+            @if (snap.Checks.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Nothing to report.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        @foreach (var c in snap.Checks.OrderByDescending(c => c.Severity))
+                        {
+                            <tr>
+                                <td><MudChip T="string" Size="Size.Small" Color="@(c.Severity == CheckSeverity.Problem ? Color.Error : c.Severity == CheckSeverity.Warning ? Color.Warning : Color.Default)">@c.Severity</MudChip></td>
+                                <td class="mono">@c.Key</td>
+                                <td>@c.Message</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private SystemSnapshot? snap;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin != true) return;
+        await LoadAsync(false);
+    }
+
+    private async Task LoadAsync(bool refresh)
+    {
+        busy = true;
+        try { snap = await Info.GetAsync(refresh); }
+        finally { busy = false; }
+    }
+
+    private static string Uptime(DateTime startedUtc)
+    {
+        var t = DateTime.UtcNow - startedUtc;
+        return t.TotalDays >= 1 ? $"{(int)t.TotalDays} d {t.Hours} h" : t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes} min" : $"{(int)t.TotalMinutes} min";
+    }
+}

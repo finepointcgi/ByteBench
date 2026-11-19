@@ -150,7 +150,10 @@ public class CsvTests(TestApp app) : IClassFixture<TestApp>
     {
         var (source, _) = await SourceProjectAsync();
         await using (var db = app.Db())
-            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER csv_test_fail BEFORE INSERT ON Issues WHEN NEW.Title = 'boom' BEGIN SELECT RAISE(ABORT, 'boom'); END;");
+            await db.Database.ExecuteSqlRawAsync(TestApp.UsingPostgres
+                ? "CREATE FUNCTION csv_test_fail_fn() RETURNS trigger AS $$ BEGIN IF NEW.\"Title\" = 'boom' THEN RAISE EXCEPTION 'boom'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql; " +
+                  "CREATE TRIGGER csv_test_fail BEFORE INSERT ON \"Issues\" FOR EACH ROW EXECUTE FUNCTION csv_test_fail_fn();"
+                : "CREATE TRIGGER csv_test_fail BEFORE INSERT ON Issues WHEN NEW.Title = 'boom' BEGIN SELECT RAISE(ABORT, 'boom'); END;");
         try
         {
             await using var s = app.Scope(app.UserId("carol"));
@@ -168,7 +171,9 @@ public class CsvTests(TestApp app) : IClassFixture<TestApp>
         finally
         {
             await using var db = app.Db();
-            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER csv_test_fail;");
+            await db.Database.ExecuteSqlRawAsync(TestApp.UsingPostgres
+                ? "DROP TRIGGER csv_test_fail ON \"Issues\"; DROP FUNCTION csv_test_fail_fn();"
+                : "DROP TRIGGER csv_test_fail;");
         }
     }
 

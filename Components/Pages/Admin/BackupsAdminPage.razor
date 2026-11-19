@@ -1,0 +1,148 @@
+@page "/admin/backups"
+@using GitBench.Services.Attachments
+@using GitBench.Components.Repositories
+@using GitBench.Services.Audit
+@using GitBench.Services.Hosting.Backup
+@inject CurrentUser Me
+@inject BackupService Backups
+@inject AuditLog Audit
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+@* Back up now, download or delete archives. Restore is a command (dotnet GitBench.dll restore <file>) run with the server stopped. *@
+
+<PageTitle>Backups · GitBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can manage backups." />
+}
+else
+{
+    <div class="page-header mb-4 d-flex align-center">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Backups</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                One archive holds the database, repositories, attachments, packages, LFS objects, pages and keys, with a manifest and SHA-256 checksums.
+            </MudText>
+        </div>
+        <span class="flex-grow-1"></span>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(running)" OnClick="RunNow" data-testid="backup-now"
+                   StartIcon="@Icons.Material.Outlined.Backup">@(running ? "Backing up…" : "Back up now")</MudButton>
+    </div>
+
+    @if (running)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mb-3" />
+    }
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 980px">
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>Folder</td><td class="mono">@Backups.Directory</td></tr>
+                <tr><td>Schedule</td><td>@(Backups.Options.Enabled ? $"every {Backups.Options.IntervalHours:0.##} h from {Backups.Options.StartTime:HH:mm} UTC" : "off (Backup:Enabled=false)")</td></tr>
+                <tr><td>Retention</td><td>@Retention()</td></tr>
+                <tr><td>Database</td><td>@Backups.Layout.Provider@(Backups.Layout.Provider == GitBench.Services.Hosting.DatabaseProvider.Postgres ? " (pg_dump)" : " (online backup)")</td></tr>
+            </tbody>
+        </MudSimpleTable>
+        @if (status.LastError != null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3">Last attempt failed (@status.LastAttemptUtc?.ToLocalTime().ToString("g")): @status.LastError</MudAlert>
+        }
+    </MudPaper>
+
+    <MudPaper Outlined="true" Style="max-width: 980px" Class="mb-4">
+        @if (files.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary pa-4">No backups yet.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+                <thead><tr><th>Archive</th><th>Made</th><th class="text-right">Size</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var f in files)
+                    {
+                        <tr>
+                            <td class="mono">@f.Name</td>
+                            <td>@f.CreatedUtc.ToLocalTime().ToString("g")</td>
+                            <td class="text-right">@AttachmentFormat.Size(f.Bytes)</td>
+                            <td class="text-right">
+                                <MudLink Href="@($"/admin/backups/download/{f.Name}")" Class="mr-3">Download</MudLink>
+                                <MudLink Href="@($"/admin/backups/download/{f.Name}.sha256")" Class="mr-3">SHA-256</MudLink>
+                                <MudLink Typo="Typo.body2" Color="Color.Error" Style="cursor:pointer" @onclick="() => Delete(f.Name)">Delete</MudLink>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-5" Style="max-width: 980px">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Restoring</MudText>
+        <MudText Typo="Typo.body2">
+            A restore replaces the database and files, so it runs as a command with GitBench stopped, using the same configuration:
+        </MudText>
+        <pre class="mono pa-2 mt-2" style="overflow:auto">dotnet GitBench.dll restore gitbench-backup-YYYYMMDD-HHMMSS.tar.gz</pre>
+        <MudText Typo="Typo.body2">
+            It checks every checksum, the format and database version, and refuses to overwrite a non-empty installation unless you add <code>--force</code>.
+            In Docker: <code>docker compose run --rm gitbench restore /data/backups/gitbench-backup-….tar.gz</code>. Archives contain password hashes, secrets and keys: store them encrypted.
+        </MudText>
+    </MudPaper>
+}
+
+@code {
+    private List<BackupFileInfo> files = [];
+    private BackupStatusFile status = new();
+    private bool running;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin != true) return;
+        Load();
+    }
+
+    private void Load()
+    {
+        files = Backups.List().ToList();
+        status = Backups.Status();
+        running = Backups.IsRunning;
+    }
+
+    private string Retention() =>
+        (Backups.Options.KeepLast, Backups.Options.KeepDays) switch
+        {
+            (0, 0) => "keep everything",
+            (var n, 0) => $"newest {n}",
+            (0, var d) => $"{d} days",
+            var (n, d) => $"newest {n}, and nothing older than {d} days",
+        };
+
+    private async Task RunNow()
+    {
+        running = true;
+        StateHasChanged();
+        try
+        {
+            var r = await Backups.RunAsync("admin");
+            await Audit.RecordAsync("admin.backup_created", "backup", Path.GetFileName(r.Path), details: new { file = Path.GetFileName(r.Path), bytes = r.Bytes, files = r.Files });
+            Snackbar.Add($"Backup written: {Path.GetFileName(r.Path)} ({AttachmentFormat.Size(r.Bytes)})", Severity.Success);
+        }
+        catch (BackupException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add("Backup failed: " + ex.Message, Severity.Error); }
+        finally { running = false; Load(); }
+    }
+
+    private async Task Delete(string name)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete backup", $"Delete {name}? This can't be undone.")) return;
+        if (Backups.Delete(name))
+        {
+            await Audit.RecordAsync("admin.backup_deleted", "backup", name, details: new { file = name });
+            Snackbar.Add("Deleted " + name, Severity.Success);
+        }
+        Load();
+    }
+}

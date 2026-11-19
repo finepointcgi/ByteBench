@@ -142,6 +142,14 @@ public sealed class GqlService(IDbContextFactory<AppDbContext> dbFactory, Projec
             if (field.SortKeys.Count == 0) throw new GqlException($"Results can't be sorted by {field.Name}.", s.Start, s.Length);
             foreach (var key in field.SortKeys)
             {
+                // Empty values sort as the smallest (first ascending, last descending) on every database; PostgreSQL would
+                // otherwise treat NULL as the largest.
+                if (!key.ReturnType.IsValueType || Nullable.GetUnderlyingType(key.ReturnType) != null)
+                {
+                    var present = Expression.Lambda(Expression.NotEqual(key.Body, Expression.Constant(null, key.ReturnType)), key.Parameters);
+                    q = OrderBy(q, present, s.Descending, first);
+                    first = false;
+                }
                 q = OrderBy(q, key, s.Descending, first);
                 first = false;
             }
