@@ -27,6 +27,8 @@ public class ProjectAccessTests(TestApp app) : IClassFixture<TestApp>
             [Permission.DeleteProject] = ProjectRole.Owner,
             [Permission.PublishPackages] = ProjectRole.Developer,
             [Permission.DeletePackages] = ProjectRole.Maintainer,
+            [Permission.ToggleFlags] = ProjectRole.Developer,
+            [Permission.ManageFlags] = ProjectRole.Maintainer,
         };
         Assert.Equal(Enum.GetValues<Permission>().Length, minimum.Count); // a new permission must be added to this table
         foreach (var role in Enum.GetValues<ProjectRole>())

@@ -237,11 +237,13 @@ Every project has members, each with one role. `Services/ProjectAccess.cs` makes
 | CreatePullRequest | | ✓ | ✓ | ✓ |
 | ReviewPullRequest | | ✓ | ✓ | ✓ |
 | PublishPackages (NuGet/npm publish, docker push) | | ✓ | ✓ | ✓ |
+| ToggleFlags (turn feature flags on/off, edit values, rules and segments) | | ✓ | ✓ | ✓ |
 | ManageLabelsAndMilestones (also sprints: create, edit, start, complete, delete) | | | ✓ | ✓ |
 | MergePullRequest | | | ✓ | ✓ |
 | DeleteBranch | | | ✓ | ✓ |
 | ManageRepositories | | | ✓ | ✓ |
 | DeletePackages (packages, versions, image tags) | | | ✓ | ✓ |
+| ManageFlags (create, archive, delete feature flags; environments, SDK keys) | | | ✓ | ✓ |
 | ManageMembers | | | | ✓ |
 | ManageProjectSettings (name, description, visibility) | | | | ✓ |
 | DeleteProject | | | | ✓ |

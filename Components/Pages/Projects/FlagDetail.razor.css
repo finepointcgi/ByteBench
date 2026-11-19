@@ -1,0 +1,15 @@
+.fd-page { max-width: 1100px; }
+.fd-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.fd-muted { margin-left: 10px; font-size: 0.8rem; color: var(--mud-palette-text-secondary); }
+.fd-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.fd-rule { border: 1px solid var(--mud-palette-lines-default); border-radius: 4px; padding: 8px; margin-bottom: 8px; }
+.fd-rule-head, .fd-clause { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fd-num { font-weight: 700; min-width: 1.5em; text-align: center; }
+.fd-if { min-width: 2em; }
+.fd-grow { flex: 1 1 200px; }
+.fd-attr { flex: 0 1 180px; }
+.fd-op { flex: 0 1 190px; }
+.fd-pct { flex: 0 1 180px; }
+::deep .fd-val-edit { flex: 1 1 240px; min-width: 160px; }
+.fd-scroll { overflow-x: auto; }
+.fd-val { max-width: 280px; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }

@@ -164,6 +164,36 @@ public static class ChatEventClassifier
                 });
                 break;
             }
+            case WebhookEventNames.FlagChanged:
+            {
+                var key = S(env, "flag", "key");
+                var environment = S(env, "environment", "name");
+                var kind = S(env, "change", "kind") ?? "changed";
+                var what = kind switch
+                {
+                    "toggled" => $"turned {S(env, "change", "newValue")}",
+                    "created" => "created",
+                    "archived" => "archived",
+                    "unarchived" => "restored",
+                    "deleted" => "deleted",
+                    "rules" => "changed the targeting rules of",
+                    "default_value" => "changed the default value of",
+                    "off_value" => "changed the off value of",
+                    _ => "updated",
+                };
+                result.Add(new ChatMessage
+                {
+                    Event = ChatEvents.FlagChanged,
+                    Summary = $"{actor ?? "Someone"} {what} flag {key}" + (environment != null ? $" in {environment}" : ""),
+                    Title = $"Flag {key}" + (environment != null ? $" · {environment}" : ""),
+                    Url = S(env, "url"),
+                    Status = kind == "deleted" ? ChatStatus.Warning : ChatStatus.Info,
+                    Actor = actor,
+                    Context = projectKey,
+                    Fields = [new("Flag", S(env, "flag", "name") ?? key ?? ""), new("Environment", environment ?? "all"), new("Change", Humanize(kind))],
+                });
+                break;
+            }
             case WebhookEventNames.ReleasePublished:
             {
                 var r = env["release"];

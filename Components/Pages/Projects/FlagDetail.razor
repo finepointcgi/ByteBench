@@ -1,0 +1,353 @@
+@page "/p/{Key}/flags/{FlagKey}"
+@using System.Globalization
+@using GitBench.Services.Flags
+@using GitBench.Components.Repositories
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject FlagService FlagSvc
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>@(flag?.Name ?? FlagKey) · Feature flags · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This project or flag does not exist." />
+}
+else if (project != null && flag != null)
+{
+<div class="fd-page">
+    <div class="page-header">
+        <div>
+            <MudLink Href="@FlagUrls.List(project.Key)" Typo="Typo.body2">← All flags</MudLink>
+            <MudText Typo="Typo.h5" HtmlTag="h1">@flag.Name @if (flag.IsArchived) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">archived</MudChip> }</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2"><code>@flag.Key</code> · @flag.Type.ToString().ToLowerInvariant()</MudText>
+        </div>
+        @if (canManage)
+        {
+            <div>
+                <MudButton Variant="Variant.Outlined" OnClick="ArchiveAsync">@(flag.IsArchived ? "Restore" : "Archive")</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="DeleteAsync">Delete</MudButton>
+            </div>
+        }
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-3 mb-4">
+        <MudTextField T="string" @bind-Value="name" Label="Name" MaxLength="120" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="@(!canToggle)" Class="mb-3" />
+        <MudTextField T="string" @bind-Value="description" Label="Description" Lines="2" MaxLength="2000" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="@(!canToggle)" Class="mb-3" />
+        <MudTextField T="string" @bind-Value="issues" Label="Linked issues (numbers, comma separated)" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="@(!canToggle)" Class="mb-2" />
+        <div class="mb-2">
+            @foreach (var n in flag.LinkedIssues) { <MudChip T="string" Size="Size.Small" Href="@($"/p/{project.Key}/issues/{n}")">@($"{project.Key}-{n}")</MudChip> }
+        </div>
+        <div class="fd-row">
+            @ValueEditor("Value when off (all environments)", offText, v => offText = v, canToggle)
+        </div>
+        @if (canToggle)
+        {
+            <div class="mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDetailsAsync">Save details</MudButton>
+            </div>
+        }
+    </MudPaper>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Environments</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+        When on, the first matching rule is served; with no match, the default value. When off, the off value is served.
+        A percentage rollout puts a stable share of users (by hashing the bucket attribute with the flag and rule) into the rule; raising it only adds users.
+    </MudText>
+    @foreach (var e in envs)
+    {
+        <MudPaper Outlined="true" Class="pa-3 mb-3" @key="e.State.EnvironmentId">
+            <div class="fd-head">
+                <div>
+                    <b>@e.State.Environment.Name</b>
+                    <span class="fd-muted">updated @e.State.UpdatedAt.ToLocalTime().ToString("MMM d, HH:mm") · @(e.State.LastEvaluatedAt is { } le ? $"evaluated {le.ToLocalTime():MMM d, HH:mm}" : "never evaluated")</span>
+                </div>
+                <MudSwitch T="bool" Value="e.Enabled" ValueChanged="@(v => ToggleAsync(e, v))" Color="Color.Success" Label="@(e.Enabled ? "On" : "Off")"
+                           Disabled="@(!canToggle || flag.IsArchived)" aria-label="@($"Enabled in {e.State.Environment.Name}")" />
+            </div>
+            @ValueEditor("Default value (when on, no rule matches)", e.DefaultText, v => e.DefaultText = v, canToggle && !flag.IsArchived)
+
+            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Targeting rules (first match wins)</MudText>
+            @for (var ri = 0; ri < e.Rules.Count; ri++)
+            {
+                var rule = e.Rules[ri];
+                var idx = ri;
+                <div class="fd-rule" @key="rule">
+                    <div class="fd-rule-head">
+                        <span class="fd-num">@(idx + 1)</span>
+                        <MudTextField T="string" @bind-Value="rule.Description" Label="Description (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" Class="fd-grow" ReadOnly="@(!canToggle)" />
+                        @if (canToggle && !flag.IsArchived)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" Disabled="@(idx == 0)" OnClick="() => Move(e, idx, -1)" aria-label="Move up" />
+                            <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small" Disabled="@(idx == e.Rules.Count - 1)" OnClick="() => Move(e, idx, 1)" aria-label="Move down" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" OnClick="() => e.Rules.RemoveAt(idx)" aria-label="Remove rule" />
+                        }
+                    </div>
+                    @foreach (var c in rule.Clauses.ToList())
+                    {
+                        <div class="fd-clause" @key="c">
+                            <MudText Typo="Typo.body2" Class="fd-if">@(c == rule.Clauses[0] ? "if" : "and")</MudText>
+                            <MudTextField T="string" @bind-Value="c.Attribute" Label="Attribute" Placeholder="userId, email, plan…" Variant="Variant.Outlined" Margin="Margin.Dense" Class="fd-attr"
+                                          Disabled="@(c.Op is "inSegment" or "notInSegment")" ReadOnly="@(!canToggle)" />
+                            <MudSelect T="string" @bind-Value="c.Op" Label="Operator" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="fd-op" ReadOnly="@(!canToggle)">
+                                @foreach (var op in FlagEvaluator.Operators) { <MudSelectItem Value="@op">@OpLabel(op)</MudSelectItem> }
+                            </MudSelect>
+                            <MudTextField T="string" @bind-Value="c.ValuesText" Label="@(c.Op is "inSegment" or "notInSegment" ? "Segment keys" : "Values (comma separated)")" Variant="Variant.Outlined" Margin="Margin.Dense" Class="fd-grow" ReadOnly="@(!canToggle)" />
+                            @if (canToggle && !flag.IsArchived) { <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="() => rule.Clauses.Remove(c)" aria-label="Remove condition" /> }
+                        </div>
+                    }
+                    <div class="fd-clause">
+                        @if (canToggle && !flag.IsArchived) { <MudButton Size="Size.Small" OnClick="() => rule.Clauses.Add(new ClauseEdit())">Add condition</MudButton> }
+                        <MudTextField T="string" @bind-Value="rule.PercentageText" Label="Rollout % (blank: everyone matching)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="fd-pct" ReadOnly="@(!canToggle)" />
+                        @if (!string.IsNullOrWhiteSpace(rule.PercentageText))
+                        {
+                            <MudTextField T="string" @bind-Value="rule.BucketBy" Label="Bucket by" Variant="Variant.Outlined" Margin="Margin.Dense" Class="fd-pct" ReadOnly="@(!canToggle)" />
+                        }
+                        @ValueEditor("Serve", rule.ValueText, v => rule.ValueText = v, canToggle && !flag.IsArchived)
+                    </div>
+                </div>
+            }
+            @if (canToggle && !flag.IsArchived)
+            {
+                <MudButton Size="Size.Small" Class="mt-1" OnClick="() => e.Rules.Add(NewRule())" StartIcon="@Icons.Material.Filled.Add">Add rule</MudButton>
+                <div class="mt-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SaveEnvAsync(e)">Save @e.State.Environment.Name</MudButton>
+                </div>
+            }
+        </MudPaper>
+    }
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2 mt-4">History</MudText>
+    <MudPaper Outlined="true" Class="mb-4 fd-scroll">
+        <MudSimpleTable Dense="true" Elevation="0">
+            <thead><tr><th>When</th><th>Who</th><th>Environment</th><th>Change</th><th>From</th><th>To</th></tr></thead>
+            <tbody>
+                @foreach (var c in history)
+                {
+                    <tr @key="c.Id">
+                        <td title="@c.At.ToString("u")">@c.At.ToLocalTime().ToString("MMM d, yyyy HH:mm")</td>
+                        <td>@(c.ActorName ?? "system")</td>
+                        <td>@(c.EnvironmentName ?? "all")</td>
+                        <td>@Humanize(c.Kind)</td>
+                        <td class="fd-val">@Show(c, c.OldValue)</td>
+                        <td class="fd-val">@Show(c, c.NewValue)</td>
+                    </tr>
+                }
+                @if (history.Count == 0) { <tr><td colspan="6" class="mud-text-secondary">No changes recorded.</td></tr> }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+    @if (history.Count < historyTotal)
+    {
+        <MudButton Variant="Variant.Outlined" OnClick="MoreHistoryAsync">Show older changes</MudButton>
+    }
+</div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public string FlagKey { get; set; } = "";
+
+    private sealed class ClauseEdit
+    {
+        public string? Attribute { get; set; }
+        public string Op { get; set; } = "equals";
+        public string ValuesText { get; set; } = "";
+    }
+
+    private sealed class RuleEdit
+    {
+        public string Id { get; set; } = "";
+        public string? Description { get; set; }
+        public List<ClauseEdit> Clauses { get; set; } = [];
+        public string PercentageText { get; set; } = "";
+        public string BucketBy { get; set; } = "userId";
+        public string ValueText { get; set; } = "";
+    }
+
+    private sealed class EnvEdit
+    {
+        public FlagEnvironmentState State { get; set; } = null!;
+        public bool Enabled { get; set; }
+        public string DefaultText { get; set; } = "";
+        public List<RuleEdit> Rules { get; set; } = [];
+    }
+
+    private Project? project;
+    private FeatureFlag? flag;
+    private bool notFound, canToggle, canManage;
+    private string name = "", description = "", issues = "", offText = "";
+    private List<EnvEdit> envs = [];
+    private List<FlagChange> history = [];
+    private int historyTotal;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        if (project == null) { notFound = true; return; }
+        var perms = await Access.GetPermissionsAsync(project.Id);
+        canToggle = perms.Can(Permission.ToggleFlags);
+        canManage = perms.Can(Permission.ManageFlags);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        flag = await FlagSvc.GetFlagAsync(project!.Id, FlagKey);
+        notFound = flag == null;
+        if (flag == null) return;
+        name = flag.Name;
+        description = flag.Description ?? "";
+        issues = string.Join(", ", flag.LinkedIssues);
+        offText = FlagEvaluator.ToInput(flag.Type, flag.OffValue);
+        envs = flag.States.OrderBy(s => s.Environment.Name, StringComparer.OrdinalIgnoreCase).Select(s => new EnvEdit
+        {
+            State = s, Enabled = s.Enabled, DefaultText = FlagEvaluator.ToInput(flag.Type, s.DefaultValue),
+            Rules = FlagEvaluator.ParseRules(s.RulesJson).Select(r => new RuleEdit
+            {
+                Id = r.Id, Description = r.Description, PercentageText = r.Percentage?.ToString(CultureInfo.InvariantCulture) ?? "", BucketBy = r.BucketBy,
+                ValueText = FlagEvaluator.ToInput(flag.Type, r.Value?.ToJsonString()),
+                Clauses = r.Clauses.Select(c => new ClauseEdit { Attribute = c.Attribute, Op = c.Op, ValuesText = string.Join(", ", c.Values) }).ToList(),
+            }).ToList(),
+        }).ToList();
+        (history, historyTotal) = await FlagSvc.HistoryAsync(project.Id, FlagKey, 25);
+    }
+
+    private async Task MoreHistoryAsync()
+    {
+        var (more, total) = await FlagSvc.HistoryAsync(project!.Id, FlagKey, 25, history.Count);
+        history.AddRange(more);
+        historyTotal = total;
+    }
+
+    private async Task Try(Func<Task> action, string? done = null)
+    {
+        try { await action(); if (done != null) Snackbar.Add(done, Severity.Success); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        await LoadAsync();
+    }
+
+    private static string OpLabel(string op) => op switch
+    {
+        "equals" => "equals", "notEquals" => "does not equal", "in" => "is one of", "notIn" => "is not one of", "contains" => "contains",
+        "startsWith" => "starts with", "endsWith" => "ends with", "inSegment" => "is in segment", "notInSegment" => "is not in segment", _ => op,
+    };
+
+    private static string Humanize(string kind) => kind switch
+    {
+        "toggled" => "Turned on/off", "default_value" => "Default value", "off_value" => "Off value", "rules" => "Targeting rules",
+        "details" => "Details", "issues" => "Linked issues", "created" => "Created", "archived" => "Archived", "unarchived" => "Restored", _ => kind,
+    };
+
+    private static string Show(FlagChange c, string? v)
+    {
+        if (v == null) return "";
+        if (c.Kind == "rules") return $"{FlagEvaluator.ParseRules(v).Count} rule(s)";
+        return v.Length > 120 ? v[..120] + "…" : v;
+    }
+
+    private RuleEdit NewRule() => new()
+    {
+        Clauses = [new ClauseEdit { Attribute = "userId", Op = "in" }],
+        ValueText = FlagEvaluator.ToInput(flag!.Type, FlagEvaluator.DefaultValueText(flag.Type, true)),
+    };
+
+    private static void Move(EnvEdit e, int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= e.Rules.Count) return;
+        (e.Rules[index], e.Rules[target]) = (e.Rules[target], e.Rules[index]);
+    }
+
+    private RenderFragment ValueEditor(string label, string value, Action<string> set, bool editable) => builder =>
+    {
+        var seq = 0;
+        if (flag!.Type == FlagType.Boolean)
+        {
+            builder.OpenComponent<MudSelect<string>>(seq++);
+            builder.AddAttribute(seq++, "Label", label);
+            builder.AddAttribute(seq++, "Value", value is "true" ? "true" : "false");
+            builder.AddAttribute(seq++, "ValueChanged", EventCallback.Factory.Create<string>(this, set));
+            builder.AddAttribute(seq++, "Variant", Variant.Outlined);
+            builder.AddAttribute(seq++, "Margin", Margin.Dense);
+            builder.AddAttribute(seq++, "Dense", true);
+            builder.AddAttribute(seq++, "Class", "fd-val-edit");
+            builder.AddAttribute(seq++, "ReadOnly", !editable);
+            builder.AddAttribute(seq++, "ChildContent", (RenderFragment)(b =>
+            {
+                b.OpenComponent<MudSelectItem<string>>(0); b.AddAttribute(1, "Value", "true"); b.AddAttribute(2, "ChildContent", (RenderFragment)(x => x.AddContent(0, "true"))); b.CloseComponent();
+                b.OpenComponent<MudSelectItem<string>>(3); b.AddAttribute(4, "Value", "false"); b.AddAttribute(5, "ChildContent", (RenderFragment)(x => x.AddContent(0, "false"))); b.CloseComponent();
+            }));
+            builder.CloseComponent();
+        }
+        else
+        {
+            builder.OpenComponent<MudTextField<string>>(seq++);
+            builder.AddAttribute(seq++, "Label", label + (flag.Type is FlagType.Number or FlagType.Json ? $" ({FlagEvaluator.TypeName(flag.Type)})" : ""));
+            builder.AddAttribute(seq++, "Value", value);
+            builder.AddAttribute(seq++, "ValueChanged", EventCallback.Factory.Create<string>(this, set));
+            builder.AddAttribute(seq++, "Variant", Variant.Outlined);
+            builder.AddAttribute(seq++, "Margin", Margin.Dense);
+            builder.AddAttribute(seq++, "Class", "fd-val-edit");
+            builder.AddAttribute(seq++, "ReadOnly", !editable);
+            if (flag.Type == FlagType.Json) builder.AddAttribute(seq++, "Lines", 2);
+            builder.CloseComponent();
+        }
+    };
+
+    private Task SaveDetailsAsync() => Try(async () =>
+    {
+        var numbers = issues.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s.TrimStart('#'), out var n) ? n : throw new InvalidOperationException($"'{s}' is not an issue number.")).ToList();
+        await FlagSvc.UpdateDetailsAsync(project!.Id, flag!.Key, name, description, numbers);
+        await FlagSvc.SetOffValueAsync(project.Id, flag.Key, FlagEvaluator.FromInput(flag.Type, offText));
+    }, "Saved.");
+
+    private Task ToggleAsync(EnvEdit e, bool on) => Try(() => FlagSvc.SetEnabledAsync(project!.Id, flag!.Key, e.State.EnvironmentId, on));
+
+    private Task SaveEnvAsync(EnvEdit e) => Try(async () =>
+    {
+        var rules = e.Rules.Select(r =>
+        {
+            double? pct = null;
+            if (!string.IsNullOrWhiteSpace(r.PercentageText))
+            {
+                if (!double.TryParse(r.PercentageText.Trim().TrimEnd('%'), NumberStyles.Float, CultureInfo.InvariantCulture, out var p))
+                    throw new InvalidOperationException($"'{r.PercentageText}' is not a number.");
+                pct = p;
+            }
+            return new FlagRule
+            {
+                Id = r.Id, Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description, Percentage = pct, BucketBy = r.BucketBy,
+                Value = FlagEvaluator.FromInput(flag!.Type, r.ValueText),
+                Clauses = r.Clauses.Select(c => new FlagClause
+                {
+                    Attribute = c.Attribute, Op = c.Op,
+                    Values = c.ValuesText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+                }).ToList(),
+            };
+        }).ToList();
+        await FlagSvc.SetRulesAsync(project!.Id, flag!.Key, e.State.EnvironmentId, rules);
+        await FlagSvc.SetDefaultValueAsync(project.Id, flag.Key, e.State.EnvironmentId, FlagEvaluator.FromInput(flag.Type, e.DefaultText));
+    }, "Saved.");
+
+    private async Task ArchiveAsync()
+    {
+        var archive = !flag!.IsArchived;
+        if (archive && !await Dialogs.ConfirmAsync("Archive flag", $"Archive '{flag.Key}'? SDKs stop seeing it. You can restore it later.", "Archive")) return;
+        await Try(() => FlagSvc.ArchiveAsync(project!.Id, flag.Key, archive));
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await Dialogs.TypeToConfirmAsync("Delete flag", $"Delete '{flag!.Key}' with its history? This cannot be undone. Archive it instead to keep the history.", flag.Key) == null) return;
+        try
+        {
+            await FlagSvc.DeleteFlagAsync(project!.Id, flag.Key);
+            Nav.NavigateTo(FlagUrls.List(project.Key));
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

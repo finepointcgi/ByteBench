@@ -96,6 +96,7 @@ public static class ApiEndpoints
         api.MapSecurityEndpoints(); // security findings (Night Owl), triage, PR new/fixed
         api.MapServiceDeskEndpoints(); // service desk queue, replies to requesters
         api.MapReportEndpoints(); // delivery reports: cycle/lead time, flow, DORA, pull requests
+        api.MapFlagEndpoints(); // feature flags: management API
         api.MapEnvironmentEndpoints(); // environments, deployments, approvals, rollback, traceability, deploy freezes
         api.MapTriageEndpoints(); // AI triage suggestions for issues
 

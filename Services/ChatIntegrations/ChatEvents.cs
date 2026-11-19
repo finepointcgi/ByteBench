@@ -24,6 +24,7 @@ public static class ChatEvents
     public const string PipelineFixed = "pipeline.fixed";
     public const string ReleasePublished = "release.published";
     public const string Deployment = "deployment";
+    public const string FlagChanged = "flag.changed";
     public const string Mention = "mention";
     /// <summary>Only for "Send test message"; not subscribable.</summary>
     public const string Test = "test";
@@ -43,6 +44,7 @@ public static class ChatEvents
         new(PipelineFailed, "Pipeline failed", ChatEventGroup.Pipelines, [WebhookEventNames.PipelineCompleted]),
         new(PipelineFixed, "Pipeline fixed", ChatEventGroup.Pipelines, [WebhookEventNames.PipelineCompleted]),
         new(Deployment, "Deployment finished", ChatEventGroup.Pipelines, [WebhookEventNames.DeploymentStatus]),
+        new(FlagChanged, "Feature flag changed", ChatEventGroup.Pipelines, [WebhookEventNames.FlagChanged]),
         new(ReleasePublished, "Release published", ChatEventGroup.Releases, [WebhookEventNames.ReleasePublished]),
         new(Mention, "@mentions in issues, pull requests and comments", ChatEventGroup.Mentions,
             [WebhookEventNames.IssueCreated, WebhookEventNames.IssueCommented, WebhookEventNames.PullRequestOpened, WebhookEventNames.PullRequestCommented]),

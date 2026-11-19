@@ -133,6 +133,8 @@ GitBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistr
 GitBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.AddServiceDesk(builder.Services, builder.Configuration); // service desk: inbound mail, public form, queue
 GitBench.Services.Pages.PagesServiceCollectionExtensions.AddPages(builder.Services, builder.Configuration); // static sites from CI output (Pages:*)
 
+GitBench.Services.Flags.FlagsServiceCollectionExtensions.AddFeatureFlags(builder.Services); // feature flags per project, SDK keys, live updates
+
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
 
@@ -179,6 +181,7 @@ GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info
 GitBench.Services.Packages.PackagesServiceCollectionExtensions.MapPackageRegistry(app); // /packages/{KEY}/nuget|npm/..., /v2/ (OCI)
 app.MapCiEndpoints();
 GitBench.Services.Security.SecurityServiceCollectionExtensions.MapSecurityDownloads(app); // triage.json export
+GitBench.Services.Flags.FlagSdkEndpoints.MapFlagSdk(app); // /api/v1/flags/*: SDK-key authenticated evaluation (before the user API's catch-all)
 app.MapGitBenchApi();
 GitBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // /integrations/slack/{commands,interactivity,events}
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);

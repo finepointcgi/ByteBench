@@ -23,6 +23,10 @@ public enum Permission
     PublishPackages,
     /// <summary>Delete packages, versions and image tags from the project's registry (Maintainer+).</summary>
     DeletePackages,
+    /// <summary>Toggle feature flags and edit their per-environment values and targeting rules (Developer+).</summary>
+    ToggleFlags,
+    /// <summary>Create, delete and archive feature flags; manage flag environments, segments and SDK keys (Maintainer+).</summary>
+    ManageFlags,
 }
 
 /// <summary>
@@ -81,9 +85,9 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
     {
         Permission.ViewProject => ProjectRole.Viewer,
         Permission.EditIssues or Permission.Comment or Permission.PushCode
-            or Permission.CreatePullRequest or Permission.ReviewPullRequest or Permission.PublishPackages => ProjectRole.Developer,
+            or Permission.CreatePullRequest or Permission.ReviewPullRequest or Permission.PublishPackages or Permission.ToggleFlags => ProjectRole.Developer,
         Permission.ManageLabelsAndMilestones or Permission.MergePullRequest
-            or Permission.DeleteBranch or Permission.ManageRepositories or Permission.DeletePackages => ProjectRole.Maintainer,
+            or Permission.DeleteBranch or Permission.ManageRepositories or Permission.DeletePackages or Permission.ManageFlags => ProjectRole.Maintainer,
         _ => ProjectRole.Owner, // ManageMembers, ManageProjectSettings, DeleteProject
     };
 
@@ -222,6 +226,8 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
         Permission.DeleteProject => "delete this project",
         Permission.PublishPackages => "publish packages in this project",
         Permission.DeletePackages => "delete packages in this project",
+        Permission.ToggleFlags => "change feature flags in this project",
+        Permission.ManageFlags => "create, delete or archive feature flags in this project",
         _ => p.ToString(),
     };
 }
