@@ -343,6 +343,7 @@ public partial class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigurePackages(b);
         ConfigureMergeQueue(b);
         ConfigureSecurity(b);
+        ConfigurePages(b);
         ConfigureChatIntegrations(b);
         ConfigureServiceDesk(b);
     }

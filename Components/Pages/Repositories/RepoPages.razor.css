@@ -1,0 +1,8 @@
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; }
+.pg-example { background: var(--mud-palette-action-default-hover); padding: 8px 12px; border-radius: 6px; overflow-x: auto; font-size: 0.8rem; margin: 8px 0 0; }
+.pg-meta { font-size: 0.85rem; margin-top: 2px; }
+.pg-row { align-items: flex-start; }
+@media (max-width: 600px) {
+    .pg-row { flex-wrap: wrap; }
+    .gb-row-right { width: 100%; justify-content: flex-end; }
+}

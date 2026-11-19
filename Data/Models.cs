@@ -249,6 +249,9 @@ public enum NotificationKind
     SecurityFindings,
 
     DeploymentApprovalRequested, DeploymentApproved, DeploymentRejected,
+
+    /// <summary>A CI job deployed a Pages site (to the pipeline's author, Services/Pages).</summary>
+    PagesDeployed,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>

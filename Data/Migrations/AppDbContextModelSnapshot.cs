@@ -2048,6 +2048,120 @@ namespace GitBench.Data.Migrations
                     b.ToTable("PackageVersions");
                 });
 
+            modelBuilder.Entity("GitBench.Data.PagesDeployment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommitSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("DeployedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Directory")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FileCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsRollback")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("JobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PipelineId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SiteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Slot")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeployedById");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("SiteId", "Slot", "IsCurrent");
+
+                    b.HasIndex("SiteId", "Slot", "Version")
+                        .IsUnique();
+
+                    b.ToTable("PagesDeployments");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesSite", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("NotFound")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ReviewExpireDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ReviewSites")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Visibility")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.ToTable("PagesSites");
+                });
+
             modelBuilder.Entity("GitBench.Data.PersonalAccessToken", b =>
                 {
                     b.Property<int>("Id")
@@ -5216,6 +5330,35 @@ namespace GitBench.Data.Migrations
                     b.Navigation("PublishedBy");
                 });
 
+            modelBuilder.Entity("GitBench.Data.PagesDeployment", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "DeployedBy")
+                        .WithMany()
+                        .HasForeignKey("DeployedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.PagesSite", "Site")
+                        .WithMany("Deployments")
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeployedBy");
+
+                    b.Navigation("Site");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesSite", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+                });
+
             modelBuilder.Entity("GitBench.Data.PersonalAccessToken", b =>
                 {
                     b.HasOne("GitBench.Data.User", "User")
@@ -6120,6 +6263,11 @@ namespace GitBench.Data.Migrations
             modelBuilder.Entity("GitBench.Data.PackageVersion", b =>
                 {
                     b.Navigation("Files");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesSite", b =>
+                {
+                    b.Navigation("Deployments");
                 });
 
             modelBuilder.Entity("GitBench.Data.Pipeline", b =>

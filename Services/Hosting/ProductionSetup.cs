@@ -37,6 +37,8 @@ public static class ProductionSetup
     public const string CspNonceKey = "gitbench.csp-nonce";
     /// <summary>An <c>HttpContext.Items</c> key: when present, X-Frame-Options is SAMEORIGIN instead of DENY.</summary>
     public const string AllowSameOriginFramingKey = "gitbench.allow-framing";
+    /// <summary>Set by Pages (Services/Pages): the response carries its own full header set, so none of the app's security headers or CSP are added.</summary>
+    public const string OwnSecurityHeadersKey = "gitbench.own-security-headers";
 
     // ------------------------------------------------------------------ services
 
@@ -184,6 +186,8 @@ public static class ProductionSetup
             ctx.Items[CspNonceKey] = nonce;
             ctx.Response.OnStarting(() =>
             {
+                // Pages (user-uploaded sites) set their own complete header set; none of the app's headers or CSP apply to them.
+                if (ctx.Items.ContainsKey(OwnSecurityHeadersKey)) return Task.CompletedTask;
                 var h = ctx.Response.Headers;
                 if (!h.ContainsKey("X-Content-Type-Options")) h.XContentTypeOptions = "nosniff";
                 // Embeddable views (snippet embeds) opt in to same-origin framing; they send their own CSP.

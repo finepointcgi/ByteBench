@@ -18,13 +18,15 @@
                          Class="@ItemClass("security")" aria-current="@(Active == "security" ? "page" : null)">Security</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/mirroring")" Icon="@Icons.Material.Outlined.Sync"
                          Class="@ItemClass("mirroring")" aria-current="@(Active == "mirroring" ? "page" : null)">Mirroring</MudListItem>
+            <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/pages")" Icon="@Icons.Material.Outlined.Language"
+                         Class="@ItemClass("pages")" aria-current="@(Active == "pages" ? "page" : null)">Pages</MudListItem>
         </MudList>
     </MudPaper>
 </nav>
 
 @code {
     [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
-    /// <summary>The current settings page, "general", "branches", "merge", "ci-variables", "deploy-keys", "tags", "security" or "mirroring".</summary>
+    /// <summary>The current settings page, "general", "branches", "merge", "ci-variables", "deploy-keys", "tags", "security", "mirroring" or "pages".</summary>
     [Parameter] public string Active { get; set; } = "general";
 
     private string ItemClass(string page) => Active == page ? "settings-nav-item settings-nav-active" : "settings-nav-item";
