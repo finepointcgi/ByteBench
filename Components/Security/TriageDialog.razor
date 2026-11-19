@@ -1,0 +1,37 @@
+@* Dismiss a finding as a false positive or an accepted risk: a reason (required) and an optional expiry. Returns TriageDialog.Result. *@
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">@(State == SecurityTriageState.FalsePositive ? "Dismiss as false positive" : "Accept the risk")</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            <b>@FindingTitle</b><br />
+            <span class="mud-text-secondary">The decision is keyed by the finding's fingerprint, so it stays in place on later scans and branches.
+                An expired decision stops applying and the finding counts again.</span>
+        </MudText>
+        <MudTextField T="string" @bind-Value="reason" Immediate="true" Label="Reason" Variant="Variant.Outlined" Margin="Margin.Dense" AutoFocus="true"
+                      Lines="3" MaxLength="2000" Required="true" HelperText="Why it doesn't need fixing (shown to everyone and exported to triage.json)." />
+        <MudDatePicker @bind-Date="expires" Label="Expires (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                       MinDate="DateTime.Today.AddDays(1)" Class="mt-3" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(reason)" OnClick="Confirm">Dismiss</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public sealed record Result(string Reason, DateTime? Expires);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public SecurityTriageState State { get; set; } = SecurityTriageState.FalsePositive;
+    [Parameter] public string FindingTitle { get; set; } = "";
+
+    private string? reason;
+    private DateTime? expires;
+
+    private void Confirm()
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return;
+        // End of the chosen day, local time → UTC.
+        MudDialog.Close(DialogResult.Ok(new Result(reason.Trim(), expires?.Date.AddDays(1).AddSeconds(-1).ToUniversalTime())));
+    }
+}

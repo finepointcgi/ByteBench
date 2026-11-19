@@ -1,0 +1,48 @@
+@* Open findings by severity per scanned pipeline (stacked bars, oldest left). Pure SVG: no script. *@
+@if (Points.Count > 0)
+{
+    var max = Math.Max(1, Points.Max(p => p.Total));
+    var barW = Math.Min(28.0, (Width - 8.0) / Points.Count - 4);
+    var step = (Width - 8.0) / Points.Count;
+    <figure class="sec-trend">
+        <svg viewBox="0 0 @Width @(Height + 4)" preserveAspectRatio="none" role="img" aria-label="@AriaLabel">
+            <line x1="0" y1="@Height" x2="@Width" y2="@Height" class="axis" />
+            @for (var i = 0; i < Points.Count; i++)
+            {
+                var p = Points[i];
+                var x = 4 + i * step + (step - barW) / 2;
+                var y = (double)Height;
+                <g @key="p.PipelineId">
+                    <title>@($"Pipeline #{p.PipelineId} ({p.CommitSha[..Math.Min(7, p.CommitSha.Length)]}), {p.At.ToLocalTime():MMM d HH:mm}: {p.Critical} critical, {p.High} high, {p.Medium} medium, {p.Low} low, {p.Other} info")</title>
+                    @foreach (var (count, css) in Segments(p))
+                    {
+                        if (count == 0) continue;
+                        var h = count * (Height - 6.0) / max;
+                        y -= h;
+                        <rect x="@F(x)" y="@F(y)" width="@F(barW)" height="@F(h)" class="@css" />
+                    }
+                </g>
+            }
+        </svg>
+        <figcaption class="small muted">
+            Open findings per scan · newest @Points[^1].Total (@Points[^1].Critical critical, @Points[^1].High high)
+            @if (Points.Count > 1)
+            {
+                var delta = Points[^1].Total - Points[^2].Total;
+                <span> · @(delta > 0 ? $"+{delta}" : delta.ToString()) since the previous scan</span>
+            }
+        </figcaption>
+    </figure>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SecurityTrendPoint> Points { get; set; } = [];
+    private const int Width = 600, Height = 110;
+
+    private string AriaLabel => $"Open findings over the last {Points.Count} scans";
+
+    private static IEnumerable<(int, string)> Segments(SecurityTrendPoint p) =>
+        [(p.Critical, "critical"), (p.High, "high"), (p.Medium, "medium"), (p.Low, "low"), (p.Other, "other")];
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

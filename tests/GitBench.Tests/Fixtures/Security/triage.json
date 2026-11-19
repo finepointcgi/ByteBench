@@ -1,0 +1,19 @@
+[
+  {
+    "findingId": "a06f2fbfa39f1f4a2a210c1e64c0034f",
+    "state": "accepted-risk",
+    "reason": "Internal admin tool, input is an integer id",
+    "by": "alice",
+    "at": "2026-11-10T12:00:00+00:00",
+    "expires": "2099-01-01T00:00:00+00:00",
+    "title": "SQL built with string formatting"
+  },
+  {
+    "findingId": "3716fd71a893335bfec443739c070f59",
+    "state": "false-positive",
+    "reason": "Generated switch",
+    "by": "someone-external",
+    "at": "2026-11-10T12:05:00+00:00",
+    "title": "render() has cyclomatic complexity 23 (max 15)"
+  }
+]

@@ -341,6 +341,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureWebEditor(b);
         ConfigurePackages(b);
         ConfigureMergeQueue(b);
+        ConfigureSecurity(b);
     }
 
     // ----- Forks -----
@@ -578,5 +579,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<MergeQueueEntry>().HasOne(e => e.EnqueuedBy).WithMany().HasForeignKey(e => e.EnqueuedById).OnDelete(DeleteBehavior.Cascade);
         b.Entity<MergeQueueEntry>().HasOne(e => e.Pipeline).WithMany().HasForeignKey(e => e.PipelineId).OnDelete(DeleteBehavior.SetNull);
         b.Entity<MergeQueueEntry>().HasOne<User>().WithMany().HasForeignKey(e => e.RemovedById).OnDelete(DeleteBehavior.SetNull);
+    }
+
+
+    // ----- Security scanning (Night Owl) -----
+    public DbSet<SecurityScan> SecurityScans => Set<SecurityScan>();
+    public DbSet<SecurityFinding> SecurityFindings => Set<SecurityFinding>();
+    public DbSet<SecurityTriage> SecurityTriages => Set<SecurityTriage>();
+    public DbSet<RepositorySecuritySettings> RepositorySecuritySettings => Set<RepositorySecuritySettings>();
+
+    private static void ConfigureSecurity(ModelBuilder b)
+    {
+        b.Entity<SecurityScan>().HasIndex(s => new { s.RepositoryId, s.Ref, s.PipelineId });
+        b.Entity<SecurityScan>().HasIndex(s => new { s.RepositoryId, s.CommitSha });
+        b.Entity<SecurityScan>().HasIndex(s => s.PipelineId);
+        b.Entity<SecurityScan>().HasOne<Repository>().WithMany().HasForeignKey(s => s.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SecurityScan>().HasOne<Pipeline>().WithMany().HasForeignKey(s => s.PipelineId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SecurityFinding>().HasIndex(f => new { f.ScanId, f.Fingerprint }).IsUnique();
+        b.Entity<SecurityFinding>().HasIndex(f => new { f.RepositoryId, f.Fingerprint });
+        b.Entity<SecurityFinding>().HasOne(f => f.Scan).WithMany(s => s.Findings).HasForeignKey(f => f.ScanId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SecurityTriage>().HasIndex(t => new { t.RepositoryId, t.Fingerprint }).IsUnique();
+        b.Entity<SecurityTriage>().HasOne<Repository>().WithMany().HasForeignKey(t => t.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<SecurityTriage>().HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<RepositorySecuritySettings>().HasKey(s => s.RepositoryId);
+        b.Entity<RepositorySecuritySettings>().HasOne<Repository>().WithMany().HasForeignKey(s => s.RepositoryId).OnDelete(DeleteBehavior.Cascade);
     }
 }

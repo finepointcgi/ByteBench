@@ -1,0 +1,35 @@
+@* One finding in a .gb-rows list: severity, title (links to its detail), where it is, triage state. *@
+@{ var f = View.Finding; }
+<div class="gb-row sec-row">
+    <SeverityChip Severity="f.Severity" />
+    <div class="gb-min0 sec-main">
+        <a class="sec-title" href="@SecurityUrls.Repo(Repo, Branch, f.Fingerprint)">@f.Title</a>
+        <div class="small muted sec-meta">
+            <span class="sec-cat">@SecurityLabels.Category(f.Category)</span>
+            <span class="mono">@f.RuleId</span>
+            @if (f.PackageName != null)
+            {
+                <span class="mono">@Package(f)</span>
+                @if (f.FixedVersions != null) { <span>fixed in <span class="mono">@f.FixedVersions</span></span> }
+            }
+            @if (f.FilePath != null)
+            {
+                <span class="mono">@Location(f)</span>
+            }
+            @if (f.Context is { } ctx && ctx != "production") { <span class="sec-ctx">@ctx</span> }
+        </div>
+    </div>
+    @if (View.State != SecurityTriageState.New)
+    {
+        <span class="sec-state @(View.IsOpen ? "open" : "dismissed")" title="@(View.Triage?.Reason ?? "From the repository's .nightowl/triage.json")">@SecurityLabels.Triage(View.State)</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SecurityFindingView View { get; set; } = null!;
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter] public string? Branch { get; set; }
+
+    public static string Package(SecurityFinding f) => f.PackageVersion is { Length: > 0 } v ? $"{f.PackageName}@{v}" : f.PackageName ?? "";
+    public static string Location(SecurityFinding f) => f.Line is { } l ? $"{f.FilePath}:{l}" : f.FilePath ?? "";
+}

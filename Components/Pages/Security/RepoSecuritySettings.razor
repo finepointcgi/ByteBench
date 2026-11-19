@@ -1,0 +1,110 @@
+@page "/p/{Key}/repos/{Slug}/settings/security"
+@inherits RepoPageBase
+@inject ProjectAccess Access
+@inject SecurityService Security
+@inject ISnackbar Snackbar
+@inject Microsoft.Extensions.Options.IOptionsMonitor<NightOwlOptions> NightOwl
+
+<PageTitle>Security settings · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !canManage)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can change repository settings." BackHref="@RepoUrls.Source(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="security" />
+        <div class="gb-min0">
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">Merge check</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    Adds a <b>Security</b> line to every pull request's merge box: it fails when the pull request introduces open findings
+                    at or above the chosen severity, compared with the target branch's latest scan. Dismissed findings (false positive,
+                    accepted risk) don't count. To block merging, also turn on "Require checks to pass" in
+                    <a href="@RepoUrls.BranchProtection(Repo)">branch protection</a>.
+                </MudText>
+                <MudSwitch T="bool" @bind-Value="mergeCheck" Color="Color.Primary" Label="No new findings at or above" />
+                <MudSelect T="SecuritySeverity" @bind-Value="mergeSeverity" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="!mergeCheck"
+                           Style="max-width: 200px" aria-label="Merge check severity">
+                    @foreach (var s in Levels) { <MudSelectItem T="SecuritySeverity" Value="@s">@s</MudSelectItem> }
+                </MudSelect>
+
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mt-5 mb-1">Alerts</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    When a scan of <span class="branch-pill">@Repo.DefaultBranch</span> finds something new at or above this severity, Maintainers and Owners
+                    (and whoever triggered the pipeline) get a notification, and webhooks subscribed to <span class="mono">security.new_findings</span> fire.
+                </MudText>
+                <MudSelect T="SecuritySeverity" @bind-Value="notifySeverity" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                           Style="max-width: 200px" aria-label="Alert severity">
+                    @foreach (var s in Levels) { <MudSelectItem T="SecuritySeverity" Value="@s">@s and above</MudSelectItem> }
+                </MudSelect>
+                <div class="mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="busy" OnClick="Save">Save changes</MudButton>
+                </div>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-5">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">Scanning with Night Owl</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                    <a href="https://finepointcgi.github.io/Night-Owl/" target="_blank" rel="noopener noreferrer">Night Owl</a> scans dependencies (SCA), licenses,
+                    code (SAST), secrets, infrastructure-as-code and container images. Add the built-in job to <span class="mono">@CiFile.FileName</span>:
+                </MudText>
+                <pre class="sec-code">include: [nightowl]</pre>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                    Tune it with CI variables: <span class="mono">NIGHTOWL_FAIL_ON</span> (critical, high, medium, low or none; empty uses
+                    <span class="mono">.nightowl/policy.yml</span>), <span class="mono">NIGHTOWL_PATH</span>, <span class="mono">NIGHTOWL_ARGS</span>
+                    (e.g. <span class="mono">--engines opengrep,gitleaks,osv-scanner</span>) and <span class="mono">NIGHTOWL_VERSION</span>.
+                    Night Owl runs its engines from local binaries or pinned container images, so the job needs engines on its image's PATH or access to a Docker daemon.
+                    To customise the job, define your own job named <span class="mono">nightowl</span>; it replaces the built-in one:
+                </MudText>
+                <pre class="sec-code">@(CiTemplates.Snippet("nightowl"))</pre>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Any job can publish reports with <span class="mono">artifacts: &#123; reports: &#123; nightowl: nightowl.json, sarif: results.sarif &#125; &#125;</span>.
+                    Night Owl's JSON is preferred (it carries packages, fixed versions and fingerprints); SARIF 2.1 from other tools is accepted too.
+                    Triage decisions can be exported as, and imported from, Night Owl's shared <span class="mono">@NightOwlTriageFile.RepositoryPath</span>.
+                    @if (NightOwl.CurrentValue.SafeDashboardUrl is { } dashboard)
+                    {
+                        <span> Your Night Owl dashboard: <a href="@dashboard" target="_blank" rel="noopener noreferrer">@dashboard</a>.</span>
+                    }
+                </MudText>
+            </MudPaper>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly SecuritySeverity[] Levels = [SecuritySeverity.Critical, SecuritySeverity.High, SecuritySeverity.Medium, SecuritySeverity.Low, SecuritySeverity.Info];
+    private bool canManage, busy, mergeCheck;
+    private SecuritySeverity mergeSeverity = SecuritySeverity.High, notifySeverity = SecuritySeverity.High;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        canManage = await Access.CanAsync(Repo!.ProjectId, Permission.ManageRepositories);
+        var s = await Security.GetSettingsAsync(Repo.Id);
+        (mergeCheck, mergeSeverity, notifySeverity) = (s.MergeCheckEnabled, s.MergeCheckSeverity, s.NotifySeverity);
+    }
+
+    private async Task Save()
+    {
+        busy = true;
+        Error = null;
+        try
+        {
+            await Security.SaveSettingsAsync(Repo!, mergeCheck, mergeSeverity, notifySeverity, Me.Id);
+            Snackbar.Add("Security settings saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+}

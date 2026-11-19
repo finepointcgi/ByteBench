@@ -75,8 +75,13 @@ public enum CiArtifactsWhen { OnSuccess, OnFailure, Always }
 /// <summary>One entry of <c>rules:</c>. <see cref="Branches"/> null matches every branch; <see cref="When"/> null keeps the job's.</summary>
 public sealed record CiRule(IReadOnlyList<string>? Branches, CiRuleWhen? When);
 
-/// <summary><c>artifacts:</c>. <see cref="ExpireIn"/> null means they never expire.</summary>
-public sealed record CiArtifactsDefinition(IReadOnlyList<string> Paths, TimeSpan? ExpireIn, CiArtifactsWhen When);
+/// <summary>
+/// <c>artifacts:</c>. <see cref="ExpireIn"/> null means they never expire. <see cref="Reports"/> maps a report type
+/// (<see cref="CiFile.ReportTypes"/>: <c>nightowl</c>, <c>sarif</c>) to the file the job writes it to; those files are
+/// always part of <see cref="Paths"/>, and GitBench reads them after the job (Services/Security).
+/// </summary>
+public sealed record CiArtifactsDefinition(IReadOnlyList<string> Paths, TimeSpan? ExpireIn, CiArtifactsWhen When,
+    IReadOnlyDictionary<string, string>? Reports = null);
 
 /// <summary><c>cache:</c>. <see cref="Key"/> is a template: literal text plus <c>{{ hashFiles('a', 'b/**') }}</c>.</summary>
 public sealed record CiCacheDefinition(string Key, IReadOnlyList<string> Paths);
@@ -94,6 +99,7 @@ public sealed record CiParseResult(CiDefinition? Definition, string? Error)
 /// Parser for <c>.gitbench-ci.yml</c>. Format:
 /// <code>
 /// image: alpine:3.20                     # default image for jobs (default alpine:3.20)
+/// include: [nightowl]                    # optional built-in jobs (<see cref="CiTemplates"/>); a job of the same name in this file wins
 /// on:                                    # optional; default: every push and every pull request
 ///   branches: [main, "feature/*"]
 ///   pull_requests: true
@@ -102,6 +108,7 @@ public sealed record CiParseResult(CiDefinition? Definition, string? Error)
 ///     image: mcr.microsoft.com/dotnet/sdk:10.0   # optional per-job override
 ///     cache: { key: "nuget-{{ hashFiles('**/*.csproj') }}", paths: [.nuget/] }
 ///     artifacts: { paths: [dist/, "*.log"], expire_in: 7d, when: on_success }
+///     # artifacts: { reports: { nightowl: nightowl.json, sarif: nightowl.sarif } }  # security reports (see Services/Security)
 ///     steps:
 ///       - name: Build
 ///         run: dotnet build
@@ -141,6 +148,7 @@ public static partial class CiFile
     private sealed class FileDto
     {
         public string? Image { get; set; }
+        public object? Include { get; set; }
         public OnDto? On { get; set; }
         public Dictionary<string, JobDto?>? Jobs { get; set; }
     }
@@ -182,6 +190,7 @@ public static partial class CiFile
         public List<string>? Paths { get; set; }
         public string? ExpireIn { get; set; }
         public string? When { get; set; }
+        public Dictionary<string, string?>? Reports { get; set; }
     }
 
     private sealed class CacheDto
@@ -200,6 +209,12 @@ public static partial class CiFile
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .Build();
 
+    private static Dictionary<string, JobDto?> Deserialize(string yaml) =>
+        Deserializer.Deserialize<Dictionary<string, JobDto?>>(yaml);
+
+    /// <summary>Report types <c>artifacts.reports</c> accepts.</summary>
+    public static readonly IReadOnlyList<string> ReportTypes = ["nightowl", "sarif"];
+
     public static CiParseResult Parse(string? yaml)
     {
         if (string.IsNullOrWhiteSpace(yaml)) return Fail("The file is empty.");
@@ -209,6 +224,8 @@ public static partial class CiFile
         try { dto = Deserializer.Deserialize<FileDto>(yaml); }
         catch (YamlException ex) { return Fail(Describe(ex)); }
         if (dto == null) return Fail("The file is empty.");
+
+        if (CiTemplates.Expand(dto.Include, dto.Jobs ??= [], Deserialize) is { } includeError) return Fail(includeError);
 
         var defaultImage = dto.Image?.Trim() is { Length: > 0 } i ? i : DefaultImage;
         if (!ImagePattern().IsMatch(defaultImage)) return Fail($"'{defaultImage}' is not a valid image name.");
@@ -315,6 +332,19 @@ public static partial class CiFile
         CiArtifactsDefinition? artifacts = null;
         if (job.Artifacts != null)
         {
+            var reports = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (type, file) in job.Artifacts.Reports ?? [])
+            {
+                var t = type?.Trim().ToLowerInvariant() ?? "";
+                if (!ReportTypes.Contains(t)) return Err($"artifacts report type '{type}' is not supported: use {string.Join(" or ", ReportTypes)}.");
+                var f = file?.Trim() ?? "";
+                if (f.Length == 0) return Err($"artifacts report '{t}' needs a file name.");
+                if (f.Contains('*') || f.Contains('?') || f.EndsWith('/')) return Err($"artifacts report '{t}' must name one file, not a pattern.");
+                if (CiArtifacts.ValidatePattern(f) is { } re) return Err($"artifacts report '{t}' path '{f}' {re}");
+                reports[t] = f;
+            }
+            if (reports.Count > 0)
+                job.Artifacts.Paths = (job.Artifacts.Paths ?? []).Concat(reports.Values.Where(r => job.Artifacts.Paths?.Contains(r) != true)).ToList();
             if (ValidatePaths(job.Artifacts.Paths, "artifacts") is { } pe) return Err(pe);
             TimeSpan? expire = DefaultArtifactExpiry;
             if (job.Artifacts.ExpireIn != null)
@@ -330,7 +360,7 @@ public static partial class CiFile
                 case "always": aw = CiArtifactsWhen.Always; break;
                 default: return Err($"artifacts 'when: {job.Artifacts.When}' is not valid: use on_success, on_failure or always.");
             }
-            artifacts = new CiArtifactsDefinition(Clean(job.Artifacts.Paths!), expire, aw);
+            artifacts = new CiArtifactsDefinition(Clean(job.Artifacts.Paths!), expire, aw, reports.Count > 0 ? reports : null);
         }
 
         CiCacheDefinition? cache = null;

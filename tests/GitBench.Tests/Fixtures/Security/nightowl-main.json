@@ -1,0 +1,256 @@
+{
+  "project": "/workspace",
+  "startedAt": "2026-11-17T09:00:00+00:00",
+  "seconds": 41.7,
+  "manifestSequence": 42,
+  "engines": [
+    {
+      "engine": "osv-scanner",
+      "version": "2.2.1",
+      "succeeded": true,
+      "seconds": 3.2
+    },
+    {
+      "engine": "opengrep",
+      "version": "1.10.0",
+      "succeeded": true,
+      "seconds": 3.2
+    },
+    {
+      "engine": "gitleaks",
+      "version": "8.28.0",
+      "succeeded": true,
+      "seconds": 3.2
+    },
+    {
+      "engine": "trivy",
+      "version": "0.66.0",
+      "succeeded": true,
+      "seconds": 3.2
+    },
+    {
+      "engine": "trivy-image",
+      "version": "0.66.0",
+      "succeeded": true,
+      "seconds": 3.2
+    },
+    {
+      "engine": "syft",
+      "version": "1.33.0",
+      "succeeded": true,
+      "seconds": 3.2
+    },
+    {
+      "engine": "lizard",
+      "version": "1.17.31",
+      "succeeded": true,
+      "seconds": 3.2
+    }
+  ],
+  "findings": [
+    {
+      "id": "c52e02814b743f7d1434619b97e20e3a",
+      "category": "Vulnerability",
+      "severity": "High",
+      "ruleId": "GHSA-35jh-r3h4-6jhm",
+      "title": "Command Injection in lodash",
+      "description": "lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+      "engines": [
+        "osv-scanner"
+      ],
+      "location": {
+        "path": "package-lock.json"
+      },
+      "package": {
+        "name": "lodash",
+        "version": "4.17.20",
+        "ecosystem": "npm",
+        "purl": "pkg:npm/lodash@4.17.20"
+      },
+      "aliases": [
+        "CVE-2021-23337"
+      ],
+      "fixedVersions": [
+        "4.17.21"
+      ],
+      "references": [
+        "https://github.com/advisories/GHSA-35jh-r3h4-6jhm"
+      ],
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Imported"
+    },
+    {
+      "id": "c52e02814b743f7d1434619b97e20e3a",
+      "category": "Vulnerability",
+      "severity": "Critical",
+      "ruleId": "CVE-2021-23337",
+      "title": "Command Injection in lodash",
+      "description": "lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+      "engines": [
+        "trivy"
+      ],
+      "location": {
+        "path": "package-lock.json"
+      },
+      "package": {
+        "name": "lodash",
+        "version": "4.17.20",
+        "ecosystem": "npm",
+        "purl": "pkg:npm/lodash@4.17.20"
+      },
+      "aliases": [
+        "GHSA-35jh-r3h4-6jhm"
+      ],
+      "fixedVersions": [
+        "4.17.21"
+      ],
+      "references": [
+        "https://github.com/advisories/GHSA-35jh-r3h4-6jhm"
+      ],
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Imported"
+    },
+    {
+      "id": "02257fd41e6907613b51c092d1a64f05",
+      "category": "Secret",
+      "severity": "Critical",
+      "ruleId": "aws-access-token",
+      "title": "AWS access key committed",
+      "description": "Identified a pattern that may indicate an AWS access key.",
+      "engines": [
+        "gitleaks"
+      ],
+      "location": {
+        "path": "config/settings.py",
+        "startLine": 12,
+        "endLine": 12,
+        "snippet": "AWS_KEY = \"AKIA...\""
+      },
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Unknown"
+    },
+    {
+      "id": "a06f2fbfa39f1f4a2a210c1e64c0034f",
+      "category": "Code",
+      "severity": "Medium",
+      "ruleId": "python.lang.security.audit.formatted-sql-query",
+      "title": "SQL built with string formatting",
+      "description": "Detected possible formatted SQL query. Use parameterized queries instead.",
+      "engines": [
+        "opengrep"
+      ],
+      "location": {
+        "path": "app/db.py",
+        "startLine": 40,
+        "snippet": "cursor.execute(\"SELECT * FROM users WHERE id=%s\" % uid)"
+      },
+      "references": [
+        "https://cwe.mitre.org/data/definitions/89.html"
+      ],
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Unknown"
+    },
+    {
+      "id": "8191934646596fd363a3d5c253ab8592",
+      "category": "License",
+      "severity": "Medium",
+      "ruleId": "license/denied",
+      "title": "left-pad-gpl@1.0.0 uses GPL-3.0-only (denied by policy)",
+      "engines": [
+        "syft"
+      ],
+      "package": {
+        "name": "left-pad-gpl",
+        "version": "1.0.0",
+        "ecosystem": "npm"
+      },
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Unknown"
+    },
+    {
+      "id": "1b6d257d4dcac6df4cd657ae8455b1c9",
+      "category": "Infrastructure",
+      "severity": "Low",
+      "ruleId": "DS002",
+      "title": "Image user should not be 'root'",
+      "engines": [
+        "trivy"
+      ],
+      "location": {
+        "path": "Dockerfile",
+        "startLine": 1
+      },
+      "references": [
+        "https://avd.aquasec.com/misconfig/ds002"
+      ],
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Unknown"
+    },
+    {
+      "id": "2356495ae6832d54cbdf62a3f84be3ec",
+      "category": "Vulnerability",
+      "severity": "High",
+      "ruleId": "CVE-2023-44487",
+      "title": "HTTP/2 Rapid Reset in libnghttp2-14@1.52.0-1 (image nginx:1.25)",
+      "engines": [
+        "trivy-image"
+      ],
+      "location": {
+        "path": "Dockerfile",
+        "startLine": 1
+      },
+      "package": {
+        "name": "libnghttp2-14",
+        "version": "1.52.0-1",
+        "ecosystem": "debian (nginx:1.25)"
+      },
+      "fixedVersions": [
+        "1.52.0-1+deb12u1"
+      ],
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Unknown"
+    },
+    {
+      "id": "3716fd71a893335bfec443739c070f59",
+      "category": "Quality",
+      "severity": "Low",
+      "ruleId": "complexity",
+      "title": "render() has cyclomatic complexity 23 (max 15)",
+      "engines": [
+        "lizard"
+      ],
+      "location": {
+        "path": "app/views.py",
+        "startLine": 10
+      },
+      "triage": "New",
+      "context": "Production",
+      "reachability": "Unknown"
+    },
+    {
+      "id": "74f83d20fa17990c6b5da0916324e011",
+      "category": "Code",
+      "severity": "High",
+      "ruleId": "javascript.browser.security.eval-detected",
+      "title": "eval() with dynamic input",
+      "engines": [
+        "opengrep"
+      ],
+      "location": {
+        "path": "tests/fixtures/eval.js",
+        "startLine": 3,
+        "snippet": "eval(input)"
+      },
+      "triage": "FalsePositive",
+      "context": "Test",
+      "reachability": "Unknown"
+    }
+  ]
+}

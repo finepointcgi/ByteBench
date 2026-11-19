@@ -1,0 +1,85 @@
+@* The pull request's "Security" tab: findings the PR introduces and fixes, compared with the target branch's latest scan. *@
+@inject SecurityService Security
+@inject LiveEvents Live
+@implements IDisposable
+
+@if (diff == null)
+{
+    <div class="empty">Loading…</div>
+}
+else if (diff.Source == null)
+{
+    <div class="empty">
+        <MudIcon Icon="@Icons.Material.Outlined.Shield" Size="Size.Large" /><br />
+        @if (diff.ScanPending)
+        {
+            <span>A pipeline for <span class="mono">@ShortSha(diff.HeadSha)</span> is still running; its security report will show here.</span>
+        }
+        else
+        {
+            <span>No security report for this pull request's head (<span class="mono">@ShortSha(diff.HeadSha)</span>).
+                Add <span class="mono">include: [nightowl]</span> to <span class="mono">@CiFile.FileName</span> to scan every pipeline.</span>
+        }
+    </div>
+}
+else
+{
+    <div class="d-flex align-center flex-wrap gap-2 mb-3">
+        <MudChip T="string" Size="Size.Small" Color="@(diff.New.Count > 0 ? Color.Error : Color.Success)" Variant="Variant.Outlined" Class="ma-0"
+                 Icon="@Icons.Material.Outlined.Shield">@diff.New.Count new</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined" Class="ma-0">@diff.Fixed.Count fixed</MudChip>
+        <span class="small muted">
+            @diff.Unchanged unchanged ·
+            head <a href="@PipelineUrls.Detail(PullRequest.Repository, diff.Source.PipelineId)">pipeline #@diff.Source.PipelineId</a>
+            @if (diff.Target is { } t)
+            {
+                <span> vs <span class="branch-pill">@PullRequest.TargetBranch</span> <a href="@PipelineUrls.Detail(PullRequest.Repository, t.PipelineId)">pipeline #@t.PipelineId</a></span>
+            }
+            else
+            {
+                <span> · <span class="branch-pill">@PullRequest.TargetBranch</span> has no scan yet, so every open finding counts as new</span>
+            }
+        </span>
+        <a class="small ml-auto" href="@SecurityUrls.Repo(PullRequest.Repository, PullRequest.SourceBranch)">All findings on @PullRequest.SourceBranch</a>
+    </div>
+
+    <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">New findings</MudText>
+    <div class="gb-rows mb-4">
+        @if (diff.New.Count == 0) { <div class="empty">This pull request introduces no open findings.</div> }
+        @foreach (var v in diff.New) { <FindingRow @key="v.Fingerprint" View="v" Repo="PullRequest.Repository" Branch="@PullRequest.SourceBranch" /> }
+    </div>
+    <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">Fixed</MudText>
+    <div class="gb-rows">
+        @if (diff.Fixed.Count == 0) { <div class="empty">Nothing open on @PullRequest.TargetBranch is fixed by this pull request.</div> }
+        @foreach (var v in diff.Fixed) { <FindingRow @key="v.Fingerprint" View="v" Repo="PullRequest.Repository" Branch="@PullRequest.TargetBranch" /> }
+    </div>
+}
+
+@code {
+    /// <summary>Needs Repository.Project loaded.</summary>
+    [Parameter, EditorRequired] public PullRequest PullRequest { get; set; } = null!;
+
+    private SecurityPullRequestDiff? diff;
+    private IDisposable? sub;
+    private int reloadPending;
+
+    protected override async Task OnParametersSetAsync() => diff = await Security.PullRequestAsync(PullRequest) ?? SecuritySnapshots.Diff(null, null, null, false);
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) sub = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+    }
+
+    private async Task OnPipelineChanged(PipelineChanged e)
+    {
+        if (e.RepositoryId != PullRequest.RepositoryId) return;
+        if (Interlocked.Exchange(ref reloadPending, 1) == 1) return;
+        await Task.Delay(1500);
+        Interlocked.Exchange(ref reloadPending, 0);
+        await InvokeAsync(async () => { diff = await Security.PullRequestAsync(PullRequest) ?? diff; StateHasChanged(); });
+    }
+
+    private static string ShortSha(string? sha) => sha is { Length: >= 7 } s ? s[..7] : "unknown";
+
+    public void Dispose() => sub?.Dispose();
+}

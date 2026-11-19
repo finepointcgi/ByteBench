@@ -45,7 +45,7 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
             or NotificationKind.PullRequestMerged or NotificationKind.PullRequestDeclined or NotificationKind.PullRequestReopened
             => NotificationGroup.WatchedChanges,
         NotificationKind.IssueLinked or NotificationKind.IssueHierarchyChanged => NotificationGroup.IssueLinks,
-        NotificationKind.PipelineFailed => NotificationGroup.Pipelines,
+        NotificationKind.PipelineFailed or NotificationKind.SecurityFindings => NotificationGroup.Pipelines,
         _ => NotificationGroup.WatchedChanges, // a new kind lands somewhere sensible until it gets its own group
     };
 
