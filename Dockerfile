@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # GitBench container image. Build:  docker build -t gitbench .
-# Run:    docker compose up -d   (see docker-compose.yml and "Deploying GitBench" in README.md)
+# Run:    docker compose up -d   (see docker-compose.yml and "Production" in README.md)
 
 # ---------- build ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -14,9 +14,11 @@ RUN dotnet publish GitBench.csproj -c Release -o /app/publish --no-restore /p:Us
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
 # git: Git Smart HTTP (git http-backend), git grep code search and source archives (git archive).
-# curl: the container health check. sqlite3: consistent backups from inside the container (scripts/backup.sh).
+# openssh-client: ssh:// mirrors (git runs ssh); the SSH *server* for pushes is built into GitBench (port 2222).
+# postgresql-client: pg_dump / pg_restore for backups when Database__Provider=Postgres.
+# curl: the container health check. sqlite3: optional manual inspection and the older scripts/backup.sh.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl ca-certificates sqlite3 \
+    && apt-get install -y --no-install-recommends git openssh-client postgresql-client curl ca-certificates sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Optional docker CLI for CI pipelines (talks to a daemon through a mounted socket or DOCKER_HOST).
@@ -31,7 +33,7 @@ RUN if [ "$WITH_DOCKER_CLI" = "true" ]; then \
     fi
 
 # All state lives under /data (one volume per kind, see docker-compose.yml), owned by the non-root "app" user (uid 1654).
-RUN mkdir -p /data/db /data/repos /data/attachments /data/keys \
+RUN mkdir -p /data/db /data/repos /data/attachments /data/packages /data/lfs /data/pages /data/keys /data/backups \
     && chown -R app:app /data \
     && chmod 700 /data/keys
 
@@ -45,6 +47,10 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     ConnectionStrings__Default="Data Source=/data/db/gitbench.db" \
     Git__RepositoryRoot=/data/repos \
     Attachments__Root=/data/attachments \
+    Packages__Root=/data/packages \
+    Lfs__Root=/data/lfs \
+    Pages__Root=/data/pages \
+    Backup__Directory=/data/backups \
     DataProtection__KeysPath=/data/keys \
     Ssh__Enabled=true \
     Ssh__Port=2222 \
@@ -57,9 +63,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
 USER app
 # 8080: HTTP (behind the TLS proxy). 2222: git over SSH (host key in the /data/keys volume).
 EXPOSE 8080 2222
-VOLUME ["/data/db", "/data/repos", "/data/attachments", "/data/keys"]
+VOLUME ["/data/db", "/data/repos", "/data/attachments", "/data/packages", "/data/lfs", "/data/pages", "/data/keys", "/data/backups"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://localhost:8080/health/live || exit 1
+    CMD curl -fsS http://localhost:8080/health/ready || exit 1
 
 ENTRYPOINT ["dotnet", "GitBench.dll"]

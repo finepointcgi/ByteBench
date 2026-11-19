@@ -1,6 +1,6 @@
 # GitBench
 
-A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive Server)**, **.NET 10**, **MudBlazor**, **EF Core** and **SQLite**.
+A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive Server)**, **.NET 10**, **MudBlazor**, **EF Core** with **SQLite** or **PostgreSQL**.
 
 ## Run
 
@@ -10,13 +10,21 @@ dotnet run --launch-profile http
 
 Open http://localhost:5108. On startup, EF Core migrations are applied to `gitbench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded (in Development only, or when `Seed:DemoData` is `true`). Delete `gitbench.db*` and `repos/` to reset.
 
-**Schema changes:** edit the model, then `dotnet ef migrations add <Name> -o Data/Migrations` (the `dotnet-ef` tool is pinned in `dotnet-tools.json`; run `dotnet tool restore` once). Migrations apply automatically on the next start.
+**Schema changes:** edit the model, then add one migration for each database provider (the `dotnet-ef` tool is pinned in `dotnet-tools.json`; run `dotnet tool restore` once). There are two contexts, so name one:
+
+```bash
+dotnet ef migrations add <Name> --context AppDbContext -o Data/Migrations
+dotnet ef migrations add <Name> --context PostgresAppDbContext -o Data/MigrationsPostgres
+```
+
+Migrations apply automatically on the next start. See [PostgreSQL](#postgresql).
 
 ## Running tests
 
 ```bash
 dotnet test                              # everything (about 15 s)
 dotnet test --filter "Category!=Docker"  # skip the Docker pipeline test (what CI runs)
+GITBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=test;Database=postgres" dotnet test   # the same suite on PostgreSQL, see PostgreSQL below
 ```
 
 The suite is in `tests/GitBench.Tests` (xUnit, referenced from `GitBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs pipelines in `alpine:3.20` (including artifacts passed through `needs`, a cache and a manual deploy); it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
@@ -1465,7 +1473,7 @@ Each project has its own **workflow**: an ordered list of statuses (name, colour
   - `automation.rule_created`, `automation.rule_updated`, `automation.rule_enabled`, `automation.rule_disabled`, `automation.rule_deleted`
   - There is no UI for changing the site-admin flag, so there's no event for it yet.
 - **No secrets.** Passwords, tokens (not even their prefix) and webhook secrets are never passed. Webhook URLs are logged as scheme and host only, because paths and queries often carry credentials. As a backstop, detail keys that look like secrets (`password`, `secret`, `token`, `hash`, …) are dropped before storing.
-- **Actor, IP and user agent.** The actor is the explicit `actorId`, else the acting user (`ProjectAccess`), else the signed-in user of the HTTP request. Blazor circuits have no reliable `HttpContext`, so `AuditCircuitHandler` copies IP and user agent from the connection's request into the scoped `AuditRequestInfo` when the circuit opens. Static SSR pages, the API and minimal endpoints read them from `IHttpContextAccessor`. Behind a reverse proxy, set `ReverseProxy:Enabled` (see [Deploying GitBench](#deploying-gitbench)) so `RemoteIpAddress` is the client's address.
+- **Actor, IP and user agent.** The actor is the explicit `actorId`, else the acting user (`ProjectAccess`), else the signed-in user of the HTTP request. Blazor circuits have no reliable `HttpContext`, so `AuditCircuitHandler` copies IP and user agent from the connection's request into the scoped `AuditRequestInfo` when the circuit opens. Static SSR pages, the API and minimal endpoints read them from `IHttpContextAccessor`. Behind a reverse proxy, set `ReverseProxy:Enabled` (see [Production](#production)) so `RemoteIpAddress` is the client's address.
 - **Append-only.** `AppDbContext` refuses tracked updates and deletes of audit rows, and the table has no foreign keys, so events outlive the users and projects they name. The only deletion is retention: `AuditRetentionService` deletes events older than `Audit:RetentionDays` (default 365; `0` keeps them forever) at startup and then daily.
 - **Pages:**
   - `/admin/audit` (site admins, linked in the sidebar) filters by actor username (or `system`), action prefix (e.g. `member.`), project key and UTC date range. It shows 50 events per page, and each row's **Details** expands to show the JSON and user agent.
@@ -1661,9 +1669,9 @@ Gist-style snippets: a title, an optional Markdown description, a visibility and
 | GET | `/api/v1/snippets/{id}/files/{fileName}/raw` | A file as `text/plain` |
 | GET / POST / DELETE | `/api/v1/snippets/{id}/comments[/{commentId}]` | Comments |
 
-## Deploying GitBench
+## Production
 
-GitBench is one ASP.NET Core process with a SQLite database and three folders: repositories, attachments (which also hold release assets), and the Data Protection key ring. Run it as a single instance. SQLite and the in-process queues (CI, webhooks, AI review) aren't built for several replicas.
+GitBench is one ASP.NET Core process with a database (SQLite by default, or [PostgreSQL](#postgresql)) and a few folders: repositories, attachments (which also hold release assets), packages, LFS objects, pages and the Data Protection key ring. Run it as a single instance: the in-process queues (CI, webhooks, AI review) aren't built for several replicas. This section covers the Docker image, configuration, PostgreSQL, [backup and restore](#backup--restore), the [system page](#the-system-page) and a [production checklist](#production-checklist).
 
 ### Docker
 
@@ -1672,7 +1680,7 @@ docker compose up -d --build        # builds the image from the Dockerfile and s
 docker compose logs -f gitbench     # JSON logs
 ```
 
-- **Image.** The `Dockerfile` is multi-stage: an SDK build, then an `aspnet:10.0` runtime with `git`, `curl` and `sqlite3`. It runs as the non-root `app` user (uid 1654). State lives in four volumes: `/data/db`, `/data/repos`, `/data/attachments` and `/data/keys`.
+- **Image.** The `Dockerfile` is multi-stage: an SDK build, then an `aspnet:10.0` runtime with `git`, `openssh-client`, `postgresql-client`, `curl` and `sqlite3`. It runs as the non-root `app` user (uid 1654). State lives in eight volumes: `/data/db` (SQLite), `/data/repos`, `/data/attachments`, `/data/packages`, `/data/lfs`, `/data/pages`, `/data/keys` (key ring and SSH host key) and `/data/backups`.
 - **Image defaults.** The image sets:
   - `ASPNETCORE_ENVIRONMENT=Production`
   - `Seed__DemoData=false`, so no demo users with the published password
@@ -1680,7 +1688,7 @@ docker compose logs -f gitbench     # JSON logs
   - `Security__HttpsRedirection=false`, because TLS ends at the proxy
 - **First admin.** Register your account in the UI, then restart once with `Bootstrap__AdminUsers=<your username>`; separate several usernames with commas. The setting only ever promotes users, so it's fine to leave it set.
 - **TLS.** Production cookies are `Secure`, so serve GitBench over HTTPS. `docker-compose.yml` has a commented-out Caddy service that gets certificates automatically: uncomment it, set the domain, and remove the `ports:` mapping of `gitbench`. For a quick trial over plain HTTP, set `Security__SecureCookies=false` instead. GitBench logs a warning when it sees plain HTTP with Secure cookies on.
-- **Health checks.** The container health check calls `/health/live`; compose checks `/health/ready`.
+- **Health checks.** The image's `HEALTHCHECK` and compose call `/health/ready` (database, storage folders and, with CI on, Docker).
 - **Git over SSH.** The image turns the SSH server on (`Ssh__Enabled=true`) on port 2222 (`EXPOSE 2222`); its host key lives in the `/data/keys` volume, so it survives upgrades. `docker-compose.yml` publishes it as `2222:2222`. To offer the usual `git@host:KEY/slug.git` URLs, map the host's port 22 instead (`"22:2222"`, after moving the host's own sshd to another port) and set `Ssh__PublicPort=22`; set `Ssh__PublicHost` if the SSH host name differs from the web one. The TLS proxy doesn't carry SSH: publish the port directly or use a TCP (layer 4) proxy.
 
 **CI in the container.** Pipelines need a Docker daemon, so they're off by default. There are three options:
@@ -1706,7 +1714,8 @@ Settings come from these sources; later ones override earlier ones:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `ConnectionStrings:Default` | `Data Source=gitbench.db` | SQLite connection string |
+| `Database:Provider` | `Sqlite` | `Sqlite` or `Postgres` (see [PostgreSQL](#postgresql)) |
+| `ConnectionStrings:Default` | `Data Source=gitbench.db` | SQLite file, or the Npgsql connection string when the provider is `Postgres` (required then) |
 | `PublicBaseUrl` | learned from the first request | Absolute site URL for links in API responses and webhooks. **Set it in production** |
 | `AllowedHosts` | `*` | Host header filter (e.g. `gitbench.example.com`) |
 | `Seed:DemoData` | `true` in Development, else `false` | Seed demo users, projects and repositories into an empty database |
@@ -1717,6 +1726,8 @@ Settings come from these sources; later ones override earlier ones:
 | `Attachments:MaxBytes` / `Attachments:MaxPerIssue` | 25 MB / 50 | Issue attachment limits |
 | `Releases:MaxAssetBytes` | 512 MB | Size limit per release asset |
 | `Archives:MaxBytes` / `TimeoutSeconds` / `MaxConcurrent` | 1 GB / 300 / 4 | Source archive limits |
+| `Packages:Root` / `Pages:Root` | `{ContentRoot}/packages` / `{ContentRoot}/pages` | Package registry blobs; static pages |
+| `Backup:*`, `Retention:WebhookDeliveryDays` | see [Backup & restore](#backup--restore) and the [checklist](#production-checklist) | Scheduled backups and retention |
 | `DataProtection:KeysPath` | `{ContentRoot}/keys` | Key ring folder (created with mode 700). Back it up and keep it private |
 | `DataProtection:ApplicationName` | `GitBench` | Keep it the same across deployments that share keys |
 | `DataProtection:CertificatePath` / `CertificatePassword` | none | A `.pfx` that encrypts the keys at rest. Recommended on Linux, where the keys are otherwise stored as plain XML |
@@ -1795,23 +1806,125 @@ Settings come from these sources; later ones override earlier ones:
 - **Large and long requests.** Git pushes and uploads need large request bodies and long timeouts. With nginx, set `client_max_body_size 0; proxy_request_buffering off; proxy_buffering off;` for `/git/`.
 - **Public URL.** Set `PublicBaseUrl` to the public `https://` URL.
 
-### Upgrades & backups
+### PostgreSQL
 
-1. **Back up first.** `scripts/backup.sh [out-dir]` writes `gitbench-backup-<UTC time>.tar.gz`. It contains a consistent SQLite copy (made with `sqlite3 .backup`, safe while GitBench runs), the repositories, the attachments and the key ring.
-   - If those aren't in the checkout, set `GITBENCH_DB`, `GITBENCH_REPOS`, `GITBENCH_ATTACHMENTS` and `GITBENCH_KEYS`.
-   - The image includes the script at `/app/scripts/backup.sh`; its header has the `docker compose exec` command.
-   - The archive contains password hashes, webhook secrets and the keys, so store it encrypted.
+SQLite is the default and is fine for one server. Set `Database:Provider=Postgres` to use PostgreSQL 14 or newer instead:
+
+```bash
+Database__Provider=Postgres
+ConnectionStrings__Default="Host=db;Database=gitbench;Username=gitbench;Password=…"
+```
+
+- **Start-up.** Migrations run at start, as with SQLite, and create the database if the role may `CREATE DATABASE`. `docker-compose.yml` has an optional `postgres:17-alpine` service (`docker compose --profile postgres up -d`) and the matching environment lines.
+- **How two providers share one model.** The entities are declared once. `AppDbContext` (SQLite, migrations in `Data/Migrations`) has a subclass, `PostgresAppDbContext` (`Data/Postgres`), with its own migrations in `Data/MigrationsPostgres` and its own model snapshot, generated from the same model. The app asks for `AppDbContext` either way; `Database:Provider` decides which one the container builds. After a model change add one migration per provider (the context has to be named because there are two):
+
+  ```bash
+  dotnet ef migrations add <Name> --context AppDbContext
+  dotnet ef migrations add <Name> --context PostgresAppDbContext --output-dir Data/MigrationsPostgres
+  ```
+
+  `DatabaseProviderTests` fails when either snapshot is behind the model.
+- **Differences handled in `Data/Postgres`.**
+  - `EF.Functions.Like` is rewritten to `ILIKE`, because SQLite's `LIKE` ignores case and every search relies on that.
+  - `DateTime` is stored as `timestamptz` and read back as UTC.
+  - Three raw-SQL fragments in the model (two index filters and a check constraint) are restated with quoted identifiers and real booleans.
+  - GQL `ORDER BY` puts empty values first ascending and last descending on both databases (PostgreSQL treats `NULL` as the largest value).
+- **Test suite.** Set `GITBENCH_TEST_POSTGRES` to a connection string for a server that may create databases and every test fixture gets its own throw-away database there:
+
+  ```bash
+  docker run -d --name pg -e POSTGRES_PASSWORD=test -p 55432:5432 postgres:17-alpine
+  GITBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=test;Database=postgres" dotnet test
+  ```
+
+  The whole suite passes on PostgreSQL 17 except that the backup round-trip tests return early there (they need the PostgreSQL client tools; the Postgres backup and restore was checked by hand, see below). Interactive pages that build their form model after an `await` need a `null` guard, because SQLite answers synchronously and Npgsql doesn't (the profile page had the bug).
+- **Not covered.**
+  - There is **no data migration from an existing SQLite database**. Start a new installation on PostgreSQL, or keep SQLite.
+  - Backups need `pg_dump`/`pg_restore` (the Docker image has them) and only restore into the same provider.
+  - Text sort order follows the database's collation (SQLite sorts by bytes). List pages that sort by a nullable column outside GQL may place empty values differently.
+  - Connection pooling is Npgsql's (`Maximum Pool Size`, default 100); size it for your PostgreSQL `max_connections`.
+  - Failover, replicas and load were not tested. GitBench is still a single instance: its queues are in-process.
+
+### Backup & restore
+
+One archive holds everything needed to rebuild an installation: `gitbench-backup-<UTC time>.tar.gz`, plus a `.sha256` file with the archive's own hash.
+
+| Content | Where it comes from |
+|---|---|
+| `db/gitbench.db` or `db/postgres.dump` | SQLite online backup API (a consistent copy while running, no `-wal`/`-shm`), or `pg_dump --format=custom` |
+| `repos/`, `attachments/`, `packages/`, `lfs/`, `pages/` | `Git:RepositoryRoot`, `Attachments:Root`, `Packages:Root`, `Lfs:Root`, `Pages:Root` |
+| `keys/` | `DataProtection:KeysPath`: the key ring and the SSH host key (`Backup:IncludeKeys`, default on) |
+| `ci-artifacts/` | off by default (`Backup:IncludeCiArtifacts`) |
+| `manifest.json` (last entry) | format, GitBench version, provider, newest migration, and the size and SHA-256 of every file |
+
+The archive stores folder *names*, never absolute paths, so it restores onto any layout. The database is copied first and the files afterwards, so every commit the database mentions is in the repositories. A push that lands during the copy isn't in the archive; git's `*.lock` files, symbolic links and the backup folder itself are skipped.
+
+**Command line** (same configuration and environment as the server; run `dotnet GitBench.dll backup --help`):
+
+```bash
+dotnet GitBench.dll backup /srv/backups --keep 14      # safe while GitBench runs
+dotnet GitBench.dll restore /srv/backups/gitbench-backup-20261119-023000.tar.gz [--force]
+# Docker
+docker compose exec gitbench dotnet GitBench.dll backup
+docker compose stop gitbench
+docker compose run --rm gitbench restore /data/backups/gitbench-backup-….tar.gz
+docker compose start gitbench
+```
+
+**Restore checks everything before it touches anything.** The archive is unpacked into a staging folder (`Backup:StagingDirectory`, default the temp folder) and verified:
+
+1. entries are plain files and folders under `db/` or a known section, with no `..`, absolute paths or links;
+2. `manifest.json` is present, of a known format, and from the same database provider;
+3. the backup's newest migration isn't newer than this build's (a backup from a newer GitBench is refused: upgrade first; older backups are fine and migrate at start);
+4. every file matches the manifest's size and SHA-256, and nothing is missing or extra;
+5. the installation is empty: no users or projects in the database and nothing in the storage folders. Otherwise it **refuses** unless `--force` is given, which replaces the database and the contents of each folder in the archive. A database that was only just migrated, with no users or projects, counts as empty.
+
+Stop GitBench before restoring. For Postgres the database is created if it doesn't exist, and `pg_restore --clean --if-exists` replaces its tables. Exit code 0 means success, 1 a backup or restore problem, 2 bad arguments.
+
+**Scheduled backups** run inside the server when `Backup:Enabled=true`; `/admin/backups` has "Back up now", download links and delete, and `/admin/system` shows the last result:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Backup:Enabled` | `false` | Run backups on a schedule |
+| `Backup:Directory` | `{ContentRoot}/backups` (`/data/backups` in Docker) | Where archives go. Put it on another disk or share |
+| `Backup:StartTimeUtc` / `Backup:IntervalHours` | `02:30` / `24` | The slots are the start time plus whole intervals |
+| `Backup:KeepLast` / `Backup:KeepDays` | `7` / `0` | Retention: keep the newest N, and delete archives older than N days (0 = off). The newest archive is never deleted. Only `gitbench-backup-*.tar.gz` files are touched |
+| `Backup:IncludeKeys` / `Backup:IncludeCiArtifacts` | `true` / `false` | Optional sections |
+| `Backup:PgDumpPath` / `Backup:PgRestorePath` | `pg_dump` / `pg_restore` | PostgreSQL client tools (must be as new as the server) |
+| `Backup:StagingDirectory` | temp folder | Unpacking area for a restore (needs room for the whole archive) |
+
+The CLI applies `Backup:KeepLast` and `KeepDays` too when it writes to the default folder, or `--keep N` for a folder you name. Test a restore into a scratch directory now and then; the round trip is covered by `BackupRestoreTests`.
+
+**The archive holds password hashes, webhook and CI secrets and the key ring.** Store it encrypted, with access control. Without the original `keys/`, everyone has to sign in again and encrypted secrets can't be read, so keep `Backup:IncludeKeys` on unless you back the key ring up separately. `scripts/backup.sh` is the older shell-only SQLite alternative.
+
+### The system page
+
+`/admin/system` (site admins) shows what an operator wants at a glance:
+
+- **Server:** version, runtime, OS, uptime, memory.
+- **Database:** provider, target (never the password), server version, size, applied and pending migrations.
+- **Health:** the checks behind `/health/ready`.
+- **Storage:** files and bytes in each folder, measured on demand and cached for a minute.
+- **Queues:** webhook deliveries waiting, CI pipelines queued and running, merge queue entries, pending e-mail and chat notifications, and failures in the last 24 hours.
+- **Backups:** schedule, folder, number and size of archives, last success, last error.
+- **Hosting checks:** the review below.
+
+### Production checklist
+
+The same review runs at start-up (warnings and problems go to the log) and is listed on `/admin/system`:
+
+- **TLS and the proxy.** Terminate TLS at a reverse proxy and set `PublicBaseUrl` to the public `https://` URL, `ReverseProxy:Enabled=true` and the proxy in `ReverseProxy:KnownProxies` or `KnownNetworks`. Only then does GitBench see `https`, send HSTS, set `Secure` cookies and log real client addresses. In Production, cookies are `Secure`-only unless `Security:SecureCookies=false`, HSTS is on HTTPS responses (`Security:HstsMaxAgeDays`, default 365) and `Security:HttpsRedirection` redirects plain HTTP (the Docker image turns the redirect off because the proxy does it).
+- **Data Protection keys.** `DataProtection:KeysPath` must be a persistent, backed-up folder (a volume in Docker; the container user is uid 1654). If it isn't set in Production GitBench warns, and if it isn't writable GitBench refuses to start, because every restart would otherwise sign everyone out and lose encrypted webhook and CI secrets. Add `DataProtection:CertificatePath` to encrypt the keys at rest.
+- **Demo data off.** `Seed:DemoData` is `false` outside Development; turning it on in Production is flagged as a problem (the demo users share a published password).
+- **Backups on**, restore tested (see above).
+- **Logs.** Production logs are JSON on stdout (`appsettings.Production.json`). GitBench doesn't rotate them: the Docker json-file driver does (`max-size` and `max-file` in `docker-compose.yml`), journald and Kubernetes have their own limits. Keep `Logging:LogLevel:Default` at `Information`. Data that grows inside the database has retention settings: `Audit:RetentionDays` (default 365) and `Retention:WebhookDeliveryDays` (default 30, `0` keeps them forever).
+- **Rate limits on**, `AllowedHosts` set to your host name, and a single instance of the app.
+- **Docker image.** Multi-stage build, non-root user (uid 1654), `git` and `openssh-client` (ssh mirrors), `postgresql-client` (backups on Postgres) and `curl`, with the health check on `/health/ready`.
+
+### Upgrades
+
+1. **Back up first**: `docker compose exec gitbench dotnet GitBench.dll backup` (see [Backup & restore](#backup--restore)), or let the schedule do it.
 2. **Deploy the new version**: `git pull && docker compose up -d --build`, or replace the published files and restart.
-3. **Migrations run automatically at startup.** Watch the log for `Applying migration`. If startup fails, restore the backup and run the previous version.
-
-**Restore**:
-
-1. Stop GitBench and extract the archive.
-2. Copy `db/gitbench.db` over the database, and delete any `-wal`/`-shm` files next to it.
-3. Replace the `repos`, `attachments` and `keys` folders with the archived ones.
-4. Start GitBench.
-
-Without the original `keys`, everyone has to sign in again and encrypted secrets can't be read.
+3. **Migrations run automatically at startup.** Watch the log for `Applying migration`, and `/admin/system` for pending migrations. If startup fails, stop it, restore the backup (`restore --force`) and run the previous version. A backup made by a newer version is refused by an older one.
 
 ## Next steps
 

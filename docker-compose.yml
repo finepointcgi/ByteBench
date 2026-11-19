@@ -1,8 +1,11 @@
 # GitBench with Docker Compose. Start: docker compose up -d   Logs: docker compose logs -f gitbench
-# See "Deploying GitBench" in README.md for every setting.
+# See "Production" in README.md for every setting, backups and the upgrade routine.
 #
 # Out of the box GitBench listens on http://localhost:8080 without TLS. Because production cookies are Secure-only,
 # either put the TLS proxy below in front of it (recommended), or for a quick local trial set Security__SecureCookies=false.
+#
+# SQLite (default) needs nothing else. For PostgreSQL: docker compose --profile postgres up -d, and uncomment the three
+# "Database__Provider" lines under environment (plus depends_on) below.
 
 services:
   gitbench:
@@ -12,10 +15,10 @@ services:
     ports:
       - "127.0.0.1:8080:8080"   # only reachable from this host; the proxy (or an SSH tunnel) exposes it
       - "2222:2222"             # git over SSH (the TLS proxy doesn't carry it). For git@host:KEY/repo.git URLs use "22:2222" + Ssh__PublicPort
-
     environment:
-      # Absolute URL used in API responses, webhooks and e-mails.
+      # Absolute URL used in API responses, webhooks and e-mails. Set it.
       PublicBaseUrl: "https://gitbench.example.com"
+      AllowedHosts: "gitbench.example.com"
       # Behind the proxy below: trust its X-Forwarded-For/-Proto (proxy containers live on the compose network).
       ReverseProxy__Enabled: "true"
       ReverseProxy__KnownNetworks__0: "172.16.0.0/12"
@@ -24,6 +27,14 @@ services:
       # Quick local trial over plain HTTP only:
       # Security__SecureCookies: "false"
       # Security__HttpsRedirection: "false"
+      # ----- Backups: one archive (database + repos + attachments + packages + LFS + pages + keys) into /data/backups -----
+      Backup__Enabled: "true"
+      Backup__StartTimeUtc: "02:30"
+      Backup__IntervalHours: "24"
+      Backup__KeepLast: "7"
+      # ----- PostgreSQL instead of SQLite (also uncomment depends_on and the "postgres" service) -----
+      # Database__Provider: "Postgres"
+      # ConnectionStrings__Default: "Host=postgres;Database=gitbench;Username=gitbench;Password=${GITBENCH_DB_PASSWORD}"
       # CI pipelines (see README "CI in the container"): off unless you give GitBench a Docker daemon.
       Ci__Enabled: "false"
       # Git over SSH is on in the image (port 2222, host key in the gitbench-keys volume). Clone URLs show:
@@ -34,11 +45,17 @@ services:
       # Ci__WorkDirectory: "/data/ci"          # must be the same path on the host when using the host's socket
       # Secrets come from the environment (or an env_file), never from appsettings.json:
       # Ai__ApiKey: "${GITBENCH_AI_API_KEY}"
+    # depends_on:
+    #   postgres: { condition: service_healthy }
     volumes:
-      - gitbench-db:/data/db
+      - gitbench-db:/data/db                   # SQLite database (unused with PostgreSQL)
       - gitbench-repos:/data/repos
       - gitbench-attachments:/data/attachments
+      - gitbench-packages:/data/packages
+      - gitbench-lfs:/data/lfs
+      - gitbench-pages:/data/pages
       - gitbench-keys:/data/keys               # Data Protection key ring and the SSH host key
+      - gitbench-backups:/data/backups         # archives: put this on another disk (or bind-mount a backup share) in production
       # CI option A (host daemon; anyone who can push can then control the host, see README):
       # - /var/run/docker.sock:/var/run/docker.sock
       # - /data/ci:/data/ci
@@ -48,9 +65,31 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+    # Console logs are JSON on stdout; rotate them so they can't fill the disk.
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  # ----- Optional PostgreSQL (docker compose --profile postgres up -d) -----
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gitbench
+      POSTGRES_USER: gitbench
+      POSTGRES_PASSWORD: "${GITBENCH_DB_PASSWORD:?set GITBENCH_DB_PASSWORD}"
+    volumes:
+      - gitbench-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gitbench -d gitbench"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ----- Optional TLS reverse proxy (Caddy gets and renews Let's Encrypt certificates automatically) -----
   # Point DNS for gitbench.example.com at this host, uncomment, and remove the "ports" mapping above.
+  # Caddy forwards Host, X-Forwarded-For/-Proto and WebSockets (Blazor) by default. For nginx see "Reverse proxy" in the README.
   # caddy:
   #   image: caddy:2
   #   restart: unless-stopped
@@ -64,5 +103,10 @@ volumes:
   gitbench-db:
   gitbench-repos:
   gitbench-attachments:
+  gitbench-packages:
+  gitbench-lfs:
+  gitbench-pages:
   gitbench-keys:
+  gitbench-backups:
+  gitbench-pg:
   # caddy-data:

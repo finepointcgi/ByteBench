@@ -31,6 +31,8 @@
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Profile</MudText>
         <StatusMessage Success="@profileSuccess" Errors="profileErrors" />
 
+        @if (ProfileInput != null)
+        {
         <EditForm Model="ProfileInput" FormName="profile" OnValidSubmit="SaveProfile" method="post">
             <DataAnnotationsValidator />
             <div class="gb-field">
@@ -60,6 +62,7 @@
             </div>
             <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Save profile</MudButton>
         </EditForm>
+        }
     </section>
 
     <section class="profile-section">
@@ -127,6 +130,8 @@
         {
         <StatusMessage Success="@passwordSuccess" Errors="passwordErrors" />
 
+        @if (PasswordInput != null)
+        {
         <EditForm Model="PasswordInput" FormName="password" OnValidSubmit="ChangePassword" method="post">
             <DataAnnotationsValidator />
             <div class="gb-field">
@@ -146,6 +151,7 @@
             </div>
             <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false">Change password</MudButton>
         </EditForm>
+        }
         }
     </section>
 
@@ -190,6 +196,8 @@
             </MudAlert>
         }
 
+        @if (TokenInput != null)
+        {
         <EditForm Model="TokenInput" FormName="create-token" OnValidSubmit="CreateToken" method="post">
             <DataAnnotationsValidator />
             <div class="gb-field">
@@ -229,6 +237,7 @@
             <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
                        StartIcon="@Icons.Material.Filled.Key">Create token</MudButton>
         </EditForm>
+        }
 
         @if (tokens.Count > 0)
         {

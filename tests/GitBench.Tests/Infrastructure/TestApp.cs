@@ -26,7 +26,30 @@ public class TestApp : WebApplicationFactory<Program>
     public string RepoRoot => Path.Combine(DataRoot, "repos");
     public string AttachmentRoot => Path.Combine(DataRoot, "attachments");
 
+    /// <summary>
+    /// Set <c>GITBENCH_TEST_POSTGRES</c> to an Npgsql connection string of a server (any database, a role that may CREATE DATABASE) to
+    /// run the whole suite on PostgreSQL: every fixture then gets its own throw-away database on that server.
+    /// </summary>
+    public const string PostgresEnvVar = "GITBENCH_TEST_POSTGRES";
+    public static string? PostgresServer => Environment.GetEnvironmentVariable(PostgresEnvVar) is { Length: > 0 } v ? v : null;
+    public static bool UsingPostgres => PostgresServer != null;
+
+    private string? pgDatabase;
+
     public TestApp() => Directory.CreateDirectory(DataRoot);
+
+    private string CreatePostgresDatabase()
+    {
+        pgDatabase = "gbt_" + Guid.NewGuid().ToString("N");
+        using (var c = new Npgsql.NpgsqlConnection(PostgresServer))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = $"CREATE DATABASE \"{pgDatabase}\"";
+            cmd.ExecuteNonQuery();
+        }
+        return new Npgsql.NpgsqlConnectionStringBuilder(PostgresServer) { Database = pgDatabase, MaxPoolSize = 12, Pooling = true }.ConnectionString;
+    }
 
     /// <summary>Extra configuration for a derived fixture (e.g. turning CI back on).</summary>
     protected virtual void AddSettings(IDictionary<string, string?> settings) { }
@@ -56,7 +79,14 @@ public class TestApp : WebApplicationFactory<Program>
             ["Logging:LogLevel:Microsoft"] = "Warning",
             ["Logging:LogLevel:GitBench.GitHttp"] = "Warning",
         };
+        var defaultConnection = settings["ConnectionStrings:Default"];
         AddSettings(settings);
+        // A fixture that picked its own SQLite file (a restart test sharing a folder) stays on SQLite.
+        if (UsingPostgres && !settings.ContainsKey("Database:Provider") && settings["ConnectionStrings:Default"] == defaultConnection)
+        {
+            settings["Database:Provider"] = "Postgres";
+            settings["ConnectionStrings:Default"] = CreatePostgresDatabase();
+        }
         builder.UseEnvironment("Development");
         foreach (var (k, v) in settings) builder.UseSetting(k, v);
         builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(settings));
@@ -69,6 +99,19 @@ public class TestApp : WebApplicationFactory<Program>
         base.Dispose(disposing);
         if (!disposing) return;
         SqliteConnection.ClearAllPools();
+        if (pgDatabase != null)
+        {
+            try
+            {
+                Npgsql.NpgsqlConnection.ClearAllPools();
+                using var c = new Npgsql.NpgsqlConnection(PostgresServer);
+                c.Open();
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = $"DROP DATABASE IF EXISTS \"{pgDatabase}\" WITH (FORCE)";
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception) { /* a leftover gbt_ database on a scratch server is harmless */ }
+        }
         try { DeleteDirectory(DataRoot); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 

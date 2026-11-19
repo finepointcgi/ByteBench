@@ -4,9 +4,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GitBench.Data;
 
-public partial class AppDbContext(DbContextOptions<AppDbContext> options)
-    : IdentityDbContext<User, IdentityRole<int>, int>(options)
+public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 {
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    /// <summary>For <see cref="Postgres.PostgresAppDbContext"/>: the same model on another provider.</summary>
+    protected AppDbContext(DbContextOptions options) : base(options) { }
+
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Issue> Issues => Set<Issue>();
     public DbSet<Label> Labels => Set<Label>();

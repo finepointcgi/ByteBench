@@ -51,6 +51,7 @@ public static class ProductionSetup
         // ----- Data Protection -----
         var keysPath = Path.GetFullPath(config["DataProtection:KeysPath"] is { Length: > 0 } kp ? kp : Path.Combine(env.ContentRootPath, "keys"));
         Directory.CreateDirectory(keysPath);
+        if (ProductionChecks.KeysProblem(keysPath) is { } keysProblem) throw new InvalidOperationException(keysProblem); // fail fast: a key ring that can't be written loses every session at the next restart
         if (!OperatingSystem.IsWindows())
         {
             try { File.SetUnixFileMode(keysPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }

@@ -513,3 +513,8 @@ gitbench.db*
 # Source folders named "Packages" (the NuGet packages rule above would hide them)
 !/Services/Packages/**
 !/Components/Packages/**
+
+# GitBench source folder (not Visual Studio backups)
+!Services/Hosting/Backup/
+backups/
+*.tar.gz.partial

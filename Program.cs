@@ -21,15 +21,18 @@ using Microsoft.AspNetCore.Mvc;
 using MudBlazor.Services;
 using Microsoft.EntityFrameworkCore;
 
+// `dotnet GitBench.dll backup|restore ...` run before (instead of) the web host.
+if (GitBench.Services.Hosting.Backup.BackupCli.IsCommand(args)) return await GitBench.Services.Hosting.Backup.BackupCli.RunAsync(args);
+
 var builder = WebApplication.CreateBuilder(args);
-builder.AddGitBenchHosting(); // data protection keys, forwarded headers, cookies, rate limits, health checks
+builder.AddGitBenchHosting();
+GitBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.AddBackups(builder.Services, builder.Configuration); // backup/restore, scheduled backups, /admin/system, retention jobs // data protection keys, forwarded headers, cookies, rate limits, health checks
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMudServices(); // MudBlazor UI components (dialogs, snackbars, popovers)
 
-builder.Services.AddDbContextFactory<AppDbContext>(o =>
-    o.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=gitbench.db"));
+builder.Services.AddGitBenchDatabase(builder.Configuration); // Database:Provider = Sqlite (default) | Postgres
 
 // ----- Authentication (ASP.NET Core Identity, cookie-based) -----
 builder.Services.AddCascadingAuthenticationState();
@@ -137,6 +140,7 @@ GitBench.Services.Flags.FlagsServiceCollectionExtensions.AddFeatureFlags(builder
 
 var app = builder.Build();
 app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
+ProductionChecks.LogAtStartup(app.Configuration, app.Environment, app.Logger); // hosting review: warnings in the log
 
 using (var scope = app.Services.CreateScope())
 {
@@ -193,6 +197,7 @@ GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 GitBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.MapServiceDesk(app); // POST /service-desk/inbound (signed raw MIME)
 app.MapReleases();
 app.MapGitBenchHealth(); // /health/live, /health/ready
+GitBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.MapBackupDownloads(app); // /admin/backups/download/{name}
 app.MapGitBenchSso(); // /account/sso/*: start, complete and link SSO sign-ins
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
@@ -206,6 +211,7 @@ app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit
 });
 
 app.Run();
+return 0;
 
 // Lets the integration tests (tests/GitBench.Tests) use WebApplicationFactory<Program>.
 public partial class Program;
