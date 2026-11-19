@@ -561,6 +561,9 @@ public class MirrorTagsLfsTests(KestrelApp app) : IClassFixture<KestrelApp>, IDi
         Assert.True(await app.Services.GetRequiredService<LfsStorage>().RepositoryHasAsync(r.Id, oid));
 
         var clone = await CloneAsync(p, r, "dan");
+        // The test's git has no global LFS filter, so the clone checked out the pointer: enable the filter and fetch the object.
+        await git.OkAsync(clone, "lfs", "install", "--local");
+        await git.OkAsync(clone, "lfs", "pull");
         Assert.Equal(data, await File.ReadAllBytesAsync(Path.Combine(clone, "big.bin")));
     }
 }
