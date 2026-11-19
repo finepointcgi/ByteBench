@@ -34,13 +34,13 @@ public static class FlagSdkEndpoints
         g.AddEndpointFilter<SdkEndpointFilter>();
 
         g.MapMethods("/{**rest}", ["OPTIONS"], (HttpContext http) => Results.NoContent()).ExcludeFromDescription();
-        g.MapGet("/evaluate", EvaluateOne).WithName("SdkEvaluateFlag").WithSummary("Evaluate one flag for a context")
+        g.MapGet("/evaluate", (Delegate)EvaluateOne).WithName("SdkEvaluateFlag").WithSummary("Evaluate one flag for a context")
             .WithDescription("Query: flag (key), user (id), attr.NAME=value. SDK key auth. ETag / If-None-Match supported.");
-        g.MapPost("/evaluate", EvaluateOnePost).WithName("SdkEvaluateFlagPost").WithSummary("Evaluate one flag; the context is a JSON body");
-        g.MapGet("/evaluate-all", EvaluateAll).WithName("SdkEvaluateAllFlags").WithSummary("Evaluate every flag of the environment for a context");
-        g.MapPost("/evaluate-all", EvaluateAllPost).WithName("SdkEvaluateAllFlagsPost").WithSummary("Evaluate every flag; the context is a JSON body");
+        g.MapPost("/evaluate", (Delegate)EvaluateOnePost).WithName("SdkEvaluateFlagPost").WithSummary("Evaluate one flag; the context is a JSON body");
+        g.MapGet("/evaluate-all", (Delegate)EvaluateAll).WithName("SdkEvaluateAllFlags").WithSummary("Evaluate every flag of the environment for a context");
+        g.MapPost("/evaluate-all", (Delegate)EvaluateAllPost).WithName("SdkEvaluateAllFlagsPost").WithSummary("Evaluate every flag; the context is a JSON body");
         g.MapGet("/stream", Stream).WithName("SdkFlagStream").WithSummary("Server-sent events: evaluated flags, re-sent on every change");
-        g.MapGet("/definitions", Definitions).WithName("SdkFlagDefinitions").WithSummary("Rules and segments for local evaluation (server key)");
+        g.MapGet("/definitions", (Delegate)Definitions).WithName("SdkFlagDefinitions").WithSummary("Rules and segments for local evaluation (server key)");
         return app;
     }
 

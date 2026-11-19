@@ -256,7 +256,7 @@ public class AiPullRequestReviewTests(AiReviewApp app) : IClassFixture<AiReviewA
         Assert.Equal(AiReviewStatus.Completed, second.Status);
         Assert.NotEqual(first.HeadSha, second.HeadSha);
         var comments = await CommentsAsync(t.Pr.Id);
-        Assert.Single(comments.Where(c => c.IsInline));
+        Assert.Single(comments, c => c.IsInline);
         Assert.Equal(2, comments.Count(c => !c.IsInline)); // one summary per review
         Assert.Contains("still open", comments.Last().Body);
     }

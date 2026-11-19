@@ -175,7 +175,7 @@ public class SecurityCiFileTests
                 var body = stub == "nightowl" ? "#!/bin/sh\necho \"$@\" > \"$PWD/args.txt\"\n" : "#!/bin/sh\n";
                 var path = Path.Combine(bin, stub);
                 File.WriteAllText(path, body);
-                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
             var run = CiFile.Parse("include: nightowl\n").Definition!.Jobs.Single(j => j.Name == "nightowl").Steps.Single().Run;
             File.WriteAllText(Path.Combine(dir, "step.sh"), run);

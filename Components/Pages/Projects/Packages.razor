@@ -83,7 +83,7 @@ else if (project != null)
             CI jobs get <span class="mono">GITBENCH_REGISTRY_USER</span> / <span class="mono">GITBENCH_REGISTRY_PASSWORD</span> (a job token for this project),
             <span class="mono">GITBENCH_REGISTRY</span>, <span class="mono">GITBENCH_NUGET_SOURCE_URL</span> and <span class="mono">GITBENCH_NPM_REGISTRY_URL</span>.
         </MudText>
-        <MudTabs Elevation="0" Outlined="true" Rounded="true" PanelClass="pa-4" Class="mb-4">
+        <MudTabs Elevation="0" Outlined="true" Rounded="true" TabPanelsClass="pa-4" Class="mb-4">
             @foreach (var t in new[] { PackageType.NuGet, PackageType.Npm, PackageType.Container })
             {
                 <MudTabPanel Text="@(t == PackageType.Container ? "Docker" : t == PackageType.Npm ? "npm" : "NuGet")">

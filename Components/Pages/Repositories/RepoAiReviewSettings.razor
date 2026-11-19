@@ -54,11 +54,11 @@ else if (Repo != null)
                                  Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!enabled)" Class="mt-3 ai-review-size"
                                  HelperText="Larger pull requests are reviewed partly and the summary says which files weren't." />
 
-                <MudTextField T="string" Label="Paths to ignore (one pattern per line)" @bind-Value="ignore" Lines="3" AutoGrow="true" MaxLines="10"
+                <MudTextField T="string" Label="Paths to ignore (one pattern per line)" @bind-Value="ignore" Lines="3" Sizing="InputSizing.Auto" MaxLines="10"
                               Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!enabled)" Class="mt-3"
                               HelperText="Gitignore-style, like CODEOWNERS: docs/, *.generated.cs, vendor/**. Lockfiles, binaries and generated files are always skipped." />
 
-                <MudTextField T="string" Label="Focus prompt (optional)" @bind-Value="focus" Lines="2" AutoGrow="true" MaxLines="8" MaxLength="2000"
+                <MudTextField T="string" Label="Focus prompt (optional)" @bind-Value="focus" Lines="2" Sizing="InputSizing.Auto" MaxLines="8" MaxLength="2000"
                               Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(!enabled)" Class="mt-3"
                               HelperText="Extra guidance for the reviewer, e.g. &quot;This service handles payments; pay attention to rounding and authorization.&quot;" />
 

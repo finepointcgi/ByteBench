@@ -194,7 +194,7 @@ else if (project != null)
         Send the SDK key as a Bearer token. Responses carry an <code>ETag</code>: send it back as <code>If-None-Match</code> when polling to get <code>304</code> while nothing changed,
         or open <code>/api/v1/flags/stream</code> (server-sent events) for live updates. The API allows cross-origin requests and never accepts personal access tokens.
     </MudText>
-    <MudTabs Elevation="0" Rounded="true" PanelClass="pt-2" Class="mb-4">
+    <MudTabs Elevation="0" Rounded="true" TabPanelsClass="pt-2" Class="mb-4">
         <MudTabPanel Text="C#"><pre class="fl-code">@CSharpSnippet</pre></MudTabPanel>
         <MudTabPanel Text="JavaScript"><pre class="fl-code">@JsSnippet</pre></MudTabPanel>
     </MudTabs>
