@@ -12,6 +12,7 @@
 @inject MergeGate MergeGateSvc
 @inject RepositorySettingsService RepoSettings
 @inject CodeOwnersService CodeOwners
+@inject GitBench.Services.MergeQueue.MergeQueueService MergeQueues
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -267,7 +268,15 @@ else if (pr != null)
                         </ul>
                     }
                     <MergeChecksList Gate="gate" Target="@pr.TargetBranch" />
-                    @if (perms.Can(Permission.MergePullRequest))
+                    @if (queue.Config != null)
+                    {
+                        <MergeQueueBox Pr="pr" Status="queue" Perms="perms" CanQueue="CanMerge" OnChanged="() => Reload(full: false)" />
+                    }
+                    @if (queue.AppliesToActor)
+                    {
+                        @* The merge queue replaces the merge button. *@
+                    }
+                    else if (perms.Can(Permission.MergePullRequest))
                     {
                     <MudSelect T="string" @bind-Value="strategy" Disabled="@(!CanMerge)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
                                OuterClass="mt-3" aria-label="Merge strategy">
@@ -291,7 +300,7 @@ else if (pr != null)
                         <span class="small">Delete <span class="mono">@pr.SourceBranch</span> after merging</span>
                     </MudCheckBox>
                     <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" Class="mt-2" StartIcon="@Icons.Material.Filled.Merge"
-                               Disabled="@(!CanMerge || busy)" OnClick="Merge">@(gate is { Blocked: true, CanBypass: true } ? "Merge (bypass protection)" : "Merge")</MudButton>
+                               Disabled="@(!CanMerge || busy)" OnClick="Merge">@(queue.Config != null ? "Merge directly (bypass the queue)" : gate is { Blocked: true, CanBypass: true } ? "Merge (bypass protection)" : "Merge")</MudButton>
                     }
                     else
                     {
@@ -502,6 +511,7 @@ else if (pr != null)
         perms = await Access.GetPermissionsAsync(pr.Repository.ProjectId);
         canComment = perms.Can(Permission.Comment) || (pr.IsCrossFork && pr.AuthorId == Me.Id);
         gate = pr.State == PullRequestState.Open ? await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id) : null;
+        queue = pr.State == PullRequestState.Open ? await MergeQueues.StatusAsync(pr.Id, Me.Id) : GitBench.Services.MergeQueue.MergeQueueStatus.None;
         if (full)
         {
             changes = await PRs.GetChangesAsync(pr);
@@ -529,20 +539,31 @@ else if (pr != null)
     // ----- Live updates -----
     // Reload replaces `pr` (and, when the state changed, diff/merge status); drafts and editing flags are separate
     // fields, and DiffView keeps its own inline-comment drafts, so unsaved edits survive.
-    private IDisposable? liveSubscription, pipelineSubscription;
+    private IDisposable? liveSubscription, pipelineSubscription, queueSubscription;
+    private GitBench.Services.MergeQueue.MergeQueueStatus queue = GitBench.Services.MergeQueue.MergeQueueStatus.None;
 
     protected override void OnAfterRender(bool firstRender)
     {
         if (!firstRender) return;
         liveSubscription = Live.Subscribe<PullRequestChanged>(OnPullRequestChanged);
         pipelineSubscription = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
+        queueSubscription = Live.Subscribe<GitBench.Services.MergeQueue.MergeQueueChanged>(OnQueueChanged);
     }
+
+    // The target's merge queue moved on (built, tested, merged, reordered): refresh this PR's place in it.
+    private Task OnQueueChanged(GitBench.Services.MergeQueue.MergeQueueChanged e) =>
+        pr == null || pr.RepositoryId != e.RepositoryId || pr.TargetBranch != e.TargetBranch || pr.State != PullRequestState.Open ? Task.CompletedTask : InvokeAsync(async () =>
+        {
+            queue = await MergeQueues.StatusAsync(pr.Id, Me.Id);
+            StateHasChanged();
+        });
 
     // A pipeline in this PR's repository changed: re-evaluate the merge gate (its pipeline check may have flipped).
     private Task OnPipelineChanged(PipelineChanged e) =>
         pr == null || pr.RepositoryId != e.RepositoryId || pr.State != PullRequestState.Open ? Task.CompletedTask : InvokeAsync(async () =>
         {
             gate = await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id);
+            if (queue.Active?.PipelineId == e.PipelineId) queue = await MergeQueues.StatusAsync(pr.Id, Me.Id);
             StateHasChanged();
         });
 
@@ -555,7 +576,7 @@ else if (pr != null)
         StateHasChanged();
     });
 
-    public void Dispose() { liveSubscription?.Dispose(); pipelineSubscription?.Dispose(); }
+    public void Dispose() { liveSubscription?.Dispose(); pipelineSubscription?.Dispose(); queueSubscription?.Dispose(); }
 
     private async Task Run(Func<Task> action, bool full)
     {

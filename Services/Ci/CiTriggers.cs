@@ -136,17 +136,18 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     /// </summary>
     public async Task<int?> CreateAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? userId,
         int? pullRequestId, CiParseResult def, bool dedupe, CancellationToken ct = default, bool forkPullRequest = false, int? approvedById = null,
-        int? scheduleId = null, IReadOnlyDictionary<string, string>? variables = null)
+        int? scheduleId = null, IReadOnlyDictionary<string, string>? variables = null, string? rulesBranch = null)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var commit = await Task.Run(() => GitOps.GetCommit(path, sha), ct);
 
         // rules/only: the jobs that run on this branch. None at all: no pipeline (an error for manual runs).
-        var (jobs, jobsError) = def.Definition?.ForBranch(branch) ?? ([], null);
+        // A merge queue pipeline (Ref refs/merge-queue/...) picks its jobs as if it ran on the target branch (rulesBranch).
+        var (jobs, jobsError) = def.Definition?.ForBranch(rulesBranch ?? branch) ?? ([], null);
         if (def.Definition != null && jobsError == null && jobs.Count == 0)
         {
             if (dedupe) return null;
-            throw new InvalidOperationException($"No job in {CiFile.FileName} runs on branch '{branch}' (see the jobs' rules).");
+            throw new InvalidOperationException($"No job in {CiFile.FileName} runs on branch '{rulesBranch ?? branch}' (see the jobs' rules).");
         }
 
         Pipeline p;

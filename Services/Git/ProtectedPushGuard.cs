@@ -63,6 +63,7 @@ internal static class ProtectedPushGuard
             foreach (var c in parsed.Commands)
             {
                 if (ReadOnlyReason != null) { refusals[c.Ref] = ReadOnlyReason; continue; }
+                if (c.Ref.StartsWith(GitOps.MergeQueueRefPrefix, StringComparison.Ordinal)) { refusals[c.Ref] = "refs/merge-queue/ is managed by the merge queue"; continue; }
                 if (c.Ref.StartsWith("refs/tags/", StringComparison.Ordinal))
                 {
                     var tag = c.Ref["refs/tags/".Length..];

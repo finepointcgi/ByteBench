@@ -1,0 +1,112 @@
+@using GitBench.Services.MergeQueue
+@inject MergeQueueService Queue
+@inject CurrentUser Me
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@* The merge box part for a PR whose target branch uses a merge queue: its place in the queue, or "Add to merge queue". *@
+
+<div class="mq-box" aria-live="polite">
+    @if (Status.Active is { } e)
+    {
+        <MudAlert Severity="@(e.State == MergeQueueEntryState.Passed ? Severity.Success : Severity.Info)" Dense="true" Variant="Variant.Outlined" Class="merge-status"
+                  Icon="@Icons.Material.Outlined.Train">
+            <div><b>#@Status.Position of @Status.QueueLength</b> in the merge queue of <span class="mono">@Pr.TargetBranch</span></div>
+            <div class="small mt-1">
+                @switch (e.State)
+                {
+                    case MergeQueueEntryState.Queued:
+                        <span>@(e.Message ?? "Waiting to be tested.")</span>
+                        break;
+                    case MergeQueueEntryState.Testing:
+                        <span>Testing the merge with @(Status.Position - 1 == 0 ? "the target" : $"the target and {Status.Position - 1} pull request{(Status.Position - 1 == 1 ? "" : "s")} ahead")</span>
+                        if (e.Pipeline is { } p)
+                        {
+                            <span> · <PipelineStatusIcon Status="p.Status" Href="@PipelineUrls.Detail(Pr.Repository, p.Id)" Title="@($"Pipeline #{p.Id}")" /> <a href="@PipelineUrls.Detail(Pr.Repository, p.Id)">Pipeline #@p.Id</a></span>
+                        }
+                        break;
+                    case MergeQueueEntryState.Passed:
+                        <span>Passed. It merges as soon as the pull requests ahead of it are done.</span>
+                        break;
+                }
+            </div>
+            <div class="small muted mt-1">Queued by @e.EnqueuedBy.DisplayName @Display.Ago(e.CreatedAt) · @MergeStrategySettings.Label(e.Strategy)</div>
+        </MudAlert>
+        <div class="d-flex gap-2 mt-2 flex-wrap">
+            @if (CanDequeue)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Error" Disabled="@busy" OnClick="Dequeue"
+                           StartIcon="@Icons.Material.Outlined.RemoveCircleOutline">Remove from queue</MudButton>
+            }
+            @if (Perms.Can(Permission.ManageRepositories) && Status.Position > 1)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="MoveToFront"
+                           StartIcon="@Icons.Material.Outlined.VerticalAlignTop">Move to front</MudButton>
+            }
+        </div>
+    }
+    else
+    {
+        @if (Status.Last is { State: MergeQueueEntryState.Failed or MergeQueueEntryState.Removed } last && last.FinishedAt > DateTime.UtcNow.AddDays(-7))
+        {
+            <MudAlert Severity="@(last.State == MergeQueueEntryState.Failed ? Severity.Error : Severity.Warning)" Dense="true" Variant="Variant.Outlined" Class="merge-status mb-2">
+                Removed from the merge queue @Display.Ago(last.FinishedAt!.Value): @last.Message
+                @if (last.Pipeline is { } lp)
+                {
+                    <a href="@PipelineUrls.Detail(Pr.Repository, lp.Id)">Pipeline #@lp.Id</a>
+                }
+            </MudAlert>
+        }
+        @if (Perms.Can(Permission.MergePullRequest))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" Class="mt-2" StartIcon="@Icons.Material.Outlined.Train"
+                       Disabled="@(!CanQueue || busy)" OnClick="Enqueue">Add to merge queue</MudButton>
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">
+                @MergeStrategySettings.Label(Status.Config!.StrategyFor(Pr.Repository)) · @Status.Config.Describe.
+            </MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-2">Only Maintainers and Owners can add pull requests to the merge queue.</MudText>
+        }
+    }
+    <div class="small mt-1"><a href="@MergeQueueUrls.Queue(Pr.Repository, Pr.TargetBranch)">View the merge queue</a></div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PullRequest Pr { get; set; } = null!;
+    [Parameter, EditorRequired] public MergeQueueStatus Status { get; set; } = MergeQueueStatus.None;
+    [Parameter] public ProjectPermissions Perms { get; set; } = ProjectPermissions.None;
+    /// <summary>Every other merge check passes and the PR merges cleanly.</summary>
+    [Parameter] public bool CanQueue { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool busy;
+
+    private bool CanDequeue => Perms.Can(Permission.MergePullRequest) || Pr.AuthorId == Me.Id;
+
+    private Task Enqueue() => Run(async () =>
+    {
+        await Queue.EnqueueAsync(Pr.Id, Me.Id);
+        Snackbar.Add($"Added to the merge queue of '{Pr.TargetBranch}'.", Severity.Success);
+    });
+
+    private async Task Dequeue()
+    {
+        if (!await Dialogs.ConfirmAsync("Remove from merge queue", "Remove this pull request from the merge queue? The pull requests behind it are tested again without it.")) return;
+        await Run(() => Queue.DequeueAsync(Pr.Id, Me.Id));
+    }
+
+    private Task MoveToFront() => Run(() => Queue.MoveToFrontAsync(Pr.Id, Me.Id));
+
+    private async Task Run(Func<Task> action)
+    {
+        busy = true;
+        try
+        {
+            await action();
+            await OnChanged.InvokeAsync();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+}

@@ -243,6 +243,7 @@ public enum NotificationKind
     PipelineFailed,
     IssueLinked, IssueHierarchyChanged,
     Automation,
+    MergeQueueRemoved,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
@@ -395,7 +396,7 @@ public class PullRequestReviewer
 public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, Skipped, Manual }
 
 /// <summary>What started a pipeline.</summary>
-public enum PipelineTrigger { Push, PullRequest, Manual, Retry, Schedule }
+public enum PipelineTrigger { Push, PullRequest, Manual, Retry, Schedule, MergeQueue }
 
 /// <summary>One CI run of <c>.gitbench-ci.yml</c> at a commit on a branch. Run by <see cref="GitBench.Services.Ci.CiRunner"/>.</summary>
 public partial class Pipeline
@@ -1987,4 +1988,68 @@ public class ProjectPackageSettings
     /// <summary>Cleanup policy: keep only this many newest versions (tags) of each package; null keeps everything.</summary>
     public int? KeepLatest { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- Merge queue -----
+
+public partial class BranchProtectionRule
+{
+    /// <summary>
+    /// Pull requests into matching branches are merged through the merge queue (Services/MergeQueue): "Merge" becomes
+    /// "Add to merge queue", and each entry is tested on a speculative merge of the target plus every entry ahead of it.
+    /// </summary>
+    public bool MergeQueueEnabled { get; set; }
+    /// <summary>How many queue entries are built and tested at once (the train length); a green entry merges everything ahead of it too.</summary>
+    [Range(1, 20)] public int MergeQueueMaxBatch { get; set; } = 5;
+    /// <summary>A queue entry merges only after a pipeline passed on its speculative commit (no pipeline file: it is removed).</summary>
+    public bool MergeQueueRequireCi { get; set; } = true;
+    /// <summary>How the queue merges (null: the repository's default strategy).</summary>
+    public MergeStrategy? MergeQueueStrategy { get; set; }
+    /// <summary>A queue pipeline that hasn't finished after this long is canceled and its entry removed.</summary>
+    [Range(1, 1440)] public int MergeQueueTimeoutMinutes { get; set; } = 60;
+}
+
+/// <summary>Where a <see cref="MergeQueueEntry"/> is. Queued, Testing and Passed are active; the rest are final.</summary>
+public enum MergeQueueEntryState { Queued, Testing, Passed, Merged, Failed, Removed }
+
+/// <summary>
+/// A pull request waiting in (or that went through) the merge queue of <see cref="TargetBranch"/>. Active entries are
+/// ordered by <see cref="Position"/>; each tested one has a speculative commit (target + every entry ahead + this PR) at
+/// <c>refs/merge-queue/{branch}/{Id}</c> and a pipeline on it. Processed by <see cref="GitBench.Services.MergeQueue.MergeQueueEngine"/>.
+/// </summary>
+public class MergeQueueEntry
+{
+    public int Id { get; set; }
+    public int RepositoryId { get; set; }
+    public Repository Repository { get; set; } = null!;
+    public int PullRequestId { get; set; }
+    public PullRequest PullRequest { get; set; } = null!;
+    [Required, MaxLength(250)] public string TargetBranch { get; set; } = "";
+    /// <summary>Who added it: the queue merges as this user.</summary>
+    public int EnqueuedById { get; set; }
+    public User EnqueuedBy { get; set; } = null!;
+    /// <summary>Sort key among the branch's active entries (lower = closer to the front).</summary>
+    public long Position { get; set; }
+    public MergeQueueEntryState State { get; set; } = MergeQueueEntryState.Queued;
+    public MergeStrategy Strategy { get; set; }
+    /// <summary>The PR's head when it was queued: a new push removes the entry.</summary>
+    [Required, MaxLength(40)] public string HeadSha { get; set; } = "";
+    /// <summary>The commit the speculative merge was built on (the target tip, or the speculative commit of the entry ahead).</summary>
+    [MaxLength(40)] public string? BaseSha { get; set; }
+    /// <summary>The speculative commit being tested; the target branch is fast-forwarded to it on success.</summary>
+    [MaxLength(40)] public string? SpeculativeSha { get; set; }
+    public int? PipelineId { get; set; }
+    public Pipeline? Pipeline { get; set; }
+    /// <summary>How many times its speculative merge was (re)built.</summary>
+    public int Builds { get; set; }
+    /// <summary>Why it failed or was removed (or a note on the current state).</summary>
+    [MaxLength(500)] public string? Message { get; set; }
+    public int? RemovedById { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>When its current pipeline started (for the timeout).</summary>
+    public DateTime? TestingSince { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? FinishedAt { get; set; }
+
+    public bool IsActive => State is MergeQueueEntryState.Queued or MergeQueueEntryState.Testing or MergeQueueEntryState.Passed;
 }
