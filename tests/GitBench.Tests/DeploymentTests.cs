@@ -61,7 +61,7 @@ public class DeploymentUnitTests
 }
 
 /// <summary>Approvals, rollback, stop jobs, traceability and the environments API, against the database and git.</summary>
-public class DeploymentServiceTests(CiNoDockerApp app) : IClassFixture<CiNoDockerApp>
+public class DeploymentServiceTests(CiNoRunnerApp app) : IClassFixture<CiNoRunnerApp>
 {
     private static StringContent Json(object body) => new(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
     private static async Task<JsonElement> ReadJson(HttpResponseMessage r) => JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement;
@@ -434,6 +434,13 @@ public class DeploymentServiceTests(CiNoDockerApp app) : IClassFixture<CiNoDocke
         var ran = await Recorder.StartAsync(p, deploy, app.UserId("bob"));
         await Recorder.FinishAsync(ran!.Value, PipelineStatus.Passed);
         waitingId = ran;
+        // Finish the job and pipeline rows as the runner would (this app has no background runner, so nothing else races the test).
+        await using (var jdb = app.Db())
+        {
+            await jdb.PipelineJobs.Where(j => j.Id == deploy.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(j => j.Status, PipelineStatus.Passed).SetProperty(j => j.FinishedAt, DateTime.UtcNow));
+            await jdb.Pipelines.Where(x => x.Id == p.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.Status, PipelineStatus.Passed));
+        }
 
         var envId = env.GetProperty("id").GetInt32();
         var history = await ReadJson(await bob.GetAsync($"/api/v1/projects/{key}/repos/{repo.Slug}/environments/{envId}/deployments"));

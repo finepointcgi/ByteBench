@@ -147,8 +147,12 @@ public class AiReviewService(
     public async Task RunAsync(int reviewId, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+        // Claim the review atomically: the background worker and a manual run can race for the same queued review.
+        var claimed = await db.AiReviews.Where(r => r.Id == reviewId && r.Status == AiReviewStatus.Queued)
+            .ExecuteUpdateAsync(u => u.SetProperty(r => r.Status, AiReviewStatus.Running).SetProperty(r => r.StartedAt, DateTime.UtcNow), ct);
+        if (claimed == 0) return;
         var review = await db.AiReviews.FindAsync([reviewId], ct);
-        if (review == null || review.Status != AiReviewStatus.Queued) return;
+        if (review == null) return;
         var pr = await db.PullRequests.Include(p => p.Repository).ThenInclude(r => r.Project)
             .FirstOrDefaultAsync(p => p.Id == review.PullRequestId, ct);
 

@@ -4,6 +4,8 @@ using GitBench.Services;
 using GitBench.Services.Ci;
 using GitBench.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace GitBench.Tests;
 
@@ -437,6 +439,16 @@ public class CiNoDockerApp : TestApp
         settings["Ci:Enabled"] = "true";
         settings["Ci:DockerExecutable"] = "/nonexistent/docker-for-tests";
         settings["Ci:SchedulesEnabled"] = "false"; // tests call RunDueAsync themselves
+    }
+}
+
+/// <summary>CI turned on, but with no background runner at all: tests that build pipelines by hand and drive them themselves.</summary>
+public class CiNoRunnerApp : CiNoDockerApp
+{
+    protected override void ConfigureServices(IServiceCollection services)
+    {
+        foreach (var d in services.Where(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(CiRunner)).ToList())
+            services.Remove(d);
     }
 }
 
