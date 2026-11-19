@@ -648,6 +648,10 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var now = DateTime.UtcNow;
+        // Approved jobs that never got to run: their waiting deployments end too.
+        var unfinished = await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && (j.Status == PipelineStatus.Queued || j.Status == PipelineStatus.Running))
+            .Select(j => j.Id).ToListAsync();
+        foreach (var jobId in unfinished) await deployments.CancelWaitingAsync(jobId);
         await db.PipelineSteps.Where(s => s.Job.PipelineId == pipelineId && (s.Status == PipelineStatus.Queued || s.Status == PipelineStatus.Running))
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, status).SetProperty(x => x.FinishedAt, now));
         await db.PipelineJobs.Where(j => j.PipelineId == pipelineId && (j.Status == PipelineStatus.Queued || j.Status == PipelineStatus.Running))
