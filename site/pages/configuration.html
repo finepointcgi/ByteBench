@@ -1,0 +1,399 @@
+<h1>Configuration reference</h1>
+<p class="lead">Every setting GitBench reads, grouped by area, with its default, what it does and an example, plus how files, environment variables and user-secrets combine.</p>
+
+<h2 id="sources">Where settings come from</h2>
+<p>GitBench uses the standard ASP.NET Core configuration system. Later sources override earlier ones:</p>
+<ol>
+  <li><code>appsettings.json</code> (shipped defaults)</li>
+  <li><code>appsettings.{Environment}.json</code>: <code>appsettings.Development.json</code> or <code>appsettings.Production.json</code></li>
+  <li><strong>user-secrets</strong> (only in the <code>Development</code> environment)</li>
+  <li><strong>environment variables</strong></li>
+  <li><strong>command-line arguments</strong></li>
+</ol>
+<p>The environment is chosen by <code>ASPNETCORE_ENVIRONMENT</code> (<code>Development</code> with <code>dotnet run --launch-profile http</code>; <code>Production</code> in the Docker image). The shipped <code>appsettings.json</code> only sets <code>Logging</code>, <code>AllowedHosts</code>, <code>Email</code>, <code>ServiceDesk</code> and <code>Ci</code>; everything else uses the defaults in this page.</p>
+
+<h3 id="env-syntax">The double-underscore syntax for environment variables</h3>
+<p>A configuration key such as <code>Ci:MaxConcurrentJobs</code> is written <code>Ci__MaxConcurrentJobs</code> as an environment variable, because <code>:</code> is not allowed in variable names on most systems. Nesting adds more <code>__</code>; list items are numbered:</p>
+<pre><code># Ci:MaxConcurrentJobs
+Ci__MaxConcurrentJobs=4
+# Email:Smtp:Password
+Email__Smtp__Password=...
+# ReverseProxy:KnownNetworks (a list)
+ReverseProxy__KnownNetworks__0=172.16.0.0/12
+ReverseProxy__KnownNetworks__1=10.0.0.0/8
+# RateLimiting:Api:PermitLimit
+RateLimiting__Api__PermitLimit=600</code></pre>
+<p>In <code>docker-compose.yml</code> put them under <code>environment:</code> (quote values: <code>Ci__Enabled: "true"</code>). Names are case-insensitive. Command-line form: <code>dotnet run --launch-profile http -- --Email:Enabled=true</code>.</p>
+
+<h3 id="user-secrets">User-secrets (development)</h3>
+<p>The project already has a <code>UserSecretsId</code>, so you can store keys and passwords outside the source tree without any setup:</p>
+<pre><code>dotnet user-secrets set "Ai:ApiKey" "&lt;your key&gt;"
+dotnet user-secrets set "Email:Smtp:Password" "&lt;password&gt;"
+dotnet user-secrets set "Slack:SigningSecret" "&lt;secret&gt;"
+dotnet user-secrets list</code></pre>
+<p>User-secrets are only read in <code>Development</code>. In production use environment variables (or an <code>env_file</code> with mode 600, or Docker secrets). Keep secrets out of <code>appsettings.json</code> and out of the image.</p>
+
+<h3 id="anthropic-key">ANTHROPIC_API_KEY</h3>
+<p>The AI features need a Claude API key. GitBench uses <code>Ai:ApiKey</code> if set, otherwise the plain environment variable <code>ANTHROPIC_API_KEY</code>. The environment variable is the recommended way:</p>
+<pre><code>export ANTHROPIC_API_KEY=...        # then start GitBench
+# or in docker-compose.yml
+ANTHROPIC_API_KEY: "${GITBENCH_AI_API_KEY}"</code></pre>
+<p>With no key and no Claude Code on the server, every AI feature hides itself. See <a href="ai.html">AI overview and setup</a>.</p>
+
+<h3 id="env-other">Other environment variables</h3>
+<table>
+  <tr><th>Variable</th><th>Meaning</th></tr>
+  <tr><td><code>ASPNETCORE_ENVIRONMENT</code></td><td><code>Development</code> or <code>Production</code>. Changes defaults for cookies, HSTS, seeding, email sender and the SSH server</td></tr>
+  <tr><td><code>ASPNETCORE_URLS</code>, <code>ASPNETCORE_HTTP_PORTS</code></td><td>Where Kestrel listens. The <code>http</code> launch profile uses <code>http://localhost:5108</code>; the Docker image sets <code>ASPNETCORE_HTTP_PORTS=8080</code></td></tr>
+  <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Claude API key, see above</td></tr>
+  <tr><td><code>CLAUDE_CODE_OAUTH_TOKEN</code>, <code>CLAUDE_CONFIG_DIR</code></td><td>Passed through to the Claude Code CLI when the web editor uses the Claude Code backend. No other server variables are passed to it</td></tr>
+  <tr><td><code>DOCKER_HOST</code>, <code>DOCKER_TLS_VERIFY</code>, <code>DOCKER_CERT_PATH</code></td><td>Read by the <code>docker</code> CLI that runs CI jobs. Point them at a remote daemon to keep builds off the GitBench host</td></tr>
+  <tr><td><code>PATH</code></td><td>Used to find <code>git</code> (unless <code>Git:Executable</code> is set) and the <code>claude</code> CLI</td></tr>
+  <tr><td><code>GITBENCH_TEST_POSTGRES</code></td><td>Test suite only: a PostgreSQL connection string that makes <code>dotnet test</code> run against Postgres</td></tr>
+  <tr><td><code>DOTNET_gcServer</code></td><td>Set to <code>0</code> in the image (workstation garbage collector). Standard .NET setting</td></tr>
+</table>
+
+<h2 id="core">Core, hosting and database</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning and example</th></tr>
+  <tr><td><code>PublicBaseUrl</code></td><td>learned from the first request</td><td>Absolute site URL used in API responses, webhooks, chat links and email. <strong>Set it in production</strong>: <code>PublicBaseUrl=https://gitbench.example.com</code></td></tr>
+  <tr><td><code>AllowedHosts</code></td><td><code>*</code></td><td>Host header filter: <code>AllowedHosts=gitbench.example.com</code></td></tr>
+  <tr><td><code>Database:Provider</code></td><td><code>Sqlite</code></td><td><code>Sqlite</code> or <code>Postgres</code></td></tr>
+  <tr><td><code>ConnectionStrings:Default</code></td><td><code>Data Source=gitbench.db</code></td><td>SQLite file or Npgsql connection string. Required when the provider is <code>Postgres</code>: <code>Host=db;Database=gitbench;Username=gitbench;Password=...</code></td></tr>
+  <tr><td><code>Seed:DemoData</code></td><td><code>true</code> in Development, else <code>false</code></td><td>Create demo users, projects and issues in an empty database. Turning it on in Production is reported as a problem on <code>/admin/system</code></td></tr>
+  <tr><td><code>Bootstrap:AdminUsers</code></td><td>none</td><td>Usernames promoted to site admin at start-up (list or comma separated). Only ever promotes, so it is safe to leave set: <code>Bootstrap__AdminUsers=alice</code></td></tr>
+  <tr><td><code>Git:RepositoryRoot</code></td><td><code>{ContentRoot}/repos</code></td><td>Folder with the bare repositories</td></tr>
+  <tr><td><code>Git:Executable</code></td><td><code>git</code> from <code>PATH</code></td><td>The git binary used for Smart HTTP, <code>git grep</code> and <code>git archive</code></td></tr>
+  <tr><td><code>Logging:LogLevel:Default</code> and others</td><td><code>Information</code>; <code>Microsoft.AspNetCore</code> and EF commands <code>Warning</code></td><td>Standard .NET logging. <code>appsettings.Production.json</code> switches the console to JSON lines</td></tr>
+</table>
+
+<h2 id="storage">Storage and limits</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Attachments:Root</code></td><td><code>{ContentRoot}/attachments</code></td><td>Issue attachments and release assets</td></tr>
+  <tr><td><code>Attachments:MaxBytes</code></td><td>25 MB</td><td>Largest issue attachment</td></tr>
+  <tr><td><code>Attachments:MaxPerIssue</code></td><td>50</td><td>Attachments per issue</td></tr>
+  <tr><td><code>Releases:MaxAssetBytes</code></td><td>512 MB</td><td>Largest release asset</td></tr>
+  <tr><td><code>Archives:MaxBytes</code></td><td>1 GB</td><td>Source archives larger than this are cut off</td></tr>
+  <tr><td><code>Archives:TimeoutSeconds</code></td><td>300</td><td>Archive generation time limit</td></tr>
+  <tr><td><code>Archives:MaxConcurrent</code></td><td>4</td><td>Archives built at once; more get <code>503</code> with <code>Retry-After</code></td></tr>
+  <tr><td><code>Lfs:Root</code></td><td><code>{ContentRoot}/lfs</code></td><td>Git LFS object store</td></tr>
+  <tr><td><code>Lfs:MaxObjectBytes</code></td><td>2 GB</td><td>Largest LFS object (<code>413</code> above)</td></tr>
+  <tr><td><code>Packages:Root</code></td><td><code>{ContentRoot}/packages</code></td><td>NuGet, npm and container registry blobs</td></tr>
+  <tr><td><code>Packages:MaxBlobBytes</code></td><td>5 GB</td><td>Largest single blob (a package file or image layer)</td></tr>
+  <tr><td><code>CsvImport:MaxBytes</code></td><td>2 MB</td><td>Largest issue CSV import file</td></tr>
+  <tr><td><code>CsvImport:MaxRows</code></td><td>1000</td><td>Most data rows in one import</td></tr>
+  <tr><td><code>Audit:RetentionDays</code></td><td>365</td><td>Audit events older than this are deleted daily. <code>0</code> or less keeps them forever</td></tr>
+  <tr><td><code>Retention:WebhookDeliveryDays</code></td><td>30</td><td>Webhook delivery history is deleted after this many days; <code>0</code> keeps it</td></tr>
+</table>
+
+<h2 id="hosting-security">Hosting, proxy and security headers</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>ReverseProxy:Enabled</code></td><td><code>false</code></td><td>Honour <code>X-Forwarded-For</code> and <code>X-Forwarded-Proto</code> from trusted proxies</td></tr>
+  <tr><td><code>ReverseProxy:KnownProxies</code></td><td>loopback only</td><td>List of trusted proxy IP addresses</td></tr>
+  <tr><td><code>ReverseProxy:KnownNetworks</code></td><td>loopback only</td><td>List of trusted CIDR ranges, e.g. <code>172.16.0.0/12</code> for compose networks</td></tr>
+  <tr><td><code>ReverseProxy:ForwardLimit</code></td><td>1</td><td>How many proxy hops to unwind</td></tr>
+  <tr><td><code>ReverseProxy:ForwardHost</code></td><td><code>false</code></td><td>Also honour <code>X-Forwarded-Host</code></td></tr>
+  <tr><td><code>ReverseProxy:AllowedHosts</code></td><td>none</td><td>Hosts accepted from <code>X-Forwarded-Host</code> when <code>ForwardHost</code> is on</td></tr>
+  <tr><td><code>Security:SecureCookies</code></td><td><code>true</code> outside Development</td><td>Sign-in cookies only over HTTPS. Set <code>false</code> only for a plain-HTTP trial</td></tr>
+  <tr><td><code>Security:HttpsRedirection</code></td><td><code>true</code> outside Development</td><td>Redirect HTTP to HTTPS. The Docker image sets <code>false</code> because the proxy terminates TLS</td></tr>
+  <tr><td><code>Security:HstsMaxAgeDays</code></td><td>365</td><td>HSTS lifetime (sent on HTTPS responses outside Development)</td></tr>
+  <tr><td><code>Security:HstsIncludeSubDomains</code></td><td><code>false</code></td><td>Add <code>includeSubDomains</code> to HSTS</td></tr>
+  <tr><td><code>Security:ContentSecurityPolicy</code></td><td><code>true</code></td><td>Send the Content-Security-Policy header on HTML pages</td></tr>
+  <tr><td><code>Security:ContentSecurityPolicyReportOnly</code></td><td><code>false</code></td><td>Send it as <code>Content-Security-Policy-Report-Only</code> while testing</td></tr>
+  <tr><td><code>Security:CspInlineHandlers</code></td><td>none</td><td>Extra inline <code>on...=""</code> handler strings to allow by hash</td></tr>
+  <tr><td><code>DataProtection:KeysPath</code></td><td><code>{ContentRoot}/keys</code></td><td>Key ring folder. Must be persistent; GitBench refuses to start in Production if it is not writable</td></tr>
+  <tr><td><code>DataProtection:ApplicationName</code></td><td><code>GitBench</code></td><td>Keep identical across deployments that share keys</td></tr>
+  <tr><td><code>DataProtection:CertificatePath</code></td><td>none</td><td>A <code>.pfx</code> that encrypts keys at rest (recommended on Linux)</td></tr>
+  <tr><td><code>DataProtection:CertificatePassword</code></td><td>none</td><td>Password of that certificate (a secret)</td></tr>
+  <tr><td><code>DataProtection:DecryptionCertificatePaths</code></td><td>none</td><td>Older <code>.pfx</code> files still accepted for reading keys after a rotation</td></tr>
+</table>
+
+<h2 id="rate-limiting">RateLimiting</h2>
+<p>Each limit is a fixed window with <code>PermitLimit</code> requests per <code>WindowSeconds</code>. A request over the limit gets <code>429</code> with <code>Retry-After</code>. A <code>PermitLimit</code> of <code>0</code> turns that limit off.</p>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Applies to</th></tr>
+  <tr><td><code>RateLimiting:Enabled</code></td><td><code>true</code> (<code>false</code> in <code>appsettings.Development.json</code>)</td><td>Master switch</td></tr>
+  <tr><td><code>RateLimiting:Auth</code></td><td>10 per 60 s</td><td>POSTs to <code>/account/*</code> (sign-in, registration, two-factor), per client IP</td></tr>
+  <tr><td><code>RateLimiting:Api</code></td><td>300 per 60 s</td><td><code>/api/*</code>: per access token, else per user, else per IP</td></tr>
+  <tr><td><code>RateLimiting:Git</code></td><td>120 per 60 s</td><td><code>/git/*</code>: per user in the Basic credentials, else per IP</td></tr>
+  <tr><td><code>RateLimiting:Registry</code></td><td>3000 per 60 s</td><td><code>/packages/*</code> and <code>/v2/*</code>, per credential (counts requests, never bytes)</td></tr>
+  <tr><td><code>RateLimiting:RegistryIp</code></td><td>6000 per 60 s</td><td>The same paths per client IP across all credentials</td></tr>
+  <tr><td><code>RateLimiting:WebhookPing</code></td><td>5 per 60 s</td><td>Webhook test pings, per user</td></tr>
+  <tr><td><code>RateLimiting:Ssh</code></td><td>120 per 60 s</td><td>Git commands over SSH, per user or deploy key</td></tr>
+</table>
+<pre><code>RateLimiting__Api__PermitLimit=600
+RateLimiting__Api__WindowSeconds=60
+RateLimiting__Auth__PermitLimit=0      # no limit on sign-in POSTs (not advised)</code></pre>
+
+<h2 id="ssh">Ssh</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Ssh:Enabled</code></td><td><code>false</code> (<code>true</code> in Development and the Docker image)</td><td>Run the built-in Git SSH server</td></tr>
+  <tr><td><code>Ssh:Port</code></td><td>2222</td><td>TCP port to listen on</td></tr>
+  <tr><td><code>Ssh:ListenAddress</code></td><td>all interfaces</td><td>Address to bind</td></tr>
+  <tr><td><code>Ssh:HostKeyPath</code></td><td><code>{DataProtection:KeysPath}/ssh_host_rsa_key</code></td><td>RSA 3072 host key, generated on first start. Back it up with the key ring</td></tr>
+  <tr><td><code>Ssh:PublicHost</code></td><td>host of the web request</td><td>Host shown in SSH clone URLs</td></tr>
+  <tr><td><code>Ssh:PublicPort</code></td><td><code>Ssh:Port</code></td><td>Port shown in clone URLs, e.g. <code>22</code> when the host maps 22 to 2222</td></tr>
+  <tr><td><code>Ssh:MaxConnections</code></td><td>200</td><td>Simultaneous connections</td></tr>
+  <tr><td><code>Ssh:AuthTimeoutSeconds</code></td><td>30</td><td>A connection that has not authenticated by then is closed</td></tr>
+</table>
+
+<h2 id="ci">Ci</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Ci:Enabled</code></td><td><code>true</code> (<code>false</code> in the Docker image)</td><td>Turns every trigger and the Run pipeline button on or off</td></tr>
+  <tr><td><code>Ci:MaxConcurrentJobs</code></td><td>2</td><td>Jobs that run at once across all pipelines</td></tr>
+  <tr><td><code>Ci:JobTimeoutMinutes</code></td><td>20</td><td>A job is killed after this</td></tr>
+  <tr><td><code>Ci:Network</code></td><td><code>bridge</code></td><td><code>docker run --network</code>. <code>none</code> blocks network access</td></tr>
+  <tr><td><code>Ci:Memory</code></td><td><code>2g</code></td><td><code>--memory</code> per step container; empty for no limit</td></tr>
+  <tr><td><code>Ci:Cpus</code></td><td><code>2</code></td><td><code>--cpus</code> per step container; empty for no limit</td></tr>
+  <tr><td><code>Ci:PidsLimit</code></td><td>1024</td><td><code>--pids-limit</code>; <code>0</code> for none</td></tr>
+  <tr><td><code>Ci:DockerExecutable</code></td><td><code>docker</code></td><td>Path of the Docker CLI</td></tr>
+  <tr><td><code>Ci:WorkDirectory</code></td><td><code>{temp}/gitbench-ci/{instance}</code></td><td>Where workspaces are exported. The Docker daemon must see the same path</td></tr>
+  <tr><td><code>Ci:MaxLogChars</code></td><td>1,048,576</td><td>Per-step log cap in characters</td></tr>
+  <tr><td><code>Ci:ArtifactsRoot</code></td><td><code>{ContentRoot}/ci-artifacts</code></td><td>Where artifact zips are stored</td></tr>
+  <tr><td><code>Ci:MaxArtifactBytes</code></td><td>100 MB</td><td>Largest artifact per job</td></tr>
+  <tr><td><code>Ci:CacheRoot</code></td><td><code>{ContentRoot}/ci-cache</code></td><td>Where caches are stored</td></tr>
+  <tr><td><code>Ci:MaxCacheBytes</code></td><td>500 MB</td><td>Largest single cache</td></tr>
+  <tr><td><code>Ci:CacheBytesPerRepository</code></td><td>2 GB</td><td>Total per repository; least recently used caches are evicted past it</td></tr>
+  <tr><td><code>Ci:SchedulesEnabled</code></td><td><code>true</code></td><td>Run pipeline schedules (only when <code>Ci:Enabled</code> too)</td></tr>
+</table>
+<p>Example for a build box with more power: <code>Ci__MaxConcurrentJobs=6 Ci__Memory=4g Ci__Cpus=4 Ci__JobTimeoutMinutes=45</code>. See <a href="ci.html">CI pipelines</a>.</p>
+
+<h2 id="email">Email</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Email:Enabled</code></td><td><code>false</code></td><td>Master switch. While off, nothing is queued and pending notification emails are dropped</td></tr>
+  <tr><td><code>Email:Sender</code></td><td><code>Pickup</code> in Development, else <code>Smtp</code></td><td><code>Pickup</code> writes <code>.eml</code> files; <code>Smtp</code> sends mail</td></tr>
+  <tr><td><code>Email:From</code></td><td><code>GitBench &lt;gitbench@localhost&gt;</code></td><td>Sender address</td></tr>
+  <tr><td><code>Email:PickupDirectory</code></td><td><code>mail-drop</code></td><td>Folder for <code>.eml</code> files (relative to the content root)</td></tr>
+  <tr><td><code>Email:DigestMinutes</code></td><td>0</td><td><code>0</code> sends each notification at once; <code>N</code> sends at most one mail per user every N minutes, batching later ones into a digest</td></tr>
+  <tr><td><code>Email:BaseUrl</code></td><td>none</td><td>Site URL for email links; falls back to <code>PublicBaseUrl</code>, then the first request</td></tr>
+  <tr><td><code>Email:Smtp:Host</code></td><td>none</td><td>SMTP server</td></tr>
+  <tr><td><code>Email:Smtp:Port</code></td><td>587</td><td>SMTP port</td></tr>
+  <tr><td><code>Email:Smtp:UseStartTls</code></td><td><code>true</code></td><td>STARTTLS. With <code>false</code>, port 465 uses implicit TLS and other ports are plain text (local relays only)</td></tr>
+  <tr><td><code>Email:Smtp:User</code>, <code>Email:Smtp:Password</code></td><td>none</td><td>Credentials. Use user-secrets or <code>Email__Smtp__Password</code></td></tr>
+</table>
+<pre><code>Email__Enabled=true
+Email__Sender=Smtp
+Email__From="GitBench &lt;gitbench@example.com&gt;"
+Email__Smtp__Host=smtp.example.com
+Email__Smtp__User=gitbench@example.com
+Email__Smtp__Password=...</code></pre>
+<p>See <a href="notifications.html">Notifications and email</a>.</p>
+
+<h2 id="service-desk">ServiceDesk</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>ServiceDesk:IncomingAddress</code></td><td><code>desk@gitbench.localhost</code></td><td>Inbound mailbox. Projects get <code>desk+KEY@domain</code> by plus-addressing</td></tr>
+  <tr><td><code>ServiceDesk:WebhookSecret</code></td><td>none</td><td>Shared secret for <code>POST /service-desk/inbound</code> (HMAC-SHA256 signed raw MIME). Empty turns the endpoint off</td></tr>
+  <tr><td><code>ServiceDesk:WebhookToleranceSeconds</code></td><td>300</td><td>How far the <code>X-GitBench-Timestamp</code> may differ from now</td></tr>
+  <tr><td><code>ServiceDesk:MaxMessageBytes</code></td><td>30 MB</td><td>Largest raw message</td></tr>
+  <tr><td><code>ServiceDesk:MaxAttachmentBytes</code></td><td>10 MB</td><td>Per attachment (also capped by <code>Attachments:MaxBytes</code>)</td></tr>
+  <tr><td><code>ServiceDesk:MaxAttachmentsPerMessage</code></td><td>10</td><td>Attachments kept per message</td></tr>
+  <tr><td><code>ServiceDesk:BlockedExtensions</code></td><td><code>.exe .bat .cmd .com .scr .pif .msi .js .jse .vbs .vbe .wsf .ps1 .jar .lnk .hta .dll .cpl .reg</code></td><td>Never accepted as attachments</td></tr>
+  <tr><td><code>ServiceDesk:MaxBodyChars</code></td><td>20000</td><td>Longest description or comment kept from one message</td></tr>
+  <tr><td><code>ServiceDesk:MaxMessagesPerSenderPerHour</code></td><td>20</td><td>Per sender address</td></tr>
+  <tr><td><code>ServiceDesk:MaxFormSubmissionsPerHour</code></td><td>10</td><td>Public form submissions per client IP</td></tr>
+  <tr><td><code>ServiceDesk:MaxLinks</code></td><td>25</td><td>More links than this is treated as spam</td></tr>
+  <tr><td><code>ServiceDesk:BlockedSenders</code></td><td>empty</td><td>Addresses or <code>@domain</code>s always refused</td></tr>
+  <tr><td><code>ServiceDesk:Imap:Enabled</code></td><td><code>false</code></td><td>Poll an IMAP mailbox</td></tr>
+  <tr><td><code>ServiceDesk:Imap:Host</code>, <code>Port</code></td><td>none, 993</td><td>IMAP server</td></tr>
+  <tr><td><code>ServiceDesk:Imap:UseSsl</code></td><td><code>true</code></td><td>Implicit TLS (993); <code>false</code> uses STARTTLS when offered</td></tr>
+  <tr><td><code>ServiceDesk:Imap:User</code>, <code>Password</code></td><td>none</td><td>Credentials (secrets)</td></tr>
+  <tr><td><code>ServiceDesk:Imap:Folder</code></td><td><code>INBOX</code></td><td>Folder to poll</td></tr>
+  <tr><td><code>ServiceDesk:Imap:PollSeconds</code></td><td>60</td><td>Polling interval</td></tr>
+  <tr><td><code>ServiceDesk:Imap:DeleteProcessed</code></td><td><code>false</code></td><td>Delete processed messages instead of only marking them seen</td></tr>
+</table>
+<p>See <a href="service-desk.html">Service desk</a>.</p>
+
+<h2 id="ai">Ai</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Ai:Enabled</code></td><td><code>true</code></td><td>Master switch. AI features also need a key (or Claude Code)</td></tr>
+  <tr><td><code>Ai:Model</code></td><td><code>claude-opus-5-5</code></td><td>Claude model for every AI feature</td></tr>
+  <tr><td><code>Ai:ApiKey</code></td><td>none</td><td>API key. Prefer <code>ANTHROPIC_API_KEY</code> or user-secrets</td></tr>
+  <tr><td><code>Ai:Editor:Backend</code></td><td><code>Auto</code></td><td><code>Auto</code> (Claude Code if installed, else the API if a key exists, else off), <code>Api</code> or <code>ClaudeCode</code></td></tr>
+  <tr><td><code>Ai:Editor:MaxToolCalls</code></td><td>15</td><td>Tool calls per request (API backend)</td></tr>
+  <tr><td><code>Ai:Editor:MaxTokensPerTurn</code></td><td>16000</td><td><code>max_tokens</code> of each model turn</td></tr>
+  <tr><td><code>Ai:Editor:MaxOutputTokensPerRequest</code></td><td>48000</td><td>Output tokens per request across all turns</td></tr>
+  <tr><td><code>Ai:Editor:RequestsPerMinute</code></td><td>6</td><td>Assistant requests per user per minute</td></tr>
+  <tr><td><code>Ai:Editor:CompletionsPerMinute</code></td><td>20</td><td>Inline ghost-text completions per user per minute</td></tr>
+  <tr><td><code>Ai:Editor:CompletionMaxTokens</code></td><td>256</td><td>Size of one inline completion</td></tr>
+  <tr><td><code>Ai:ClaudeCode:Path</code></td><td><code>claude</code></td><td>The Claude Code executable (name on <code>PATH</code> or full path)</td></tr>
+  <tr><td><code>Ai:ClaudeCode:Model</code></td><td>none</td><td>Optional model passed as <code>--model</code></td></tr>
+  <tr><td><code>Ai:ClaudeCode:TimeoutSeconds</code></td><td>300</td><td>Wall-clock limit of one run</td></tr>
+  <tr><td><code>Ai:ClaudeCode:MaxTurns</code></td><td>15</td><td>Agentic turns per run</td></tr>
+  <tr><td><code>Ai:ClaudeCode:MaxConcurrent</code></td><td>2</td><td>Runs at once across the server</td></tr>
+  <tr><td><code>Ai:ClaudeCode:MaxFiles</code>, <code>MaxBytes</code></td><td>5000, 50 MB</td><td>Caps on what is copied into the temporary workspace</td></tr>
+  <tr><td><code>Ai:Review:MaxReviewsPerRepoPerHour</code></td><td>12</td><td>Reviews a repository may start per hour</td></tr>
+  <tr><td><code>Ai:Review:MaxDiffCharsLimit</code></td><td>1,000,000</td><td>Highest "max diff size" a Maintainer can set</td></tr>
+  <tr><td><code>Ai:Review:MaxFindings</code></td><td>30</td><td>Findings kept from one review (most severe first)</td></tr>
+  <tr><td><code>Ai:Review:PushDebounceSeconds</code></td><td>30</td><td>Wait after a push so a burst is reviewed once</td></tr>
+  <tr><td><code>Ai:Triage:MaxTitleChars</code> / <code>MaxDescriptionChars</code></td><td>200 / 6000</td><td>How much of an issue goes into the prompt</td></tr>
+  <tr><td><code>Ai:Triage:MaxComments</code> / <code>MaxCommentChars</code></td><td>5 / 500</td><td>Comments included, and their length</td></tr>
+  <tr><td><code>Ai:Triage:MaxPromptChars</code> / <code>MaxResponseChars</code></td><td>40000 / 20000</td><td>Hard cap on the prompt; largest model answer that is parsed</td></tr>
+  <tr><td><code>Ai:Triage:MaxCandidates</code></td><td>10</td><td>Candidate duplicates considered</td></tr>
+  <tr><td><code>Ai:Triage:MaxLabelsInPrompt</code> / <code>MaxComponentsInPrompt</code> / <code>MaxPeopleInPrompt</code></td><td>100 / 50 / 30</td><td>Context lists given to the model</td></tr>
+  <tr><td><code>Ai:Triage:MaxRunsPerProjectPerHour</code></td><td>60</td><td>Runs (automatic and manual) per project per hour</td></tr>
+  <tr><td><code>Ai:Triage:MaxManualRunsPerUserPerHour</code></td><td>20</td><td>Manual "Suggest" requests per person per hour</td></tr>
+  <tr><td><code>Ai:Triage:IssueCooldownSeconds</code></td><td>30</td><td>Minimum time between runs on the same issue</td></tr>
+  <tr><td><code>Ai:Triage:MinHintScore</code></td><td>0.35</td><td>Similarity a title needs to be shown as a possible duplicate on the new-issue form</td></tr>
+</table>
+<pre><code>Ai__Editor__Backend=Api
+Ai__Model=claude-opus-5-5
+Ai__Review__MaxReviewsPerRepoPerHour=6</code></pre>
+
+<h2 id="workbench">Workbench</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Workbench:BaseUrl</code></td><td>none (off)</td><td>Address of Workbench, e.g. <code>https://workbench.example.com</code>. When set, issues show a "Log time in Workbench" button</td></tr>
+</table>
+<p>See <a href="workbench.html">Estimates and Workbench</a>.</p>
+
+<h2 id="slack">Slack and chat integrations</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Slack:SigningSecret</code></td><td>none</td><td>Your Slack app's signing secret. Requests to <code>/integrations/slack/*</code> are rejected unless signed with it. A secret</td></tr>
+  <tr><td><code>Slack:BotToken</code></td><td>none</td><td>Bot token (<code>xoxb-...</code>) for link previews and direct messages. Optional, a secret</td></tr>
+  <tr><td><code>Slack:TeamId</code></td><td>none</td><td>When set, only requests from this workspace are accepted</td></tr>
+  <tr><td><code>Slack:TimestampToleranceSeconds</code></td><td>300</td><td>How old a request's timestamp may be</td></tr>
+  <tr><td><code>Slack:ApiBaseUrl</code></td><td><code>https://slack.com/api/</code></td><td>Slack Web API base (change only for tests or a proxy)</td></tr>
+  <tr><td><code>ChatIntegrations:AllowedHosts</code></td><td>empty</td><td>Extra hosts integrations may post to, besides Slack's and Teams' own. A leading dot matches subdomains (<code>.example.com</code>)</td></tr>
+</table>
+<p>Per-project Slack and Teams channel integrations do not need these keys: their webhook URLs are stored encrypted per integration. See <a href="chat.html">Slack and Microsoft Teams</a>.</p>
+
+<h2 id="webhooks-mirroring">Webhooks and mirroring</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Webhooks:AllowPrivateNetworks</code></td><td><code>false</code> (<code>true</code> in Development)</td><td>Allow webhook targets on loopback, private, link-local, CGNAT and cloud-metadata addresses. Off prevents SSRF</td></tr>
+  <tr><td><code>Mirroring:AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>The same guard for mirror URLs</td></tr>
+  <tr><td><code>Mirroring:Enabled</code></td><td><code>true</code></td><td>Background mirror syncs</td></tr>
+  <tr><td><code>Mirroring:PollSeconds</code></td><td>30</td><td>How often due pull mirrors are looked for</td></tr>
+  <tr><td><code>Mirroring:TimeoutSeconds</code></td><td>600</td><td>A sync is killed after this</td></tr>
+  <tr><td><code>Mirroring:MinIntervalMinutes</code></td><td>5</td><td>Shortest pull interval a mirror may use</td></tr>
+  <tr><td><code>Mirroring:SshKeyFile</code></td><td>none</td><td>Private key for <code>ssh://</code> mirrors</td></tr>
+  <tr><td><code>Mirroring:KnownHostsFile</code></td><td><code>{ContentRoot}/keys/mirror_known_hosts</code></td><td>Known hosts for <code>ssh://</code> mirrors (new hosts trusted on first use)</td></tr>
+</table>
+
+<h2 id="pages">Pages</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Pages:Enabled</code></td><td><code>true</code></td><td>Master switch: when off nothing is deployed or served</td></tr>
+  <tr><td><code>Pages:Root</code></td><td><code>{ContentRoot}/pages</code></td><td>Where sites are stored</td></tr>
+  <tr><td><code>Pages:BaseDomain</code></td><td>empty</td><td>Serve sites on their own hosts: <code>{slug}.{KEY}.{BaseDomain}</code>. Needs wildcard DNS and a certificate. Empty means path mode only</td></tr>
+  <tr><td><code>Pages:PathModeEnabled</code></td><td><code>true</code></td><td>Keep serving <code>/pages/{KEY}/{slug}/...</code> on the GitBench host (sandboxed)</td></tr>
+  <tr><td><code>Pages:MaxSiteBytes</code></td><td>100 MB</td><td>Largest site</td></tr>
+  <tr><td><code>Pages:MaxFileBytes</code></td><td>50 MB</td><td>Largest single file</td></tr>
+  <tr><td><code>Pages:MaxFiles</code></td><td>10000</td><td>Most files in a site</td></tr>
+  <tr><td><code>Pages:KeepVersions</code></td><td>10</td><td>Deployments kept per site (review sites keep 2)</td></tr>
+  <tr><td><code>Pages:ReviewSites</code></td><td><code>true</code></td><td>Allow review sites for non-default branches</td></tr>
+  <tr><td><code>Pages:AllowPublic</code></td><td><code>true</code></td><td>Allow a site to be public. When off every site needs a project member</td></tr>
+  <tr><td><code>Pages:PathTokenMinutes</code></td><td>60</td><td>Validity of a members-only path-mode link</td></tr>
+  <tr><td><code>Pages:HostCookieHours</code></td><td>8</td><td>Lifetime of the members-only cookie on a dedicated host</td></tr>
+</table>
+<p>See <a href="pages.html">Static sites (Pages)</a>.</p>
+
+<h2 id="backup">Backup</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Backup:Enabled</code></td><td><code>false</code></td><td>Run scheduled backups inside the server. The CLI and "Back up now" work either way</td></tr>
+  <tr><td><code>Backup:Directory</code></td><td><code>{ContentRoot}/backups</code></td><td>Where archives go. Use another disk</td></tr>
+  <tr><td><code>Backup:StartTimeUtc</code></td><td><code>02:30</code></td><td>UTC time the schedule is anchored to</td></tr>
+  <tr><td><code>Backup:IntervalHours</code></td><td>24</td><td>Hours between backups</td></tr>
+  <tr><td><code>Backup:KeepLast</code></td><td>7</td><td>Keep the newest N archives (<code>0</code> no count limit)</td></tr>
+  <tr><td><code>Backup:KeepDays</code></td><td>0</td><td>Also delete archives older than N days, never the newest (<code>0</code> off)</td></tr>
+  <tr><td><code>Backup:IncludeKeys</code></td><td><code>true</code></td><td>Include the key ring and SSH host key</td></tr>
+  <tr><td><code>Backup:IncludeCiArtifacts</code></td><td><code>false</code></td><td>Include CI artifacts</td></tr>
+  <tr><td><code>Backup:PgDumpPath</code>, <code>Backup:PgRestorePath</code></td><td><code>pg_dump</code>, <code>pg_restore</code></td><td>PostgreSQL client tools (must be as new as the server)</td></tr>
+  <tr><td><code>Backup:StagingDirectory</code></td><td>system temp folder</td><td>Where a restore unpacks the archive first</td></tr>
+</table>
+<p>See <a href="production.html#backup">Backup and restore</a>.</p>
+
+<h2 id="automation-mq">Automation and MergeQueue</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Automation:Enabled</code></td><td><code>true</code></td><td>The rule worker. Off drops events; rules can still be edited</td></tr>
+  <tr><td><code>Automation:SchedulerEnabled</code></td><td><code>true</code></td><td>The scheduled-trigger timer</td></tr>
+  <tr><td><code>Automation:SchedulerIntervalSeconds</code></td><td>60</td><td>How often due scheduled rules are checked</td></tr>
+  <tr><td><code>Automation:MaxRunsPerRulePerHour</code></td><td>100</td><td>More runs of one rule in a rolling hour are skipped</td></tr>
+  <tr><td><code>Automation:MaxDepth</code></td><td>3</td><td>How deep a chain of rule-triggered rules may go</td></tr>
+  <tr><td><code>Automation:MaxLogEntriesPerRule</code></td><td>500</td><td>Log entries kept per rule</td></tr>
+  <tr><td><code>MergeQueue:Enabled</code></td><td><code>true</code></td><td>The merge queue background processor</td></tr>
+  <tr><td><code>MergeQueue:PollSeconds</code></td><td>15</td><td>How often queues are re-checked without an event</td></tr>
+</table>
+<p>Merge queue behaviour itself (batch size, timeouts, required CI) is set per branch protection rule in the repository settings, not in configuration.</p>
+
+<h2 id="night-owl">NightOwl</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>NightOwl:DashboardUrl</code></td><td>none</td><td>Optional http(s) URL of a Night Owl dashboard, linked from the Security pages. Anything that is not an absolute http or https URL is ignored</td></tr>
+</table>
+<p>This is the only Night Owl setting in GitBench. Which severities block merges, and when alerts are sent, are repository settings. See <a href="security-scanning.html">Security scanning</a>. The scan itself is a CI job; CI variables such as <code>NIGHTOWL_FAIL_ON</code> tune it.</p>
+
+<h2 id="authentication">Authentication (SSO and LDAP)</h2>
+<p>Providers are configured as list items. This is the shape; the details and a guided setup are in <a href="accounts.html">Accounts, sign-in and SSO</a>. Invalid entries are left out and shown on <code>/admin/authentication</code> instead of stopping the app.</p>
+<table>
+  <tr><th>Key (under <code>Authentication:Oidc:Providers:N</code>)</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Name</code></td><td>required</td><td>Short id: lowercase letters, digits and <code>-</code>. Callback is <code>/signin-sso/{Name}</code></td></tr>
+  <tr><td><code>Type</code></td><td><code>Oidc</code></td><td><code>Oidc</code>, <code>Google</code>, <code>Microsoft</code> or <code>GitHub</code></td></tr>
+  <tr><td><code>DisplayName</code>, <code>Icon</code></td><td>name</td><td>Button label and icon (<code>google</code>, <code>github</code>, <code>microsoft</code>, <code>key</code> or an image path)</td></tr>
+  <tr><td><code>Enabled</code></td><td><code>true</code></td><td>Turn a provider off without deleting it</td></tr>
+  <tr><td><code>Authority</code></td><td>none</td><td>OIDC issuer URL (for GitHub Enterprise, the server URL)</td></tr>
+  <tr><td><code>TenantId</code></td><td>none</td><td>Microsoft Entra directory id</td></tr>
+  <tr><td><code>ApiUrl</code></td><td>GitHub's API</td><td>GitHub API base URL</td></tr>
+  <tr><td><code>ClientId</code>, <code>ClientSecret</code></td><td>none</td><td>OAuth client. Keep the secret in user-secrets or <code>Authentication__Oidc__Providers__0__ClientSecret</code></td></tr>
+  <tr><td><code>Scopes</code></td><td>preset</td><td>Override the requested scopes</td></tr>
+  <tr><td><code>ClaimMappings:*</code></td><td><code>sub</code>, <code>preferred_username</code>, <code>email</code>, <code>email_verified</code>, <code>name</code>, <code>groups</code></td><td>Claim names for Subject, UserName, Email, EmailVerified, DisplayName, Groups</td></tr>
+  <tr><td><code>AutoCreateUsers</code></td><td><code>true</code></td><td>Create an account on first sign-in (needs a verified email)</td></tr>
+  <tr><td><code>LinkByVerifiedEmail</code></td><td><code>true</code></td><td>Link to an existing account with the same verified email</td></tr>
+  <tr><td><code>TrustEmailVerified</code></td><td><code>false</code></td><td>Treat the provider's email as verified without the claim</td></tr>
+  <tr><td><code>AllowedEmailDomains</code></td><td>empty</td><td>Only verified emails in these domains may sign in</td></tr>
+  <tr><td><code>AdminGroups</code></td><td>empty</td><td>Group claim values that make a user a site admin</td></tr>
+  <tr><td><code>GroupMappings</code></td><td>empty</td><td>List of <code>ExternalGroup</code>, <code>Group</code> (GitBench group path), <code>Role</code></td></tr>
+  <tr><td><code>TwoFactor</code></td><td><code>GitBench</code></td><td><code>GitBench</code> or <code>TrustIdp</code> (skip GitBench's code when the provider did MFA)</td></tr>
+  <tr><td><code>RequireHttpsMetadata</code></td><td><code>true</code></td><td>Only turn off for a local test provider</td></tr>
+  <tr><td><code>UseUserInfoEndpoint</code></td><td><code>true</code></td><td>Also read claims from the userinfo endpoint</td></tr>
+</table>
+<table>
+  <tr><th>Key (under <code>Authentication:Ldap</code>)</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Enabled</code></td><td><code>false</code></td><td>Turn LDAP sign-in on</td></tr>
+  <tr><td><code>DisplayName</code></td><td><code>LDAP</code></td><td>Name shown on the sign-in page</td></tr>
+  <tr><td><code>Server</code>, <code>Port</code></td><td>none, 0</td><td>Directory host. Port <code>0</code> means 636 for <code>Ssl</code>, else 389</td></tr>
+  <tr><td><code>Security</code></td><td><code>StartTls</code></td><td><code>None</code> (clear text, trusted networks only), <code>Ssl</code> or <code>StartTls</code></td></tr>
+  <tr><td><code>IgnoreCertificateErrors</code></td><td><code>false</code></td><td>Development only</td></tr>
+  <tr><td><code>BindDn</code>, <code>BindPassword</code></td><td>empty</td><td>Service account that searches for users (anonymous if empty). The password is a secret: <code>Authentication__Ldap__BindPassword</code></td></tr>
+  <tr><td><code>UserSearchBase</code>, <code>UserFilter</code></td><td>empty, <code>(&amp;(objectClass=person)(sAMAccountName={0}))</code></td><td>Where and how to find the user; <code>{0}</code> is the escaped login</td></tr>
+  <tr><td><code>Attributes:UserName</code>, <code>Email</code>, <code>DisplayName</code>, <code>MemberOf</code></td><td><code>sAMAccountName</code>, <code>mail</code>, <code>displayName</code>, <code>memberOf</code></td><td>Attribute names</td></tr>
+  <tr><td><code>GroupSearchBase</code>, <code>GroupFilter</code></td><td>empty, <code>(&amp;(objectClass=groupOfNames)(member={0}))</code></td><td>For directories without <code>memberOf</code></td></tr>
+  <tr><td><code>AdminGroupDn</code></td><td>empty</td><td>Members become site admins</td></tr>
+  <tr><td><code>GroupMappings</code></td><td>empty</td><td>List of <code>GroupDn</code>, <code>Group</code>, <code>Role</code> (default Developer)</td></tr>
+  <tr><td><code>AutoCreateUsers</code></td><td><code>true</code></td><td>Create an account on first successful sign-in</td></tr>
+  <tr><td><code>AllowGitPassword</code></td><td><code>false</code></td><td>Let directory users use their LDAP password for git over HTTP</td></tr>
+  <tr><td><code>TimeoutSeconds</code></td><td>10</td><td>Directory timeout</td></tr>
+  <tr><td><code>Sync:IntervalMinutes</code></td><td>0</td><td>Periodic account sync (<code>0</code> none)</td></tr>
+  <tr><td><code>Sync:DeactivateMissingUsers</code></td><td><code>false</code></td><td>Deactivate accounts whose directory entry is gone</td></tr>
+</table>
+<pre><code>Authentication__Oidc__Providers__0__Name=keycloak
+Authentication__Oidc__Providers__0__Type=Oidc
+Authentication__Oidc__Providers__0__Authority=https://sso.example.com/realms/acme
+Authentication__Oidc__Providers__0__ClientId=gitbench
+Authentication__Oidc__Providers__0__ClientSecret=...   # keep in a secret store</code></pre>
+
+<h2 id="examples">A realistic production snippet</h2>
+<pre><code># docker-compose.yml, under services.gitbench.environment
+PublicBaseUrl: "https://gitbench.example.com"
+AllowedHosts: "gitbench.example.com"
+ReverseProxy__Enabled: "true"
+ReverseProxy__KnownNetworks__0: "172.16.0.0/12"
+Bootstrap__AdminUsers: "alice"
+Backup__Enabled: "true"
+Backup__KeepLast: "14"
+Email__Enabled: "true"
+Email__Smtp__Host: "smtp.example.com"
+Email__Smtp__Password: "${GITBENCH_SMTP_PASSWORD}"
+ANTHROPIC_API_KEY: "${GITBENCH_AI_API_KEY}"</code></pre>
+<div class="note">Not every value can be changed without a restart. Treat all of the above as read at start-up unless a page says otherwise; restart the app after changing configuration.</div>
+<p>Settings that live in the interface instead of configuration (branch protection, per-project AI review, deploy approvals, webhooks and so on) are covered on their feature pages. Operating advice is in <a href="production.html">Production setup</a>.</p>

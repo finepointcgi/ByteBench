@@ -1,0 +1,149 @@
+<h1>FAQ and troubleshooting</h1>
+<p class="lead">Realistic problems with their causes and fixes, followed by an honest list of what has only been tested with fakes.</p>
+<p>Most start-up problems show up in two places: the log (<code>docker compose logs -f gitbench</code>) and, for site admins, the <code>/admin/system</code> page, which lists the hosting review and pending migrations.</p>
+
+<h2 id="sign-in">Sign-in and cookies</h2>
+
+<h3 id="cant-sign-in">I can sign in but I am bounced back to the login page (Docker or production)</h3>
+<p><strong>Cause:</strong> outside Development, sign-in cookies are <code>Secure</code>-only, so a browser will not keep them on plain <code>http://</code>. GitBench logs "Plain-HTTP request ... sign-in only works over HTTPS" once.</p>
+<p><strong>Fix:</strong> put GitBench behind an HTTPS proxy and set <code>ReverseProxy__Enabled=true</code> (see <a href="production.html#reverse-proxy">Reverse proxy</a>). For a quick local trial only, set <code>Security__SecureCookies=false</code>.</p>
+
+<h3 id="signed-out-restart">Everyone is signed out after every restart or deployment</h3>
+<p><strong>Cause:</strong> the Data Protection key ring is not on a persistent volume, so a new one is made each time. Encrypted webhook and CI secrets are lost too.</p>
+<p><strong>Fix:</strong> point <code>DataProtection__KeysPath</code> at a persistent, backed-up folder (<code>/data/keys</code> in the image) and make sure the container user (uid 1654) can write it. In Production GitBench refuses to start if the folder is not writable.</p>
+
+<h3 id="locked-out">Account locked</h3>
+<p>Five failed sign-ins lock an account for five minutes. In addition, sign-in POSTs are rate limited per IP (10 per minute by default); see <a href="#rate-limits">rate limits</a>. A site admin can manage accounts at <code>/admin/users</code>.</p>
+
+<h3 id="no-admin">There is no admin account in my new Docker install</h3>
+<p>Production has no demo data. Register at <code>/account/register</code>, then restart once with <code>Bootstrap__AdminUsers=your-username</code>. There is no password-reset email flow yet (see <a href="#known-limits">known limits</a>); a site admin can help from <code>/admin/users</code>.</p>
+
+<h2 id="csp-section">Browser and CSP</h2>
+
+<h3 id="csp">The page is broken and the browser console mentions Content-Security-Policy</h3>
+<p><strong>Cause:</strong> HTML pages carry a CSP with <code>default-src 'self'</code>. Scripts must come from the site; Blazor's import map is allowed with a per-request nonce, and the app's few inline handlers by hash. Styles allow <code>'unsafe-inline'</code>. Web workers must come from the site (<code>worker-src 'self'</code>), never <code>blob:</code> or <code>data:</code>. Things that trigger a block: a reverse proxy that injects its own script or an extension-like banner; a custom page or snippet with an inline <code>&lt;script&gt;</code> or <code>onclick=""</code>; an external CDN script.</p>
+<p><strong>Fix:</strong> to find out what is blocked without breaking users, set <code>Security__ContentSecurityPolicyReportOnly=true</code> and read the console. Move custom code into a <code>.js</code> file under <code>wwwroot/js</code>, or add the exact inline handler string to <code>Security:CspInlineHandlers</code>. As a last resort <code>Security__ContentSecurityPolicy=false</code> turns the header off, which the hosting review flags as a warning.</p>
+
+<h3 id="blazor-disconnects">The page loads but nothing reacts, or "Reconnecting..." keeps showing</h3>
+<p><strong>Cause:</strong> the interface is Blazor Interactive Server and needs a WebSocket on <code>/_blazor</code>. A proxy that does not pass <code>Upgrade</code> and <code>Connection</code> headers, or that times out idle connections, breaks it.</p>
+<p><strong>Fix:</strong> with nginx add <code>proxy_http_version 1.1</code>, the <code>Upgrade</code>/<code>Connection</code> headers and a long <code>proxy_read_timeout</code> (see <a href="production.html#nginx">nginx</a>). Caddy does this by default.</p>
+
+<h3 id="host-400">400 "Invalid Hostname" or blank page behind a proxy</h3>
+<p><strong>Cause:</strong> <code>AllowedHosts</code> does not include the host name the proxy sends. Or the proxy changed the <code>Host</code> header.</p>
+<p><strong>Fix:</strong> set <code>AllowedHosts</code> to your public host name and make the proxy pass the original <code>Host</code>.</p>
+
+<h2 id="forwarded">Reverse proxy and forwarded headers</h2>
+
+<h3 id="wrong-ip">The audit log and rate limits show the proxy's address, links use http://</h3>
+<p><strong>Cause:</strong> forwarded headers are only trusted from known proxies. With <code>ReverseProxy:Enabled</code> off, or with a proxy address that is not in <code>KnownProxies</code>/<code>KnownNetworks</code> (only loopback is trusted by default), GitBench sees the proxy as the client and the request as HTTP. Then HSTS is not sent, cookies and generated links are wrong and every user shares one rate limit bucket.</p>
+<p><strong>Fix:</strong></p>
+<pre><code>ReverseProxy__Enabled=true
+ReverseProxy__KnownNetworks__0=172.16.0.0/12     # the network your proxy runs on
+PublicBaseUrl=https://gitbench.example.com</code></pre>
+<p>The start-up review and <code>/admin/system</code> warn when <code>PublicBaseUrl</code> is https but the proxy setting is off.</p>
+
+<h3 id="push-too-large">Git push fails with 413 or hangs behind nginx</h3>
+<p>The proxy limits request bodies and buffers them. For <code>/git/</code> set <code>client_max_body_size 0; proxy_request_buffering off; proxy_buffering off;</code>. The same applies to package and image uploads.</p>
+
+<h2 id="database">Database and migrations</h2>
+
+<h3 id="pending-migrations">Pending migrations</h3>
+<p>Migrations are applied automatically at start-up, in both SQLite and Postgres. If <code>/admin/system</code> shows pending migrations, or the app fails to start with a migration error, check the log first: it usually names the failing step (permissions, a locked SQLite file, or a PostgreSQL role that may not alter tables).</p>
+<ul>
+  <li>Make sure only one GitBench instance uses the database.</li>
+  <li>If an upgrade failed half-way: stop, restore the pre-upgrade backup with <code>restore --force</code> and start the previous version.</li>
+  <li>A backup made by a <em>newer</em> GitBench is refused by an older build; upgrade first.</li>
+  <li>Developers: after a model change add one migration <em>per provider</em> (<code>--context AppDbContext</code> and <code>--context PostgresAppDbContext</code>). A test fails when either snapshot is behind the model.</li>
+</ul>
+
+<h3 id="postgres-required">"ConnectionStrings:Default is required" with Postgres</h3>
+<p>With <code>Database__Provider=Postgres</code> the connection string must be set explicitly and must not be the SQLite default. Use <code>ConnectionStrings__Default="Host=...;Database=...;Username=...;Password=..."</code>.</p>
+
+<h3 id="sqlite-to-pg">Can I move my SQLite data to PostgreSQL?</h3>
+<p>Not with a built-in tool. There is no data migration from SQLite to PostgreSQL, and backups restore only into the same provider. Decide before you start.</p>
+
+<h2 id="ssh">Git over SSH</h2>
+
+<h3 id="ssh-port">"The SSH server could not listen on port 2222"</h3>
+<p><strong>Cause:</strong> something else (often another GitBench run or a local sshd) holds the port, or the process may not bind it. GitBench logs the error and carries on without SSH; HTTP still works.</p>
+<p><strong>Fix:</strong> stop the other process or choose a port with <code>Ssh__Port=2223</code>, or turn SSH off with <code>Ssh__Enabled=false</code>. In Docker, map the host port you want (<code>"2223:2222"</code>) and set <code>Ssh__PublicPort</code> so clone URLs show it.</p>
+
+<h3 id="ssh-clone">Clone fails: permission denied (publickey)</h3>
+<p>Add your public key under <code>/account/ssh-keys</code> (ed25519, ECDSA or RSA 2048+; FIDO <code>sk-</code> keys are not supported). A key can be registered only once on the whole site, expired keys stop working, and so do keys of deactivated accounts. Test with <code>ssh -p 2222 git@localhost</code>; you should be greeted by name.</p>
+<p>If the host key changes (a new <code>/data/keys</code> volume) every client warns. Back the host key up with the key ring.</p>
+
+<h3 id="ssh-pq-warning">OpenSSH prints a "post-quantum key exchange" warning</h3>
+<p>Harmless: the server offers ECDH and DH key exchange only. Silence it per host with <code>WarnWeakCrypto no-pq-kex</code> in <code>~/.ssh/config</code>.</p>
+
+<h2 id="ci-faq">CI and Docker</h2>
+
+<h3 id="docker-ci">Pipelines end in Error: "Docker is not available on the server"</h3>
+<p><strong>Cause:</strong> the <code>docker</code> CLI that GitBench runs cannot reach a daemon. In the official image there is no daemon and no CLI, and <code>Ci__Enabled</code> is <code>false</code>. When CI is on, <code>/health/ready</code> reports <em>Degraded</em> and the log says "Docker is not available".</p>
+<p><strong>Fix:</strong> run <code>docker version</code> as the same user as GitBench. For the container, choose one of the three options in <a href="production.html#ci-in-docker">CI in the container</a> (mounted socket plus <code>WITH_DOCKER_CLI</code>, run on the host, or a remote <code>DOCKER_HOST</code>). Also check <code>Ci:DockerExecutable</code> and that <code>Ci:WorkDirectory</code> exists at the same path on the host.</p>
+
+<h3 id="ci-stuck">Pipelines stay Queued, or jobs are killed</h3>
+<p>Only <code>Ci:MaxConcurrentJobs</code> (default 2) jobs run at once across all pipelines, and a job is killed after <code>Ci:JobTimeoutMinutes</code> (20). Out-of-memory kills come from <code>Ci:Memory</code> (2g). Raise them if the host has capacity. Pipelines that were running when the server stopped are marked Error; queued ones run again.</p>
+
+<h3 id="ci-yaml-error">A pipeline is in Error with a YAML message</h3>
+<p>The file <code>.gitbench-ci.yml</code> is validated strictly: unknown keys, a step without <code>run</code>, unknown or circular <code>needs</code> and invalid image names are errors with a line and column. Limits: 20 jobs, 50 steps per job, 64 KB per file. See <a href="ci.html">CI pipelines</a>.</p>
+
+<h2 id="email-faq">Email</h2>
+
+<h3 id="email-not-sending">Email is not sending</h3>
+<p>Work through the list:</p>
+<ol>
+  <li><code>Email:Enabled</code> is <code>false</code> by default. While off, nothing is queued, and turning it on later does not send a backlog.</li>
+  <li><code>Email:Sender</code>: in Development the default is <code>Pickup</code>, which only writes <code>.eml</code> files to <code>mail-drop/</code>. Set <code>Email__Sender=Smtp</code> for real delivery.</li>
+  <li>Check <code>Email__Smtp__Host</code>, port, <code>UseStartTls</code> and credentials. Port 587 uses STARTTLS; with <code>UseStartTls=false</code> port 465 is implicit TLS and other ports are clear text.</li>
+  <li>Failed sends are retried three times (after 2 s, 10 s and 30 s), then logged and dropped. Look for the error in the log; addresses are masked (<code>b***@example.com</code>).</li>
+  <li>The recipient's notification preferences may have email off for that kind of event, or <code>Email:DigestMinutes</code> may be batching mail.</li>
+  <li>Links in mail point to the wrong host? Set <code>PublicBaseUrl</code> or <code>Email:BaseUrl</code>.</li>
+</ol>
+<p>See <a href="notifications.html">Notifications and email</a>.</p>
+
+<h2 id="rate-limits">Rate limits (429)</h2>
+<p>Requests over a limit get <code>429</code> with <code>Retry-After</code> (problem+json for the API, plain text elsewhere). Defaults per 60 seconds: sign-in POSTs 10, API 300, Git over HTTP 120, Git over SSH 120, package and image registry 3000 per credential and 6000 per IP, webhook test pings 5. In Development rate limiting is off.</p>
+<p>Causes you will actually meet: many users behind one NAT or an unconfigured proxy (everyone shares one IP bucket; fix the forwarded headers first), a CI farm pulling and pushing images, or a script polling the API. Raise a limit with <code>RateLimiting__Api__PermitLimit=600</code>, or set a <code>PermitLimit</code> of <code>0</code> to switch one off. Over SSH, git prints "Too many requests. Try again in N seconds."</p>
+
+<h2 id="git-faq">Git, LFS and repositories</h2>
+
+<h3 id="git-503">Clone and push answer 503</h3>
+<p>The server runs <code>git http-backend</code>, so <code>git</code> must be on the server's <code>PATH</code> (the Docker image has it) or set via <code>Git:Executable</code>. The error is logged at start-up.</p>
+
+<h3 id="git-404">"Repository not found" for a repository that exists</h3>
+<p>That is deliberate: if you cannot view the project, git sees 404, the same as for a missing repository. Check your role and the project's visibility. A <em>Viewer</em> who pushes gets 403.</p>
+
+<h3 id="lfs-missing">git LFS is missing</h3>
+<p>Two different things. On <strong>your machine</strong>, <code>git-lfs</code> must be installed (<code>git lfs install</code>) to push or pull LFS files; without it you get small pointer files instead of the content. On the <strong>server</strong>, GitBench implements the LFS Batch API itself and does not need git-lfs installed. Notes: objects over <code>Lfs:MaxObjectBytes</code> (2 GB) get 413; the locks API is not implemented, so git-lfs prints a one-time warning (silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>); and with an SSH remote you must set <code>lfs.url</code> to the HTTPS LFS URL, because <code>git-lfs-authenticate</code> over SSH is not implemented.</p>
+
+<h3 id="push-rejected">A push is rejected with "remote rejected"</h3>
+<p>Branch protection, protected tags, an archived repository or a pull mirror. The message after <code>(</code> names the reason. Force pushes to protected branches are refused by the pre-receive hook.</p>
+
+<h2 id="ai-faq">AI features do not appear</h2>
+<p>All AI features hide themselves unless <code>Ai:Enabled</code> is true <em>and</em> a key exists (<code>ANTHROPIC_API_KEY</code> or <code>Ai:ApiKey</code>), or, for the web editor and AI review, Claude Code is installed for the server's account. The site admin page <code>/admin/ai</code> shows what was detected and has a <em>Check again</em> button. See <a href="ai.html">AI overview and setup</a>.</p>
+
+<h2 id="known-limits">Known limits and what was only tested with fakes</h2>
+<p>GitBench has a large automated test suite, but a test suite is not the same as years of production use. These are the places where the honest answer is "tested against a stand-in, not the real thing":</p>
+<table>
+  <tr><th>Area</th><th>What was tested</th><th>What was not</th></tr>
+  <tr><td><strong>Slack and Microsoft Teams</strong></td><td>Message formatting, signature checks, slash commands, link previews and delivery against a fake HTTP handler</td><td>No live calls to Slack or Teams. Your first real workspace is the first real test, including Slack app scopes and Teams Workflows URLs</td></tr>
+  <tr><td><strong>Service desk email (IMAP)</strong></td><td>Intake, spam rules, replies and the signed inbound webhook, with a fake email sender</td><td>I found no automated test that talks to a real IMAP server. Try it against a test mailbox before pointing it at a real one</td></tr>
+  <tr><td><strong>Email (SMTP)</strong></td><td>Composition, queue and retries; pickup files</td><td>Delivery through a real SMTP provider</td></tr>
+  <tr><td><strong>Anthropic API and Claude Code</strong></td><td>AI review, triage and the web editor against fake models; the Claude Code backend against a fake <code>claude</code> script</td><td>The real API and the real Claude Code CLI are never called by the tests. Output quality, cost and rate limits are unknown until you run it</td></tr>
+  <tr><td><strong>Night Owl scans</strong></td><td>Parsing and ingesting Night Owl JSON and SARIF fixture reports, triage, pull request checks</td><td>A real Night Owl scan running inside a GitBench CI job (including the install step and engine images) was not exercised end to end</td></tr>
+  <tr><td><strong>Single sign-on</strong></td><td>A built-in mock OIDC provider with GitHub-style endpoints</td><td>Real Google, GitHub, Entra or Keycloak tenants</td></tr>
+  <tr><td><strong>LDAP</strong></td><td>An in-memory fake directory that evaluates filters; a Docker test against an OpenLDAP container (skipped without Docker)</td><td>Real Active Directory</td></tr>
+  <tr><td><strong>CI on Docker</strong></td><td>A pipeline test runs real containers when a daemon exists (skipped otherwise); GitHub Actions excludes it</td><td>Remote Docker hosts, rootless Docker and large parallel loads</td></tr>
+  <tr><td><strong>PostgreSQL</strong></td><td>The suite passes against PostgreSQL 17; backup round trip was checked by hand</td><td>Failover, replicas, load, and any data migration from SQLite (there is none)</td></tr>
+  <tr><td><strong>Scale</strong></td><td>Single-instance behaviour</td><td>Several replicas (not supported), very large repositories and thousands of concurrent users</td></tr>
+</table>
+
+<h3 id="not-implemented">Not implemented or partial</h3>
+<ul>
+  <li><strong>No password-reset or email-confirmation flow.</strong> The Identity email sender exists but nothing calls it yet.</li>
+  <li><strong>Git LFS</strong>: no locks API and no <code>git-lfs-authenticate</code> over SSH.</li>
+  <li><strong>SSH</strong>: FIDO (<code>sk-...</code>) keys are not supported; the server offers no shell, no sftp and no forwarding, only <code>git-upload-pack</code> and <code>git-receive-pack</code>; it is not a post-quantum key exchange.</li>
+  <li><strong>Git over HTTP</strong>: protocol v2 works, the legacy "dumb" protocol does not.</li>
+  <li><strong>Single instance only</strong>, SQLite or PostgreSQL, no clustering.</li>
+</ul>
+<p>Found something broken that is not listed here? Open an issue in the <a href="https://github.com/finepointcgi/GitBench">GitBench repository</a>.</p>

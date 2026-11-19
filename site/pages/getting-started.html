@@ -1,0 +1,102 @@
+<h1>Getting started</h1>
+<p class="lead">A ten-minute tour: start GitBench, sign in with a demo account, create a project, push a repository, file an issue and run your first CI pipeline.</p>
+
+<h2 id="prerequisites">Prerequisites</h2>
+<table>
+  <tr><th>You need</th><th>For</th></tr>
+  <tr><td>The <strong>.NET 10 SDK</strong></td><td>Running from source (<code>dotnet run</code>)</td></tr>
+  <tr><td><strong>git</strong> on the server's <code>PATH</code></td><td>Git over HTTP, code search and source archives. Without it the Git endpoints answer <code>503</code></td></tr>
+  <tr><td><strong>Docker</strong> (Engine or Desktop)</td><td>Running the container image, and running CI pipelines (every CI job runs in a container)</td></tr>
+  <tr><td>A modern browser</td><td>The web interface (Blazor Interactive Server, so it needs WebSockets)</td></tr>
+</table>
+<p>You do not need a separate database server: GitBench uses SQLite by default. PostgreSQL is optional, see <a href="production.html#postgres">Postgres or SQLite</a>.</p>
+
+<h2 id="run-from-source">Option A: run from source</h2>
+<p>From the repository root:</p>
+<pre><code>dotnet run --launch-profile http</code></pre>
+<p>Then open <code>http://localhost:5108</code>. On the first start GitBench creates <code>gitbench.db</code> (SQLite), applies all migrations and, because the <code>http</code> launch profile uses the <code>Development</code> environment, fills the empty database with demo users, projects and issues. The Git SSH server is also on in Development, on port 2222.</p>
+<div class="note">To reset a development install, stop the app and delete <code>gitbench.db*</code> and the <code>repos/</code> folder. The next start seeds everything again.</div>
+
+<h2 id="run-docker">Option B: run with Docker</h2>
+<pre><code>docker compose up -d --build
+docker compose logs -f gitbench</code></pre>
+<p>This builds the image and listens on <code>http://127.0.0.1:8080</code>. The image runs in <code>Production</code> mode, which changes three things for a first try:</p>
+<ul>
+  <li><strong>No demo data.</strong> <code>Seed__DemoData=false</code>, so there are no demo accounts. Register your own at <code>/account/register</code>.</li>
+  <li><strong>Secure cookies.</strong> Sign-in cookies are marked <code>Secure</code> and will not work over plain HTTP. For a quick local trial add <code>Security__SecureCookies: "false"</code> under <code>environment</code> in <code>docker-compose.yml</code>. For anything real, put a TLS proxy in front (see <a href="production.html#reverse-proxy">Reverse proxy</a>).</li>
+  <li><strong>CI is off.</strong> <code>Ci__Enabled=false</code> because the container has no Docker daemon. See <a href="production.html#ci-in-docker">CI in the container</a>.</li>
+</ul>
+<p>To make yourself a site admin, register, then restart once with <code>Bootstrap__AdminUsers</code> set to your username (uncomment the line in <code>docker-compose.yml</code>).</p>
+<p>The rest of this tour assumes Option A. With Docker, replace <code>http://localhost:5108</code> with your address and sign in with the account you registered.</p>
+
+<h2 id="sign-in">1. Sign in with a demo account</h2>
+<p>Open <code>/account/login</code>. The seed data creates four accounts, all with the same password, which is defined in <code>SeedData.DemoPassword</code> in <code>Data/SeedData.cs</code>. You can sign in with a username or an email address.</p>
+<table>
+  <tr><th>Username</th><th>Role on the demo data</th></tr>
+  <tr><td><code>alice</code></td><td>Site admin, Owner of the demo projects</td></tr>
+  <tr><td><code>bob</code></td><td>Developer on WEB</td></tr>
+  <tr><td><code>carol</code></td><td>Maintainer on WEB, Developer on OPS</td></tr>
+  <tr><td><code>dan</code></td><td>Developer on WEB, Maintainer on OPS</td></tr>
+</table>
+<p>Sign in as <code>alice</code> for the tour so you can see the admin pages too. Five failed attempts lock an account for five minutes. The demo password is public, so never enable demo data on a server other people can reach.</p>
+
+<h2 id="create-project">2. Create a project</h2>
+<ol class="steps">
+  <li>Open <code>/projects/new</code> (the <strong>New project</strong> button).</li>
+  <li>Pick a <strong>key</strong>: 2 to 10 capital letters or digits, starting with a letter, for example <code>DEMO</code>. Issues will be numbered <code>DEMO-1</code>, <code>DEMO-2</code> and so on. Keys are unique across the whole site.</li>
+  <li>Give it a name and choose visibility: <strong>Private</strong> (members only) or <strong>Internal</strong> (every signed-in user can see it as a Viewer).</li>
+  <li>Save. You become the project's <strong>Owner</strong>. Manage members at <code>/p/DEMO/members</code> and settings at <code>/p/DEMO/settings</code>.</li>
+</ol>
+<p>A project can optionally live inside a group; pick the group on the same form. More in <a href="concepts.html">Concepts</a>.</p>
+
+<h2 id="push-repo">3. Create a repository and push over HTTP</h2>
+<ol class="steps">
+  <li>Open <code>/p/DEMO/repos</code> and create a repository, for example with the name <code>hello</code>. It becomes a bare Git repository on the server.</li>
+  <li>On your machine, create something to push and push it. Git asks for your username and password; enter your GitBench username and the password (or a personal access token, see below).
+<pre><code>mkdir hello &amp;&amp; cd hello
+git init -b main
+echo "# Hello" &gt; README.md
+git add . &amp;&amp; git commit -m "First commit"
+git remote add origin http://localhost:5108/git/DEMO/hello.git
+git push -u origin main</code></pre></li>
+  <li>Refresh <code>/p/DEMO/repos/hello</code>. Your files, commits and branches are there.</li>
+</ol>
+<p>Instead of a password you can use a <strong>personal access token</strong>: create one at <code>/account/profile</code> under Access tokens, give it the <code>write_repository</code> scope, and paste it where git asks for the password. It is shown once. Use a credential helper (<code>git config credential.helper osxkeychain</code>, <code>manager</code> or <code>store</code>) so you are not asked every time.</p>
+<p>Pushing needs the Developer role or higher. A Viewer gets <code>403</code>. SSH is also available (<code>/account/ssh-keys</code>); see <a href="repositories.html">Repositories</a>.</p>
+<p>Commits whose message names an issue key, such as <code>DEMO-1: fix typo</code>, are attached to that issue automatically (smart commits).</p>
+
+<h2 id="create-issue">4. Create an issue</h2>
+<ol class="steps">
+  <li>Open <code>/p/DEMO/issues/new</code> or use <strong>New issue</strong> in the top bar.</li>
+  <li>Enter a title and a Markdown description. Choose a type (task, bug, feature, story, epic), priority, assignee and labels.</li>
+  <li>Save. You are on <code>DEMO-1</code>. Change the status from the issue page, or drag its card on the project's board.</li>
+</ol>
+<p>Mention the key in a commit (<code>DEMO-1: ...</code>) and the commit shows up in the issue's Development panel. Read <a href="issues.html">Issues and workflows</a> and <a href="boards-sprints.html">Boards and sprints</a> next.</p>
+
+<h2 id="first-ci">5. Run your first CI pipeline</h2>
+<p>CI needs Docker reachable from the GitBench process. In the <code>dotnet run</code> setup that is simply Docker running on your machine; <code>Ci:Enabled</code> is <code>true</code> by default there. Add a file named <code>.gitbench-ci.yml</code> at the root of the repository:</p>
+<pre><code>image: alpine:3.20
+jobs:
+  hello:
+    steps:
+      - name: Say hello
+        run: echo "Hello from CI"
+  check:
+    needs: [hello]
+    steps:
+      - name: List files
+        run: ls -la /workspace</code></pre>
+<p>Commit and push it:</p>
+<pre><code>git add .gitbench-ci.yml
+git commit -m "Add CI"
+git push</code></pre>
+<p>Open <code>/p/DEMO/repos/hello/pipelines</code>. A pipeline appears as Queued, then Running, then Passed. Click it to see each job and tail the step logs. Every job gets a fresh copy of the commit mounted at <code>/workspace</code>, and every step runs in its own container.</p>
+<p>You can also start one by hand with <strong>Run pipeline</strong> on the Pipelines tab (Developer or higher). If the pipeline ends in <em>Error</em> with "Docker is not available on the server", see <a href="troubleshooting.html#docker-ci">the troubleshooting entry</a>. The full file format is in <a href="ci.html">CI pipelines</a>.</p>
+
+<h2 id="next">Where to go next</h2>
+<div class="cards">
+  <a class="card" href="concepts.html"><b>Concepts</b><span>How projects, groups, roles and visibility fit together.</span></a>
+  <a class="card" href="pull-requests.html"><b>Pull requests</b><span>Branch, open a pull request, review, merge.</span></a>
+  <a class="card" href="configuration.html"><b>Configuration</b><span>Every setting and environment variable.</span></a>
+  <a class="card" href="production.html"><b>Production setup</b><span>Take it off your laptop.</span></a>
+</div>
