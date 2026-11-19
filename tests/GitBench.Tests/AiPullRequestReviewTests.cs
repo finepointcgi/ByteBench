@@ -58,6 +58,8 @@ public class AiPullRequestReviewTests(AiReviewApp app) : IClassFixture<AiReviewA
     {
         await using var s = app.Scope(app.UserId("bob"));
         var intake = await s.Get<AiReviewService>().CreateQueuedAsync(t.Pr.Id, new AiReviewRequest(trigger, app.UserId("bob")));
+        // The app's own queue may already have started a review of this head (a push event does that): wait for that one.
+        if (!intake.Queued && intake.ExistingReviewId is { } existing) return await RunQueuedAsync(existing);
         Assert.True(intake.Queued, intake.Reason);
         return await RunQueuedAsync(intake.ReviewId!.Value);
     }
