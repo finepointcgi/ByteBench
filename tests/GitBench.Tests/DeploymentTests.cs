@@ -454,6 +454,12 @@ public class DeploymentServiceTests(CiNoDockerApp app) : IClassFixture<CiNoDocke
         Assert.Equal(HttpStatusCode.OK, rules.StatusCode);
         Assert.Equal(2, (await ReadJson(rules)).GetProperty("requiredApprovals").GetInt32());
         Assert.Equal(0, (await ReadJson(rules)).GetProperty("approvers").GetArrayLength());
+        // The rule only bites on a protected environment, so the same call can protect it (an API caller has no other way to).
+        rules = await carol.PutAsync($"/api/v1/projects/{key}/repos/{repo.Slug}/environments/{envId}/approval-rules", Json(new { requiredApprovals = 2, isProtected = false }));
+        Assert.False((await ReadJson(rules)).GetProperty("isProtected").GetBoolean());
+        rules = await carol.PutAsync($"/api/v1/projects/{key}/repos/{repo.Slug}/environments/{envId}/approval-rules", Json(new { requiredApprovals = 2, isProtected = true }));
+        Assert.Equal(HttpStatusCode.OK, rules.StatusCode);
+        Assert.True((await ReadJson(rules)).GetProperty("isProtected").GetBoolean());
 
         var freeze = await bob.PostAsync($"/api/v1/projects/{key}/deploy-freezes", Json(new { cronStart = "0 18 * * 5", cronEnd = "0 8 * * 1" }));
         Assert.Equal(HttpStatusCode.Forbidden, freeze.StatusCode);

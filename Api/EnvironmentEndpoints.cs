@@ -31,8 +31,11 @@ public record DeployFreezeDto(int Id, string? Description, string? CronStart, st
 /// <summary>POST body for approving or rejecting a deployment.</summary>
 public record DeploymentDecisionRequest(string? Comment = null);
 
-/// <summary>PUT body for an environment's approval rule. Empty <c>userIds</c> and <c>groupIds</c>: Maintainers approve.</summary>
-public record ApprovalRulesRequest(int RequiredApprovals = 1, IReadOnlyList<int>? UserIds = null, IReadOnlyList<int>? GroupIds = null);
+/// <summary>
+/// PUT body for an environment's approval rule. Empty <c>userIds</c> and <c>groupIds</c>: Maintainers approve. The rule only
+/// applies to a protected environment, so <c>isProtected</c> (optional; omitted leaves it as is) protects or unprotects it in the same call.
+/// </summary>
+public record ApprovalRulesRequest(int RequiredApprovals = 1, IReadOnlyList<int>? UserIds = null, IReadOnlyList<int>? GroupIds = null, bool? IsProtected = null);
 
 /// <summary>POST body for a deploy freeze: two cron expressions (UTC) or a date range.</summary>
 public record CreateDeployFreezeRequest(string? Description = null, string? CronStart = null, string? CronEnd = null,
@@ -170,6 +173,7 @@ public static class EnvironmentEndpoints
         var repo = await RequireRepoAsync(repos, key, slug);
         var body = await ApiResults.ReadBodyAsync<ApprovalRulesRequest>(http.Request);
         await envs.SetApprovalRulesAsync(repo, id, body.RequiredApprovals, body.UserIds ?? [], body.GroupIds ?? []);
+        if (body.IsProtected is { } protect) await envs.SetProtectedAsync(repo, id, protect);
         return await GetEnvironment(http, repos, envs, url, key, slug, id);
     }
 
