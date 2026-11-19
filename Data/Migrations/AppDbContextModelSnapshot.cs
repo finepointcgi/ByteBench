@@ -1643,6 +1643,87 @@ namespace GitBench.Data.Migrations
                     b.ToTable("IssueTemplates");
                 });
 
+            modelBuilder.Entity("GitBench.Data.IssueTriageItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ResolvedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RunId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TargetId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("IssueTriageItems");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueTriageRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId", "CreatedAt");
+
+                    b.ToTable("IssueTriageRuns");
+                });
+
             modelBuilder.Entity("GitBench.Data.IssueVersion", b =>
                 {
                     b.Property<int>("IssueId")
@@ -2478,6 +2559,12 @@ namespace GitBench.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("AiReviewEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AiTriageAutoApplyLabels")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AiTriageEnabled")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("CreatedAt")
@@ -5160,6 +5247,28 @@ namespace GitBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.IssueTriageItem", b =>
+                {
+                    b.HasOne("GitBench.Data.IssueTriageRun", "Run")
+                        .WithMany("Items")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueTriageRun", b =>
+                {
+                    b.HasOne("GitBench.Data.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Issue");
+                });
+
             modelBuilder.Entity("GitBench.Data.IssueVersion", b =>
                 {
                     b.HasOne("GitBench.Data.Issue", null)
@@ -6242,6 +6351,11 @@ namespace GitBench.Data.Migrations
                     b.Navigation("CustomFieldValues");
 
                     b.Navigation("VersionLinks");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueTriageRun", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("GitBench.Data.Milestone", b =>

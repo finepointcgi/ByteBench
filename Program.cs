@@ -3,6 +3,7 @@ using GitBench.Data;
 using GitBench.Services;
 using GitBench.Services.Git;
 using GitBench.Services.Ai;
+using GitBench.Services.Ai.Triage;
 using GitBench.Services.Ci;
 using GitBench.Services.Webhooks;
 using GitBench.Api;
@@ -67,6 +68,7 @@ builder.Services.Configure<GitBench.Services.Workbench.WorkbenchOptions>(builder
 builder.Services.AddSingleton<AiClient>();
 builder.Services.AddScoped<IssueAiService>();
 builder.Services.AddAiCodeReview(builder.Configuration);
+builder.Services.AddAiTriage(builder.Configuration);
 builder.Services.AddScoped<RepositoryService>();
 builder.Services.AddScoped<PullRequestService>();
 builder.Services.AddScoped<IGitPushListener, IssueCommitPushListener>();
