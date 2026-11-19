@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Git;
-using GitBench.Services.MergeQueue;
+using ByteBench.Data;
+using ByteBench.Services.Git;
+using ByteBench.Services.MergeQueue;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>The pieces of merging that the merge queue (Services/MergeQueue) shares with a normal merge.</summary>
 public partial class PullRequestService

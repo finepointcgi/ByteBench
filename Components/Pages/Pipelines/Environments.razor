@@ -17,7 +17,7 @@ else if (Repo != null)
         each time it runs (<span class="mono">action: stop</span> makes a stop job). Deploys to <b>protected</b> environments wait for approval.
         <a href="@($"/p/{Repo.Project.Key}/environments")">All environments in @Repo.Project.Name</a>
     </MudText>
-    <GitBench.Components.Pipelines.EnvironmentsView Project="Repo.Project" Repo="Repo" Perms="perms" />
+    <ByteBench.Components.Pipelines.EnvironmentsView Project="Repo.Project" Repo="Repo" Perms="perms" />
 }
 
 @code {

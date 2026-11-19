@@ -286,7 +286,7 @@ else if (Repo != null)
 
     private async Task ImportFromRepository()
     {
-        if (!await Dialogs.ConfirmAsync("Import triage", $"Apply every decision in {NightOwlTriageFile.RepositoryPath} on {Repo!.DefaultBranch}? They replace GitBench's decisions for the same findings.", "Import"))
+        if (!await Dialogs.ConfirmAsync("Import triage", $"Apply every decision in {NightOwlTriageFile.RepositoryPath} on {Repo!.DefaultBranch}? They replace ByteBench's decisions for the same findings.", "Import"))
             return;
         await Run(async () =>
         {
@@ -300,7 +300,7 @@ else if (Repo != null)
         var dialog = await Dialogs.ShowAsync<EditorPromptDialog>("Import triage", new DialogParameters<EditorPromptDialog>
         {
             { x => x.Title, "Import a Night Owl triage file" },
-            { x => x.Message, $"Paste the contents of {NightOwlTriageFile.RepositoryPath}. Each decision replaces GitBench's for that fingerprint; \"new\" removes it." },
+            { x => x.Message, $"Paste the contents of {NightOwlTriageFile.RepositoryPath}. Each decision replaces ByteBench's for that fingerprint; \"new\" removes it." },
             { x => x.Label, "triage.json" },
             { x => x.ButtonText, "Import" },
             { x => x.Multiline, true },

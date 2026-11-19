@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>What kind of operand a condition takes (tells the rule editor which input to show).</summary>
 public enum ConditionValueKind { None, IssueType, Priority, Status, StatusCategory, Label, User, Text }

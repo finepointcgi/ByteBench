@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 public sealed class WebhookOptions
 {
@@ -37,7 +37,7 @@ public sealed class WebhookSender : IDisposable
     {
         this.options = options;
         client = new HttpClient(CreateGuardedHandler()) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("GitBench-Hookshot/1.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("ByteBench-Hookshot/1.0");
     }
 
     /// <summary>
@@ -81,11 +81,11 @@ public sealed class WebhookSender : IDisposable
         timeout.CancelAfter(Timeout);
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new ByteArrayContent(body) };
         request.Content.Headers.ContentType = new("application/json") { CharSet = "utf-8" };
-        request.Headers.Add("X-GitBench-Event", eventName);
-        request.Headers.Add("X-GitBench-Delivery", deliveryId);
-        request.Headers.Add("X-GitBench-Hook-ID", webhookId.ToString());
-        request.Headers.Add("X-GitBench-Signature-256", Sign(secret, body));
-        if (redelivery) request.Headers.Add("X-GitBench-Redelivery", "true");
+        request.Headers.Add("X-ByteBench-Event", eventName);
+        request.Headers.Add("X-ByteBench-Delivery", deliveryId);
+        request.Headers.Add("X-ByteBench-Hook-ID", webhookId.ToString());
+        request.Headers.Add("X-ByteBench-Signature-256", Sign(secret, body));
+        if (redelivery) request.Headers.Add("X-ByteBench-Redelivery", "true");
 
         try
         {

@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Sso.Ldap;
+namespace ByteBench.Services.Sso.Ldap;
 
 /// <summary>
 /// Runs <see cref="LdapAuthService.SyncAllAsync"/> every <c>Authentication:Ldap:Sync:IntervalMinutes</c> (off at 0), and

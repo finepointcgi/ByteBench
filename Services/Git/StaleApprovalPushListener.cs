@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// After a push: for each open PR whose source branch moved and whose target branch has a rule with

@@ -72,9 +72,9 @@
 <li><b>Zoom and filters</b>: weeks, months or quarters; filter by label or assignee.</li>
 </ul>
 <pre><code># Move an epic's dates with the API
-curl -X PUT -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X PUT -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"startDate":"2026-12-01","dueDate":"2027-02-15"}' \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/9/dates</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/issues/9/dates</code></pre>
 <p><code>GET /api/v1/projects/{key}/roadmap</code> (and <code>/groups/{group}/roadmap</code>) returns epics, dependencies, sprints and milestones.</p>
 
 <h2 id="versions">Versions and releases of a project</h2>

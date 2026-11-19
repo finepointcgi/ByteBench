@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.MergeQueue;
+namespace ByteBench.Services.MergeQueue;
 
 /// <summary>
 /// Hosted service that runs <see cref="MergeQueueEngine.ProcessAllAsync"/>: once at startup (which picks up every queue

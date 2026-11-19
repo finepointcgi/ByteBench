@@ -1,8 +1,8 @@
 using System.Linq.Expressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>A link as seen from one issue: stored type plus direction ("blocks" vs "is blocked by").</summary>
 public enum IssueLinkRelation { Blocks, IsBlockedBy, RelatesTo, Duplicates, IsDuplicatedBy, Clones, IsClonedBy }

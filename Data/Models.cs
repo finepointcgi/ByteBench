@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Identity;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 public enum IssueStatus { Backlog, Todo, InProgress, InReview, Done }
 public enum IssuePriority { Lowest, Low, Medium, High, Highest }
@@ -121,7 +121,7 @@ public class Activity
 
 /// <summary>
 /// A Git repository belonging to a project (Bitbucket-style). The bare repo lives on disk at
-/// <see cref="GitBench.Services.RepoStorage.PathFor"/>; this row is its metadata.
+/// <see cref="ByteBench.Services.RepoStorage.PathFor"/>; this row is its metadata.
 /// </summary>
 public partial class Repository
 {
@@ -217,7 +217,7 @@ public class PullRequestActivity
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One Claude API call, for cost reporting. Written by <see cref="GitBench.Services.Ai.AiClient"/>.</summary>
+/// <summary>One Claude API call, for cost reporting. Written by <see cref="ByteBench.Services.Ai.AiClient"/>.</summary>
 public class AiUsage
 {
     public int Id { get; set; }
@@ -254,7 +254,7 @@ public enum NotificationKind
     PagesDeployed,
 }
 
-/// <summary>An in-app notification for one user. Created by <see cref="GitBench.Services.NotificationService"/>.</summary>
+/// <summary>An in-app notification for one user. Created by <see cref="ByteBench.Services.NotificationService"/>.</summary>
 public partial class Notification
 {
     public int Id { get; set; }
@@ -286,7 +286,7 @@ public partial class Watch
 
 public enum AiReviewStatus { Queued, Running, Completed, Failed, Skipped }
 
-/// <summary>One GitBench AI review run of a pull request at a given head commit. Written by <see cref="GitBench.Services.Ai.AiReviewService"/>.</summary>
+/// <summary>One ByteBench AI review run of a pull request at a given head commit. Written by <see cref="ByteBench.Services.Ai.AiReviewService"/>.</summary>
 public partial class AiReview
 {
     public int Id { get; set; }
@@ -314,7 +314,7 @@ public partial class AiReview
 
 public enum ProjectVisibility { Private, Internal }
 
-/// <summary>Project roles, ordered: each role has every permission of the roles before it. See <see cref="GitBench.Services.ProjectAccess"/>.</summary>
+/// <summary>Project roles, ordered: each role has every permission of the roles before it. See <see cref="ByteBench.Services.ProjectAccess"/>.</summary>
 public enum ProjectRole { Viewer, Developer, Maintainer, Owner }
 
 /// <summary>A user's role in a project (at most one row per project and user).</summary>
@@ -360,7 +360,7 @@ public class PersonalAccessToken
 /// <summary>
 /// Protection for the branches of one repository whose name matches <see cref="Pattern"/> (exact, or a glob:
 /// <c>*</c> and <c>?</c> stay within one path segment, <c>**</c> matches across <c>/</c>). Enforced by
-/// <see cref="GitBench.Services.BranchProtectionService"/> on git push, branch create/delete and PR merge.
+/// <see cref="ByteBench.Services.BranchProtectionService"/> on git push, branch create/delete and PR merge.
 /// </summary>
 public partial class BranchProtectionRule
 {
@@ -406,7 +406,7 @@ public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, S
 /// <summary>What started a pipeline.</summary>
 public enum PipelineTrigger { Push, PullRequest, Manual, Retry, Schedule, MergeQueue }
 
-/// <summary>One CI run of <c>.gitbench-ci.yml</c> at a commit on a branch. Run by <see cref="GitBench.Services.Ci.CiRunner"/>.</summary>
+/// <summary>One CI run of <c>.bytebench-ci.yml</c> at a commit on a branch. Run by <see cref="ByteBench.Services.Ci.CiRunner"/>.</summary>
 public partial class Pipeline
 {
     public int Id { get; set; }
@@ -497,8 +497,8 @@ public class RepositoryRedirect
 // ----- Webhooks & API -----
 
 /// <summary>
-/// An outgoing webhook of a project: GitBench POSTs a signed JSON payload to <see cref="Url"/> for each subscribed event.
-/// Managed by <see cref="GitBench.Services.Webhooks.WebhookService"/>, delivered by <see cref="GitBench.Services.Webhooks.WebhookWorker"/>.
+/// An outgoing webhook of a project: ByteBench POSTs a signed JSON payload to <see cref="Url"/> for each subscribed event.
+/// Managed by <see cref="ByteBench.Services.Webhooks.WebhookService"/>, delivered by <see cref="ByteBench.Services.Webhooks.WebhookWorker"/>.
 /// </summary>
 public partial class Webhook
 {
@@ -508,16 +508,16 @@ public partial class Webhook
     [Required, MaxLength(2000)] public string Url { get; set; } = "";
     /// <summary>
     /// HMAC-SHA256 signing key (16 to 200 characters), encrypted at rest with ASP.NET Core Data Protection by
-    /// <see cref="GitBench.Services.Webhooks.WebhookSecrets"/>: stored as <c>dp:</c> + ciphertext. A value without that
+    /// <see cref="ByteBench.Services.Webhooks.WebhookSecrets"/>: stored as <c>dp:</c> + ciphertext. A value without that
     /// prefix is a legacy plaintext secret, encrypted at startup. Shown to users only once (at creation and rotation).
     /// </summary>
     [Required, MaxLength(8000)] public string Secret { get; set; } = "";
-    /// <summary>Comma-separated event names (see <see cref="GitBench.Services.Webhooks.WebhookEventNames"/>).</summary>
+    /// <summary>Comma-separated event names (see <see cref="ByteBench.Services.Webhooks.WebhookEventNames"/>).</summary>
     [Required, MaxLength(1000)] public string Events { get; set; } = "";
     public bool IsActive { get; set; } = true;
-    /// <summary>Failed deliveries in a row; at <see cref="GitBench.Services.Webhooks.WebhookService.MaxConsecutiveFailures"/> the hook is disabled.</summary>
+    /// <summary>Failed deliveries in a row; at <see cref="ByteBench.Services.Webhooks.WebhookService.MaxConsecutiveFailures"/> the hook is disabled.</summary>
     public int ConsecutiveFailures { get; set; }
-    /// <summary>Set when GitBench turned the hook off automatically; cleared when someone re-activates it.</summary>
+    /// <summary>Set when ByteBench turned the hook off automatically; cleared when someone re-activates it.</summary>
     public DateTime? DisabledAt { get; set; }
     public int CreatedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -529,7 +529,7 @@ public class WebhookDelivery
 {
     public int Id { get; set; }
     public int WebhookId { get; set; }
-    /// <summary>The X-GitBench-Delivery GUID. A redelivery reuses the original's.</summary>
+    /// <summary>The X-ByteBench-Delivery GUID. A redelivery reuses the original's.</summary>
     [Required, MaxLength(36)] public string DeliveryId { get; set; } = "";
     [Required, MaxLength(60)] public string Event { get; set; } = "";
     /// <summary>The exact JSON body that was (or will be) sent and signed.</summary>
@@ -550,7 +550,7 @@ public class WebhookDelivery
 
 // ----- Linked work -----
 
-/// <summary>Hierarchy: an issue's parent (an epic, or for a sub-task its story/task). Rules: <see cref="GitBench.Services.HierarchyRules"/>.</summary>
+/// <summary>Hierarchy: an issue's parent (an epic, or for a sub-task its story/task). Rules: <see cref="ByteBench.Services.HierarchyRules"/>.</summary>
 public partial class Issue
 {
     public int? ParentId { get; set; }
@@ -587,7 +587,7 @@ public class IssueLink
 
 /// <summary>
 /// A file attached to an issue (from the issue page, a comment or the API). The bytes live on disk at
-/// <see cref="GitBench.Services.Attachments.AttachmentStorage.PathFor"/>(<see cref="StoredName"/>), never under the user's filename.
+/// <see cref="ByteBench.Services.Attachments.AttachmentStorage.PathFor"/>(<see cref="StoredName"/>), never under the user's filename.
 /// </summary>
 public class Attachment
 {
@@ -609,11 +609,11 @@ public class Attachment
     public bool FromComment { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public bool IsImage => GitBench.Services.Attachments.AttachmentStorage.IsInlineImage(ContentType);
+    public bool IsImage => ByteBench.Services.Attachments.AttachmentStorage.IsInlineImage(ContentType);
 }
 
 /// <summary>
-/// A named issue-list filter: the list's URL query string (see <see cref="GitBench.Services.IssueFilterQuery"/>) plus a name.
+/// A named issue-list filter: the list's URL query string (see <see cref="ByteBench.Services.IssueFilterQuery"/>) plus a name.
 /// Private to its owner unless <see cref="IsShared"/>, which makes it visible to everyone who can view the project.
 /// </summary>
 public class SavedFilter
@@ -645,8 +645,8 @@ public enum SprintState { Planned, Active, Completed }
 
 /// <summary>
 /// A time-boxed iteration of a project (Scrum-style). At most one sprint per project is <see cref="SprintState.Active"/>.
-/// Managed by <see cref="GitBench.Services.SprintService"/>; report history is rebuilt from issue activity by
-/// <see cref="GitBench.Services.SprintHistory"/>.
+/// Managed by <see cref="ByteBench.Services.SprintService"/>; report history is rebuilt from issue activity by
+/// <see cref="ByteBench.Services.SprintHistory"/>.
 /// </summary>
 public class Sprint
 {
@@ -681,7 +681,7 @@ public partial class Issue
 
 public partial class Project
 {
-    /// <summary>The project's workflow: its issue statuses, in board order. See <see cref="GitBench.Services.WorkflowService"/>.</summary>
+    /// <summary>The project's workflow: its issue statuses, in board order. See <see cref="ByteBench.Services.WorkflowService"/>.</summary>
     public List<WorkflowStatus> WorkflowStatuses { get; set; } = [];
 }
 
@@ -689,7 +689,7 @@ public partial class Issue
 {
     /// <summary>
     /// The issue's status in its project's workflow. <see cref="Status"/> always equals this status's
-    /// <see cref="WorkflowStatus.Category"/>: <see cref="GitBench.Services.IssueService"/> sets both together.
+    /// <see cref="WorkflowStatus.Category"/>: <see cref="ByteBench.Services.IssueService"/> sets both together.
     /// </summary>
     public int? WorkflowStatusId { get; set; }
     public WorkflowStatus? WorkflowStatus { get; set; }
@@ -724,7 +724,7 @@ public class WorkflowTransition
 
 /// <summary>
 /// One security-relevant event (sign-in, membership change, settings change, ...). Append-only: the app never updates
-/// or deletes these rows except for retention cleanup (<see cref="GitBench.Services.Audit.AuditRetentionService"/>).
+/// or deletes these rows except for retention cleanup (<see cref="ByteBench.Services.Audit.AuditRetentionService"/>).
 /// No foreign keys, so events outlive the users and projects they mention. <see cref="Details"/> never holds secrets.
 /// </summary>
 public class AuditEvent
@@ -817,9 +817,9 @@ public class CiVariable
     public int? RepositoryId { get; set; }
     /// <summary>Environment variable name: letters, digits and underscores, not starting with a digit.</summary>
     [Required, MaxLength(100)] public string Name { get; set; } = "";
-    /// <summary>The value, protected by <see cref="GitBench.Services.Ci.CiVariableService"/> (Data Protection).</summary>
+    /// <summary>The value, protected by <see cref="ByteBench.Services.Ci.CiVariableService"/> (Data Protection).</summary>
     [Required] public string EncryptedValue { get; set; } = "";
-    /// <summary>Only exposed to pipelines whose branch is protected (see <see cref="GitBench.Services.BranchProtectionService"/>).</summary>
+    /// <summary>Only exposed to pipelines whose branch is protected (see <see cref="ByteBench.Services.BranchProtectionService"/>).</summary>
     public bool IsProtected { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -856,7 +856,7 @@ public class Release
 }
 
 /// <summary>
-/// A file attached to a release. Stored like issue attachments (<see cref="GitBench.Services.Attachments.AttachmentStorage"/>,
+/// A file attached to a release. Stored like issue attachments (<see cref="ByteBench.Services.Attachments.AttachmentStorage"/>,
 /// random 32-hex name, never the user's filename) but in its own table.
 /// </summary>
 public class ReleaseAsset
@@ -889,7 +889,7 @@ public class ProjectStar
 
 /// <summary>
 /// One branch or tag that a <c>git push</c> moved, recorded for the profile activity feed and contribution calendar
-/// (<see cref="GitBench.Services.Explore.PushActivityListener"/>).
+/// (<see cref="ByteBench.Services.Explore.PushActivityListener"/>).
 /// </summary>
 public class PushEvent
 {
@@ -903,7 +903,7 @@ public class PushEvent
     [Required, MaxLength(250)] public string Ref { get; set; } = "";
     [MaxLength(40)] public string? Before { get; set; }
     [MaxLength(40)] public string? After { get; set; }
-    /// <summary>Commits the push added to the ref (capped at <see cref="GitBench.Services.Explore.PushActivityListener.MaxCommits"/>); 0 for a deletion.</summary>
+    /// <summary>Commits the push added to the ref (capped at <see cref="ByteBench.Services.Explore.PushActivityListener.MaxCommits"/>); 0 for a deletion.</summary>
     public int CommitCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
@@ -919,7 +919,7 @@ public partial class User
 /// <summary>
 /// A GitLab-style namespace that owns projects and subgroups (nested up to <see cref="MaxDepth"/> levels). Its URL is
 /// <c>/g/{FullPath}</c>. Members' roles are inherited by every subgroup and project below it
-/// (see <see cref="GitBench.Services.ProjectAccess"/>).
+/// (see <see cref="ByteBench.Services.ProjectAccess"/>).
 /// </summary>
 public class Group
 {
@@ -1056,7 +1056,7 @@ public partial class Repository
 // ----- SSH -----
 
 /// <summary>
-/// An OpenSSH public key that authenticates git over SSH (<see cref="GitBench.Services.Ssh.SshGitServer"/>). Either a
+/// An OpenSSH public key that authenticates git over SSH (<see cref="ByteBench.Services.Ssh.SshGitServer"/>). Either a
 /// user's key (<see cref="UserId"/> set: acts as that user, with their project permissions) or a repository's deploy key
 /// (<see cref="RepositoryId"/> set: only that repository, read-only unless <see cref="CanWrite"/>). Both kinds share this
 /// table so a <see cref="Fingerprint"/> is unique across all users and deploy keys.
@@ -1118,7 +1118,7 @@ public enum BoardCardFields
 }
 
 /// <summary>
-/// One of a project's boards (see <see cref="GitBench.Services.BoardService"/>). Every project has exactly one
+/// One of a project's boards (see <see cref="ByteBench.Services.BoardService"/>). Every project has exactly one
 /// <see cref="IsDefault"/> board, created lazily, which is what <c>/p/{KEY}/board</c> opens.
 /// </summary>
 public class Board
@@ -1135,7 +1135,7 @@ public class Board
     /// </summary>
     public bool FollowsWorkflow { get; set; }
 
-    /// <summary>Issue list query string (<see cref="GitBench.Services.IssueFilterQuery"/>) limiting the board's issues; null = all.</summary>
+    /// <summary>Issue list query string (<see cref="ByteBench.Services.IssueFilterQuery"/>) limiting the board's issues; null = all.</summary>
     [MaxLength(2000)] public string? FilterQuery { get; set; }
     /// <summary>Simple filter fields, applied on top of <see cref="FilterQuery"/>. Labels: issues with any of them.</summary>
     public List<int> FilterLabelIds { get; set; } = [];
@@ -1182,7 +1182,7 @@ public class BoardQuickFilter
 // ----- Mirroring, tags & LFS -----
 
 /// <summary>
-/// A protected tag rule of a repository (<see cref="GitBench.Services.Git.ProtectedTagService"/>): tags whose name matches
+/// A protected tag rule of a repository (<see cref="ByteBench.Services.Git.ProtectedTagService"/>): tags whose name matches
 /// <see cref="Pattern"/> (exact or glob, like branch protection) may only be created by <see cref="CreateRole"/> and above,
 /// and can be blocked from being deleted or moved. Enforced on git push (HTTP and SSH) and in the tag pages and API.
 /// </summary>
@@ -1195,7 +1195,7 @@ public class ProtectedTagRule
     [Required, MaxLength(250)] public string Pattern { get; set; } = "";
     /// <summary>The lowest role allowed to create (and, if not blocked, delete or move) matching tags: Developer or Maintainer.</summary>
     public ProjectRole CreateRole { get; set; } = ProjectRole.Maintainer;
-    /// <summary>Nobody can delete a matching tag (by push or in GitBench) while the rule exists.</summary>
+    /// <summary>Nobody can delete a matching tag (by push or in ByteBench) while the rule exists.</summary>
     public bool BlockDeletion { get; set; } = true;
     /// <summary>Nobody can move a matching tag to another object (a forced tag push) while the rule exists.</summary>
     public bool BlockUpdate { get; set; } = true;
@@ -1207,7 +1207,7 @@ public enum MirrorDirection { Pull, Push }
 public enum MirrorSyncStatus { Never, Running, Succeeded, Failed }
 
 /// <summary>
-/// A repository mirror (<see cref="GitBench.Services.Mirroring.MirrorService"/>). A pull mirror (at most one per repository)
+/// A repository mirror (<see cref="ByteBench.Services.Mirroring.MirrorService"/>). A pull mirror (at most one per repository)
 /// fetches branches and tags from <see cref="Url"/> every <see cref="IntervalMinutes"/> and makes the repository read-only
 /// for pushes; a push mirror pushes them to <see cref="Url"/> after every push and on demand. The credentials are encrypted
 /// with Data Protection and never shown again.
@@ -1221,7 +1221,7 @@ public class RepositoryMirror
     /// <summary>An http(s):// or ssh:// URL without credentials.</summary>
     [Required, MaxLength(2048)] public string Url { get; set; } = "";
     [MaxLength(200)] public string? Username { get; set; }
-    /// <summary>The password or access token, encrypted (<see cref="GitBench.Services.Mirroring.MirrorCredentials"/>).</summary>
+    /// <summary>The password or access token, encrypted (<see cref="ByteBench.Services.Mirroring.MirrorCredentials"/>).</summary>
     [MaxLength(4096)] public string? ProtectedSecret { get; set; }
     public bool Enabled { get; set; } = true;
     /// <summary>Pull mirrors: minutes between syncs.</summary>
@@ -1242,7 +1242,7 @@ public class RepositoryMirror
 }
 
 /// <summary>
-/// A Git LFS object a repository has (<see cref="GitBench.Services.Lfs.LfsStorage"/>). The bytes are stored once,
+/// A Git LFS object a repository has (<see cref="ByteBench.Services.Lfs.LfsStorage"/>). The bytes are stored once,
 /// content-addressed by <see cref="Oid"/> (SHA-256), and shared by every repository that uploaded them; a repository can
 /// only download the objects it has a row for.
 /// </summary>
@@ -1312,7 +1312,7 @@ public class Dashboard
     public List<DashboardGadget> Gadgets { get; set; } = [];
 }
 
-/// <summary>One gadget on a <see cref="Dashboard"/>; its settings are JSON (<see cref="GitBench.Services.Dashboards.GadgetConfig"/>).</summary>
+/// <summary>One gadget on a <see cref="Dashboard"/>; its settings are JSON (<see cref="ByteBench.Services.Dashboards.GadgetConfig"/>).</summary>
 public class DashboardGadget
 {
     public int Id { get; set; }
@@ -1347,7 +1347,7 @@ public enum AutomationTrigger
 /// <summary>Whose permissions a rule's actions use.</summary>
 public enum AutomationRunAs
 {
-    /// <summary>The "GitBench Automation" bot (<see cref="GitBench.Services.Automation.AutomationBot"/>), trusted within the rule's project.</summary>
+    /// <summary>The "ByteBench Automation" bot (<see cref="ByteBench.Services.Automation.AutomationBot"/>), trusted within the rule's project.</summary>
     AutomationBot,
     /// <summary>The user who last saved the rule: actions are checked against their current role.</summary>
     RuleAuthor,
@@ -1358,7 +1358,7 @@ public enum AutomationRunStatus { Success, Failure, NoActions, Throttled, LoopPr
 /// <summary>
 /// A Jira-style automation rule (<c>Services/Automation/</c>): a trigger, conditions and actions, for one project
 /// (<see cref="ProjectId"/>) or for every project in a group and its subgroups (<see cref="GroupId"/>). The trigger options,
-/// conditions and actions are JSON (<see cref="GitBench.Services.Automation.RuleDefinition"/>), so new kinds need no migration.
+/// conditions and actions are JSON (<see cref="ByteBench.Services.Automation.RuleDefinition"/>), so new kinds need no migration.
 /// </summary>
 public class AutomationRule
 {
@@ -1414,13 +1414,13 @@ public class AutomationRun
 
 public partial class Project
 {
-    /// <summary>The project wiki (<see cref="GitBench.Services.Wiki.WikiService"/>) is on. Off: its pages, git remote and search hits are hidden.</summary>
+    /// <summary>The project wiki (<see cref="ByteBench.Services.Wiki.WikiService"/>) is on. Off: its pages, git remote and search hits are hidden.</summary>
     public bool WikiEnabled { get; set; } = true;
 }
 
 /// <summary>
 /// Search index of one wiki page. The wiki itself is the bare git repository <c>{KEY}/{key}.wiki.git</c>; these rows are a
-/// cache that <see cref="GitBench.Services.Wiki.WikiService"/> rebuilds after every save and every push, so global search can
+/// cache that <see cref="ByteBench.Services.Wiki.WikiService"/> rebuilds after every save and every push, so global search can
 /// use SQL LIKE like everything else.
 /// </summary>
 public class WikiPageIndex
@@ -1448,7 +1448,7 @@ public enum SnippetVisibility
 
 /// <summary>
 /// A gist-style snippet: one or more files, stored in the database with full revisions (<see cref="SnippetRevision"/>).
-/// Personal when <see cref="ProjectId"/> is null, else it belongs to that project. Rules: <see cref="GitBench.Services.Snippets.SnippetService"/>.
+/// Personal when <see cref="ProjectId"/> is null, else it belongs to that project. Rules: <see cref="ByteBench.Services.Snippets.SnippetService"/>.
 /// </summary>
 public class Snippet
 {
@@ -1505,7 +1505,7 @@ public class SnippetComment
 
 /// <summary>
 /// Forks: a repository copied into another (or the same) project, with its own history from then on. See
-/// <see cref="GitBench.Services.Forks.ForkService"/>.
+/// <see cref="ByteBench.Services.Forks.ForkService"/>.
 /// </summary>
 public partial class Repository
 {
@@ -1544,7 +1544,7 @@ public partial class PullRequest
 /// <summary>Pipelines of pull requests from forks: never given CI variables, and run only after a Maintainer approves them.</summary>
 public partial class Pipeline
 {
-    /// <summary>Runs code from a fork PR: <see cref="GitBench.Services.Ci.CiVariableService"/> gives it no CI variables at all.</summary>
+    /// <summary>Runs code from a fork PR: <see cref="ByteBench.Services.Ci.CiVariableService"/> gives it no CI variables at all.</summary>
     public bool IsForkPullRequest { get; set; }
     /// <summary>Queued but held until a Maintainer clicks "Approve and run" (fork PR pipelines); the runner skips it meanwhile.</summary>
     public bool AwaitingApproval { get; set; }
@@ -1566,7 +1566,7 @@ public partial class User
 
 /// <summary>
 /// Marks a <see cref="GroupMember"/> as managed by an SSO provider's or LDAP's group mapping
-/// (<see cref="GitBench.Services.Sso.ExternalGroupSync"/>): a sync may change its role, or remove it when the user leaves
+/// (<see cref="ByteBench.Services.Sso.ExternalGroupSync"/>): a sync may change its role, or remove it when the user leaves
 /// the external group. Memberships without this row were added by hand and are never touched by a sync.
 /// </summary>
 public class ExternalGroupMembership
@@ -1579,7 +1579,7 @@ public class ExternalGroupMembership
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One run of the LDAP directory sync (<see cref="GitBench.Services.Sso.Ldap.LdapSyncJob"/>), shown on /admin/authentication.</summary>
+/// <summary>One run of the LDAP directory sync (<see cref="ByteBench.Services.Sso.Ldap.LdapSyncJob"/>), shown on /admin/authentication.</summary>
 public class DirectorySyncRun
 {
     public int Id { get; set; }
@@ -1602,7 +1602,7 @@ public enum CustomFieldType { Text, LongText, Number, Date, SingleSelect, MultiS
 
 /// <summary>
 /// A project-defined issue field (Jira-style). Values live in <see cref="CustomFieldValue"/> rows (EAV with typed
-/// columns). Rules and parsing: <see cref="GitBench.Services.Fields.CustomFieldRules"/>.
+/// columns). Rules and parsing: <see cref="ByteBench.Services.Fields.CustomFieldRules"/>.
 /// </summary>
 public class CustomField
 {
@@ -1708,7 +1708,7 @@ public partial class Issue
     public List<IssueVersion> VersionLinks { get; set; } = [];
     public List<CustomFieldValue> CustomFieldValues { get; set; } = [];
     /// <summary>Custom field values, components and versions chosen on the new-issue form or in the API; applied by <c>IssueService.CreateIssueAsync</c>.</summary>
-    [System.ComponentModel.DataAnnotations.Schema.NotMapped] public GitBench.Services.Fields.IssueFieldDraft? FieldDraft { get; set; }
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped] public ByteBench.Services.Fields.IssueFieldDraft? FieldDraft { get; set; }
 }
 
 public partial class Project
@@ -2029,7 +2029,7 @@ public enum MergeQueueEntryState { Queued, Testing, Passed, Merged, Failed, Remo
 /// <summary>
 /// A pull request waiting in (or that went through) the merge queue of <see cref="TargetBranch"/>. Active entries are
 /// ordered by <see cref="Position"/>; each tested one has a speculative commit (target + every entry ahead + this PR) at
-/// <c>refs/merge-queue/{branch}/{Id}</c> and a pipeline on it. Processed by <see cref="GitBench.Services.MergeQueue.MergeQueueEngine"/>.
+/// <c>refs/merge-queue/{branch}/{Id}</c> and a pipeline on it. Processed by <see cref="ByteBench.Services.MergeQueue.MergeQueueEngine"/>.
 /// </summary>
 public class MergeQueueEntry
 {
@@ -2164,7 +2164,7 @@ public class SecurityTriage
     [MaxLength(500)] public string? Title { get; set; }
     public int? UserId { get; set; }
     public User? User { get; set; }
-    /// <summary>Who decided, as written in an imported file (when it isn't a GitBench user).</summary>
+    /// <summary>Who decided, as written in an imported file (when it isn't a ByteBench user).</summary>
     [MaxLength(200)] public string? By { get; set; }
     public DateTime At { get; set; } = DateTime.UtcNow;
 
@@ -2200,7 +2200,7 @@ public partial class Webhook
 {
     public WebhookKind Kind { get; set; } = WebhookKind.Generic;
     [MaxLength(100)] public string? Name { get; set; }
-    /// <summary>JSON of <c>GitBench.Services.ChatIntegrations.ChatSettings</c>: chat events, filters, channels. No secrets.</summary>
+    /// <summary>JSON of <c>ByteBench.Services.ChatIntegrations.ChatSettings</c>: chat events, filters, channels. No secrets.</summary>
     [MaxLength(8000)] public string? ChatSettings { get; set; }
     /// <summary>
     /// Set (with <see cref="ProjectId"/> null) for a group-level Slack/Teams integration: it announces the events of every
@@ -2220,7 +2220,7 @@ public class ChatIntegrationOptOut
 }
 
 /// <summary>
-/// A chat account (e.g. a Slack user in a workspace) linked to a GitBench user through the one-time link flow. Slash
+/// A chat account (e.g. a Slack user in a workspace) linked to a ByteBench user through the one-time link flow. Slash
 /// commands, interactivity and unfurls act as <see cref="UserId"/>. Unlinking sets <see cref="RevokedAt"/> (the row is
 /// kept so its one-time <see cref="Nonce"/> can't be replayed).
 /// </summary>
@@ -2281,7 +2281,7 @@ public class ServiceDeskSettings
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Someone outside GitBench who files requests: an email address and a name, never a user account.</summary>
+/// <summary>Someone outside ByteBench who files requests: an email address and a name, never a user account.</summary>
 public class ServiceDeskContact
 {
     public int Id { get; set; }

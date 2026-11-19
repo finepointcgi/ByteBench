@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Explore;
+namespace ByteBench.Services.Explore;
 
 /// <summary>
 /// Project stars. Anyone who can view a project can star it; stars on projects a user can no longer see are kept but

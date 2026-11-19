@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
-using GitBench.Api;
+using ByteBench.Api;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>Work for <see cref="WebhookWorker"/>.</summary>
 public abstract record WebhookJob;

@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// Deploy freeze windows of a project (scoped). Reading needs ViewProject; adding or removing one needs

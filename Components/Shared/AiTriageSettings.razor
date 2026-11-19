@@ -1,5 +1,5 @@
 @* Project setting: AI triage of issues (Maintainer+; the Settings page already requires that). Off by default. *@
-@using GitBench.Services.Ai.Triage
+@using ByteBench.Services.Ai.Triage
 @inject TriageService Triage
 @inject ISnackbar Snackbar
 
@@ -8,7 +8,7 @@
     <MudSwitch T="bool" Value="enabled" ValueChanged="ToggleEnabled" Color="Color.Primary"
                Label="Suggest labels, component, priority, type, assignee and duplicates for issues" />
     <MudText Typo="Typo.caption" HtmlTag="p" Class="mud-text-secondary mt-1">
-        When on, GitBench AI prepares suggestions for each new issue and anyone with the Developer role can ask for them with
+        When on, ByteBench AI prepares suggestions for each new issue and anyone with the Developer role can ask for them with
         the Suggest button on an issue. Suggestions use only this project's labels, components and Developer+ members, and
         nothing is applied until someone accepts it.
     </MudText>

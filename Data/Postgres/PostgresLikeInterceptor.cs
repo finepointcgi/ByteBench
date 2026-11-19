@@ -3,10 +3,10 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 
-namespace GitBench.Data.Postgres;
+namespace ByteBench.Data.Postgres;
 
 /// <summary>
-/// <c>EF.Functions.Like</c> is case-insensitive on SQLite (for ASCII) but case-sensitive on PostgreSQL. GitBench's searches
+/// <c>EF.Functions.Like</c> is case-insensitive on SQLite (for ASCII) but case-sensitive on PostgreSQL. ByteBench's searches
 /// (issues, GQL <c>~</c>, explore, wiki) rely on the SQLite behaviour, so on PostgreSQL every <c>Like</c> in a query is
 /// rewritten to <c>ILike</c> before translation. One place, no provider checks at the call sites.
 /// </summary>

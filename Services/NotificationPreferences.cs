@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>One user's resolved preferences: every group has a channel (stored or default).</summary>
 public sealed record UserNotificationPreferences(bool EmailEnabled, IReadOnlyDictionary<NotificationGroup, NotificationChannel> Channels,
@@ -76,7 +76,7 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
 
     /// <summary>
     /// Also deliver notifications (every group not turned Off) as Slack DMs. Takes effect only when the server has a Slack
-    /// bot token and the user linked their Slack account (<c>/gitbench link</c>).
+    /// bot token and the user linked their Slack account (<c>/bytebench link</c>).
     /// </summary>
     public async Task SetSlackDmEnabledAsync(int userId, bool enabled)
     {

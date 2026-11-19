@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 /// <summary>
 /// A parsed and validated OpenSSH public key (one <c>authorized_keys</c> line: <c>type base64 [comment]</c>).

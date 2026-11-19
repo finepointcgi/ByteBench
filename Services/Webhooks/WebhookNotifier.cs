@@ -1,8 +1,8 @@
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>
 /// Hook points for <see cref="IssueService"/> and <see cref="PullRequestService"/>: each method builds the event's payload

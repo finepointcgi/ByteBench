@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// Route builders for the code-hosting pages. Refs and paths travel as <c>?ref=</c> / <c>?path=</c> query

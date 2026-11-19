@@ -1,6 +1,6 @@
 @page "/p/{Key}/repos/{Slug}/settings/ai-review"
 @inherits RepoPageBase
-@using GitBench.Services.Ai
+@using ByteBench.Services.Ai
 @inject ProjectAccess Access
 @inject AiReviewSettingsService AiSettings
 @inject ISnackbar Snackbar
@@ -28,8 +28,8 @@ else if (Repo != null)
             <MudPaper Outlined="true" Class="pa-5">
                 <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">AI pull request review</MudText>
                 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-                    GitBench AI reads a pull request's diff and posts findings as inline comments (each with a severity) plus one
-                    summary comment, as the <b>GitBench AI</b> account. It never approves or requests changes, and it can be wrong.
+                    ByteBench AI reads a pull request's diff and posts findings as inline comments (each with a severity) plus one
+                    summary comment, as the <b>ByteBench AI</b> account. It never approves or requests changes, and it can be wrong.
                     The diff is treated as untrusted text: the reviewer has no tools and can't change anything.
                 </MudText>
                 @if (availability is { Available: false })

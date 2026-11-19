@@ -6,7 +6,7 @@ using MailKit.Search;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>
 /// Somewhere inbound service desk mail comes from. Pull sources (IMAP) are polled by <see cref="InboundMailPoller"/>:
@@ -74,14 +74,14 @@ public sealed class ImapMailSource(IOptions<ServiceDeskOptions> options, ILogger
 
 /// <summary>
 /// <c>POST /service-desk/inbound</c>: for mail providers that forward each message as raw MIME (the request body). The
-/// request must carry <c>X-GitBench-Timestamp</c> (Unix seconds) and <c>X-GitBench-Signature: sha256=&lt;hex&gt;</c>,
+/// request must carry <c>X-ByteBench-Timestamp</c> (Unix seconds) and <c>X-ByteBench-Signature: sha256=&lt;hex&gt;</c>,
 /// the HMAC-SHA256 of <c>"{timestamp}.{body}"</c> keyed with <c>ServiceDesk:WebhookSecret</c>, compared in constant
 /// time. Without a configured secret the endpoint answers 404.
 /// </summary>
 public sealed class WebhookMailSource(IOptions<ServiceDeskOptions> options, TimeProvider clock) : IInboundMailSource
 {
-    public const string SignatureHeader = "X-GitBench-Signature";
-    public const string TimestampHeader = "X-GitBench-Timestamp";
+    public const string SignatureHeader = "X-ByteBench-Signature";
+    public const string TimestampHeader = "X-ByteBench-Timestamp";
 
     public string Name => "webhook";
 
@@ -132,7 +132,7 @@ public sealed class WebhookMailSource(IOptions<ServiceDeskOptions> options, Time
             }
             if (!source.Verify(ctx.Request.Headers[TimestampHeader], ctx.Request.Headers[SignatureHeader], buffer.GetBuffer().AsSpan(0, (int)buffer.Length)))
             {
-                lf.CreateLogger("GitBench.ServiceDesk").LogWarning("Service desk webhook: bad or missing signature from {Ip}", ctx.Connection.RemoteIpAddress);
+                lf.CreateLogger("ByteBench.ServiceDesk").LogWarning("Service desk webhook: bad or missing signature from {Ip}", ctx.Connection.RemoteIpAddress);
                 return Results.Text("Invalid or missing signature.", statusCode: StatusCodes.Status401Unauthorized);
             }
             buffer.Position = 0;

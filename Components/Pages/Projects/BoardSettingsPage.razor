@@ -1,6 +1,6 @@
 @page "/p/{Key}/boards/{BoardId:int}/settings"
-@using GitBench.Services.Boards
-@using GitBench.Components.Repositories
+@using ByteBench.Services.Boards
+@using ByteBench.Components.Repositories
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject BoardService Boards
@@ -262,7 +262,7 @@ else if (project != null && board != null)
     ];
 
     private Project? project;
-    private GitBench.Data.Board? board;
+    private ByteBench.Data.Board? board;
     private ProjectRole? role;
     private bool notFound, customizing;
     private string? error;

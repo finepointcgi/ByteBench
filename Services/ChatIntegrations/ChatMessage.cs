@@ -1,7 +1,7 @@
 using System.Text;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>Colour of a message: green for success, red for failures, amber for warnings, blue for news.</summary>
 public enum ChatStatus { Neutral, Info, Good, Warning, Danger }
@@ -87,6 +87,6 @@ public static class ChatText
 
     public static string ShortSha(string? sha) => sha is { Length: > 8 } ? sha[..8] : sha ?? "";
 
-    /// <summary>Removes the Markdown bold markers GitBench puts in activity text ("changed status from **A** to **B**").</summary>
+    /// <summary>Removes the Markdown bold markers ByteBench puts in activity text ("changed status from **A** to **B**").</summary>
     public static string StripBold(string? s) => (s ?? "").Replace("**", "");
 }

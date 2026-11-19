@@ -1,8 +1,8 @@
 <h1>Repositories and Git hosting</h1>
-<p class="lead">Every project can host any number of Git repositories. You clone and push over HTTP with a password or personal access token, or over GitBench's built-in SSH server with an SSH key or a deploy key.</p>
+<p class="lead">Every project can host any number of Git repositories. You clone and push over HTTP with a password or personal access token, or over ByteBench's built-in SSH server with an SSH key or a deploy key.</p>
 
 <h2 id="overview">How repositories work</h2>
-<p>A <strong>repository</strong> lives inside a <strong>project</strong> (which has a key such as <code>WEB</code>). It is a normal bare Git repository on the server's disk, plus a database row for its name, description, default branch and settings. GitBench reads and writes it with LibGit2Sharp and runs the real <code>git</code> executable for the network protocols, so any Git client works.</p>
+<p>A <strong>repository</strong> lives inside a <strong>project</strong> (which has a key such as <code>WEB</code>). It is a normal bare Git repository on the server's disk, plus a database row for its name, description, default branch and settings. ByteBench reads and writes it with LibGit2Sharp and runs the real <code>git</code> executable for the network protocols, so any Git client works.</p>
 <p>A repository is addressed as <code>KEY/slug</code>, for example <code>WEB/web-app</code>. The slug is the URL-friendly name. These are the main pages:</p>
 <table>
   <tr><th>Route</th><th>What is there</th></tr>
@@ -24,25 +24,25 @@
 <p>The new repository starts with one commit on <code>main</code> containing a <code>README.md</code> built from the name and description. The default branch of a new repository is always <code>main</code>; change it later in <a href="#repository-settings">Settings</a>. The slug must be unique inside the project. Creation is recorded in the audit log as <code>repository.created</code>.</p>
 
 <h2 id="importing">Bringing existing code in</h2>
-<p>GitBench has no "import from URL" wizard. There are three ways to get history in:</p>
+<p>ByteBench has no "import from URL" wizard. There are three ways to get history in:</p>
 <ul>
   <li><strong>Push it.</strong> Add the new repository as a remote and push. Because a new repository already has a README commit, either push to a different branch name, or force-push if you want your history to replace <code>main</code> (branch protection must allow it):
-<pre><code>git remote add gitbench https://gitbench.example.com/git/WEB/web-app.git
-git push gitbench --all
-git push gitbench --tags</code></pre></li>
+<pre><code>git remote add bytebench https://bytebench.example.com/git/WEB/web-app.git
+git push bytebench --all
+git push bytebench --tags</code></pre></li>
   <li><strong>Mirror it.</strong> A <a href="#mirroring">pull mirror</a> keeps the repository in sync with an upstream URL on a schedule. While a pull mirror is enabled the repository is read-only for pushes.</li>
-  <li><strong>Fork it.</strong> To copy a repository that already lives in GitBench, use <a href="#forks">Fork</a>.</li>
+  <li><strong>Fork it.</strong> To copy a repository that already lives in ByteBench, use <a href="#forks">Fork</a>.</li>
 </ul>
 <p>Issues and pull requests from other systems are not imported by repository tools. For issues use the CSV import described in <a href="fields-filters.html">Fields, filters and search</a>.</p>
 
 <h2 id="cloning-over-http">Cloning over HTTP</h2>
 <p>Every repository is served over the Git Smart HTTP protocol at <code>/git/{KEY}/{slug}.git</code>:</p>
-<pre><code>git clone https://gitbench.example.com/git/WEB/web-app.git
+<pre><code>git clone https://bytebench.example.com/git/WEB/web-app.git
 cd web-app
 git push origin main</code></pre>
 <p>The repository page has <strong>HTTPS</strong> and <strong>SSH</strong> tabs in its clone box with the exact URLs for your server.</p>
 <ul>
-  <li><strong>Credentials.</strong> Clone, fetch and push all require a GitBench account. When git prompts, enter your username (or email) and either your password or a personal access token. Use a credential helper (<code>osxkeychain</code>, <code>manager</code>, <code>store</code>) instead of putting a secret in the URL. Failed logins count towards account lockout.</li>
+  <li><strong>Credentials.</strong> Clone, fetch and push all require a ByteBench account. When git prompts, enter your username (or email) and either your password or a personal access token. Use a credential helper (<code>osxkeychain</code>, <code>manager</code>, <code>store</code>) instead of putting a secret in the URL. Failed logins count towards account lockout.</li>
   <li><strong>Two-factor accounts.</strong> If you turned on two-factor sign-in, Git over HTTP refuses your password with a message to use a personal access token instead. See <a href="accounts.html">Accounts, sign-in and SSO</a>.</li>
   <li><strong>Permissions.</strong> Clone and fetch need the Viewer role (<code>ViewProject</code>). Push needs Developer or higher (<code>PushCode</code>). If you cannot see the project, git answers <code>404 Repository not found</code>, the same as for a repository that does not exist. A Viewer who tries to push gets <code>403</code>.</li>
   <li><strong>Server requirement.</strong> The server needs the <code>git</code> executable on its <code>PATH</code> (or set <code>Git:Executable</code>). Without it the Git endpoints answer <code>503</code> and an error is logged at startup.</li>
@@ -60,24 +60,24 @@ git push origin main</code></pre>
   <tr><td><code>read_api</code>, <code>write_api</code></td><td>REST API read and write access (see <a href="api.html">REST API and webhooks</a>)</td></tr>
 </table>
 <ul>
-  <li>The token looks like <code>gbp_</code> followed by 43 characters and is shown <strong>once</strong>. GitBench stores only a SHA-256 hash and a short display prefix.</li>
-  <li>Use it as the password: <code>git clone https://bob@gitbench.example.com/git/WEB/web-app.git</code>, then paste the token when prompted.</li>
+  <li>The token looks like <code>gbp_</code> followed by 43 characters and is shown <strong>once</strong>. ByteBench stores only a SHA-256 hash and a short display prefix.</li>
+  <li>Use it as the password: <code>git clone https://bob@bytebench.example.com/git/WEB/web-app.git</code>, then paste the token when prompted.</li>
   <li>A token with only <code>read_repository</code> gets <code>403</code> on push. Your project role still applies on top of the token's scopes.</li>
   <li>Revoked or expired tokens are rejected like a wrong password. The token list shows when each was last used.</li>
 </ul>
 <div class="warn">Treat a token like a password. Never commit it, and do not paste it into issues or chat. If one leaks, revoke it on the same page.</div>
 
 <h2 id="cloning-over-ssh">Cloning over SSH</h2>
-<p>GitBench has its own SSH server for Git. It is <strong>off by default</strong>; it is on in <code>appsettings.Development.json</code> (port 2222) and in the Docker image.</p>
-<pre><code>git clone ssh://git@gitbench.example.com:2222/WEB/web-app.git
-git clone git@gitbench.example.com:WEB/web-app.git     # scp-like form, only works when the public port is 22</code></pre>
+<p>ByteBench has its own SSH server for Git. It is <strong>off by default</strong>; it is on in <code>appsettings.Development.json</code> (port 2222) and in the Docker image.</p>
+<pre><code>git clone ssh://git@bytebench.example.com:2222/WEB/web-app.git
+git clone git@bytebench.example.com:WEB/web-app.git     # scp-like form, only works when the public port is 22</code></pre>
 <p>Any SSH user name works; use <code>git</code>. The identity comes from your key, not the name.</p>
 
 <h3 id="ssh-keys">Your SSH keys</h3>
 <ol class="steps">
   <li>Open <strong>Profile, SSH keys</strong> (<code>/account/ssh-keys</code>).</li>
   <li>Paste the contents of your <code>.pub</code> file, give it a title (default: the key's comment) and optionally an expiry.</li>
-  <li>Test: <code>ssh -p 2222 git@gitbench.example.com</code> should print <code>Hi alice! You've successfully authenticated, but GitBench does not provide shell access.</code></li>
+  <li>Test: <code>ssh -p 2222 git@bytebench.example.com</code> should print <code>Hi alice! You've successfully authenticated, but ByteBench does not provide shell access.</code></li>
 </ol>
 <ul>
   <li>Supported: <code>ssh-ed25519</code> (recommended), <code>ecdsa-sha2-nistp256/384/521</code> and <code>ssh-rsa</code> of 2048 bits or more. FIDO (<code>sk-...</code>) keys are not supported yet.</li>
@@ -112,11 +112,11 @@ git clone git@gitbench.example.com:WEB/web-app.git     # scp-like form, only wor
   <tr><td><code>Ssh:AuthTimeoutSeconds</code></td><td><code>30</code></td><td>A connection that has not authenticated by then is closed</td></tr>
   <tr><td><code>RateLimiting:Ssh</code></td><td>120 per 60 s</td><td>Git commands per user or deploy key</td></tr>
 </table>
-<pre><code># docker-compose.yml: map the host's port 22 to GitBench and tell it what to show
+<pre><code># docker-compose.yml: map the host's port 22 to ByteBench and tell it what to show
 ports:
   - "22:2222"
 environment:
-  Ssh__PublicHost: "gitbench.example.com"
+  Ssh__PublicHost: "bytebench.example.com"
   Ssh__PublicPort: "22"</code></pre>
 <ul>
   <li><strong>Only Git.</strong> The server runs <code>git-upload-pack</code> and <code>git-receive-pack</code> for <code>KEY/slug.git</code> paths and nothing else. Password and keyboard-interactive login are not offered; shells, PTYs, forwarding and <code>sftp</code> are refused.</li>
@@ -127,7 +127,7 @@ environment:
 <p>More on running behind a proxy and in Docker: <a href="production.html">Production setup</a>. All settings: <a href="configuration.html">Configuration reference</a>.</p>
 
 <h2 id="git-lfs">Git LFS</h2>
-<p>GitBench implements the Git LFS Batch API (the <code>basic</code> transfer adapter) at the URL git-lfs derives from the clone URL, <code>/git/{KEY}/{slug}.git/info/lfs/</code>. Nothing needs turning on:</p>
+<p>ByteBench implements the Git LFS Batch API (the <code>basic</code> transfer adapter) at the URL git-lfs derives from the clone URL, <code>/git/{KEY}/{slug}.git/info/lfs/</code>. Nothing needs turning on:</p>
 <pre><code>git lfs install
 git lfs track "*.psd"
 git add .gitattributes
@@ -149,11 +149,11 @@ git push</code></pre>
 <p>At most one per repository. You enter an upstream URL, an optional username with a password or token, a sync interval (at least <code>Mirroring:MinIntervalMinutes</code>, default 5) and whether to mirror <strong>only protected branches</strong> or all of them.</p>
 <ul>
   <li>A background service runs <code>git fetch --prune</code> of <code>refs/heads/*</code> and <code>refs/tags/*</code> into the bare repository when the mirror is due. With "only protected branches" it fetches only branches matching a <a href="branch-protection.html">branch protection rule</a> (and all tags).</li>
-  <li>While a pull mirror is enabled the repository is <strong>read-only for pushes</strong> over HTTP and SSH, and tag changes in GitBench and LFS uploads are refused too.</li>
+  <li>While a pull mirror is enabled the repository is <strong>read-only for pushes</strong> over HTTP and SSH, and tag changes in ByteBench and LFS uploads are refused too.</li>
   <li>Push listeners (webhooks, CI, smart commits) do not run for mirrored commits.</li>
 </ul>
 <h3 id="push-mirror">Push mirrors</h3>
-<p>Up to 10 per repository. After every successful push, and on demand with <strong>Sync now</strong>, GitBench runs a forced <code>git push --prune</code> of branches and tags to the target. With "only protected branches" it pushes the matching branches plus tags and deletes nothing.</p>
+<p>Up to 10 per repository. After every successful push, and on demand with <strong>Sync now</strong>, ByteBench runs a forced <code>git push --prune</code> of branches and tags to the target. With "only protected branches" it pushes the matching branches plus tags and deletes nothing.</p>
 <h3 id="mirror-security">Credentials and safety</h3>
 <ul>
   <li>Passwords and tokens are encrypted at rest and never shown again. Leave the field blank to keep a saved token; changing the URL drops it. During a sync the token goes through a temporary credential helper, never the URL or command line.</li>
@@ -174,7 +174,7 @@ git push</code></pre>
 <p>Each mirror shows its last sync status, time and message. Audit events: <code>mirror.created</code>, <code>mirror.updated</code>, <code>mirror.deleted</code>, <code>mirror.sync_requested</code>.</p>
 
 <h2 id="forks">Forks</h2>
-<p>The <strong>Fork</strong> button in a repository's header (any user who can view it) copies the repository into a project where you can create repositories (Maintainer or higher). GitBench has no personal namespaces, so for a fork of your own, create a project first (you become its Owner). The button shows the fork count and links to the list of forks.</p>
+<p>The <strong>Fork</strong> button in a repository's header (any user who can view it) copies the repository into a project where you can create repositories (Maintainer or higher). ByteBench has no personal namespaces, so for a fork of your own, create a project first (you become its Owner). The button shows the fork count and links to the list of forks.</p>
 <ul>
   <li>The copy is a <code>git clone --bare --local</code>, which hard-links the object files: nearly free on disk and fully independent (deleting either side never breaks the other).</li>
   <li><strong>Sync fork</strong> fetches every upstream branch into the fork's <code>refs/upstream/*</code> and fast-forwards the fork's default branch. If the fork has its own commits it reports "ahead" or "diverged" and changes nothing.</li>
@@ -223,7 +223,7 @@ git push</code></pre>
   <tr><td>LFS objects</td><td><code>./lfs/{oid[0..2]}/{oid[2..4]}/{oid}</code></td><td><code>Lfs:Root</code></td></tr>
   <tr><td>Release assets and attachments</td><td><code>./attachments</code></td><td><code>Attachments:Root</code></td></tr>
   <tr><td>SSH host key and Data Protection keys</td><td><code>./keys</code> (<code>/data/keys</code> in Docker)</td><td><code>DataProtection:KeysPath</code>, <code>Ssh:HostKeyPath</code></td></tr>
-  <tr><td>Push hook scripts</td><td><code>{RepositoryRoot}/.hooks</code></td><td>(managed by GitBench)</td></tr>
+  <tr><td>Push hook scripts</td><td><code>{RepositoryRoot}/.hooks</code></td><td>(managed by ByteBench)</td></tr>
 </table>
 <p>The project key is upper-cased and the slug lower-cased on disk. Metadata (names, settings, pull requests) is in the database, so back up both. Never edit the bare repositories by hand while the server runs. Deleted projects and repositories are first renamed to a <code>.trash-...</code> name and then removed.</p>
 
@@ -237,8 +237,8 @@ git push</code></pre>
   <tr><td><code>GET .../repos/{slug}/raw/{path}?ref=</code></td><td>Raw file</td></tr>
   <tr><td><code>GET/POST .../repos/{slug}/forks</code>, <code>POST .../sync-fork</code></td><td>Forks</td></tr>
 </table>
-<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
-  https://gitbench.example.com/api/v1/projects/WEB/repos</code></pre>
+<pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos</code></pre>
 <p>There is no API endpoint to create or delete a repository; do that in the UI. See <a href="api.html">REST API and webhooks</a> for tokens and conventions.</p>
 
 <h2 id="troubleshooting">Common problems</h2>

@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <summary>One stretch of an issue's life in one status. <see cref="End"/> is null while it is still there.</summary>
 public sealed record StatusSegment(string Status, IssueStatus Category, DateTime Start, DateTime? End);

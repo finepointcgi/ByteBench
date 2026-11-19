@@ -1,6 +1,6 @@
-using GitBench.Services.Editor.Ai;
+using ByteBench.Services.Editor.Ai;
 
-namespace GitBench.Services.Editor;
+namespace ByteBench.Services.Editor;
 
 public static class EditorServiceCollectionExtensions
 {

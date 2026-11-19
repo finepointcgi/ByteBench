@@ -1,4 +1,4 @@
-namespace GitBench.Services.Sso.Ldap;
+namespace ByteBench.Services.Sso.Ldap;
 
 public enum LdapSecurity
 {
@@ -13,7 +13,7 @@ public enum LdapSecurity
 /// <summary>Directory attribute names.</summary>
 public sealed class LdapAttributeMappings
 {
-    /// <summary>The login name; also the stable key that links the directory entry to the GitBench account.</summary>
+    /// <summary>The login name; also the stable key that links the directory entry to the ByteBench account.</summary>
     public string UserName { get; set; } = "sAMAccountName";
     public string Email { get; set; } = "mail";
     public string DisplayName { get; set; } = "displayName";
@@ -21,19 +21,19 @@ public sealed class LdapAttributeMappings
     public string MemberOf { get; set; } = "memberOf";
 }
 
-/// <summary>LDAP group DN → GitBench group membership.</summary>
+/// <summary>LDAP group DN → ByteBench group membership.</summary>
 public sealed class LdapGroupMapping
 {
     public string GroupDn { get; set; } = "";
     public string Group { get; set; } = "";
-    public GitBench.Data.ProjectRole Role { get; set; } = GitBench.Data.ProjectRole.Developer;
+    public ByteBench.Data.ProjectRole Role { get; set; } = ByteBench.Data.ProjectRole.Developer;
 }
 
 public sealed class LdapSyncOptions
 {
     /// <summary>Minutes between syncs of every directory account (0: no periodic sync; "Sync now" on /admin/authentication still works).</summary>
     public int IntervalMinutes { get; set; }
-    /// <summary>Deactivate GitBench accounts whose directory entry is gone (or no longer matches the user filter).</summary>
+    /// <summary>Deactivate ByteBench accounts whose directory entry is gone (or no longer matches the user filter).</summary>
     public bool DeactivateMissingUsers { get; set; }
 }
 
@@ -65,10 +65,10 @@ public sealed class LdapOptions
     /// <summary>Members of this group DN are site admins (revoked again when they leave it, if LDAP granted it).</summary>
     public string AdminGroupDn { get; set; } = "";
     public List<LdapGroupMapping> GroupMappings { get; set; } = [];
-    /// <summary>Create a GitBench account on the first successful LDAP sign-in.</summary>
+    /// <summary>Create a ByteBench account on the first successful LDAP sign-in.</summary>
     public bool AutoCreateUsers { get; set; } = true;
     /// <summary>
-    /// Let directory users use their LDAP password for git over HTTP (Basic auth), when they don't have GitBench two-factor
+    /// Let directory users use their LDAP password for git over HTTP (Basic auth), when they don't have ByteBench two-factor
     /// sign-in. Off: they must use personal access tokens.
     /// </summary>
     public bool AllowGitPassword { get; set; }

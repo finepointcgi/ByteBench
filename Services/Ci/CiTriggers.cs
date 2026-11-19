@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// Remembers each repository's branch tips (singleton) so that after a push, or a merge in the UI, the branches that
@@ -53,14 +53,14 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     public async Task<CiParseResult?> LoadDefinitionAsync(Repository repo, string sha)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
-        var blob = await Task.Run(() => GitOps.GetBlob(path, sha, CiFile.FileName));
+        var blob = await Task.Run(() => CiFile.GetBlob(path, sha));
         if (blob == null) return null;
         if (blob.TooLarge || blob.IsBinary || blob.Text == null) return new CiParseResult(null, $"{CiFile.FileName}: the file is too large or not text.");
         return CiFile.Parse(blob.Text);
     }
 
     /// <summary>
-    /// After a push (or a merge done in GitBench): starts a pipeline for every branch whose tip moved and that matches
+    /// After a push (or a merge done in ByteBench): starts a pipeline for every branch whose tip moved and that matches
     /// the file's <c>on.branches</c>, or that is the source of an open PR when <c>on.pull_requests</c> is on.
     /// </summary>
     public async Task SyncRepositoryAsync(int repositoryId, int? userId, CancellationToken ct = default)

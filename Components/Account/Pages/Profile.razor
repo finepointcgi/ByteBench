@@ -6,15 +6,15 @@
 @inject UserManager<User> Users
 @inject NavigationManager Nav
 @inject AccessTokenService Tokens
-@inject GitBench.Services.Audit.AuditLog Audit
-@inject GitBench.Services.Sso.SsoService Sso
-@inject GitBench.Services.Sso.Ldap.LdapAuthService Ldap
+@inject ByteBench.Services.Audit.AuditLog Audit
+@inject ByteBench.Services.Sso.SsoService Sso
+@inject ByteBench.Services.Sso.Ldap.LdapAuthService Ldap
 
-<PageTitle>Your profile · GitBench</PageTitle>
+<PageTitle>Your profile · ByteBench</PageTitle>
 
 <div class="profile-page">
     <div class="profile-head">
-        <a class="auth-back" href="/"><MudIcon Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" /> Back to GitBench</a>
+        <a class="auth-back" href="/"><MudIcon Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" /> Back to ByteBench</a>
         @if (user != null)
         {
             <div class="profile-id">
@@ -74,7 +74,7 @@
     {
         <section class="profile-section" id="connected-accounts">
             <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Connected accounts</MudText>
-            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Sign in to GitBench with another account. Connecting one needs you to sign in with it once.</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Sign in to ByteBench with another account. Connecting one needs you to sign in with it once.</MudText>
             <StatusMessage Success="@ssoSuccess" Errors="ssoErrors" />
             @if (isDirectoryUser)
             {
@@ -121,7 +121,7 @@
                 }
                 else
                 {
-                    <span>Your account has no GitBench password: you sign in with a connected account.</span>
+                    <span>Your account has no ByteBench password: you sign in with a connected account.</span>
                 }
                 For git over HTTP, use a <a href="account/profile#tokens">personal access token</a> as the password@(isDirectoryUser && Ldap.Options.AllowGitPassword ? " (or your directory password, if two-factor sign-in is off)" : "").
             </MudText>
@@ -179,7 +179,7 @@
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
             Use a personal access token instead of your password for Git over HTTP: enter your username and paste the
             token when git asks for a password. Tokens with an API scope also work for the
-            <a href="/developers/api">REST API</a> (<code>Authorization: Bearer gbp_…</code>). Tokens are shown once; GitBench stores only a hash.
+            <a href="/developers/api">REST API</a> (<code>Authorization: Bearer gbp_…</code>). Tokens are shown once; ByteBench stores only a hash.
         </MudText>
         <StatusMessage Success="@tokenSuccess" Errors="tokenErrors" />
 
@@ -313,7 +313,7 @@
 
     // ----- Connected accounts (SSO) -----
     private bool hasPassword = true, isDirectoryUser;
-    private List<GitBench.Services.Sso.ConnectedAccount> connected = [];
+    private List<ByteBench.Services.Sso.ConnectedAccount> connected = [];
     private string? linkToken, ssoSuccess;
     private readonly List<string> ssoErrors = [];
 
@@ -346,7 +346,7 @@
         {
             var title = Sso.Settings.Find(SsoProvider)?.Title ?? "the provider";
             if (SsoResult == "linked") ssoSuccess = $"{title} is now connected. You can sign in with it.";
-            if (SsoError != null) ssoErrors.Add(GitBench.Services.Sso.SsoErrors.Message(SsoError, title));
+            if (SsoError != null) ssoErrors.Add(ByteBench.Services.Sso.SsoErrors.Message(SsoError, title));
         }
     }
 
@@ -363,7 +363,7 @@
         if (user is null || UnlinkProvider is not { } provider) return;
         var error = await Sso.UnlinkAsync(user.Id, provider);
         var title = Sso.Settings.Find(provider)?.Title ?? provider;
-        if (error != null) ssoErrors.Add(GitBench.Services.Sso.SsoErrors.Message(error, title));
+        if (error != null) ssoErrors.Add(ByteBench.Services.Sso.SsoErrors.Message(error, title));
         else ssoSuccess = $"{title} was disconnected.";
         await LoadConnectedAsync();
     }

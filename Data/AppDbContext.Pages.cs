@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 public partial class AppDbContext
 {

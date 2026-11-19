@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ai.Triage;
+namespace ByteBench.Services.Ai.Triage;
 
 /// <summary>Published on <see cref="LiveEvents"/> when a triage run changes status or one of its suggestions is accepted or dismissed.</summary>
 public sealed record TriageChanged(int ProjectId, int IssueId) : LiveEvent;

@@ -53,10 +53,10 @@
 <p>Branch protection, required reviews, code owners and environment approval rules can add further restrictions on top of roles. See <a href="branch-protection.html">branch protection</a> and <a href="environments.html">environments</a>.</p>
 
 <h2 id="site-admin">Site admins</h2>
-<p>A <strong>site admin</strong> is treated as <strong>Owner of every project and group</strong>, sees everything, and can open the <a href="admin.html">administration pages</a>. The first admin is usually created with the <code>Bootstrap:AdminUsers</code> setting (see <a href="production.html">production setup</a>). Admins can be granted or revoked on <code>/admin/users</code>, and GitBench refuses to revoke the last admin. SSO and LDAP can grant admin from a group claim (see <a href="accounts.html#sso-flow">SSO sign-in</a>).</p>
+<p>A <strong>site admin</strong> is treated as <strong>Owner of every project and group</strong>, sees everything, and can open the <a href="admin.html">administration pages</a>. The first admin is usually created with the <code>Bootstrap:AdminUsers</code> setting (see <a href="production.html">production setup</a>). Admins can be granted or revoked on <code>/admin/users</code>, and ByteBench refuses to revoke the last admin. SSO and LDAP can grant admin from a group claim (see <a href="accounts.html#sso-flow">SSO sign-in</a>).</p>
 
 <h2 id="visibility">Visibility</h2>
-<p>GitBench has two visibility levels for projects and groups. There is <strong>no public (anonymous) visibility</strong>: every page and API call needs a signed-in user.</p>
+<p>ByteBench has two visibility levels for projects and groups. There is <strong>no public (anonymous) visibility</strong>: every page and API call needs a signed-in user.</p>
 <table>
 <thead><tr><th>Visibility</th><th>Who can see it</th></tr></thead>
 <tbody>
@@ -120,7 +120,7 @@
 </ul>
 
 <div class="cards">
-<a class="card" href="accounts.html"><b>Accounts and SSO</b><span>Map identity provider groups to GitBench roles</span></a>
+<a class="card" href="accounts.html"><b>Accounts and SSO</b><span>Map identity provider groups to ByteBench roles</span></a>
 <a class="card" href="admin.html"><b>Administration</b><span>Site admins, audit log, user admin</span></a>
 <a class="card" href="branch-protection.html"><b>Branch protection</b><span>Extra rules on top of roles</span></a>
 </div>

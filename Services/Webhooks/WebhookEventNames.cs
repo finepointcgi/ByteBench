@@ -1,6 +1,6 @@
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
-/// <summary>The event names a webhook can subscribe to (the <c>X-GitBench-Event</c> header and the payload's <c>event</c>).</summary>
+/// <summary>The event names a webhook can subscribe to (the <c>X-ByteBench-Event</c> header and the payload's <c>event</c>).</summary>
 public static class WebhookEventNames
 {
     public const string Ping = "ping";
@@ -49,8 +49,8 @@ public static class WebhookEventNames
         (DeploymentStatus, "A deployment changes status (waiting for approval, running, passed, failed, canceled)"),
         (PagesDeployed, "A Pages site is deployed or rolled back"),
         (ReleasePublished, "A release is published"),
-        (TagCreated, "A tag is created (in GitBench or by a push)"),
-        (TagDeleted, "A tag is deleted (in GitBench or by a push)"),
+        (TagCreated, "A tag is created (in ByteBench or by a push)"),
+        (TagDeleted, "A tag is deleted (in ByteBench or by a push)"),
         (PackagePublished, "A package version or container image tag is published"),
         (PackageDeleted, "A package, version or image tag is deleted"),
         (FlagChanged, "A feature flag is created, toggled, edited, archived or deleted"),

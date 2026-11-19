@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace GitBench.Components.Sprints;
+namespace ByteBench.Components.Sprints;
 
 /// <summary>Small helpers for the hand-written SVG charts.</summary>
 internal static class ChartScale

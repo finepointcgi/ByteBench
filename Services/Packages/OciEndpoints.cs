@@ -2,10 +2,10 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>
 /// The container registry: the subset of the OCI Distribution API (Docker Registry HTTP API v2) that <c>docker push</c>
@@ -45,7 +45,7 @@ public static partial class OciEndpoints
 
     private static string BaseUrl(HttpContext ctx) => ctx.RequestServices.GetRequiredService<Api.PublicBaseUrl>().For(ctx.Request);
 
-    private static string ChallengeFor(HttpContext ctx) => $"Bearer realm=\"{BaseUrl(ctx)}/v2/token\",service=\"gitbench\"";
+    private static string ChallengeFor(HttpContext ctx) => $"Bearer realm=\"{BaseUrl(ctx)}/v2/token\",service=\"bytebench\"";
 
     private static async Task Error(HttpContext ctx, int status, string code, string message)
     {
@@ -119,7 +119,7 @@ public static partial class OciEndpoints
         var (identity, error) = await auth.AuthenticateAsync(ctx);
         if (identity == null)
         {
-            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"GitBench registry\"";
+            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"ByteBench registry\"";
             await Error(ctx, 401, "UNAUTHORIZED", error ?? "Sign in with your user name and a personal access token.");
             return;
         }

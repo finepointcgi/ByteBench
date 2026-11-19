@@ -41,7 +41,7 @@ function loadMonaco() {
 
 function isDark() {
     try {
-        const saved = localStorage.getItem("gitbench-theme");
+        const saved = localStorage.getItem("bytebench-theme");
         if (saved) return saved === "dark";
     } catch { }
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -142,7 +142,7 @@ export function openFile(path, text, readOnly) {
     let f = state.files.get(path);
     if (!f) {
         const lang = languageFor(monaco, path);
-        const model = monaco.editor.createModel(text ?? "", lang, monaco.Uri.from({ scheme: "gitbench", path: "/" + path }));
+        const model = monaco.editor.createModel(text ?? "", lang, monaco.Uri.from({ scheme: "bytebench", path: "/" + path }));
         f = { path, model, saved: model.getAlternativeVersionId(), timer: 0, seq: 0, saving: false, dirtyReported: false, readOnly: !!readOnly };
         f.listener = model.onDidChangeContent(() => onChange(state, f));
         state.files.set(path, f);

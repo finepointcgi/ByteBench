@@ -1,12 +1,12 @@
 using System.IO.Compression;
 using System.Text;
-using GitBench.Api;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Api;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using LibGit2Sharp;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>One ref update requested by a push: <c>old new ref</c> from the receive-pack command list.</summary>
 public sealed record PushedRef(string Before, string After, string Ref)
@@ -32,7 +32,7 @@ public sealed class PushCapture
     public IReadOnlyList<PushedRef> Refs => refs ??= Buffer == null ? [] : Parse(Buffer.ToArray(), Gzipped);
 
     /// <summary>
-    /// Records ref updates GitBench made itself (a web editor commit), so the push listeners that read this capture see
+    /// Records ref updates ByteBench made itself (a web editor commit), so the push listeners that read this capture see
     /// them exactly as they would see a git push's.
     /// </summary>
     public void SetRefs(IReadOnlyList<PushedRef> updates)
@@ -159,7 +159,7 @@ public sealed class WebhookPushListener(IDbContextFactory<AppDbContext> dbFactor
 
 /// <summary>
 /// Builds and enqueues <c>push</c> events for ref updates, whether they came from a git push (<see cref="WebhookPushListener"/>)
-/// or from GitBench itself (merging a pull request moves its target branch and may delete its source branch). Every
+/// or from ByteBench itself (merging a pull request moves its target branch and may delete its source branch). Every
 /// ref is checked against the repository first, so only refs that really are at <c>after</c> are reported.
 /// </summary>
 public sealed class WebhookPushEvents(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage,
@@ -167,7 +167,7 @@ public sealed class WebhookPushEvents(IDbContextFactory<AppDbContext> dbFactory,
 {
     public const int MaxCommits = 20;
 
-    /// <summary>A branch ref update made inside GitBench (<paramref name="before"/>/<paramref name="after"/> null for a create/delete).</summary>
+    /// <summary>A branch ref update made inside ByteBench (<paramref name="before"/>/<paramref name="after"/> null for a create/delete).</summary>
     public static PushedRef Branch(string branch, string? before, string? after) =>
         new(before ?? PushedRef.ZeroSha, after ?? PushedRef.ZeroSha, "refs/heads/" + branch);
 

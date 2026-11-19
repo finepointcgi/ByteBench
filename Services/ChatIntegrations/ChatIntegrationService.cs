@@ -1,11 +1,11 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>An integration as the settings page sees it: secrets only as hints ("••••3f9a").</summary>
 public sealed record ChatIntegrationInfo(int Id, WebhookKind Kind, string Name, ChatSettings Settings, bool IsActive, DateTime? DisabledAt,

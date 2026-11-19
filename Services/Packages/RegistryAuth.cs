@@ -1,11 +1,11 @@
 using System.Text;
-using GitBench.Data;
-using GitBench.Services.Ci;
+using ByteBench.Data;
+using ByteBench.Services.Ci;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>What a registry request wants to do in a project.</summary>
 public enum RegistryOp { Read, Write, Delete }
@@ -48,6 +48,7 @@ public sealed class RegistryAuth(IServiceProvider services, IDbContextFactory<Ap
     public static readonly TimeSpan BearerLifetime = TimeSpan.FromHours(1);
     public const string PasswordRefused = "Use a personal access token (Profile → Access tokens) or a CI job token as the password.";
 
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     private ITimeLimitedDataProtector Protector => dataProtection.CreateProtector("GitBench.Packages.Bearer.v1").ToTimeLimitedDataProtector();
 
     /// <summary>The request's identity, null when it has no (valid) credentials; <c>Error</c> explains a refusal.</summary>

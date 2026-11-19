@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 public enum SlackSignatureResult { Valid, NotConfigured, Missing, Expired, Invalid, Replayed }
 

@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>Pipelines of pull requests from forks wait for a Maintainer's "Approve and run".</summary>
 public partial class PipelineService

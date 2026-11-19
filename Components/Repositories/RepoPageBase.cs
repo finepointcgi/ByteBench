@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 using Microsoft.AspNetCore.Components;
 
-namespace GitBench.Components.Repositories;
+namespace ByteBench.Components.Repositories;
 
 /// <summary>Shared plumbing for pages under /p/{Key}/repos/{Slug}: loads the repository and commit-author lookup.</summary>
 public abstract class RepoPageBase : ComponentBase

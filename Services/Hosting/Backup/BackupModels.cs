@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace GitBench.Services.Hosting.Backup;
+namespace ByteBench.Services.Hosting.Backup;
 
 /// <summary><c>Backup:*</c> settings.</summary>
 public sealed class BackupOptions
@@ -37,7 +37,7 @@ public sealed class BackupOptions
 public sealed record BackupSection(string Name, string Path);
 
 /// <summary>
-/// Where GitBench keeps its data, resolved from configuration the same way the services do (so the CLI, which runs without the
+/// Where ByteBench keeps its data, resolved from configuration the same way the services do (so the CLI, which runs without the
 /// web host, finds the same folders). The archive stores section <i>names</i>, never absolute paths: a backup restores onto any
 /// machine or container layout.
 /// </summary>
@@ -101,15 +101,15 @@ public sealed class BackupManifest
     public const string FileName = "manifest.json";
 
     public int Format { get; set; } = CurrentFormat;
-    public string App { get; set; } = "GitBench";
+    public string App { get; set; } = "ByteBench";
     public string AppVersion { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; }
     public string Host { get; set; } = "";
     /// <summary><c>Sqlite</c> or <c>Postgres</c>; a backup only restores into the same provider.</summary>
     public string Provider { get; set; } = "Sqlite";
-    /// <summary>Archive path of the database dump (<c>db/gitbench.db</c> or <c>db/postgres.dump</c>).</summary>
+    /// <summary>Archive path of the database dump (<c>db/bytebench.db</c> or <c>db/postgres.dump</c>).</summary>
     public string DatabaseEntry { get; set; } = "";
-    /// <summary>Id of the newest EF migration in the dumped database. A restore into an older GitBench is refused.</summary>
+    /// <summary>Id of the newest EF migration in the dumped database. A restore into an older ByteBench is refused.</summary>
     public string Migration { get; set; } = "";
     public Dictionary<string, ManifestSection> Sections { get; set; } = [];
     public List<ManifestFile> Files { get; set; } = [];

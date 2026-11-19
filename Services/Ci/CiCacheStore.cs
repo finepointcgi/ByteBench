@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// Job caches (singleton, for the runner). A cache is a zip of the job's <c>cache.paths</c>, stored per repository,
@@ -37,11 +37,11 @@ public class CiCacheStore(IDbContextFactory<AppDbContext> dbFactory, CiStorage s
         var scope = protectedBranch ? "protected" : "unprotected";
         var entry = await FindAsync(repositoryId, key, protectedBranch);
         var path = entry == null ? null : storage.CachePath(entry.StoredName);
-        if (entry == null || !File.Exists(path)) return [$"[gitbench] Cache '{key}' ({scope} branches): not found."];
+        if (entry == null || !File.Exists(path)) return [$"[bytebench] Cache '{key}' ({scope} branches): not found."];
         var r = await Task.Run(() => CiArtifacts.ExtractSafely(path, workspace, MaxBytes));
         await using (var db = await dbFactory.CreateDbContextAsync())
             await db.CiCacheEntries.Where(c => c.Id == entry.Id).ExecuteUpdateAsync(s => s.SetProperty(c => c.LastUsedAt, DateTime.UtcNow));
-        return [$"[gitbench] Restored cache '{key}' ({scope} branches): {r.FileCount} file(s).", .. r.Notes.Select(n => "[gitbench] Cache: " + n)];
+        return [$"[bytebench] Restored cache '{key}' ({scope} branches): {r.FileCount} file(s).", .. r.Notes.Select(n => "[bytebench] Cache: " + n)];
     }
 
     /// <summary>Saves the workspace's cache paths under <paramref name="key"/>, replacing the previous cache, then evicts old ones.</summary>
@@ -54,11 +54,11 @@ public class CiCacheStore(IDbContextFactory<AppDbContext> dbFactory, CiStorage s
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             log.LogWarning(ex, "Could not save cache {Key} of repository {Repo}", key, repositoryId);
-            return [$"[gitbench] Could not save cache '{key}': {ex.Message}"];
+            return [$"[bytebench] Could not save cache '{key}': {ex.Message}"];
         }
-        var notes = r.Notes.Select(n => "[gitbench] Cache: " + n).ToList();
-        if (!r.Ok) { notes.Add($"[gitbench] Cache '{key}' not saved: {r.Error}."); return notes; }
-        if (r.FileCount == 0) { notes.Add($"[gitbench] Cache '{key}' not saved: no files matched {string.Join(", ", paths)}."); return notes; }
+        var notes = r.Notes.Select(n => "[bytebench] Cache: " + n).ToList();
+        if (!r.Ok) { notes.Add($"[bytebench] Cache '{key}' not saved: {r.Error}."); return notes; }
+        if (r.FileCount == 0) { notes.Add($"[bytebench] Cache '{key}' not saved: no files matched {string.Join(", ", paths)}."); return notes; }
 
         string? replaced = null;
         await using (var db = await dbFactory.CreateDbContextAsync())
@@ -79,11 +79,11 @@ public class CiCacheStore(IDbContextFactory<AppDbContext> dbFactory, CiStorage s
             {
                 // Another job saved the same key at the same moment: keep theirs.
                 CiArtifacts.TryDelete(path);
-                return [.. notes, $"[gitbench] Cache '{key}' was saved by another job at the same time; kept that one."];
+                return [.. notes, $"[bytebench] Cache '{key}' was saved by another job at the same time; kept that one."];
             }
         }
         if (replaced != null) CiArtifacts.TryDelete(storage.CachePath(replaced));
-        notes.Add($"[gitbench] Saved cache '{key}' ({(protectedBranch ? "protected" : "unprotected")} branches): {r.FileCount} file(s), {CiArtifacts.Format(r.ZipBytes)}.");
+        notes.Add($"[bytebench] Saved cache '{key}' ({(protectedBranch ? "protected" : "unprotected")} branches): {r.FileCount} file(s), {CiArtifacts.Format(r.ZipBytes)}.");
         await TrimAsync(repositoryId);
         return notes;
     }

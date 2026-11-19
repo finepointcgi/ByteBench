@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// Git access layer over LibGit2Sharp. Every operation opens the bare repository at the given path,
@@ -373,7 +373,7 @@ public static partial class GitOps
 
             var sig = Sig(who, DateTimeOffset.Now);
             var merge = r.ObjectDatabase.CreateCommit(sig, sig, message, result.Tree, [t, s], prettifyMessage: true);
-            r.Refs.UpdateTarget(targetRef, merge.Id, $"merge {source}: Merge made by GitBench");
+            r.Refs.UpdateTarget(targetRef, merge.Id, $"merge {source}: Merge made by ByteBench");
             return new MergeOutcome(true, null, merge.Sha, false, s.Sha, t.Sha, []);
         }
 

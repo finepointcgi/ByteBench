@@ -1,8 +1,8 @@
 <h1>Environments and deployments</h1>
-<p class="lead">Mark a CI job as a deployment and GitBench records what is running where, who put it there, who approved it, and which issues, pull requests and releases it contains.</p>
+<p class="lead">Mark a CI job as a deployment and ByteBench records what is running where, who put it there, who approved it, and which issues, pull requests and releases it contains.</p>
 
 <h2 id="overview">How it works</h2>
-<p>Environments are not configured up front. A job with an <code>environment:</code> key in <a href="ci.html"><code>.gitbench-ci.yml</code></a> records a <b>deployment</b> every time it runs (environment, pipeline, job, commit, branch, user, status). The environment is created the first time a job names it, and its URL is refreshed from the file on each run. Environments belong to a <b>repository</b>; the project-wide page gathers all repositories.</p>
+<p>Environments are not configured up front. A job with an <code>environment:</code> key in <a href="ci.html"><code>.bytebench-ci.yml</code></a> records a <b>deployment</b> every time it runs (environment, pipeline, job, commit, branch, user, status). The environment is created the first time a job names it, and its URL is refreshed from the file on each run. Environments belong to a <b>repository</b>; the project-wide page gathers all repositories.</p>
 <ul>
 <li><b>Repository page:</b> the repository's <b>Environments</b> tab, <code>/p/{KEY}/repos/{slug}/environments</code>.</li>
 <li><b>Project page:</b> <code>/p/{KEY}/environments</code>, every repository's environments, deployments waiting for approval, and <a href="#freezes">deploy freezes</a>.</li>
@@ -113,7 +113,7 @@
 </ul>
 
 <h2 id="traceability">Traceability: what is deployed where</h2>
-<p>GitBench works out which environments contain a piece of work. A commit counts as deployed when the environment's <em>current</em> successful deployment is that commit or a descendant of it. The result, with the first deployment that shipped it and a "N of M commits" count when only some are in, appears as a <b>Deployed to</b> panel:</p>
+<p>ByteBench works out which environments contain a piece of work. A commit counts as deployed when the environment's <em>current</em> successful deployment is that commit or a descendant of it. The result, with the first deployment that shipped it and a "N of M commits" count when only some are in, appears as a <b>Deployed to</b> panel:</p>
 <ul>
 <li><b>Issues:</b> in the Development panel of an issue. It looks at commits that mention the issue key (such as <code>WEB-12</code>) and merge commits of merged pull requests whose title or source branch mentions it, across the project's repositories.</li>
 <li><b>Pull requests:</b> on a merged PR, where its merge commit is deployed.</li>
@@ -131,7 +131,7 @@
     "pipelineId": 118, "jobId": 402, "jobName": "deploy-production",
     "createdAt": "2026-11-19T10:02:11Z", "finishedAt": null,
     "user": { "id": 4, "userName": "dana", "displayName": "Dana Lee" },
-    "url": "https://gitbench.example.com/p/WEB/repos/web-app/pipelines/118"
+    "url": "https://bytebench.example.com/p/WEB/repos/web-app/pipelines/118"
   },
   "environment": { "id": 7, "name": "production", "externalUrl": "https://example.com", "isProtected": true },
   "repository": { "id": 3, "slug": "web-app", "name": "Web App" }
@@ -154,8 +154,8 @@
 <tr><td><code>POST /repos/{slug}/deployments/{id}/rollback</code></td><td>Redeploy a previous successful deployment (202)</td></tr>
 <tr><td><code>GET /repos/{slug}/deployed?rev=...</code>, <code>.../pull-requests/{n}/deployments</code>, <code>.../releases/{id}/deployments</code></td><td>Traceability</td></tr>
 </table>
-<pre><code>curl -X POST https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/deployments/31/approve \
-  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X POST https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/deployments/31/approve \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"comment":"Checked the changelog"}'</code></pre>
 
 <h2 id="audit">Audit events</h2>

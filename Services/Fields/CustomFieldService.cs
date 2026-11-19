@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 /// <summary>A custom field and its value on one issue.</summary>
 public sealed record IssueFieldValue(CustomField Field, FieldValue Value);

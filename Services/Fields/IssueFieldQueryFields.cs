@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Linq.Expressions;
-using GitBench.Data;
-using GitBench.Services.Query;
+using ByteBench.Data;
+using ByteBench.Services.Query;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 /// <summary>
 /// GQL fields for components, versions, estimates, the Workbench charge code and custom fields: <c>component</c>,

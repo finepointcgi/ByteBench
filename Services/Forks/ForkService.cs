@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Forks;
+namespace ByteBench.Services.Forks;
 
 /// <summary>What the repository header shows: the visible upstream (if any) and how many visible forks there are.</summary>
 /// <param name="Parent">The repository this one was forked from, when the viewer can see it.</param>
@@ -15,7 +15,7 @@ public sealed record ForkCompare(CompareResult? Compare, MergeStatus? Merge);
 
 /// <summary>
 /// Forks (scoped). A fork is an ordinary <see cref="Repository"/> with <see cref="Repository.ForkedFromId"/> set, in any
-/// project where the user can create repositories. GitBench has no personal namespaces: a user forks into a project of
+/// project where the user can create repositories. ByteBench has no personal namespaces: a user forks into a project of
 /// their own (whoever creates a project is its Owner) or into any project or group project where they're Maintainer+.
 /// <para>
 /// <b>Storage.</b> The bare repository is copied with <c>git clone --bare --local</c>, which hard-links the object files:
@@ -198,7 +198,7 @@ public partial class ForkService(IDbContextFactory<AppDbContext> dbFactory, Repo
     {
         await EnsurePullRequestAllowedAsync(source, target, await access.ResolveUserIdAsync());
         var (from, into) = (repos.PathOf(source), repos.PathOf(target));
-        var temp = $"refs/gitbench-preview/{Guid.NewGuid():N}";
+        var temp = $"refs/bytebench-preview/{Guid.NewGuid():N}";
         return await Task.Run(() =>
         {
             if (!GitOps.BranchExists(into, targetBranch) || targetBranch.StartsWith("refs/", StringComparison.Ordinal)) return new ForkCompare(null, null);

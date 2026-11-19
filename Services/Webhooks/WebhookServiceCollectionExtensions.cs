@@ -1,7 +1,7 @@
-using GitBench.Api;
-using GitBench.Services.Git;
+using ByteBench.Api;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 public static class WebhookServiceCollectionExtensions
 {

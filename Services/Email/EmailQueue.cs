@@ -1,7 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 /// <summary>
 /// In-memory outbox. <see cref="Enqueue"/> never blocks the request; <see cref="EmailWorker"/> sends in the background.

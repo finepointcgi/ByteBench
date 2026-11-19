@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
 /// <summary>Filters for <see cref="SecurityService.ListAsync"/>. <see cref="State"/>: open (default), dismissed or all.</summary>
 public sealed record SecurityFindingFilter(string? Branch = null, SecuritySeverity? MinSeverity = null, SecurityCategory? Category = null,
@@ -175,7 +175,7 @@ public class SecurityService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
     }
 
     /// <summary>
-    /// Imports a Night Owl triage file: each decision replaces GitBench's for that fingerprint ("new" removes it).
+    /// Imports a Night Owl triage file: each decision replaces ByteBench's for that fingerprint ("new" removes it).
     /// Returns how many decisions were applied.
     /// </summary>
     public async Task<int> ImportTriageAsync(Repository repo, string json, int? actorId = null, string source = "upload")

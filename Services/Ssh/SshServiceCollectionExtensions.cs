@@ -1,4 +1,4 @@
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 public static class SshServiceCollectionExtensions
 {

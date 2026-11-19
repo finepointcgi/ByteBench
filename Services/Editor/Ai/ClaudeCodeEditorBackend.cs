@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using GitBench.Services.Ai;
+using ByteBench.Services.Ai;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>
 /// The assistant through Claude Code installed on the server. Per request:
@@ -47,7 +47,7 @@ public sealed partial class ClaudeCodeEditorBackend : IEditorAiBackend, IStructu
     public string DisplayName => "Claude Code (on the server)";
 
     /// <summary>Root of the temporary workspaces (tests check it is emptied).</summary>
-    public static string TempRoot => Path.Combine(Path.GetTempPath(), "gitbench-claude-code");
+    public static string TempRoot => Path.Combine(Path.GetTempPath(), "bytebench-claude-code");
 
     public async Task<bool> IsAvailableAsync(CancellationToken ct = default) => (await detector.GetAsync(false, ct)).Installed;
 

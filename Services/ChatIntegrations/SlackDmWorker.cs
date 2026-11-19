@@ -1,10 +1,10 @@
 using System.Threading.Channels;
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// Sends notifications flagged <see cref="Notification.ChatPending"/> (users who turned on Slack DMs in their notification

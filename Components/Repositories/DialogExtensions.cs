@@ -1,6 +1,6 @@
 using MudBlazor;
 
-namespace GitBench.Components.Repositories;
+namespace ByteBench.Components.Repositories;
 
 /// <summary>Confirmation helpers used by the repository and pipeline pages (replace JS confirm()).</summary>
 public static class DialogExtensions

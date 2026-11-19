@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services.Git;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Git;
+using ByteBench.Services.Webhooks;
 using LibGit2Sharp;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Explore;
+namespace ByteBench.Services.Explore;
 
 /// <summary>
 /// After a push, records a <see cref="PushEvent"/> per branch or tag that actually moved (checked against the repository,

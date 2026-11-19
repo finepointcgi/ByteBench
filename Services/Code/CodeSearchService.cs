@@ -1,11 +1,11 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Code;
+namespace ByteBench.Services.Code;
 
 public sealed record CodeSearchOptions(string Query, bool IgnoreCase = true, bool Regex = false);
 

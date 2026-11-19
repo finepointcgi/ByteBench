@@ -1,12 +1,12 @@
 using System.Security.Claims;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
 /// <summary>Registration of the query language (GQL), CSV export and CSV import.</summary>
 public static class QuerySetup
 {
-    public static IServiceCollection AddGitBenchQuery(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddByteBenchQuery(this IServiceCollection services, IConfiguration config)
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IQueryFieldProvider, BuiltInQueryFields>();

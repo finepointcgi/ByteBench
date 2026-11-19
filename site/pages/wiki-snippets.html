@@ -55,8 +55,8 @@ See [[guides/Getting-started]] for the first day.
 <p>Use <strong>Upload image</strong> in the editor. Images are committed to <code>uploads/</code> in the wiki repository (PNG, JPEG, GIF or WebP, checked by file signature, at most 10 MB) and served from <code>/wiki-files/{KEY}/{path}</code> with <code>nosniff</code> and a sandbox policy. Anything that is not one of those image types is sent as a download.</p>
 
 <h3 id="wiki-git">Cloning the wiki</h3>
-<pre><code>git clone https://gitbench.example.com/git/WEB/wiki.git
-git clone ssh://git@gitbench.example.com:2222/WEB/wiki.git</code></pre>
+<pre><code>git clone https://bytebench.example.com/git/WEB/wiki.git
+git clone ssh://git@bytebench.example.com:2222/WEB/wiki.git</code></pre>
 <p><code>KEY/wiki.git</code> and <code>KEY/{key}.wiki.git</code> both work, over HTTP and SSH. Authentication is the same as for code repositories (<a href="repositories.html">Repositories</a>). Branch protection, deploy keys and code push listeners do not apply to wikis; after a push the search index is rebuilt. The repository slugs <code>wiki</code> and <code>*.wiki</code> are reserved so a code repository cannot clash.</p>
 
 <h3 id="wiki-permissions">Permissions and turning it off</h3>
@@ -81,9 +81,9 @@ git clone ssh://git@gitbench.example.com:2222/WEB/wiki.git</code></pre>
   <tr><td>DELETE</td><td><code>.../wiki/pages/{path}?sha=</code></td><td>Delete, conditional with <code>sha</code></td></tr>
   <tr><td>GET</td><td><code>.../wiki/history?path=</code></td><td>Commits that changed a page</td></tr>
 </table>
-<pre><code>curl -X PUT -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X PUT -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"content":"# Home\nWelcome!","sha":"SHA_FROM_THE_GET","message":"Update home"}' \
-  https://gitbench.example.com/api/v1/projects/WEB/wiki/pages/home</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/wiki/pages/home</code></pre>
 
 <h2 id="snippets">Snippets</h2>
 <p>Snippets are small pasted pieces of code or text, like gists. A snippet has a title, an optional Markdown description, a visibility and <strong>1 to 10 files</strong> (512 KB each, 1 MB in total). Files are highlighted by extension.</p>
@@ -103,10 +103,10 @@ git clone ssh://git@gitbench.example.com:2222/WEB/wiki.git</code></pre>
   <tr><td><strong>Project</strong></td><td>Everyone who can view the project</td><td>project snippets only</td></tr>
   <tr><td><strong>Public</strong></td><td>Every signed-in user</td><td>personal snippets only</td></tr>
 </table>
-<p>"Public" means every <em>signed-in</em> user of this GitBench server; there is no anonymous access. Site admins see everything. To share, copy the snippet's URL, or use the raw and embed links below.</p>
+<p>"Public" means every <em>signed-in</em> user of this ByteBench server; there is no anonymous access. Site admins see everything. To share, copy the snippet's URL, or use the raw and embed links below.</p>
 <ul>
   <li><strong>Raw</strong>: <code>/snippets/{id}/raw/{file}</code> (add <code>?rev=</code> for an older revision, <code>?download=1</code> to download). Always <code>text/plain; charset=utf-8</code> with <code>nosniff</code> and a sandbox policy.</li>
-  <li><strong>Embed</strong>: <code>/snippets/{id}/embed</code> is a chrome-less read-only view. <strong>Embed</strong> on the snippet page copies an <code>&lt;iframe&gt;</code> tag. Embeds are allowed only from the same site (<code>frame-ancestors 'self'</code>) and require sign-in, so they work on pages hosted on your own GitBench domain for signed-in viewers.</li>
+  <li><strong>Embed</strong>: <code>/snippets/{id}/embed</code> is a chrome-less read-only view. <strong>Embed</strong> on the snippet page copies an <code>&lt;iframe&gt;</code> tag. Embeds are allowed only from the same site (<code>frame-ancestors 'self'</code>) and require sign-in, so they work on pages hosted on your own ByteBench domain for signed-in viewers.</li>
 </ul>
 
 <h3 id="snippet-revisions">Revisions and storage</h3>
@@ -132,7 +132,7 @@ git clone ssh://git@gitbench.example.com:2222/WEB/wiki.git</code></pre>
   <tr><td>GET</td><td><code>/api/v1/snippets/{id}/files/{fileName}/raw</code></td><td>A file as <code>text/plain</code></td></tr>
   <tr><td>GET, POST, DELETE</td><td><code>/api/v1/snippets/{id}/comments[/{commentId}]</code></td><td>Comments</td></tr>
 </table>
-<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"title":"Retry helper","visibility":"Private","files":[{"fileName":"retry.sh","content":"until \"$@\"; do sleep 1; done"}]}' \
-  https://gitbench.example.com/api/v1/snippets</code></pre>
+  https://bytebench.example.com/api/v1/snippets</code></pre>
 <p>For tokens, rate limits and conventions see <a href="api.html">REST API and webhooks</a>. Roles are explained in <a href="permissions.html">Roles, groups and permissions</a>.</p>

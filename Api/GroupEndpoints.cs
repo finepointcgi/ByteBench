@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>A group (namespace). <c>Role</c> is the caller's role in it, inherited from parent groups too (null if none).</summary>
 public record GroupDto(int Id, string Name, string Path, string FullPath, string? Description, ProjectVisibility Visibility, string Color,

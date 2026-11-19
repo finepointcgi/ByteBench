@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace GitBench.Services.Wiki;
+namespace ByteBench.Services.Wiki;
 
 /// <summary>
 /// Wiki page paths. A page is the Markdown file <c>{path}.md</c> in the wiki repository; its path uses <c>/</c> for folders

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, int>
 {

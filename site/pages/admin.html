@@ -20,7 +20,7 @@
 <table>
 <thead><tr><th>Action</th><th>Effect</th><th>Audit event</th></tr></thead>
 <tbody>
-<tr><td>Make admin / Revoke admin</td><td>Sets the admin flag. GitBench refuses to revoke the last admin</td><td><code>admin.user_admin_granted</code> / <code>admin.user_admin_revoked</code></td></tr>
+<tr><td>Make admin / Revoke admin</td><td>Sets the admin flag. ByteBench refuses to revoke the last admin</td><td><code>admin.user_admin_granted</code> / <code>admin.user_admin_revoked</code></td></tr>
 <tr><td>Lock</td><td>Locks the account for 1 hour, 1 day, 7 days or until unlocked, and signs the user out everywhere</td><td><code>admin.user_locked</code></td></tr>
 <tr><td>Unlock / Reactivate</td><td>Clears the lockout, the failed sign-in counter and any deactivation</td><td><code>admin.user_unlocked</code></td></tr>
 <tr><td>Sign out</td><td>Ends every browser session within a minute. Access tokens keep working</td><td><code>admin.user_signed_out</code></td></tr>
@@ -36,7 +36,7 @@
 </ul>
 
 <h2 id="audit">Audit log</h2>
-<p>GitBench records security-relevant events as append-only audit events: time, actor (user, or none for system and anonymous), IP address, user agent, a dotted action, target type and id, project, and JSON details. Rows cannot be updated or deleted through the app, and they outlive the users and projects they mention. Only retention removes them.</p>
+<p>ByteBench records security-relevant events as append-only audit events: time, actor (user, or none for system and anonymous), IP address, user agent, a dotted action, target type and id, project, and JSON details. Rows cannot be updated or deleted through the app, and they outlive the users and projects they mention. Only retention removes them.</p>
 
 <h3 id="audit-pages">Where to read it</h3>
 <ul>
@@ -49,7 +49,7 @@
 <p>Passwords, tokens (not even a prefix) and webhook secrets are never stored. Webhook and mirror URLs are logged as scheme and host only. Detail keys that look like secrets (<code>password</code>, <code>secret</code>, <code>token</code>, <code>hash</code> and the like) are dropped as a backstop. Behind a reverse proxy, set <code>ReverseProxy:Enabled</code> so the recorded IP is the client's.</p>
 
 <h3 id="audit-events">Event catalogue</h3>
-<p>Events are grouped by their prefix, which is also what the action filter matches. This list comes from the code and is the set GitBench raises today; use the filter to see what your server has recorded.</p>
+<p>Events are grouped by their prefix, which is also what the action filter matches. This list comes from the code and is the set ByteBench raises today; use the filter to see what your server has recorded.</p>
 <table>
 <thead><tr><th>Area</th><th>Events</th></tr></thead>
 <tbody>
@@ -106,7 +106,7 @@ RateLimiting__Auth__PermitLimit=20</code></pre>
 <p>A read-only table of every project's package registry usage: number of packages, versions or image tags, and size (each distinct blob counted once per project), plus total bytes on disk, the storage folder (<code>Packages:Root</code>) and the largest blob allowed (<code>Packages:MaxBlobBytes</code>). Blobs are stored once by digest, and unreferenced blobs are swept daily. Project Maintainers manage individual packages from the project's packages page; see <a href="packages.html">Package and container registry</a>.</p>
 
 <h2 id="backups">Backups (/admin/backups)</h2>
-<p>One archive (<code>gitbench-backup-&lt;UTC time&gt;.tar.gz</code> with a <code>.sha256</code> file) holds the database, repositories, attachments, packages, LFS objects, Pages and, by default, the Data Protection key ring, with a manifest and checksums for every file. The page shows the folder, schedule, retention and database mode, a <strong>Back up now</strong> button, and for each archive a download, a SHA-256 file and a delete link. Backups and deletions are audited. Restoring is a command run with the server stopped.</p>
+<p>One archive (<code>bytebench-backup-&lt;UTC time&gt;.tar.gz</code> with a <code>.sha256</code> file) holds the database, repositories, attachments, packages, LFS objects, Pages and, by default, the Data Protection key ring, with a manifest and checksums for every file. The page shows the folder, schedule, retention and database mode, a <strong>Back up now</strong> button, and for each archive a download, a SHA-256 file and a delete link. Backups and deletions are audited. Restoring is a command run with the server stopped.</p>
 <table>
 <thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
 <tbody>

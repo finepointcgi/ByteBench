@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Mirroring;
+namespace ByteBench.Services.Mirroring;
 
 /// <summary>
 /// Runs pull mirrors when they are due (every <c>Mirroring:PollSeconds</c> it syncs the enabled pull mirrors whose

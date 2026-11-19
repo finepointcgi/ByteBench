@@ -1,12 +1,12 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using GitBench.Data;
-using GitBench.Services.Attachments;
-using GitBench.Services.Email;
+using ByteBench.Data;
+using ByteBench.Services.Attachments;
+using ByteBench.Services.Email;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>
 /// Emails to requesters, through the app's email queue (<see cref="EmailQueue"/>: pickup directory in Development). Each

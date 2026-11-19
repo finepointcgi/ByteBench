@@ -7,7 +7,7 @@ using Markdig.Renderers.Html;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// <c>@username</c> mentions. Parsing is a Markdig inline parser, so mentions inside code spans and code blocks

@@ -2,7 +2,7 @@ using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 /// <summary>Sends through an SMTP server with MailKit (<c>Email:Smtp:*</c>). One connection per message: volume is low.</summary>
 public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSender

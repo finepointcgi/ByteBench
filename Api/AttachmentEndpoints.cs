@@ -1,11 +1,11 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Attachments;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Attachments;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Net.Http.Headers;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record AttachmentDto(int Id, string FileName, string ContentType, long Size, string Sha256, UserDto Uploader,
     DateTimeOffset CreatedAt, string Url, string ApiUrl, string Markdown);

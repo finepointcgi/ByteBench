@@ -1,11 +1,11 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>Why a review was requested. Manual requests bypass the repository's automatic-trigger mode (not its on/off switch).</summary>
 public record AiReviewRequest(string Trigger, int? UserId = null)

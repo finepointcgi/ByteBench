@@ -1,6 +1,6 @@
-# GitBench
+# ByteBench
 
-**Documentation: https://finepointcgi.github.io/GitBench/** (every feature, how to configure and use it; source in [`site/`](site), build with `python3 site/build.py`).
+**Documentation: https://finepointcgi.github.io/ByteBench/** (every feature, how to configure and use it; source in [`site/`](site), build with `python3 site/build.py`).
 
 A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive Server)**, **.NET 10**, **MudBlazor**, **EF Core** with **SQLite** or **PostgreSQL**.
 
@@ -10,7 +10,7 @@ A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive S
 dotnet run --launch-profile http
 ```
 
-Open http://localhost:5108. On startup, EF Core migrations are applied to `gitbench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded (in Development only, or when `Seed:DemoData` is `true`). Delete `gitbench.db*` and `repos/` to reset.
+Open http://localhost:5108. On startup, EF Core migrations are applied to `bytebench.db` (SQLite) and, on an empty database, demo users, projects and issues are seeded (in Development only, or when `Seed:DemoData` is `true`). Delete `bytebench.db*` and `repos/` to reset.
 
 **Schema changes:** edit the model, then add one migration for each database provider (the `dotnet-ef` tool is pinned in `dotnet-tools.json`; run `dotnet tool restore` once). There are two contexts, so name one:
 
@@ -26,16 +26,16 @@ Migrations apply automatically on the next start. See [PostgreSQL](#postgresql).
 ```bash
 dotnet test                              # everything (about 15 s)
 dotnet test --filter "Category!=Docker"  # skip the Docker pipeline test (what CI runs)
-GITBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=test;Database=postgres" dotnet test   # the same suite on PostgreSQL, see PostgreSQL below
+BYTEBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=test;Database=postgres" dotnet test   # the same suite on PostgreSQL, see PostgreSQL below
 ```
 
-The suite is in `tests/GitBench.Tests` (xUnit, referenced from `GitBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs pipelines in `alpine:3.20` (including artifacts passed through `needs`, a cache and a manual deploy); it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
+The suite is in `tests/ByteBench.Tests` (xUnit, referenced from `ByteBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs pipelines in `alpine:3.20` (including artifacts passed through `needs`, a cache and a manual deploy); it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
 
 ## UI
 
 The UI uses [MudBlazor](https://mudblazor.com) 9 (no Bootstrap).
 
-- **Theme:** `Components/Layout/GitBenchTheme.cs` holds the light and dark palettes, typography and radii.
+- **Theme:** `Components/Layout/ByteBenchTheme.cs` holds the light and dark palettes, typography and radii.
 - **Dark mode:** the moon/sun button in the app bar toggles it. The choice is kept in the browser's `localStorage` (`wwwroot/js/theme.js`); until you choose, it follows the OS setting.
 - **Shell:** `MainLayout.razor` is a MudLayout with an app bar (project switcher, New issue, notifications, account menu) and a responsive drawer. It also hosts the Popover, Dialog and Snackbar providers. Confirmations use `IDialogService` and transient messages use `ISnackbar`.
 - **CSS:** component styles live in scoped `.razor.css` files. `wwwroot/app.css` keeps only shared bits, and its `--bg`, `--surface`, `--text`, `--muted`, `--border` and `--accent` variables map onto `--mud-palette-*`, so custom CSS follows the theme.
@@ -65,27 +65,27 @@ Account pages run as static server-side rendering (`[ExcludeFromInteractiveRouti
 
 ## Single sign-on (OIDC, OAuth) & LDAP
 
-GitBench can sign people in through OpenID Connect providers (Google, Microsoft Entra ID, Keycloak, Okta, …), GitHub (OAuth) and LDAP / Active Directory, next to local accounts. Code: `Services/Sso/` (`SsoOptions`, `SsoAuthentication`, `SsoService`, `ExternalGroupSync`) and `Services/Sso/Ldap/`; pages: the sign-in page, **Profile → Connected accounts** and `/admin/authentication`. Nothing changes until providers are configured.
+ByteBench can sign people in through OpenID Connect providers (Google, Microsoft Entra ID, Keycloak, Okta, …), GitHub (OAuth) and LDAP / Active Directory, next to local accounts. Code: `Services/Sso/` (`SsoOptions`, `SsoAuthentication`, `SsoService`, `ExternalGroupSync`) and `Services/Sso/Ldap/`; pages: the sign-in page, **Profile → Connected accounts** and `/admin/authentication`. Nothing changes until providers are configured.
 
 ### How SSO sign-in works
 
 - The sign-in page shows a **Sign in with X** button per provider. It's a plain link to `GET /account/sso/{name}`. It isn't a form post, and it isn't Blazor enhanced navigation, whose `fetch` the CSP's `connect-src` would block at the redirect. The CSP's `form-action` also lists the providers' origins.
 - The provider's handler (`Microsoft.AspNetCore.Authentication.OpenIdConnect`, or ASP.NET Core's OAuth handler for GitHub) uses the **authorization code flow with PKCE (S256)**. State and the OIDC nonce live in correlation cookies, and the ID token's signature, issuer, audience and nonce are validated. The provider redirects back to `/signin-sso/{name}`: register `https://your-site/signin-sso/{name}` as the redirect URI (`/admin/authentication` shows the exact URL). The response mode is `query`, so the SameSite=Lax correlation cookies come along.
-- `/account/sso/complete` then finds or creates the GitBench account:
+- `/account/sso/complete` then finds or creates the ByteBench account:
   1. an account already **linked** to this provider and subject; else
-  2. with `LinkByVerifiedEmail` (default on), an account with the **same email**. This happens only if the provider says the email is verified (`email_verified`) **and** the GitBench account's email is confirmed too (or it has no password), so nobody can register someone else's address and wait for their first SSO sign-in. Otherwise the user is told to sign in with their password and connect the provider from the profile; else
+  2. with `LinkByVerifiedEmail` (default on), an account with the **same email**. This happens only if the provider says the email is verified (`email_verified`) **and** the ByteBench account's email is confirmed too (or it has no password), so nobody can register someone else's address and wait for their first SSO sign-in. Otherwise the user is told to sign in with their password and connect the provider from the profile; else
   3. with `AutoCreateUsers` (default on), a **new account** with that verified email, a username from `preferred_username` (or the email), and **no password**.
 - An unverified email never links or creates an account. With `AllowedEmailDomains`, only verified emails in those domains get in (linking included).
 - **Locked and deactivated accounts are refused**, and Identity's usual sign-in checks apply.
-- **Two-factor:** with `TwoFactor: GitBench` (the default), users who turned on GitBench 2FA enter their code after the provider (`/account/login-2fa`). With `TwoFactor: TrustIdp`, the GitBench code is skipped when the ID token's `amr` claim shows multi-factor (`mfa`, `otp`, `hwk`, `swk`, `fpt`, …; RFC 8176).
+- **Two-factor:** with `TwoFactor: ByteBench` (the default), users who turned on ByteBench 2FA enter their code after the provider (`/account/login-2fa`). With `TwoFactor: TrustIdp`, the ByteBench code is skipped when the ID token's `amr` claim shows multi-factor (`mfa`, `otp`, `hwk`, `swk`, `fpt`, …; RFC 8176).
 - **Admins and groups:**
   - Group claim values listed in `AdminGroups` make the user a site admin. Leaving the group revokes it again, but only if that provider granted it (`User.AdminGrantedBy`), and never for the last admin.
-  - `GroupMappings` turn group claim values into GitBench group memberships with a role (the highest wins).
+  - `GroupMappings` turn group claim values into ByteBench group memberships with a role (the highest wins).
   - Memberships the provider created (tracked in `ExternalGroupMemberships`) follow the claim on every sign-in: their role changes, or they're removed. Memberships added by hand are never touched. Changes record `auth.external_sync`.
 - **Connected accounts** (`/account/profile#connected-accounts`):
   - **Connect** links another provider to the signed-in account. The link carries a 15-minute token from the page, and the callback must come back to the same user.
   - **Disconnect** is refused if the account would be left with no password and no other login.
-- **No password:** accounts created by SSO (or LDAP) have no GitBench password, and the profile says so. Git over HTTP uses [personal access tokens](#cloning--pushing); git Basic auth with a password is refused for them.
+- **No password:** accounts created by SSO (or LDAP) have no ByteBench password, and the profile says so. Git over HTTP uses [personal access tokens](#cloning--pushing); git Basic auth with a password is refused for them.
 - **Audit events:**
   - `auth.sso_sign_in` (provider, created, idpMfa)
   - `auth.sso_link` (`verified_email` or `profile`) and `auth.sso_unlink`
@@ -115,7 +115,7 @@ GitBench can sign people in through OpenID Connect providers (Google, Microsoft 
 | `AllowedEmailDomains` | all | e.g. `["example.com"]` |
 | `AdminGroups` | none | Group claim values that make site admins |
 | `GroupMappings` | none | `[{ "ExternalGroup": "…", "Group": "acme/platform", "Role": "Developer" }]` |
-| `TwoFactor` | `GitBench` | Or `TrustIdp` (see above) |
+| `TwoFactor` | `ByteBench` | Or `TrustIdp` (see above) |
 | `Icon` | preset | `google`, `github`, `microsoft`, `key`, or a site image like `/img/keycloak.svg` |
 | `RequireHttpsMetadata` | `true` | Turn it off only for a local test provider over plain HTTP |
 | `UseUserInfoEndpoint` | `true` | Also read claims from the userinfo endpoint |
@@ -132,11 +132,11 @@ Invalid providers are skipped with a warning on `/admin/authentication`; they do
 ] } }
 ```
 
-**GitHub:** create an OAuth App with callback `https://git.example.com/signin-sso/github`. GitHub isn't OIDC, so GitBench reads `/user` and uses the primary **verified** address from `/user/emails`. When mappings need them, it also reads orgs (`acme`) and teams (`acme/platform-devs`) as groups.
+**GitHub:** create an OAuth App with callback `https://git.example.com/signin-sso/github`. GitHub isn't OIDC, so ByteBench reads `/user` and uses the primary **verified** address from `/user/emails`. When mappings need them, it also reads orgs (`acme`) and teams (`acme/platform-devs`) as groups.
 
 ```json
 { "Name": "github", "Type": "GitHub", "ClientId": "Iv1.0123456789abcdef",
-  "AdminGroups": [ "acme/gitbench-admins" ],
+  "AdminGroups": [ "acme/bytebench-admins" ],
   "GroupMappings": [ { "ExternalGroup": "acme/platform-devs", "Group": "acme/platform", "Role": "Developer" } ] }
 ```
 
@@ -156,28 +156,28 @@ Entra doesn't send `email_verified`, so set `TrustEmailVerified` only for your o
 
 ```json
 { "Name": "keycloak", "DisplayName": "Acme SSO", "Authority": "https://sso.example.com/realms/acme",
-  "ClientId": "gitbench", "AdminGroups": [ "gitbench-admins" ],
+  "ClientId": "bytebench", "AdminGroups": [ "bytebench-admins" ],
   "GroupMappings": [ { "ExternalGroup": "developers", "Group": "acme", "Role": "Developer" },
                      { "ExternalGroup": "leads", "Group": "acme", "Role": "Maintainer" } ] }
 ```
 
 ### LDAP / Active Directory
 
-With `Authentication:Ldap:Enabled`, the normal sign-in form also checks the directory. GitBench uses [Novell.Directory.Ldap.NETStandard](https://github.com/dsbenghe/Novell.Directory.Ldap.NETStandard) rather than `System.DirectoryServices.Protocols`. It's fully managed: no native `libldap` in the container image or on macOS, and the same TLS stack everywhere.
+With `Authentication:Ldap:Enabled`, the normal sign-in form also checks the directory. ByteBench uses [Novell.Directory.Ldap.NETStandard](https://github.com/dsbenghe/Novell.Directory.Ldap.NETStandard) rather than `System.DirectoryServices.Protocols`. It's fully managed: no native `libldap` in the container image or on macOS, and the same TLS stack everywhere.
 
 - **Who goes to LDAP:**
   - a login with the `ldap:` prefix
   - a login that no local account has
   - accounts that came from the directory
 
-  Everyone else signs in with their GitBench password as before. A directory user never takes over a local account with the same username or email: that sign-in is refused.
+  Everyone else signs in with their ByteBench password as before. A directory user never takes over a local account with the same username or email: that sign-in is refused.
 - **How it signs in:**
-  1. GitBench binds as the service account (`BindDn`) and searches `UserSearchBase` with `UserFilter`. `{0}` is the login, escaped per RFC 4515: `*`, `(`, `)`, `\`, NUL and non-ASCII become `\XX`, so `*)(uid=*` can't widen the filter.
+  1. ByteBench binds as the service account (`BindDn`) and searches `UserSearchBase` with `UserFilter`. `{0}` is the login, escaped per RFC 4515: `*`, `(`, `)`, `\`, NUL and non-ASCII become `\XX`, so `*)(uid=*` can't widen the filter.
   2. It binds as the one entry it found, with the given password. Empty passwords are refused before binding, because they'd be an "unauthenticated bind".
-  3. It creates the account (with no GitBench password) or updates its name and email. The account is linked as login provider `ldap`, with the username attribute as its key.
-  4. The sign-in goes through Identity, so lockout (5 failures) and GitBench 2FA apply.
+  3. It creates the account (with no ByteBench password) or updates its name and email. The account is linked as login provider `ldap`, with the username attribute as its key.
+  4. The sign-in goes through Identity, so lockout (5 failures) and ByteBench 2FA apply.
 - **Groups:** the user's groups come from `memberOf` (AD, or OpenLDAP's memberof overlay). When `Attributes:MemberOf` is empty, they come from a search of `GroupSearchBase` with `GroupFilter`, where `{0}` is the user's DN. `AdminGroupDn` and `GroupMappings` (by group DN; case and spacing don't matter) work like the SSO ones, with source `ldap`.
-- **Git over HTTP:** directory users use personal access tokens. With `AllowGitPassword: true`, their LDAP password also works for git Basic auth. It never does for accounts with GitBench 2FA, which get the usual "use a personal access token" message. Failures count toward lockout, and `/git` is rate-limited per user (`RateLimiting:Git`).
+- **Git over HTTP:** directory users use personal access tokens. With `AllowGitPassword: true`, their LDAP password also works for git Basic auth. It never does for accounts with ByteBench 2FA, which get the usual "use a personal access token" message. Failures count toward lockout, and `/git` is rate-limited per user (`RateLimiting:Git`).
 - **Directory sync:** with `Sync:IntervalMinutes` above 0, every directory account is re-read on that schedule; **Sync now** on `/admin/authentication` runs it at once.
   - Names, emails, admin and groups are updated.
   - With `Sync:DeactivateMissingUsers`, accounts the directory no longer returns are deactivated: locked, signed out and their tokens revoked (`auth.directory_user_deactivated`). Site admins are never deactivated automatically.
@@ -204,16 +204,16 @@ With `Authentication:Ldap:Enabled`, the normal sign-in form also checks the dire
 ```json
 "Authentication": { "Ldap": {
   "Enabled": true, "DisplayName": "Corp AD", "Server": "dc1.corp.example", "Security": "Ssl",
-  "BindDn": "CN=svc-gitbench,OU=Service Accounts,DC=corp,DC=example",
+  "BindDn": "CN=svc-bytebench,OU=Service Accounts,DC=corp,DC=example",
   "UserSearchBase": "OU=Staff,DC=corp,DC=example",
   "UserFilter": "(&(objectClass=user)(objectCategory=person)(sAMAccountName={0})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
-  "AdminGroupDn": "CN=GitBench Admins,OU=Groups,DC=corp,DC=example",
+  "AdminGroupDn": "CN=ByteBench Admins,OU=Groups,DC=corp,DC=example",
   "GroupMappings": [ { "GroupDn": "CN=Developers,OU=Groups,DC=corp,DC=example", "Group": "acme", "Role": "Developer" } ],
   "Sync": { "IntervalMinutes": 60, "DeactivateMissingUsers": true }
 } }
 ```
 
-The `userAccountControl` clause leaves out disabled AD accounts, so the sync deactivates them in GitBench too. For OpenLDAP, use e.g. `"UserFilter": "(&(objectClass=inetOrgPerson)(uid={0}))"` with `"Attributes": { "UserName": "uid" }`.
+The `userAccountControl` clause leaves out disabled AD accounts, so the sync deactivates them in ByteBench too. For OpenLDAP, use e.g. `"UserFilter": "(&(objectClass=inetOrgPerson)(uid={0}))"` with `"Attributes": { "UserName": "uid" }`.
 
 ### `/admin/authentication`
 
@@ -228,7 +228,7 @@ For LDAP, it shows the server, security, service account (its password only as "
 
 ### Testing SSO and LDAP
 
-`tests/GitBench.Tests/Sso/` covers it end to end:
+`tests/ByteBench.Tests/Sso/` covers it end to end:
 
 - `MockOidcProvider` is a small OIDC provider with GitHub-style endpoints, on a real port. It has discovery, JWKS, the code flow with PKCE and nonce, RS256 ID tokens and userinfo. With no `NextUser` set, its `/authorize` shows a form, which makes it handy for manual testing too.
 - `FakeLdapClient` is an in-memory directory that really evaluates RFC 4515 filters.
@@ -363,7 +363,7 @@ Each project can have several boards (`Board`, `BoardColumn`, `BoardQuickFilter`
 - **Card fields:** key, type, labels, priority, story points, assignee, parent/sub-tasks/blocked chips, epic, due date and milestone (the default board shows what the classic board did).
 - **Permissions:** viewing needs ViewProject; moving cards needs EditIssues; creating, configuring and deleting boards needs Maintainer+ (`ProjectAccess.RequireRoleAsync`). Board changes are audited (`board.*`) and publish `BoardChanged`, so open boards refresh, as they do when cards move or the workflow changes.
 - **API:** `GET /api/v1/projects/{key}/boards` (default first) and `GET /api/v1/projects/{key}/boards/{id}` (columns with statuses, WIP limit, scope count, over-limit flag and issues; `?quickFilters=1,2` applies quick filters). Move cards with `PATCH …/issues/{number}` (`workflowStatusId`).
-- **Tests:** `tests/GitBench.Tests/BoardTests.cs` (default board equals the classic board, column mapping, drop status choice and transitions, WIP limits, swimlanes, Scrum/Kanban scope, filters, permissions, API).
+- **Tests:** `tests/ByteBench.Tests/BoardTests.cs` (default board equals the classic board, column mapping, drop status choice and transitions, WIP limits, swimlanes, Scrum/Kanban scope, filters, permissions, API).
 
 ## Cloning & pushing
 
@@ -375,7 +375,7 @@ cd web-app
 git push origin main
 ```
 
-- **Credentials:** clone, fetch and push all require a GitBench account. Enter your username (or email) and password when git prompts. In development the demo users `alice`, `bob`, `carol` and `dan` share the password defined in `SeedData.DemoPassword` (`Data/SeedData.cs`). Use a credential helper (`git config credential.helper osxkeychain`/`manager`/`store`) rather than putting the password in the URL. Failed logins count toward Identity lockout.
+- **Credentials:** clone, fetch and push all require a ByteBench account. Enter your username (or email) and password when git prompts. In development the demo users `alice`, `bob`, `carol` and `dan` share the password defined in `SeedData.DemoPassword` (`Data/SeedData.cs`). Use a credential helper (`git config credential.helper osxkeychain`/`manager`/`store`) rather than putting the password in the URL. Failed logins count toward Identity lockout.
 - **Permissions:**
   - Clone and fetch need ViewProject. Push needs PushCode (Developer or higher).
   - If you can't view the project, git gets `404 Repository not found`, the same as for a repository that doesn't exist.
@@ -383,7 +383,7 @@ git push origin main
 - **Requirements:** the server runs `git http-backend`, so `git` must be on the server's `PATH` (or set `Git:Executable` in `appsettings.json`). If git is missing, the endpoints answer `503` and the error is logged at startup.
 - **Personal access tokens:** you can use a token instead of your password.
   - Create one under **Profile → Access tokens** (`/account/profile`). Give it a name, choose scopes, and pick an expiry: 7, 30, 90 or 365 days, or never.
-  - The token looks like `gbp_` followed by 43 base64url characters. It's shown **once**. GitBench stores only its SHA-256 hash and a short display prefix.
+  - The token looks like `gbp_` followed by 43 base64url characters. It's shown **once**. ByteBench stores only its SHA-256 hash and a short display prefix.
   - When git prompts, enter your username and paste the token as the password: `git clone http://bob@localhost:5108/git/WEB/web-app.git`.
   - `read_repository` allows clone and fetch. `write_repository` allows push, and also clone and fetch. A token with only `read_repository` gets `403` on push.
   - Revoked or expired tokens are rejected like a wrong password. Token hashes are compared in constant time, and *Last used* is updated on each use.
@@ -395,11 +395,11 @@ git push origin main
 
 ### Git over SSH
 
-GitBench has its own SSH server for git, so you can clone and push with an SSH key instead of a password or token. It is **off by default** (on in `appsettings.Development.json` and in the Docker image).
+ByteBench has its own SSH server for git, so you can clone and push with an SSH key instead of a password or token. It is **off by default** (on in `appsettings.Development.json` and in the Docker image).
 
 ```bash
 git clone ssh://git@localhost:2222/WEB/web-app.git      # Development: port 2222
-git clone git@gitbench.example.com:WEB/web-app.git      # scp-like form, only when the public port is 22
+git clone git@bytebench.example.com:WEB/web-app.git      # scp-like form, only when the public port is 22
 ```
 
 - **Your keys:** add them under **Profile → SSH keys** (`/account/ssh-keys`): paste the `.pub` file, give it a title (default: the key's comment) and optionally an expiry. The list shows each key's `SHA256:` fingerprint (as `ssh-keygen -lf key.pub` prints it), when it was added and last used. Supported: `ssh-ed25519` (recommended), `ecdsa-sha2-nistp256/384/521` and `ssh-rsa` of 2048 bits or more. FIDO (`sk-…`) keys aren't supported yet.
@@ -411,7 +411,7 @@ git clone git@gitbench.example.com:WEB/web-app.git      # scp-like form, only wh
 - **Deploy keys:** under a repository's **Settings → Deploy keys** (Maintainer or Owner), add an SSH key for a server or CI system. It works for that repository only, read-only unless *Allow write access* is ticked. A write deploy key pushes like a Developer: branch protection applies, with no admin bypass. Its pushes run webhooks, pipelines and smart commits as the person who added it, and it can't push once that person's account is deactivated. Audited as `deploy_key.added` / `deploy_key.removed`.
 - **Clone URLs:** the repository page has *HTTPS* and *SSH* tabs. The SSH URL is `ssh://git@{Ssh:PublicHost}:{Ssh:PublicPort}/KEY/slug.git` (host defaults to the site's host, port to `Ssh:Port`); when the public port is 22 the scp-like `git@host:KEY/slug.git` is shown too. Any SSH user name works; use `git`. Old slugs of renamed repositories keep working, as over HTTP.
 - **Same rules as HTTP:** archived repositories refuse pushes; branch protection and release tags are checked before git sees the push (the same `ProtectedPushGuard` checks, so a refused push gets `! [remote rejected] main -> main (reason)` and writes nothing), and force pushes to protected branches are caught by the same pre-receive hook. After a push, every `IGitPushListener` runs (webhooks with the pushed refs, CI, smart commits, stale approvals, AI review). Commands are rate limited per user or deploy key (`RateLimiting:Ssh`). Protocol v2 works (git sends `GIT_PROTOCOL`).
-- **Only git:** the server runs `git-upload-pack` and `git-receive-pack` for `KEY/slug.git` paths and nothing else. Password and keyboard-interactive auth are not offered; `ssh git@host` prints "Hi alice! You've successfully authenticated, but GitBench does not provide shell access."; other commands, PTYs, port/agent/X11 forwarding and subsystems such as sftp are refused.
+- **Only git:** the server runs `git-upload-pack` and `git-receive-pack` for `KEY/slug.git` paths and nothing else. Password and keyboard-interactive auth are not offered; `ssh git@host` prints "Hi alice! You've successfully authenticated, but ByteBench does not provide shell access."; other commands, PTYs, port/agent/X11 forwarding and subsystems such as sftp are refused.
 - **Host key:** an RSA 3072 host key is generated on first start at `Ssh:HostKeyPath` (default `{DataProtection:KeysPath}/ssh_host_rsa_key`, i.e. `keys/` locally and `/data/keys` in Docker; gitignored, mode 600) and its fingerprint is logged and shown on the SSH keys page. Back it up with the key ring: a new host key makes every client warn about a changed host.
 - **Library:** the server is built on [Microsoft.DevTunnels.Ssh](https://github.com/microsoft/dev-tunnels-ssh) (Microsoft's maintained, async SSH library with server sessions, public-key auth and exec channels; FxSsh was the alternative, but it is synchronous, thread-per-channel and also lacks ed25519). ed25519 signatures are verified with BouncyCastle (`Services/Ssh/Ed25519Algorithm.cs`).
 - **Post-quantum warning:** OpenSSH 10.1+ prints "WARNING: connection is not using a post-quantum key exchange algorithm" because the library offers ECDH and DH key exchange only. The connection is still encrypted; silence it per host with `WarnWeakCrypto no-pq-kex` in `~/.ssh/config`.
@@ -472,11 +472,11 @@ Each project can host Git repositories, Bitbucket-style. Bare repos live on disk
 
 Refs and paths are passed as query parameters because branch names contain `/`.
 
-**Merging** happens inside the bare repo. GitBench computes the merge tree in memory; if there are conflicts nothing is written and the conflicting files are listed. Otherwise it writes a two-parent merge commit, or fast-forwards when "Fast-forward if possible" is selected and the target hasn't moved. The PR stores the source and target tips at merge or decline time, so its diff stays viewable after the source branch is deleted.
+**Merging** happens inside the bare repo. ByteBench computes the merge tree in memory; if there are conflicts nothing is written and the conflicting files are listed. Otherwise it writes a two-parent merge commit, or fast-forwards when "Fast-forward if possible" is selected and the target hasn't moved. The PR stores the source and target tips at merge or decline time, so its diff stays viewable after the source branch is deleted.
 
 **Issue linking (Jira-style):** issue keys such as `WEB-3` in PR titles, source branch names and commit messages link to issues. A PR lists its linked issues. Each issue's sidebar shows a **Development** panel with the branches, PRs and recent commits that mention it. Merging a PR adds a "merged pull request web-app#N" entry to each linked issue's activity.
 
-The demo seed (`Data/RepoSeeder.cs`) creates `WEB/web-app` with history on `main`, a `feature/WEB-3-kanban-dnd` branch, and an open, reviewed PR #1. It runs only when the `web-app` row doesn't exist. If you delete `gitbench.db*` and a stale `repos/WEB/web-app.git` is left over, the seeder rebuilds it.
+The demo seed (`Data/RepoSeeder.cs`) creates `WEB/web-app` with history on `main`, a `feature/WEB-3-kanban-dnd` branch, and an open, reviewed PR #1. It runs only when the `web-app` row doesn't exist. If you delete `bytebench.db*` and a stale `repos/WEB/web-app.git` is left over, the seeder rebuilds it.
 
 ## Notifications & live updates
 
@@ -522,16 +522,16 @@ dotnet user-secrets set "Email:Enabled" "true"
 dotnet user-secrets set "Email:Sender" "Smtp"
 dotnet user-secrets set "Email:Smtp:Host" "smtp.example.com"
 dotnet user-secrets set "Email:Smtp:Port" "587"
-dotnet user-secrets set "Email:Smtp:User" "gitbench@example.com"
+dotnet user-secrets set "Email:Smtp:User" "bytebench@example.com"
 dotnet user-secrets set "Email:Smtp:Password" "<password>"
-dotnet user-secrets set "Email:From" "GitBench <gitbench@example.com>"
+dotnet user-secrets set "Email:From" "ByteBench <bytebench@example.com>"
 ```
 
 | Key | Default | Meaning |
 |---|---|---|
 | `Email:Enabled` | `false` | Master switch. While it's off, nothing is queued and pending notification emails are dropped, so turning it on doesn't send a backlog |
 | `Email:Sender` | `Pickup` in Development, else `Smtp` | Which sender to use |
-| `Email:From` | `GitBench <gitbench@localhost>` | Sender address |
+| `Email:From` | `ByteBench <bytebench@localhost>` | Sender address |
 | `Email:PickupDirectory` | `mail-drop` | Folder for `.eml` files (relative to the content root) |
 | `Email:DigestMinutes` | `0` | `0` sends each notification right away. `N` sends at most one email per user every N minutes: the first one at once, later ones batched into a digest |
 | `Email:BaseUrl` | (none) | Absolute site URL for links in emails. Falls back to `PublicBaseUrl`, then the URL of the first request |
@@ -560,11 +560,11 @@ There are no sprint notifications, so sprints have no group. A master switch tur
 
 Preferences are applied in `NotificationService.DeliverAsync` (`Services/NotificationService.Delivery.cs`), the single fan-out point every notification passes through (single events, bulk edits and pipelines). If a user qualifies for several kinds in one event (say, mentioned in a comment on an issue they watch) and has turned the first one off, they get the next one.
 
-**Mute.** Watchers get a **🔕 Mute** button next to **Watching** on issues and PRs. A muted watch (`Watch.Muted`) stays a watch but receives no watcher notifications. Direct ones (assigned, mentioned, review requested, reviews of your own PR) still arrive. Unwatching isn't the same thing: GitBench auto-watches you again when you comment, are assigned or review, so an unwatch doesn't stick. A mute does, because auto-watching only adds missing rows. Unwatching clears the mute.
+**Mute.** Watchers get a **🔕 Mute** button next to **Watching** on issues and PRs. A muted watch (`Watch.Muted`) stays a watch but receives no watcher notifications. Direct ones (assigned, mentioned, review requested, reviews of your own PR) still arrive. Unwatching isn't the same thing: ByteBench auto-watches you again when you comment, are assigned or review, so an unwatch doesn't stick. A mute does, because auto-watching only adds missing rows. Unwatching clears the mute.
 
 ### Autocomplete in the Markdown editor
 
-Typing `@` and a letter in any Markdown editor (issue description, new issue, issue comments, PR description, PR comments and inline diff comments) shows up to 8 people who can view the project. Each row shows the display name, `@username` and avatar colour. People who can view a project are site admins and members, plus everyone if the project is Internal; the `gitbench-ai` bot is never suggested. Typing `#` and a number or text suggests issues by number or title, and a project key like `WEB-` suggests that project's issues. Picking one inserts `@bob ` or `WEB-12 `.
+Typing `@` and a letter in any Markdown editor (issue description, new issue, issue comments, PR description, PR comments and inline diff comments) shows up to 8 people who can view the project. Each row shows the display name, `@username` and avatar colour. People who can view a project are site admins and members, plus everyone if the project is Internal; the `bytebench-ai` bot is never suggested. Typing `#` and a number or text suggests issues by number or title, and a project key like `WEB-` suggests that project's issues. Picking one inserts `@bob ` or `WEB-12 `.
 
 - Keys: ↑/↓ to move, Enter or Tab to pick, Esc to close. The mouse works too.
 - `wwwroot/js/mention-autocomplete.js` is an ES module the editor imports. It places a `position: fixed` dropdown at the caret, using a mirror element to measure the caret position, and builds it with `textContent` only.
@@ -574,7 +574,7 @@ Typing `@` and a letter in any Markdown editor (issue description, new issue, is
 
 ## AI code review
 
-GitBench AI reviews pull requests with Claude (official Anthropic C# SDK, model `claude-opus-5-5` by default, effort `high`). Its comments come from a bot account, `gitbench-ai` ("GitBench AI"), which is created at startup and has no password, so nobody can sign in as it. Its comments and reviews carry an **AI** badge.
+ByteBench AI reviews pull requests with Claude (official Anthropic C# SDK, model `claude-opus-5-5` by default, effort `high`). Its comments come from a bot account, `bytebench-ai` ("ByteBench AI"), which is created at startup and has no password, so nobody can sign in as it. Its comments and reviews carry an **AI** badge.
 
 **Setup.** Provide an API key in either of these ways:
 
@@ -588,7 +588,7 @@ Without a key, every AI control hides itself or shows "AI review isn't set up (s
 
 **What it does**
 
-- **Triggers:** a PR is created; new commits are pushed to an open PR's source branch (debounced by 30 seconds, so a burst of pushes is reviewed once); or someone clicks **Ask GitBench AI to review** / **Re-run AI review** in the PR sidebar. A head commit is reviewed only once unless someone re-runs it.
+- **Triggers:** a PR is created; new commits are pushed to an open PR's source branch (debounced by 30 seconds, so a burst of pushes is reviewed once); or someone clicks **Ask ByteBench AI to review** / **Re-run AI review** in the PR sidebar. A head commit is reviewed only once unless someone re-runs it.
 - **Input:** the PR title and description, its commit messages, and the merge-base diff with file headers and new-side line numbers.
 - **Large diffs are never cut silently.** Binary files, lockfiles (`package-lock.json`, `yarn.lock`, …), minified/generated files and build output are skipped. Diffs over about 120k characters are reviewed in per-file batches (files that are too big are split at hunk boundaries), up to 6 batches. The summary lists everything skipped or not reviewed.
 - **Output:** structured JSON (summary, findings with file, line, severity `bug`/`security`/`suggestion`/`nit`, title and body, plus a verdict). Each finding is checked against the diff. Valid ones become inline comments. A finding a few lines off is moved to the nearest changed line and marked as moved. Findings that can't be placed are listed in the summary comment.
@@ -599,12 +599,12 @@ Without a key, every AI control hides itself or shows "AI review isn't set up (s
 **Cost.** Every Claude call is logged in the `AiUsages` table, with feature (`pr-review` and `pr-description`), model, project, and input, output and cache tokens. The reviewer's system prompt is fixed, so it is served from the prompt cache. A review makes one call per batch, which is one call for most PRs.
 
 ```bash
-sqlite3 gitbench.db "select Feature, count(*), sum(InputTokens), sum(OutputTokens), sum(CacheReadTokens) from AiUsages group by Feature"
+sqlite3 bytebench.db "select Feature, count(*), sum(InputTokens), sum(OutputTokens), sum(CacheReadTokens) from AiUsages group by Feature"
 ```
 
 **Turning it off**
 
-- Per project: **Settings → AI code review** turns off automatic reviews. Manual "Ask GitBench AI to review" still works.
+- Per project: **Settings → AI code review** turns off automatic reviews. Manual "Ask ByteBench AI to review" still works.
 - Everywhere: set `"Ai": { "Enabled": false }` in `appsettings.json`, or remove the API key.
 
 Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions), `AiReviewLogic.cs` (pure functions: skipping, chunking, prompts, validation, summary), `AiReviewQueue.cs` (queue, worker, push listener), `AiClient.Structured.cs` (generic `CompleteJsonAsync<T>` structured-output helper) and `AiBot.cs`.
@@ -635,7 +635,7 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 
 **Assigned reviewers.** Pick reviewers on the New PR page (project members with ReviewPullRequest) or with **Edit reviewers** in the PR sidebar (the author or a Maintainer+). The sidebar shows each one as Pending, Approved or Changes requested. Added reviewers get a "requested your review on" notification and start watching the PR. The PR list's **Review requested** button (`?filter=review-requested`) shows open PRs waiting for your verdict.
 
-**PR templates.** The New PR description is prefilled from the target branch's `.gitbench/pull_request_template.md`, falling back to `PULL_REQUEST_TEMPLATE.md`, then `.github/pull_request_template.md`.
+**PR templates.** The New PR description is prefilled from the target branch's `.bytebench/pull_request_template.md`, falling back to `PULL_REQUEST_TEMPLATE.md`, then `.github/pull_request_template.md`.
 ## Pull request features: drafts, threads, suggestions, code owners & merge strategies
 
 **Draft pull requests.** Click **Create draft** on the New PR page (or send `"draft": true` to the API). A draft shows a grey **Draft** badge, can never be merged (MergeGate adds a failed "Draft" check that admins can't bypass, protected branch or not), and its assigned reviewers are recorded but **not notified** until the author or a Maintainer+ clicks **Ready for review**. **Convert to draft** goes back. The PR list has a **Drafts and ready / Ready for review / Drafts only** filter (`?draft=ready|only`). Webhooks: `pull_request.updated` with action `ready_for_review` or `converted_to_draft`.
@@ -644,7 +644,7 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 
 **Suggested changes.** In an inline comment on a new-side line, a fenced block opened with ` ```suggestion ` proposes its content as the replacement for the commented line(s) (an empty block deletes them; the API's `startLine` makes a comment cover several lines). **Suggest a change** in the comment box inserts one prefilled with the line. It renders as a mini diff with **Apply suggestion** for users who can push to the source branch (Developer+, branch protection on the source branch allowing it, repository not archived). Applying writes a commit to the source branch in the bare repo, authored by the applier, with the message "Apply suggestion from @user" and `Co-authored-by` the suggester, then resolves the thread. **Apply all suggestions** commits every pending one in a single commit. It's refused, with nothing written, if the suggested lines changed since the comment or two suggestions overlap.
 
-**Code owners.** A `CODEOWNERS` file on the target branch (`.gitbench/CODEOWNERS`, then `CODEOWNERS`, then `docs/CODEOWNERS`) in GitHub syntax: `pattern @username @other email@example.com`, `#` comments, last matching rule wins, gitignore-style patterns (`*.md`, `/build/`, `docs/*`, `src/**/test.cs`). Owners of the changed files are added as reviewers when a PR is created (if they can review), and the Files tab shows the owners of each file. `@group/path` (or a bare `@acme` that isn't a username) stands for that group's direct members with Developer or higher. Owners who can't see the project, and names that match no user or group, are ignored with a warning on the PR. The branch protection option **Require code owner approval** blocks merging until each changed file with owners is approved by one of them (files owned only by the PR's author need none).
+**Code owners.** A `CODEOWNERS` file on the target branch (`.bytebench/CODEOWNERS`, then `CODEOWNERS`, then `docs/CODEOWNERS`) in GitHub syntax: `pattern @username @other email@example.com`, `#` comments, last matching rule wins, gitignore-style patterns (`*.md`, `/build/`, `docs/*`, `src/**/test.cs`). Owners of the changed files are added as reviewers when a PR is created (if they can review), and the Files tab shows the owners of each file. `@group/path` (or a bare `@acme` that isn't a username) stands for that group's direct members with Developer or higher. Owners who can't see the project, and names that match no user or group, are ignored with a warning on the PR. The branch protection option **Require code owner approval** blocks merging until each changed file with owners is approved by one of them (files owned only by the PR's author need none).
 
 **Require all threads resolved** is another branch protection option: any unresolved inline thread blocks merging.
 
@@ -667,11 +667,11 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 
 Comments in the API carry `parentId`, `startLine`, `resolved`, `commitSha`, `hasSuggestion` and `appliedCommitSha`; pull requests carry `isDraft` and `mergeStrategy`.
 
-Code: `Services/PullRequestService.Features.cs`, `Services/PullRequests/` (CODEOWNERS, suggestions), `Services/Git/GitOps.PrFeatures.cs` (squash, rebase, line edits), `Components/Repositories/DiffThread.razor`, `Components/Pages/Repositories/RepoCompare.razor` and `RepoMergeSettings.razor`. Tests: `tests/GitBench.Tests/PullRequestFeatureTests.cs`.
+Code: `Services/PullRequestService.Features.cs`, `Services/PullRequests/` (CODEOWNERS, suggestions), `Services/Git/GitOps.PrFeatures.cs` (squash, rebase, line edits), `Components/Repositories/DiffThread.razor`, `Components/Pages/Repositories/RepoCompare.razor` and `RepoMergeSettings.razor`. Tests: `tests/ByteBench.Tests/PullRequestFeatureTests.cs`.
 
 ## Forks & pull requests between forks
 
-**Forking.** The **Fork** button in every repository header (anyone who can view the repository) copies it into a project where you can create repositories (ManageRepositories: Maintainer+), with the slug and name you choose. GitBench has no personal namespaces, so for a fork of your own, create a project (you become its Owner) and fork into it; group projects where you're Maintainer+ work too. The button shows the number of forks (in projects you can see) and links to `/p/{KEY}/repos/{slug}/forks`; a fork's header shows "Forked from KEY/slug". `Repository.ForkedFromId` records the upstream.
+**Forking.** The **Fork** button in every repository header (anyone who can view the repository) copies it into a project where you can create repositories (ManageRepositories: Maintainer+), with the slug and name you choose. ByteBench has no personal namespaces, so for a fork of your own, create a project (you become its Owner) and fork into it; group projects where you're Maintainer+ work too. The button shows the number of forks (in projects you can see) and links to `/p/{KEY}/repos/{slug}/forks`; a fork's header shows "Forked from KEY/slug". `Repository.ForkedFromId` records the upstream.
 
 **Storage.** The bare repository is copied with `git clone --bare --local`, which hard-links the object files: nearly free on disk, yet each copy is independent. We deliberately don't use `--shared` (alternates): a fork would then read its objects from the upstream's directory, so deleting the upstream, or a gc there after a force push, would break every fork unless each fork were repacked first (`git repack -a -d` and removing `objects/info/alternates`). With hard links, deleting either side only drops a link. Without a git executable, LibGit2Sharp copies the objects instead.
 
@@ -685,7 +685,7 @@ Code: `Services/PullRequestService.Features.cs`, `Services/PullRequests/` (CODEO
 - **Deleting the fork** leaves the PR open with source "unknown repository:branch"; `refs/pull/{n}/head` keeps its commits, so it can still be reviewed and merged. **Deleting the upstream** leaves its forks working, just no longer linked.
 
 **CI security.** A fork PR's pipeline runs code from outside the project, so:
-- It's created with `Pipeline.IsForkPullRequest`, and `CiVariableService.ResolveAsync` gives it **no CI variables at all**, protected or not, whatever branch rules match `refs/pull/*`. Only the `GITBENCH_*` variables are set.
+- It's created with `Pipeline.IsForkPullRequest`, and `CiVariableService.ResolveAsync` gives it **no CI variables at all**, protected or not, whatever branch rules match `refs/pull/*`. Only the `BYTEBENCH_*` variables are set.
 - CI extras follow the same rule: it gets no pipeline (schedule) variables (`Pipeline.VariablesJson` is never set or passed on by a re-run), its `cache:` always uses the **unprotected** scope (`CiCacheStore.UsesProtectedScope`), even if a branch rule matches `refs/pull/*`, and its manual jobs, artifacts and deployments only start after the approval: the runner never starts a pipeline with `AwaitingApproval`, however it was queued.
 - It waits (Queued, `AwaitingApproval`) until a Maintainer+ clicks **Approve and run** on the pipeline page. The approval covers that one pipeline: the next push waits again. The PR's merge check reads "waiting for a Maintainer to approve and run it". A Maintainer's **Re-run** counts as approval; anyone else's waits again. **Run pipeline** refuses `refs/…` names, so nobody can run a fork head as an ordinary pipeline with variables.
 
@@ -700,11 +700,11 @@ Code: `Services/PullRequestService.Features.cs`, `Services/PullRequests/` (CODEO
 | `POST /api/v1/projects/{key}/repos/{slug}/sync-fork` | sync a fork: `{ state, before, after, ahead, behind }` with state `upToDate`, `fastForwarded`, `ahead`, `diverged` or `noUpstreamBranch` |
 | `POST …/repos/{slug}/pull-requests` | `sourceRepository: "KEY/slug"` opens a cross-fork PR from that fork's `sourceBranch` |
 
-Code: `Services/Forks/` (`ForkService`, `ForkPullRequestSync` and its push listener), `Services/PullRequestService.Forks.cs`, `Services/Git/GitOps.Forks.cs`, `Services/Ci/PipelineService.Forks.cs`, `Api/ForkEndpoints.cs`, `Components/Repositories/ForkDialog.razor`, `Components/Pages/Repositories/RepoForks.razor` and `ForkPullRequestNew.razor`. Tests: `tests/GitBench.Tests/ForkTests.cs`.
+Code: `Services/Forks/` (`ForkService`, `ForkPullRequestSync` and its push listener), `Services/PullRequestService.Forks.cs`, `Services/Git/GitOps.Forks.cs`, `Services/Ci/PipelineService.Forks.cs`, `Api/ForkEndpoints.cs`, `Components/Repositories/ForkDialog.razor`, `Components/Pages/Repositories/RepoForks.razor` and `ForkPullRequestNew.razor`. Tests: `tests/ByteBench.Tests/ForkTests.cs`.
 
 ## CI pipelines
 
-Each repository can run a CI pipeline from a `.gitbench-ci.yml` file at its root. Jobs run in **Docker** containers on the GitBench server.
+Each repository can run a CI pipeline from a `.bytebench-ci.yml` file at its root. Jobs run in **Docker** containers on the ByteBench server.
 
 ```yaml
 image: alpine:3.20          # default image for jobs (alpine:3.20 if omitted)
@@ -725,18 +725,18 @@ jobs:
 Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` and `environment`; see [CI artifacts, caches, manual jobs, schedules & environments](#ci-artifacts-caches-manual-jobs-schedules--environments).
 
 - **Format.** `jobs` is required. Each job has `steps` (each with `run` and an optional `name`), plus optional `image`, `needs`, `artifacts`, `cache`, `when`, `allow_failure`, `rules` or `only`, and `environment`. Job names use letters, digits, `_`, `.` and `-`. Limits: 20 jobs, 50 steps per job, 64 KB per file. Unknown keys, missing `run`, unknown or circular `needs` and invalid image names are errors: the pipeline is created in the **Error** state with a readable message, such as `invalid YAML at line 4, column 5: Property 'stepz' not found`.
-- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass (or failed without `allow_failure`) is skipped. Jobs only share files through [artifacts](#ci-artifacts-caches-manual-jobs-schedules--environments): a job gets the artifacts of the jobs it `needs`. Steps can read `CI`, `GITBENCH_PIPELINE_ID`, `GITBENCH_JOB`, `GITBENCH_REF`, `GITBENCH_COMMIT_SHA`, `GITBENCH_REPOSITORY`, `CI_PIPELINE_SOURCE` (= `GITBENCH_PIPELINE_SOURCE`: `push`, `pull_request`, `manual`, `retry` or `schedule`) and, for jobs with an environment, `CI_ENVIRONMENT_NAME` and `CI_ENVIRONMENT_URL`.
+- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass (or failed without `allow_failure`) is skipped. Jobs only share files through [artifacts](#ci-artifacts-caches-manual-jobs-schedules--environments): a job gets the artifacts of the jobs it `needs`. Steps can read `CI`, `BYTEBENCH_PIPELINE_ID`, `BYTEBENCH_JOB`, `BYTEBENCH_REF`, `BYTEBENCH_COMMIT_SHA`, `BYTEBENCH_REPOSITORY`, `CI_PIPELINE_SOURCE` (= `BYTEBENCH_PIPELINE_SOURCE`: `push`, `pull_request`, `manual`, `retry` or `schedule`) and, for jobs with an environment, `CI_ENVIRONMENT_NAME` and `CI_ENVIRONMENT_URL`.
 - **Triggers.**
-  - A push runs a pipeline for each branch it created or moved, if the branch matches `on.branches` or is the source of an open PR. Deleted branches are skipped. A merge done in GitBench counts as a push to the target branch.
+  - A push runs a pipeline for each branch it created or moved, if the branch matches `on.branches` or is the source of an open PR. Deleted branches are skipped. A merge done in ByteBench counts as a push to the target branch.
   - Opening a PR runs a pipeline for its source head, unless that commit already has one.
   - A commit runs at most once per branch automatically.
   - **Run pipeline** (Pipelines tab) runs any branch's tip and ignores the filters. **Re-run** runs the same commit again. Both need PushCode (Developer or higher), as does **Cancel**.
   - Pushes are noticed by `CiPushListener`. PR events reach `CiPullRequestWatcher` through `LiveEvents`.
-  - Push listeners aren't told which refs moved, so GitBench remembers each repository's branch tips, starting from a snapshot taken at startup. A branch created in the UI is picked up by the next push.
+  - Push listeners aren't told which refs moved, so ByteBench remembers each repository's branch tips, starting from a snapshot taken at startup. A branch created in the UI is picked up by the next push.
 - **Statuses.** A pipeline is Queued, Running, Passed, Failed, Canceled, Error or Manual (blocked on a manual job). Jobs and steps can also be Skipped; jobs can be Manual (waiting for someone to run them). Icons (✓ ✗ ● spinner ⊘) appear on the commit list, the branch list and the PR header.
 - **Logs.** stdout and stderr stream into the database about once a second, and the pipeline page tails them live. Each step's log is capped at about 1 MB, with a note when it's truncated. The page shows the last 200 KB. **Raw log** opens the full text.
 - **Pages.** `/p/{KEY}/repos/{slug}/pipelines` lists pipelines. `/p/{KEY}/repos/{slug}/pipelines/{id}` shows jobs, steps and logs, with Cancel and Re-run buttons. Everything needs ViewProject.
-- **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head: Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.gitbench-ci.yml`.
+- **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head: Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.bytebench-ci.yml`.
 - **Notifications.** When a pipeline fails or errors, the person who triggered it gets a notification.
 - **Restarts.** Pipelines that were running when the server stopped are marked Error. Queued ones run again. This instance's leftover containers and workspaces are removed.
 - **Docker missing.** If the docker CLI can't reach a daemon, pipelines end in Error with "Docker is not available on the server".
@@ -752,7 +752,7 @@ Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` 
 | `Memory` / `Cpus` | `2g` / `2` | `--memory` / `--cpus` per container. Empty means no limit |
 | `PidsLimit` | `1024` | `--pids-limit` |
 | `DockerExecutable` | `docker` | Path of the docker CLI |
-| `WorkDirectory` | `{temp}/gitbench-ci/{instance}` | Where workspaces are exported. Docker must be able to mount it |
+| `WorkDirectory` | `{temp}/bytebench-ci/{instance}` | Where workspaces are exported. Docker must be able to mount it |
 | `ArtifactsRoot` / `CacheRoot` | `{ContentRoot}/ci-artifacts` / `{ContentRoot}/ci-cache` | Where artifact and cache zips are stored. Back up the artifacts folder with the database |
 | `MaxArtifactBytes` | 100 MB | Largest artifact per job (total file size and zip size). Over it, the job fails |
 | `MaxCacheBytes` / `CacheBytesPerRepository` | 500 MB / 2 GB | Largest single cache; total per repository before least-recently-used caches are evicted |
@@ -763,12 +763,12 @@ Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` 
 **Pipelines run arbitrary code from the repository on the server host, inside Docker.** Anyone who can push (Developer or higher) can run any command in any image they choose. Treat PushCode as "can run code on the CI host".
 
 - The docker CLI is always started with an argument list, never a shell command line, and image names are validated so they can't be read as flags.
-- Containers never get the Docker socket, host environment variables or any GitBench secret. They get only the `GITBENCH_*` variables above, plus the [CI variables](#ci-secret-variables) the pipeline is allowed to see.
+- Containers never get the Docker socket, host environment variables or any ByteBench secret. They get only the `BYTEBENCH_*` variables above, plus the [CI variables](#ci-secret-variables) the pipeline is allowed to see.
 - Containers run with `--security-opt no-new-privileges`, memory, CPU and PID limits, a per-job timeout, and `--rm`.
 - Only the exported workspace is mounted. Symlinks in the repository are created after every regular file, so nothing is written through them. Submodules aren't fetched.
 - Containers still have network access by default (`bridge`). They run as the image's user, often root inside the container, and Docker isolation is not a hard security boundary. On a shared or exposed server, use `Network: none`, rootless Docker or a separate CI host, and let only trusted people push.
 
-Code: `Services/Ci/` (`CiFile` parser, `CiTriggerService`, `CiRunner` worker, `CiDocker`, `PipelineService`, `PipelineMergeCheck`) and `Components/Pages/Pipelines/`. The seeded `WEB/web-app` repository has a sample `.gitbench-ci.yml`.
+Code: `Services/Ci/` (`CiFile` parser, `CiTriggerService`, `CiRunner` worker, `CiDocker`, `PipelineService`, `PipelineMergeCheck`) and `Components/Pages/Pipelines/`. The seeded `WEB/web-app` repository has a sample `.bytebench-ci.yml`.
 
 ### CI artifacts, caches, manual jobs, schedules & environments
 
@@ -804,7 +804,7 @@ jobs:
 Unknown keys are still errors (`invalid YAML at line 5, column 7: Property 'expire' not found`), as are `..` or absolute paths, bad durations, cache keys with anything but letters, digits, `.`, `_`, `-` and `{{ hashFiles('…') }}`, `only` together with `rules`, non-http(s) environment URLs, and a job that `needs` a job its rules leave out on the branch being run. Code: `Services/Ci/` (`CiFile`, `CiJobGraph`, `CiArtifacts`, `CiArtifactStore`, `CiCacheStore`, `CiCron`, `PipelineScheduleService`, `CiEnvironmentService`), `Components/Pipelines/PipelineGraph.razor`, `Components/Pipelines/PipelineArtifacts.razor`, and `Components/Pages/Pipelines/Environments.razor` and `PipelineSchedules.razor`.
 
 - **Pipeline graph.** The pipeline page draws the jobs in columns by `needs` depth, with a line from each need. Each job shows its status, duration and environment, plus ▶ (run a manual job) or ↻ (retry). Click a job to see its log. Retry runs a finished job again in the same pipeline, replacing its logs and artifacts; it needs PushCode.
-- **Artifacts.** After a job's steps, if `artifacts.when` matches the result, GitBench zips the matching files from the workspace into `Ci:ArtifactsRoot/{repoId}/{guid}.zip` and records the size, file count and expiry. Symbolic links are never followed or stored (the log names each one skipped), so a step can't use `ln -s /etc/passwd dist/x` to read host files. If the files exceed `Ci:MaxArtifactBytes`, nothing is stored and the job fails. Before its first step, a job gets the artifacts of every job in its `needs` extracted into its workspace. Extraction skips names with `..` or an absolute path, and any file whose path goes through a symlink already in the workspace (from the repository or an earlier step), so it never writes outside the workspace. The pipeline page lists artifacts with **Download** (the zip), **Browse** (the file list; each file downloads) and **Keep** (pin past expiry; PushCode). Downloads need ViewProject and are always sent as `application/octet-stream` with `Content-Disposition: attachment`, `nosniff`, a sandboxing CSP and `Cache-Control: private, no-store`. Every hour `CiCleanupService` deletes expired, unkept artifacts, plus zip files no row refers to.
+- **Artifacts.** After a job's steps, if `artifacts.when` matches the result, ByteBench zips the matching files from the workspace into `Ci:ArtifactsRoot/{repoId}/{guid}.zip` and records the size, file count and expiry. Symbolic links are never followed or stored (the log names each one skipped), so a step can't use `ln -s /etc/passwd dist/x` to read host files. If the files exceed `Ci:MaxArtifactBytes`, nothing is stored and the job fails. Before its first step, a job gets the artifacts of every job in its `needs` extracted into its workspace. Extraction skips names with `..` or an absolute path, and any file whose path goes through a symlink already in the workspace (from the repository or an earlier step), so it never writes outside the workspace. The pipeline page lists artifacts with **Download** (the zip), **Browse** (the file list; each file downloads) and **Keep** (pin past expiry; PushCode). Downloads need ViewProject and are always sent as `application/octet-stream` with `Content-Disposition: attachment`, `nosniff`, a sandboxing CSP and `Cache-Control: private, no-store`. Every hour `CiCleanupService` deletes expired, unkept artifacts, plus zip files no row refers to.
 - **Caches.** Before the first step, the job's `cache.key` is resolved (each `hashFiles(...)` becomes a hash of the names and contents of the matching files in the fresh checkout) and the cache with that key is extracted, with the same safety rules as artifacts. After the job passes, the cache paths are zipped and replace that key's cache. Caches are stored per repository and key under `Ci:CacheRoot`; past `Ci:CacheBytesPerRepository` the least recently used are evicted. **Protected-branch caches are not used by unprotected branches.** Pipelines on a branch that matches a [branch protection rule](#branch-protection-reviewers--pr-templates) read and write only the *protected* scope; every other pipeline (other branches and pull requests) uses the *unprotected* scope. Without this, anyone who can push a branch could save a poisoned `node_modules` that the next `main` pipeline (which may get protected secrets and deploy) would restore. The log says which scope was used.
 - **Manual jobs.** A `when: manual` job (or a rule with `when: manual`) waits in **Manual** once its needs pass, until someone with PushCode clicks ▶ on the pipeline page. Then it runs and the pipeline resumes. Jobs that need it wait too. With `allow_failure: true` (the default for manual jobs), a waiting manual job doesn't block: the pipeline finishes as Passed and the job can still be run later. With `allow_failure: false`, the pipeline stays **Manual** (blocked): the page shows Cancel and Re-run, and the PR merge check reports it as pending. While a pipeline is blocked, no `pipeline.completed` webhook or failure notification is sent; they're sent when it really finishes.
 - **Rules / only.** `only: [main, "release/*"]` creates the job only on matching branches. `rules` is a list of `{ branches, when }`. The first rule whose `branches` match (no `branches` means every branch) decides, and `when: never` leaves the job out. If no job is left for a branch, pushes don't create a pipeline and **Run pipeline** says so.
@@ -820,15 +820,15 @@ A CI job named `pages` (or with `pages: true`, `pages: dist`, `pages: { path: di
 - **Storage**: `Pages:Root` (default `{ContentRoot}/pages`), one 32-hex folder per deployment. A deployment is packed, unpacked into a staging folder, renamed, and only then made current with one database save (atomic switch). Last `Pages:KeepVersions` (10) versions are kept for rollback; review sites keep 2.
 - **Extraction safety**: the whole archive is refused for `..`/absolute/drive/backslash-traversal names, symlinks and other non-regular entries, duplicates (also by case), file/folder clashes, and when files, bytes or the per-file size pass `Pages:MaxFiles` (10000), `Pages:MaxSiteBytes` (100 MB), `Pages:MaxFileBytes` (50 MB). Symlinks in the workspace are skipped; a publish folder that is a symlink is refused. Nothing is served through a link.
 - **URLs**: `/pages/{KEY}/{slug}/...` (review sites: `/pages/{KEY}/{slug}/-/r/{branch-slug}/`), and with `Pages:BaseDomain` (e.g. `pages.example.com`, needs wildcard DNS/TLS for `*.*.pages.example.com`) `{slug}.{key}.{BaseDomain}` and `{branch-slug}.{slug}.{key}.{BaseDomain}` (slugs with `.`/`_` stay path-only). `Pages:PathModeEnabled=false` serves only dedicated hosts. `index.html` for folders, `name.html` clean URLs, `404.html`, SPA fallback (setting), `ETag`/`If-None-Match`, `Range`, `HEAD`.
-- **Isolation (why the headers look like this)**: uploaded HTML/JS must never run with GitBench's privileges. On a dedicated host the browser's own origin separation does it; the GitBench sign-in cookie is ignored there. In path mode the site shares GitBench's origin, so every response carries `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...` **without** `allow-same-origin`: scripts run in an opaque origin and can't read GitBench cookies/storage or call its API as the user (consequently a site's own `localStorage`/cookies don't work in path mode). Always `X-Content-Type-Options: nosniff`, restrictive `Permissions-Policy`, no `Set-Cookie` (except the host sign-in below). Pages responses set their own full header set (`ProductionSetup.OwnSecurityHeadersKey`); GitBench's own CSP is unchanged. Keep `Pages:BaseDomain` on a registrable domain (or Public Suffix List entry) separate from GitBench so sites can't set cookies for it.
-- **Access** (ProjectAccess decides, on every request): *Members* (default; everyone who can view the project) or *Public* (anyone; only Owners can switch, and `Pages:AllowPublic=false` forbids it). Dedicated host, members-only: unauthenticated page loads go to `/pages/-/auth` on GitBench (sign-in), which hands a 1-minute signed code to `/_gb/pages-login` on the site's host; that sets a host-only, HttpOnly `gb_pages` cookie (`Pages:HostCookieHours`, 8). Path mode, members-only: a page load with the GitBench cookie is redirected to `/-/t/{token}/...` (signed, repository-bound, `Pages:PathTokenMinutes`, 60, `Referrer-Policy: no-referrer`) because a sandboxed page's sub-requests carry no cookie; relative links keep working. Removing a member ends access at once. Anyone who can see the project but not the site gets 404; anonymous users on a members-only site are sent to sign in (which reveals that the address exists).
+- **Isolation (why the headers look like this)**: uploaded HTML/JS must never run with ByteBench's privileges. On a dedicated host the browser's own origin separation does it; the ByteBench sign-in cookie is ignored there. In path mode the site shares ByteBench's origin, so every response carries `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...` **without** `allow-same-origin`: scripts run in an opaque origin and can't read ByteBench cookies/storage or call its API as the user (consequently a site's own `localStorage`/cookies don't work in path mode). Always `X-Content-Type-Options: nosniff`, restrictive `Permissions-Policy`, no `Set-Cookie` (except the host sign-in below). Pages responses set their own full header set (`ProductionSetup.OwnSecurityHeadersKey`); ByteBench's own CSP is unchanged. Keep `Pages:BaseDomain` on a registrable domain (or Public Suffix List entry) separate from ByteBench so sites can't set cookies for it.
+- **Access** (ProjectAccess decides, on every request): *Members* (default; everyone who can view the project) or *Public* (anyone; only Owners can switch, and `Pages:AllowPublic=false` forbids it). Dedicated host, members-only: unauthenticated page loads go to `/pages/-/auth` on ByteBench (sign-in), which hands a 1-minute signed code to `/_gb/pages-login` on the site's host; that sets a host-only, HttpOnly `gb_pages` cookie (`Pages:HostCookieHours`, 8). Path mode, members-only: a page load with the ByteBench cookie is redirected to `/-/t/{token}/...` (signed, repository-bound, `Pages:PathTokenMinutes`, 60, `Referrer-Policy: no-referrer`) because a sandboxed page's sub-requests carry no cookie; relative links keep working. Removing a member ends access at once. Anyone who can see the project but not the site gets 404; anonymous users on a members-only site are sent to sign in (which reveals that the address exists).
 - **UI/API**: repository Settings → Pages (enable, visibility, 404 behaviour, review sites, delete site, deployments with rollback); a "Site" button in the repository header; audit events `pages.deployed`, `pages.rolled_back`, `pages.settings_updated`, `pages.deleted`; webhook event `pages.deployed`; a `PagesDeployed` notification to whoever triggered the pipeline.
 
 ## Security scanning (Night Owl)
 
-GitBench reads security reports from CI into per-repository findings, with triage, trends, a pull request view and a merge check. It is built around [Night Owl](https://finepointcgi.github.io/Night-Owl/) (SCA, licenses, SAST, secrets, IaC, container images, quality), integrated through its CLI and report formats only, and accepts SARIF 2.1 from any other tool.
+ByteBench reads security reports from CI into per-repository findings, with triage, trends, a pull request view and a merge check. It is built around [Night Owl](https://finepointcgi.github.io/Night-Owl/) (SCA, licenses, SAST, secrets, IaC, container images, quality), integrated through its CLI and report formats only, and accepts SARIF 2.1 from any other tool.
 
-- **CI.** `include: [nightowl]` at the top of `.gitbench-ci.yml` adds a built-in `nightowl` job (`Services/Ci/CiTemplates.cs`, modelled on Night Owl's GitLab template). It installs the release with Night Owl's checksum-verifying `install.sh` and runs `nightowl scan --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md [--fail-on $NIGHTOWL_FAIL_ON] $NIGHTOWL_ARGS`. CI variables tune it: `NIGHTOWL_FAIL_ON` (critical, high, medium, low or none; empty uses `.nightowl/policy.yml`), `NIGHTOWL_PATH`, `NIGHTOWL_ARGS`, `NIGHTOWL_VERSION`, `NIGHTOWL_REPO`. Night Owl runs engines from local binaries or pinned images, so the job needs engines on its image's PATH or a Docker daemon. **GitBench jobs never get a Docker daemon**, so on the stock `alpine` image the template stops at once with "This image has no scan engines" (exit 2) rather than failing deep inside the scan: use a runner image (below). A job of your own named `nightowl` replaces the template (the settings page shows it to copy).
+- **CI.** `include: [nightowl]` at the top of `.bytebench-ci.yml` adds a built-in `nightowl` job (`Services/Ci/CiTemplates.cs`, modelled on Night Owl's GitLab template). It installs the release with Night Owl's checksum-verifying `install.sh` and runs `nightowl scan --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md [--fail-on $NIGHTOWL_FAIL_ON] $NIGHTOWL_ARGS`. CI variables tune it: `NIGHTOWL_FAIL_ON` (critical, high, medium, low or none; empty uses `.nightowl/policy.yml`), `NIGHTOWL_PATH`, `NIGHTOWL_ARGS`, `NIGHTOWL_VERSION`, `NIGHTOWL_REPO`. Night Owl runs engines from local binaries or pinned images, so the job needs engines on its image's PATH or a Docker daemon. **ByteBench jobs never get a Docker daemon**, so on the stock `alpine` image the template stops at once with "This image has no scan engines" (exit 2) rather than failing deep inside the scan: use a runner image (below). A job of your own named `nightowl` replaces the template (the settings page shows it to copy).
 - **Night Owl runner image.** Build an image once that has the `nightowl` CLI and the engines Night Owl should run (`syft`, `osv-scanner`, `gitleaks`, `opengrep`, `trivy`, `lizard`; see `engines/` in the Night Owl repository for how each is pinned and built), push it to your registry (the project container registry works), and override the job with that image. The template skips the install step when `nightowl` is already on PATH, so the override is the template's own script with one changed line:
 
   ```yaml
@@ -849,7 +849,7 @@ GitBench reads security reports from CI into per-repository findings, with triag
 - **Report artifacts.** Any job can publish reports: `artifacts: { reports: { nightowl: nightowl.json, sarif: results.sarif } }`. Report files are added to the job's artifact paths. After the job runs (passed or failed: a failed quality gate still has a report), the runner reads them from the workspace (never through a symlink, at most 32 MB) and the job log says what was read. With both, the Night Owl JSON is used (it has packages, fixed versions, path context and its own triage); SARIF from the same job is kept as an artifact only.
 - **Findings.** `SecurityReportParser` maps each finding to a `SecurityFinding`: Night Owl's **fingerprint** (its finding `id`, or `partialFingerprints["nightowl/v1"]` in its SARIF), severity, category (SCA vulnerability, license, SAST, secret, IaC, container — Night Owl vulnerabilities in images, from `trivy-image` — DAST, quality), rule/advisory id, aliases (CVE/GHSA), package, version and fixed versions, file and line, message, engines and path context. Other SARIF tools: the first partial fingerprint, else one derived like Night Owl's code fingerprint (rule, path, snippet or line); severity from `security-severity` (CVSS bands) or the level. Duplicates (same fingerprint) merge, keeping the highest severity and every engine.
 - **Security tab** (`/p/{KEY}/repos/{slug}/security`). The latest scanned pipeline of the default branch (or `?branch=`): open counts by severity, a trend chart of open findings per scan, filters (status, minimum severity, category, text) and the findings. `?finding={fingerprint}` opens a finding's detail: description, package and fix, location (linked to the source at the scanned commit), aliases, engines, where it was first and last seen, and triage. An optional **Night Owl dashboard** link appears when `NightOwl:DashboardUrl` is set.
-- **Triage** (Developer+). Dismiss as **false positive** or **accepted risk** (a reason is required, an expiry optional), **confirm**, or **reopen**. Decisions are keyed by fingerprint per repository, so they stick across scans and branches; an expired one stops applying. A decision the report itself carried (from the repository's `.nightowl/triage.json` at scan time) applies too, and GitBench's own decision wins. Open means new or confirmed, as in Night Owl's quality gate. **Export triage** downloads the decisions as Night Owl's `.nightowl/triage.json` (commit it so `nightowl scan` in CI and developers see the same decisions); **Import triage** (Maintainer+) reads that file from the default branch or a pasted one. Audit events: `security.finding_triaged`, `security.triage_imported`, `repository.security_settings_changed`.
+- **Triage** (Developer+). Dismiss as **false positive** or **accepted risk** (a reason is required, an expiry optional), **confirm**, or **reopen**. Decisions are keyed by fingerprint per repository, so they stick across scans and branches; an expired one stops applying. A decision the report itself carried (from the repository's `.nightowl/triage.json` at scan time) applies too, and ByteBench's own decision wins. Open means new or confirmed, as in Night Owl's quality gate. **Export triage** downloads the decisions as Night Owl's `.nightowl/triage.json` (commit it so `nightowl scan` in CI and developers see the same decisions); **Import triage** (Maintainer+) reads that file from the default branch or a pasted one. Audit events: `security.finding_triaged`, `security.triage_imported`, `repository.security_settings_changed`.
 - **Pull requests.** The PR's **Security** tab compares the head commit's latest scan with the target branch's latest scan: **new** open findings and **fixed** ones. **Settings → Security** turns on the **Security merge check** ("no new findings at or above *severity*"): Failed when the PR adds open findings at or above it, Pending while a pipeline for the head is running, Neutral when the head has no report. With branch protection's "require checks to pass" it blocks merging.
 - **Alerts.** When a scan of the default branch finds open findings at or above the repository's alert severity (default high) that its previous scan didn't have, the project's Maintainers and Owners (and whoever triggered the pipeline) get a notification (kind *security findings*, in the Pipelines preference group), and webhooks subscribed to `security.new_findings` receive the findings.
 - **REST API** (`/api/v1/projects/{key}/repos/{slug}/…`): `GET security/findings` (`?branch`, `?state=open|dismissed|all`, `?severity=` minimum, `?category=sca|license|sast|secret|iac|container|dast|quality`, `?q`; paged), `GET security/findings/{fingerprint}`, `POST security/findings/{fingerprint}/triage` (`{ "state": "accepted-risk", "reason": "…", "expires": "…" }`), `GET security/scans`, `GET security/trend`, `GET`/`POST security/triage` (Night Owl's triage.json), `GET pull-requests/{number}/security`.
@@ -858,7 +858,7 @@ GitBench reads security reports from CI into per-repository findings, with triag
 |---|---|---|
 | `NightOwl:DashboardUrl` | (none) | Link to a Night Owl dashboard (`NightOwl.Web`) shown on the Security pages |
 
-Code: `Services/Security/` (parser, ingestor, service, merge check, triage file), `Services/Ci/CiTemplates.cs`, `Components/Pages/Security/`, `Components/Security/`, `Api/SecurityEndpoints.cs`. Tests: `tests/GitBench.Tests/SecurityTests.cs` with fixture reports in `Fixtures/Security/`.
+Code: `Services/Security/` (parser, ingestor, service, merge check, triage file), `Services/Ci/CiTemplates.cs`, `Components/Pages/Security/`, `Components/Security/`, `Api/SecurityEndpoints.cs`. Tests: `tests/ByteBench.Tests/SecurityTests.cs` with fixture reports in `Fixtures/Security/`.
 
 ## Code tools
 
@@ -961,7 +961,7 @@ The chat panel talks to Claude about the open branch. It knows the open file and
 **Claude Code** (`ClaudeCodeEditorBackend`) runs the `claude` CLI installed on the server, headless:
 
 1. Your workspace (the base commit plus your changes; text files up to 1 MB, at most `MaxFiles`/`MaxBytes`) is written to a fresh temporary directory with mode 700. The repository's own Claude Code configuration (`.claude/`, `.mcp.json`) is **not** copied, so a repository can't add hooks, permissions or MCP servers.
-2. It runs `claude -p --output-format stream-json --verbose --include-partial-messages` there with the prompt on **stdin** (never on a command line or through a shell), `--tools Read,Grep,Glob,Edit,Write`, `--allowedTools "Read(./**),Edit(./**),Write(./**),Grep,Glob"`, `--disallowedTools Bash,WebFetch,WebSearch,NotebookEdit,Task`, `--permission-mode dontAsk` and `--permission-prompts none` (nothing ever prompts: anything not allowed is refused), `--restricted` (file tools confined to the directory; user/project settings ignored), `--strict-mcp-config` (no MCP servers), `--no-session-persistence`, `--disable-slash-commands`, `--max-turns`, an optional `--model`, and `--append-system-prompt` saying file contents are untrusted data. GitBench reads `claude --help` at startup and only passes the optional flags this version lists; the turn cap is also enforced on the event stream.
+2. It runs `claude -p --output-format stream-json --verbose --include-partial-messages` there with the prompt on **stdin** (never on a command line or through a shell), `--tools Read,Grep,Glob,Edit,Write`, `--allowedTools "Read(./**),Edit(./**),Write(./**),Grep,Glob"`, `--disallowedTools Bash,WebFetch,WebSearch,NotebookEdit,Task`, `--permission-mode dontAsk` and `--permission-prompts none` (nothing ever prompts: anything not allowed is refused), `--restricted` (file tools confined to the directory; user/project settings ignored), `--strict-mcp-config` (no MCP servers), `--no-session-persistence`, `--disable-slash-commands`, `--max-turns`, an optional `--model`, and `--append-system-prompt` saying file contents are untrusted data. ByteBench reads `claude --help` at startup and only passes the optional flags this version lists; the turn cap is also enforced on the event stream.
 3. The environment is **clean**: none of the server's variables (API keys, connection strings, cloud credentials) are passed, only what Claude Code needs to find itself and its login: `HOME`, `USER`, `PATH`, locale and temp variables, `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_OAUTH_TOKEN` if set.
 4. Its text and tool calls stream to the chat panel. A run that exceeds `TimeoutSeconds` is stopped by killing the whole process tree.
 5. When it finishes, the directory is compared with what was written: every changed, added or deleted file becomes a **pending proposal**, exactly like the API backend. Nothing is applied automatically. The directory is then deleted.
@@ -969,7 +969,7 @@ The chat panel talks to Claude about the open branch. It knows the open file and
 
 Ghost-text completions stay API-only (the CLI is too slow for them); with the Claude Code backend the toggle is hidden.
 
-**Setup:** install Claude Code for the account GitBench runs as and sign it in once as that account (`claude` interactively, or `claude setup-token` and `CLAUDE_CODE_OAUTH_TOKEN`). The editor then uses **that account's Claude Code login or subscription** for every user's requests: usage, limits and billing are the server account's, not the individual user's. Usage reported by Claude Code is logged to `AiUsage` as `editor.chat.claude-code` / `editor.action.*.claude-code`.
+**Setup:** install Claude Code for the account ByteBench runs as and sign it in once as that account (`claude` interactively, or `claude setup-token` and `CLAUDE_CODE_OAUTH_TOKEN`). The editor then uses **that account's Claude Code login or subscription** for every user's requests: usage, limits and billing are the server account's, not the individual user's. Usage reported by Claude Code is logged to `AiUsage` as `editor.chat.claude-code` / `editor.action.*.claude-code`.
 
 ```json
 "Ai": {
@@ -986,7 +986,7 @@ Every chat message and inline action is billed as Claude tokens: the system prom
 ### Security model
 
 - **Who:** reading the workspace and chatting need ViewProject; editing, accepting proposals and committing need PushCode on a writable repository; commits follow branch protection like a push. Workspaces are private to their user (every call checks the owner).
-- **What the AI can see:** only the requesting user's workspace for this repository and branch (API tools work on an in-memory view of it; Claude Code gets a copy of only those files). It can't reach other repositories, the server's files or the network through GitBench, and it can't commit, push or call anything outside its tools.
+- **What the AI can see:** only the requesting user's workspace for this repository and branch (API tools work on an in-memory view of it; Claude Code gets a copy of only those files). It can't reach other repositories, the server's files or the network through ByteBench, and it can't commit, push or call anything outside its tools.
 - **Untrusted content:** file contents, search results, selections and attachments are put in delimited `UNTRUSTED` blocks with a random boundary per request, and the system prompt tells the model they are data, never instructions. Whatever the model proposes still has to be accepted by you, as a diff.
 
 ### Monaco and the CSP
@@ -995,7 +995,7 @@ Every chat message and inline action is billed as Claude tokens: the system prom
 
 CSP: Monaco's web workers are started from `/lib/monaco/vs/base/worker/workerMain.js` (same origin, via `MonacoEnvironment.getWorkerUrl`), so the policy adds just **`worker-src 'self'`**, which makes explicit that workers must come from the site and rules out `blob:`/`data:` workers. Monaco's own stylesheet and dynamic `<style>` elements are covered by the existing `style-src 'self' 'unsafe-inline'`, its codicon font by `font-src 'self'`, and its scripts by `script-src 'self'`. No `unsafe-eval` is needed.
 
-Code: `Services/Editor/` (workspaces, `WorkspaceSnapshot`, `EditorPushNotifier`), `Services/Editor/Ai/` (backends, tools, prompts, `EditorAiService`, `ClaudeCodeDetector`), `Services/Git/GitOps.Editor.cs`, `Components/Pages/Repositories/WebEditor.razor`, `Components/Repositories/EditorChatPanel.razor`, `Components/Pages/Admin/AiAdminPage.razor`, `wwwroot/js/web-editor.js`, `wwwroot/css/web-editor.css`. Schema: `EditorWorkspace`, `EditorWorkspaceChange`, `ProjectEditorSettings` (migration `WebEditor`). Tests: `tests/GitBench.Tests/WebEditorTests.cs` (fake model) and `WebEditorClaudeCodeTests.cs` (a fake `claude` script; the real CLI is never run against the API).
+Code: `Services/Editor/` (workspaces, `WorkspaceSnapshot`, `EditorPushNotifier`), `Services/Editor/Ai/` (backends, tools, prompts, `EditorAiService`, `ClaudeCodeDetector`), `Services/Git/GitOps.Editor.cs`, `Components/Pages/Repositories/WebEditor.razor`, `Components/Repositories/EditorChatPanel.razor`, `Components/Pages/Admin/AiAdminPage.razor`, `wwwroot/js/web-editor.js`, `wwwroot/css/web-editor.css`. Schema: `EditorWorkspace`, `EditorWorkspaceChange`, `ProjectEditorSettings` (migration `WebEditor`). Tests: `tests/ByteBench.Tests/WebEditorTests.cs` (fake model) and `WebEditorClaudeCodeTests.cs` (a fake `claude` script; the real CLI is never run against the API).
 
 ## REST API & webhooks
 
@@ -1067,29 +1067,29 @@ They require `Permission.ManageRepositories`. Webhooks are integration settings 
 **On the settings page** you can:
 
 - Set a URL, a secret, the events and an Active flag.
-- Leave the secret blank and GitBench generates one. The secret is shown once and masked afterwards. **New secret** rotates it.
-- **Secrets are encrypted at rest** with ASP.NET Core Data Protection (purpose `GitBench.Webhooks.Secret.v1`, `Services/Webhooks/WebhookSecrets.cs`). The stored value is `dp:` + ciphertext, and only the delivery worker decrypts it to sign; the settings page gets a masked value. Secrets saved before encryption (no `dp:` prefix) still work and are encrypted at the next start. If the Data Protection keys are lost, stored secrets can't be decrypted: deliveries fail with a message saying so, and **New secret** fixes the hook.
+- Leave the secret blank and ByteBench generates one. The secret is shown once and masked afterwards. **New secret** rotates it.
+- **Secrets are encrypted at rest** with ASP.NET Core Data Protection (purpose `ByteBench.Webhooks.Secret.v1`, `Services/Webhooks/WebhookSecrets.cs`). The stored value is `dp:` + ciphertext, and only the delivery worker decrypts it to sign; the settings page gets a masked value. Secrets saved before encryption (no `dp:` prefix) still work and are encrypted at the next start. If the Data Protection keys are lost, stored secrets can't be decrypted: deliveries fail with a message saying so, and **New secret** fixes the hook.
 - Use **Send test ping**.
-- Look at the last 25 deliveries: status, duration, attempts, the payload and the first 4 KB of the response. Each has a **Redeliver** button, which resends the same body under the same delivery id with `X-GitBench-Redelivery: true`.
+- Look at the last 25 deliveries: status, duration, attempts, the payload and the first 4 KB of the response. Each has a **Redeliver** button, which resends the same body under the same delivery id with `X-ByteBench-Redelivery: true`.
 
 | Event | When |
 |---|---|
-| `push` | A git push moved a ref, or a pull request was merged in GitBench (UI or API): the merge sends one for the target branch and, if "delete source branch" was ticked, a `deleted: true` one for the source branch. One event per ref: `ref`, `before`, `after`, `created`, `deleted`, `repository`, `commits` (newest first, up to 20), `totalCommits`, `headCommit`, `compareUrl` |
+| `push` | A git push moved a ref, or a pull request was merged in ByteBench (UI or API): the merge sends one for the target branch and, if "delete source branch" was ticked, a `deleted: true` one for the source branch. One event per ref: `ref`, `before`, `after`, `created`, `deleted`, `repository`, `commits` (newest first, up to 20), `totalCommits`, `headCommit`, `compareUrl` |
 | `issue.created` / `issue.updated` / `issue.commented` | `issue` (plus `change`, the activity text, for updates; plus `comment` for comments) |
 | `pull_request.opened` / `.merged` / `.declined` | `pullRequest` and `repository` |
 | `pull_request.updated` | Same, plus `action`: `edited`, `reopened`, `approved`, `changes_requested` or `review_dismissed` |
 | `pull_request.commented` | `pullRequest`, `repository` and `comment` |
-| `pipeline.completed` | Raised by CI code, not by GitBench itself (see below) |
+| `pipeline.completed` | Raised by CI code, not by ByteBench itself (see below) |
 | `release.published` | A release was published (created as non-draft, or a draft published): `release` (with `assets`, `zipUrl`, `tarGzUrl`) and `repository` |
-| `tag.created` / `tag.deleted` | A tag was created or deleted in GitBench or by a push: `tag` and `repository` |
+| `tag.created` / `tag.deleted` | A tag was created or deleted in ByteBench or by a push: `tag` and `repository` |
 | `ping` | Only from **Send test ping**. Always sent, even to an inactive hook |
 
 **Payload and headers.** Every body is JSON that starts with `event`, `deliveryId`, `timestamp`, `project` and `sender`, followed by the event's own fields. Each request carries these headers:
 
-- `X-GitBench-Event`
-- `X-GitBench-Delivery` (a GUID)
-- `X-GitBench-Hook-ID`
-- `X-GitBench-Signature-256: sha256=<hex HMAC-SHA256(secret, raw body)>`
+- `X-ByteBench-Event`
+- `X-ByteBench-Delivery` (a GUID)
+- `X-ByteBench-Hook-ID`
+- `X-ByteBench-Signature-256: sha256=<hex HMAC-SHA256(secret, raw body)>`
 
 Verify the signature on the raw body bytes and compare in constant time:
 
@@ -1189,15 +1189,15 @@ Code: `Services/Releases/` (`ReleaseService`, `ReleaseDownloads`, `TagPushListen
 - **Pull mirror** (at most one per repository): an upstream URL, an optional username plus password or access token, a sync interval (at least `Mirroring:MinIntervalMinutes`, default 5), and an option to mirror **only protected branches** or all of them.
   - A background service (`MirrorWorker`) runs `git fetch --prune` of `refs/heads/*` and `refs/tags/*` straight into the bare repository when the mirror is due.
   - With "only protected branches", it fetches just the upstream branches that match a branch protection rule of this repository (tags always), and deletes matching local branches that are gone upstream.
-  - While an enabled pull mirror exists, the repository is **read-only for pushes**: every ref is refused over HTTP and SSH with "this repository is a pull mirror…". Tag create and delete in GitBench and LFS uploads are refused too. The mirror itself writes refs directly, not by pushing.
+  - While an enabled pull mirror exists, the repository is **read-only for pushes**: every ref is refused over HTTP and SSH with "this repository is a pull mirror…". Tag create and delete in ByteBench and LFS uploads are refused too. The mirror itself writes refs directly, not by pushing.
   - Push listeners (webhooks, CI, smart commits) don't run for mirrored commits. The repository's push mirrors do run after a sync that changed something.
-- **Push mirrors** (up to 10): after every successful push (`MirrorPushListener`, then the background queue) and on demand, GitBench runs a forced `git push --prune` of `refs/heads/*` and `refs/tags/*` to the target. With "only protected branches" it pushes the matching branches plus tags, and deletes nothing.
+- **Push mirrors** (up to 10): after every successful push (`MirrorPushListener`, then the background queue) and on demand, ByteBench runs a forced `git push --prune` of `refs/heads/*` and `refs/tags/*` to the target. With "only protected branches" it pushes the matching branches plus tags, and deletes nothing.
 
 Each mirror shows its last sync status, time and message (or git's error), with a **Sync now** button. Pull mirrors also show when they sync next. The page refreshes the status every few seconds.
 
 **How git runs.** The mirror runs git without a shell, through `ArgumentList`, with a timeout (`Mirroring:TimeoutSeconds`, default 600) that kills the process tree. It ignores the system and global git config (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL`), never prompts, and only speaks `http`, `https` and `ssh` (`GIT_ALLOW_PROTOCOL`). Redirects aren't followed.
 
-**Credentials.** Passwords and tokens are encrypted with Data Protection (purpose `GitBench.Mirroring.Credentials.v1`) and never shown again. To keep a saved token, leave the field blank. Changing the URL drops the saved token, so it never follows the URL to another host. For a sync, the token is written to a mode 600 file in a mode 700 temporary folder, and a temporary credential helper (passed in `GIT_CONFIG_*` environment variables) reads it. The token is never in the URL or on the command line, and the folder is deleted afterwards. Any other credential helper (such as a keychain) is turned off, so the token is never stored. Credentials in the URL itself are rejected.
+**Credentials.** Passwords and tokens are encrypted with Data Protection (purpose `ByteBench.Mirroring.Credentials.v1`) and never shown again. To keep a saved token, leave the field blank. Changing the URL drops the saved token, so it never follows the URL to another host. For a sync, the token is written to a mode 600 file in a mode 700 temporary folder, and a temporary credential helper (passed in `GIT_CONFIG_*` environment variables) reads it. The token is never in the URL or on the command line, and the folder is deleted afterwards. Any other credential helper (such as a keychain) is turned off, so the token is never stored. Credentials in the URL itself are rejected.
 
 **SSRF guard.** Mirror URLs must be `http://`, `https://` or `ssh://` (use `ssh://git@host/path.git`, not the scp-like `git@host:path`), with no credentials and no option-like host or path. Loopback, private (RFC 1918 / ULA), link-local, CGNAT and cloud-metadata addresses are refused when the mirror is saved and again before every sync. The host is resolved right before git runs, and git is pinned to the checked address (`http.curloptResolve` for HTTP, ssh's `HostName` for SSH), so DNS rebinding can't swap it. Set `Mirroring:AllowPrivateNetworks=true` to allow private addresses. When that is unset, `Webhooks:AllowPrivateNetworks` decides (it is on in `appsettings.Development.json`).
 
@@ -1209,7 +1209,7 @@ Each mirror shows its last sync status, time and message (or git's error), with 
 
 ### Git LFS
 
-GitBench implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) with the `basic` transfer adapter, at the URL git-lfs derives from the clone URL: `/git/{KEY}/{slug}.git/info/lfs/`. Run `git lfs install`, `git lfs track "*.bin"`, then commit and push as usual.
+ByteBench implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md) with the `basic` transfer adapter, at the URL git-lfs derives from the clone URL: `/git/{KEY}/{slug}.git/info/lfs/`. Run `git lfs install`, `git lfs track "*.bin"`, then commit and push as usual.
 
 | Endpoint | What it does |
 |---|---|
@@ -1225,7 +1225,7 @@ GitBench implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/b
 - **File viewer**: an LFS pointer file shows **Stored with Git LFS** with the real size and a **Download** link, or a note when the object was never uploaded.
 - **Not implemented**: the locks API (git-lfs prints a one-time warning and carries on; to silence it, run `git config lfs.<url>.locksverify false`) and `git-lfs-authenticate` over SSH. With an SSH remote, set `lfs.url` to the HTTPS LFS URL.
 
-Code: `Services/Git/ProtectedTagService.cs`, `Services/Mirroring/` (`MirrorService`, `MirrorSyncRunner`, `MirrorGit`, `MirrorUrlGuard`, `MirrorWorker`), `Services/Lfs/` (`LfsEndpoints`, `LfsStorage`), `Components/Pages/Repositories/Repo{ProtectedTags,Mirroring}.razor`, `Components/Repositories/MirrorStatus.razor`. Schema: `ProtectedTagRule`, `RepositoryMirror`, `LfsObject` (migration `MirrorTagsLfs`). Tests: `tests/GitBench.Tests/MirrorTagsLfsTests.cs` (the git-lfs end-to-end test is skipped when `git-lfs` isn't installed).
+Code: `Services/Git/ProtectedTagService.cs`, `Services/Mirroring/` (`MirrorService`, `MirrorSyncRunner`, `MirrorGit`, `MirrorUrlGuard`, `MirrorWorker`), `Services/Lfs/` (`LfsEndpoints`, `LfsStorage`), `Components/Pages/Repositories/Repo{ProtectedTags,Mirroring}.razor`, `Components/Repositories/MirrorStatus.razor`. Schema: `ProtectedTagRule`, `RepositoryMirror`, `LfsObject` (migration `MirrorTagsLfs`). Tests: `tests/ByteBench.Tests/MirrorTagsLfsTests.cs` (the git-lfs end-to-end test is skipped when `git-lfs` isn't installed).
 
 ## Linked work: sub-tasks, epics and issue links
 
@@ -1298,7 +1298,7 @@ Personal dashboards at `/dashboards` (sidebar **Dashboards**): each is a grid of
 - **Home.** Without a pinned dashboard, `/` shows the classic layout (projects, assigned issues, activity). **Customize** copies that layout into a new dashboard, pins it and opens it. **Use as Home** on any dashboard you can see pins it; **Unpin from Home** goes back to the classic layout.
 - **Limits:** 50 dashboards per user, 30 gadgets per dashboard, notes up to 5,000 characters.
 
-Code: `Services/Dashboards/` (`DashboardService` for CRUD, sharing and Home; `GadgetDataService` for the viewer-scoped queries; `GadgetMath` for the pure chart aggregation; `GadgetConfig`, the gadget's JSON settings), `Components/Dashboards/` and `Components/Pages/Dashboards/`. Tests: `tests/GitBench.Tests/RoadmapDashboardTests.cs`.
+Code: `Services/Dashboards/` (`DashboardService` for CRUD, sharing and Home; `GadgetDataService` for the viewer-scoped queries; `GadgetMath` for the pure chart aggregation; `GadgetConfig`, the gadget's JSON settings), `Components/Dashboards/` and `Components/Pages/Dashboards/`. Tests: `tests/ByteBench.Tests/RoadmapDashboardTests.cs`.
 
 ### API
 
@@ -1342,7 +1342,7 @@ Code: `Services/Attachments/`, `Api/AttachmentEndpoints.cs`, `Services/IssueFilt
 
 ## Advanced search (GQL) & CSV import/export
 
-### GitBench Query Language (GQL)
+### ByteBench Query Language (GQL)
 
 A JQL-style query language for issues, e.g.
 
@@ -1491,14 +1491,14 @@ Jira-style rules: **when** a trigger fires, **if** the conditions hold, **then**
 - **Conditions** (all or any): issue type, priority (is, is not, at least, at most), status, status category, labels contain or don't contain, assignee (is, is not, empty, not empty, is the person who triggered the rule), title contains, linked pull request (exists, an open one exists, none), sub-tasks (all done, not all done) and **matches GQL query** (matches, doesn't match; e.g. `labels = urgent AND cf[severity] in (Major, Critical)`). The GQL condition runs as the rule does: as its author (`currentUser()` is the author, and only issues they can view match) or as the bot with system access, in both cases with names resolved only in the rule's project. The query's syntax and field names are checked when the rule is saved; a query that fails when the rule runs (an unknown status, say) counts as not matching. Each condition is a structured `field / operator / value` matcher implementing `IAutomationCondition`. A new kind is one class plus one `AddSingleton<IAutomationCondition, …>` line in `AddAutomation`, and the editor picks it up.
 - **Actions:** transition the issue (by status name, through `IssueService`, so the workflow's transitions apply); assign (a user, the reporter, the person who triggered the rule, round-robin among the project's developers, or unassign); set priority; add or remove a label; add a comment; create a sub-task; link to another issue; transition the parent when all its children are done; send a notification (a user, the assignee, the reporter, the watchers or the person who triggered the rule); send a webhook. Text fields accept **smart values** such as `{{issue.key}}`, `{{issue.title}}`, `{{issue.status}}`, `{{issue.assignee}}`, `{{issue.parent.key}}`, `{{initiator.name}}`, `{{pr.title}}`, `{{pr.url}}`, `{{pipeline.status}}`, `{{comment.body}}` and `{{rule.name}}` (the editor lists them all). Unknown names render as nothing.
 - **Templates:** "When a PR is merged → move linked issues to Done", "When all sub-tasks are done → close the parent", "Auto-assign new bugs round-robin" and "Comment when a pipeline fails".
-- **Run as:** by default the **GitBench Automation** bot (`gitbench-automation`, created on first use like the AI bot: no password, locked out, not assignable or mentionable). The bot runs through `ProjectAccess.ActAsSystem(botId)` and stays inside the rule's project: it only links issues of that project and only assigns users who can view it. Alternatively a rule runs as its **author** (whoever last saved it), with their permissions at run time, so a demoted author's rule fails. Activity, comments, notifications, webhooks and live updates show the actor like any other change.
+- **Run as:** by default the **ByteBench Automation** bot (`bytebench-automation`, created on first use like the AI bot: no password, locked out, not assignable or mentionable). The bot runs through `ProjectAccess.ActAsSystem(botId)` and stays inside the rule's project: it only links issues of that project and only assigns users who can view it. Alternatively a rule runs as its **author** (whoever last saved it), with their permissions at run time, so a demoted author's rule fails. Activity, comments, notifications, webhooks and live updates show the actor like any other change.
 - **Execution:** the service hooks queue events on `AutomationQueue`, an in-memory channel. `IssueService`, `PullRequestService` and `SprintService` already call `WebhookNotifier`, which queues them too, and `CiRunner` queues finished pipelines. `AutomationWorker` (a hosted service) processes them one at a time. For each rule it creates a fresh DI scope, checks the conditions and runs the actions; the first failing action stops the run. A timer in the same worker evaluates scheduled rules every minute (`Automation:SchedulerIntervalSeconds`, through `TimeProvider`), and missed runs collapse into one.
 - **Loop protection:** changes made by rule actions carry a depth (an `AsyncLocal` scope around the actions). They don't trigger rules unless the rule has **Allow this rule's changes to trigger other rules**, and even then a chain stops after 3 rules (`Automation:MaxDepth`) with a "Loop stopped" log entry. Each rule runs at most `Automation:MaxRunsPerRulePerHour` times (default 100) in a rolling hour; the first skipped run is logged as "Throttled".
 - **Log:** each run records the trigger, issue, result (Success, Failed, No actions, Throttled, Loop stopped), the actions taken, the message and the duration. The **Log** button on a rule shows its latest 100 runs (`?log={id}`), updating live. Only the latest 500 runs per rule are kept (`Automation:MaxLogEntriesPerRule`).
 - **Webhook action:** POSTs JSON (`event: "automation"`, `rule`, `project`, `issue`, `pullRequest`, `pipeline`, `initiator`) through the project webhooks' `WebhookSender`, with the same SSRF guard, 10 s timeout and no redirects. It is unsigned, and the URL is validated when the rule is saved.
 - **Audit:** `automation.rule_created`, `automation.rule_updated`, `automation.rule_enabled`, `automation.rule_disabled`, `automation.rule_deleted`.
 
-Code: `Services/Automation/` (`AutomationEngine` for triggers, runs and the scheduler; `AutomationActions`; `AutomationConditions`; `AutomationService` for management, templates and manual runs; `AutomationQueue` / `AutomationWorker`; `RuleDefinition`; `SmartValues`; `AutomationSchedule`), `Services/NotificationService.Automation.cs`, `Components/Automation/`, `Components/Pages/Projects/AutomationSettings.razor`. Schema: `AutomationRule` (the trigger options, conditions and actions are JSON in `Definition`, with statuses and labels by name so group rules work across projects) and `AutomationRun` (migration `Automation`). Tests: `tests/GitBench.Tests/AutomationTests.cs`.
+Code: `Services/Automation/` (`AutomationEngine` for triggers, runs and the scheduler; `AutomationActions`; `AutomationConditions`; `AutomationService` for management, templates and manual runs; `AutomationQueue` / `AutomationWorker`; `RuleDefinition`; `SmartValues`; `AutomationSchedule`), `Services/NotificationService.Automation.cs`, `Components/Automation/`, `Components/Pages/Projects/AutomationSettings.razor`. Schema: `AutomationRule` (the trigger options, conditions and actions are JSON in `Definition`, with statuses and labels by name so group rules work across projects) and `AutomationRun` (migration `Automation`). Tests: `tests/ByteBench.Tests/AutomationTests.cs`.
 
 ## User admin, two-factor sign-in & CI secrets
 
@@ -1511,14 +1511,14 @@ Site admins manage accounts at `/admin/users` (sidebar **👥 Users**, next to t
 
   | Action | Effect | Audit event |
   |---|---|---|
-  | Make admin / Revoke admin | Sets `User.IsAdmin`. GitBench refuses to revoke the last admin, so you can't lock everyone out | `admin.user_admin_granted` / `admin.user_admin_revoked` |
+  | Make admin / Revoke admin | Sets `User.IsAdmin`. ByteBench refuses to revoke the last admin, so you can't lock everyone out | `admin.user_admin_granted` / `admin.user_admin_revoked` |
   | Lock | Identity lockout for 1 hour, 1 day, 7 days or until unlocked, and signs the user out everywhere | `admin.user_locked` |
   | Unlock / Reactivate | Clears the lockout, the failed sign-in counter and the deactivation | `admin.user_unlocked` |
   | Sign out | Rotates the security stamp: every browser session ends within a minute. Access tokens keep working | `admin.user_signed_out` |
   | Reset 2FA | For a user who lost their device: turns 2FA off, replaces the authenticator key and deletes the recovery codes | `admin.user_2fa_reset` |
   | Deactivate | Locks the account indefinitely (`User.DeactivatedAt`), signs it out and revokes every personal access token. Reactivating doesn't bring the tokens back | `admin.user_deactivated` |
 
-- You can't lock or deactivate yourself. The GitBench AI bot account is listed but can't be changed.
+- You can't lock or deactivate yourself. The ByteBench AI bot account is listed but can't be changed.
 - **Locked and deactivated accounts can't use tokens either:** `AccessTokenService` refuses tokens of locked or deactivated users (REST API Bearer and git), and git's Basic auth checks lockout before the password or token.
 - **How fast it applies:** the cookie's security stamp is re-checked every minute (`SecurityStampValidatorOptions.ValidationInterval`), and open Blazor circuits re-check it every minute too (`IdentityRevalidatingAuthenticationStateProvider`).
 
@@ -1526,7 +1526,7 @@ Site admins manage accounts at `/admin/users` (sidebar **👥 Users**, next to t
 
 Users turn it on at `/account/two-factor` (**Profile → Two-factor sign-in**). It uses ASP.NET Core Identity's authenticator support (RFC 6238 time-based codes, 6 digits, 30 seconds).
 
-- **Set up:** the page shows a QR code (the `otpauth://` URI drawn as an inline SVG with [QRCoder](https://github.com/codebude/QRCoder)) and the key for manual entry. Enter a current code to turn 2FA on. GitBench then shows **10 recovery codes once**; each works one time.
+- **Set up:** the page shows a QR code (the `otpauth://` URI drawn as an inline SVG with [QRCoder](https://github.com/codebude/QRCoder)) and the key for manual entry. Enter a current code to turn 2FA on. ByteBench then shows **10 recovery codes once**; each works one time.
 - **Manage:** see how many recovery codes are left, generate new ones (the old ones stop working), or turn 2FA off (asks for your password; the key and recovery codes are discarded).
 - **Signing in:** after a correct password, `/account/login-2fa` asks for the authenticator code, with **Remember this device** (14 days, Identity's two-factor remember-me cookie), or a recovery code (`?mode=recovery`). Wrong codes count toward the normal lockout (5 failures, 5 minutes).
 - **Git and the API:** personal access tokens keep working. Git Basic auth with the account **password** is refused for 2FA users with `401 Password authentication is not supported for accounts with two-factor sign-in. Use a personal access token…` (only after the password was checked, so it doesn't reveal who has 2FA).
@@ -1539,35 +1539,35 @@ Pipelines can get secrets (deploy keys, API tokens, …) as environment variable
 
 - **Where:** per project in the **CI variables** card at `/p/{KEY}/settings` (every repository in the project gets them), and per repository at `/p/{KEY}/repos/{slug}/settings/ci-variables` (**Settings → CI variables**). A repository variable overrides a project variable with the same name.
 - **Who:** Maintainers and Owners (`ManageRepositories`).
-- **Fields:** a name (letters, digits and `_`, not starting with a digit; `CI` and `GITBENCH_*` are reserved), a single-line value (up to 10,000 characters), and **Protected**.
-- **Storage:** values are encrypted with ASP.NET Core Data Protection (purpose `GitBench.CiVariables.v1`) and never shown again. The list only says "updated *date* by *user*". Editing with an empty value keeps the stored value. If the Data Protection keys are lost, the variable is skipped with a note in the step log, and must be saved again.
+- **Fields:** a name (letters, digits and `_`, not starting with a digit; `CI` and `BYTEBENCH_*` are reserved), a single-line value (up to 10,000 characters), and **Protected**.
+- **Storage:** values are encrypted with ASP.NET Core Data Protection (purpose `ByteBench.CiVariables.v1`) and never shown again. The list only says "updated *date* by *user*". Editing with an empty value keeps the stored value. If the Data Protection keys are lost, the variable is skipped with a note in the step log, and must be saved again.
 - **Protected variables** only reach pipelines whose branch matches a [branch protection rule](#branch-protection-reviewers--pr-templates). Pull request pipelines run on the PR's source branch, so a PR from an unprotected branch never sees them. The step log says how many protected variables were held back.
-- **Injection:** for each step GitBench writes the variables to a temp file (mode 600, in a mode-700 folder under the CI work directory, outside the mounted workspace) and passes it with `docker run --env-file`. The file is deleted when the step ends (and the folder at startup). Values never appear on a command line. The step log lists the variable names it got.
+- **Injection:** for each step ByteBench writes the variables to a temp file (mode 600, in a mode-700 folder under the CI work directory, outside the mounted workspace) and passes it with `docker run --env-file`. The file is deleted when the step ends (and the folder at startup). Values never appear on a command line. The step log lists the variable names it got.
 - **Masking:** every value at least 4 characters long is replaced with `***` in step logs. The whole log is masked each time it's stored (about once a second), not each chunk, so a value that arrives in several pieces is still masked, and a tail that looks like the start of a value is hidden until the rest arrives.
 - **Audit events:** `ci_variable.created`, `ci_variable.updated` and `ci_variable.deleted` with the name, scope and protected flag, never the value (`valueChanged` says whether the value was replaced).
-- **Limits of masking:** anyone who can change `.gitbench-ci.yml` on a branch that gets a variable (Developer+ for unprotected variables) can still leak it, e.g. by base64-encoding it or sending it over the network. Use **Protected** for anything sensitive, and protect the branches that get it so changes go through review.
+- **Limits of masking:** anyone who can change `.bytebench-ci.yml` on a branch that gets a variable (Developer+ for unprotected variables) can still leak it, e.g. by base64-encoding it or sending it over the network. Use **Protected** for anything sensitive, and protect the branches that get it so changes go through review.
 
 ## Custom fields, components, versions, templates & estimates
 
-Code: `Services/Fields/` (`CustomFieldRules` pure validation/parsing, `CustomFieldService`, `ComponentVersionService`, `IssueTemplateService`, `EstimateService`, `Duration`), UI in `Components/Fields/`, API in `Api/FieldEndpoints.cs`, demo data in `Data/FieldsSeeder.cs`. Tests: `tests/GitBench.Tests/FieldsTests.cs`.
+Code: `Services/Fields/` (`CustomFieldRules` pure validation/parsing, `CustomFieldService`, `ComponentVersionService`, `IssueTemplateService`, `EstimateService`, `Duration`), UI in `Components/Fields/`, API in `Api/FieldEndpoints.cs`, demo data in `Data/FieldsSeeder.cs`. Tests: `tests/ByteBench.Tests/FieldsTests.cs`.
 
 - **Settings:** `/p/{KEY}/settings/fields` (Maintainer+, linked from Settings) has tabs for custom fields, components, issue templates and estimates (hours per day). Definitions are audited (`custom_field.*`, `component.*`, `version.*`).
 - **Custom fields:** types text, long text, number, date, single select, multi select, user, checkbox and URL. Each has a key (`severity`, used by the API, webhooks and filters), a required flag, a default, optional issue types it applies to, and a display order. Values live in `CustomFieldValues` (EAV with typed columns: `TextValue`, `NumberValue`, `DateValue`, `UserId`, `BoolValue`; one row per option for multi select). `CustomFieldRules.Parse` checks every value (options, numbers, yyyy-MM-dd dates, http(s) URLs, users who can see the project); required fields must have a value on the issue types they apply to (new issues get the default). A field's type can't change once issues have values for it. Fields appear in the issue sidebar (saved on change, recorded in the activity: "changed **Severity** to **Critical**"), on the new-issue form and as optional list columns.
 - **Components** (name, description, lead, default assignee) and **versions** (name, description, start and release dates, released flag) are multi-valued on issues: components, fix versions and affects versions, with pickers on the issue page and the new-issue form. A new issue with no assignee gets its first component's default assignee. A version whose name matches a published release tag (`1.0` or `v1.0`) in one of the project's repositories links to that release.
 - **Versions page** (`/p/{KEY}/versions`, sidebar): unreleased versions first, each with the done/total progress of its fix-version issues, story points, the linked release and the issue list; Maintainers create, edit, release and delete versions there.
 - **Issue list:** filters for component, fix version, affects version (each also "none") and one custom field (`cf=key:value`; `key:` = no value), plus a **columns** menu (custom fields, components, fix versions, remaining estimate). They are `IssueFilter` properties (`componentId`, `fixVersionId`, `affectsVersionId`, `cf`, `columns`), so URLs and saved filters keep them.
-- **GQL:** `component`, `fixVersion`, `affectsVersion`, `originalEstimate`, `remainingEstimate`, `wbs` and `cf[key]` (see [GQL](#gitbench-query-language-gql)).
-- **Issue templates:** name, issue type, title prefix, Markdown body and default labels. The new-issue form has a **Template** picker (`?template=t{id}` preselects one). Markdown files in `.gitbench/issue_templates/*.md` on the default branch of the project's first repository are offered too, with optional front matter (`name`, `title`, `labels`, `type`).
-- **Estimates:** an original and a remaining estimate per issue, plain planning fields next to story points, entered like `2h 30m`, `1d`, `1.5h` or `1w` (a day is the project's hours per day, default 8; a week is 5 days; a bare number is hours). Setting only the original estimate on an issue without a remaining one starts the remaining one at the same value; after that each is edited on its own. Changes are recorded in the issue's activity. GitBench doesn't record time spent: see [Workbench (time & cost)](#workbench-time--cost).
+- **GQL:** `component`, `fixVersion`, `affectsVersion`, `originalEstimate`, `remainingEstimate`, `wbs` and `cf[key]` (see [GQL](#bytebench-query-language-gql)).
+- **Issue templates:** name, issue type, title prefix, Markdown body and default labels. The new-issue form has a **Template** picker (`?template=t{id}` preselects one). Markdown files in `.bytebench/issue_templates/*.md` on the default branch of the project's first repository are offered too, with optional front matter (`name`, `title`, `labels`, `type`).
+- **Estimates:** an original and a remaining estimate per issue, plain planning fields next to story points, entered like `2h 30m`, `1d`, `1.5h` or `1w` (a day is the project's hours per day, default 8; a week is 5 days; a bare number is hours). Setting only the original estimate on an issue without a remaining one starts the remaining one at the same value; after that each is edited on its own. Changes are recorded in the issue's activity. ByteBench doesn't record time spent: see [Workbench (time & cost)](#workbench-time--cost).
 - **API:** issues carry `customFields` (by key: string, number, bool, list of strings, `yyyy-MM-dd`, or username; null when unset), `components`, `fixVersions`, `affectsVersions`, `estimates` (`originalEstimate`, `remainingEstimate` as text and in minutes) and `workbenchWbs` (the effective charge code; `workbenchWbsOverride` is true when it's the issue's own). `POST …/issues` and `PATCH …/issues/{n}` accept `customFields` (PATCH changes only the keys sent; null clears), `components`, `fixVersions`, `affectsVersions` (names; replace the set), `originalEstimate`/`remainingEstimate` (durations) and `workbenchWbs` (the issue's override; null clears it). `GET …/issues` filters by `component`, `fixVersion`, `affectsVersion` (name or `none`) and `cf=key:value`. Also `GET /projects/{key}/fields`, `/components`, `/versions`, `/issue-templates` and `GET`/`PUT /projects/{key}/workbench`. Webhook issue payloads include the same fields.
 - **For other features:** read fields with `CustomFieldService.GetFieldsAsync(projectId)` and values with `GetValuesAsync(issueIds)` (issue id → field id → `FieldValue`), and format them with `CustomFieldRules.ToText`/`ToJson`. `IssueFilter.ApplyCustomField(query, key, value)` filters an `IQueryable<Issue>` by a field.
 - **Seed:** WEB gets six custom fields (Severity, required for bugs with default Major; Affected browsers; Customer; QA reviewer; Spec; Regression), the components Frontend, API and Infrastructure, versions 0.8 (released), 0.9 and 1.0, two templates (Bug report, User story) and estimates on several issues.
 
 ## Workbench (time & cost)
 
-GitBench doesn't track time. Hours are recorded in **Workbench**, the company's ERP, on the employee's timesheet. That timesheet is the cost record: hours are charged to a charge code (a WBS element), certified and approved there, and flow into labour cost, billing and the audit trail that DCAA-compliant timekeeping needs (daily entry, one system of record, corrections with a reason). Keeping a second set of hours in GitBench would create a record that disagrees with the books, so GitBench only links to Workbench and tells people which charge code to use.
+ByteBench doesn't track time. Hours are recorded in **Workbench**, the company's ERP, on the employee's timesheet. That timesheet is the cost record: hours are charged to a charge code (a WBS element), certified and approved there, and flow into labour cost, billing and the audit trail that DCAA-compliant timekeeping needs (daily entry, one system of record, corrections with a reason). Keeping a second set of hours in ByteBench would create a record that disagrees with the books, so ByteBench only links to Workbench and tells people which charge code to use.
 
-Code: `Services/Workbench/WorkbenchService.cs`, `Components/Workbench/` (`WorkbenchSettings` on project Settings, `WorkbenchIssuePanel` on the issue page), API in `Api/FieldEndpoints.cs`, GQL in `Services/Fields/IssueFieldQueryFields.cs`. Tests: `tests/GitBench.Tests/WorkbenchTests.cs`.
+Code: `Services/Workbench/WorkbenchService.cs`, `Components/Workbench/` (`WorkbenchSettings` on project Settings, `WorkbenchIssuePanel` on the issue page), API in `Api/FieldEndpoints.cs`, GQL in `Services/Fields/IssueFieldQueryFields.cs`. Tests: `tests/ByteBench.Tests/WorkbenchTests.cs`.
 
 - **Site config:** `Workbench:BaseUrl`, e.g. `https://workbench.example.com` (or `Workbench__BaseUrl`). Optional; while it is unset (or not an absolute http(s) URL) nothing about Workbench shows.
 - **Project setting:** project **Settings → Workbench (time & cost)** (Maintainer+) sets the **Workbench charge code (WBS)**, e.g. `1.2.3`, and an optional **Workbench project code**. Codes are up to 50 letters, digits, `.`, `-`, `_` or `/`. Changes are audited as `project.workbench_changed` with the old and new values.
@@ -1605,7 +1605,7 @@ Code: `Services/Explore/` (`StarService`, `ExploreService`, `UserActivityService
 
 ### Keyboard shortcuts
 
-Press `?` for the list. Shortcuts are ignored while you type in an input, textarea, select or contenteditable, and while a dialog is open. The switch in the `?` dialog turns them off for this browser (`localStorage` key `gitbench-shortcuts`).
+Press `?` for the list. Shortcuts are ignored while you type in an input, textarea, select or contenteditable, and while a dialog is open. The switch in the `?` dialog turns them off for this browser (`localStorage` key `bytebench-shortcuts`).
 
 | Keys | Action |
 |---|---|
@@ -1673,13 +1673,13 @@ Gist-style snippets: a title, an optional Markdown description, a visibility and
 
 ## Production
 
-GitBench is one ASP.NET Core process with a database (SQLite by default, or [PostgreSQL](#postgresql)) and a few folders: repositories, attachments (which also hold release assets), packages, LFS objects, pages and the Data Protection key ring. Run it as a single instance: the in-process queues (CI, webhooks, AI review) aren't built for several replicas. This section covers the Docker image, configuration, PostgreSQL, [backup and restore](#backup--restore), the [system page](#the-system-page) and a [production checklist](#production-checklist).
+ByteBench is one ASP.NET Core process with a database (SQLite by default, or [PostgreSQL](#postgresql)) and a few folders: repositories, attachments (which also hold release assets), packages, LFS objects, pages and the Data Protection key ring. Run it as a single instance: the in-process queues (CI, webhooks, AI review) aren't built for several replicas. This section covers the Docker image, configuration, PostgreSQL, [backup and restore](#backup--restore), the [system page](#the-system-page) and a [production checklist](#production-checklist).
 
 ### Docker
 
 ```bash
 docker compose up -d --build        # builds the image from the Dockerfile and starts it on 127.0.0.1:8080
-docker compose logs -f gitbench     # JSON logs
+docker compose logs -f bytebench     # JSON logs
 ```
 
 - **Image.** The `Dockerfile` is multi-stage: an SDK build, then an `aspnet:10.0` runtime with `git`, `openssh-client`, `postgresql-client`, `curl` and `sqlite3`. It runs as the non-root `app` user (uid 1654). State lives in eight volumes: `/data/db` (SQLite), `/data/repos`, `/data/attachments`, `/data/packages`, `/data/lfs`, `/data/pages`, `/data/keys` (key ring and SSH host key) and `/data/backups`.
@@ -1689,7 +1689,7 @@ docker compose logs -f gitbench     # JSON logs
   - `Ci__Enabled=false`
   - `Security__HttpsRedirection=false`, because TLS ends at the proxy
 - **First admin.** Register your account in the UI, then restart once with `Bootstrap__AdminUsers=<your username>`; separate several usernames with commas. The setting only ever promotes users, so it's fine to leave it set.
-- **TLS.** Production cookies are `Secure`, so serve GitBench over HTTPS. `docker-compose.yml` has a commented-out Caddy service that gets certificates automatically: uncomment it, set the domain, and remove the `ports:` mapping of `gitbench`. For a quick trial over plain HTTP, set `Security__SecureCookies=false` instead. GitBench logs a warning when it sees plain HTTP with Secure cookies on.
+- **TLS.** Production cookies are `Secure`, so serve ByteBench over HTTPS. `docker-compose.yml` has a commented-out Caddy service that gets certificates automatically: uncomment it, set the domain, and remove the `ports:` mapping of `bytebench`. For a quick trial over plain HTTP, set `Security__SecureCookies=false` instead. ByteBench logs a warning when it sees plain HTTP with Secure cookies on.
 - **Health checks.** The image's `HEALTHCHECK` and compose call `/health/ready` (database, storage folders and, with CI on, Docker).
 - **Git over SSH.** The image turns the SSH server on (`Ssh__Enabled=true`) on port 2222 (`EXPOSE 2222`); its host key lives in the `/data/keys` volume, so it survives upgrades. `docker-compose.yml` publishes it as `2222:2222`. To offer the usual `git@host:KEY/slug.git` URLs, map the host's port 22 instead (`"22:2222"`, after moving the host's own sshd to another port) and set `Ssh__PublicPort=22`; set `Ssh__PublicHost` if the SSH host name differs from the web one. The TLS proxy doesn't carry SSH: publish the port directly or use a TCP (layer 4) proxy.
 
@@ -1700,8 +1700,8 @@ docker compose logs -f gitbench     # JSON logs
    - Set `Ci__WorkDirectory` to a folder mounted at the **same path** on the host and in the container, because the daemon mounts workspaces by host path.
    - The socket's group must let uid 1654 use it (`group_add`).
    - **Security:** the Docker socket gives root on the host. Anyone who can push can run any image, so every Developer effectively becomes root on the host. Only do this on a dedicated machine where you trust everyone who can push.
-2. **Run GitBench on the host** (`dotnet GitBench.dll` under systemd or similar) with Docker installed. The trust caveat is the same, without the extra container layer. Rootless Docker reduces the risk.
-3. **Use a separate Docker host.** Point the CLI at a remote daemon with `DOCKER_HOST=tcp://ci-host:2376`, using TLS (`DOCKER_TLS_VERIFY=1` and `DOCKER_CERT_PATH`). Builds then can't touch the GitBench host. `Ci:WorkDirectory` must be on storage the CI host sees at the same path. This is the safest option.
+2. **Run ByteBench on the host** (`dotnet ByteBench.dll` under systemd or similar) with Docker installed. The trust caveat is the same, without the extra container layer. Rootless Docker reduces the risk.
+3. **Use a separate Docker host.** Point the CLI at a remote daemon with `DOCKER_HOST=tcp://ci-host:2376`, using TLS (`DOCKER_TLS_VERIFY=1` and `DOCKER_CERT_PATH`). Builds then can't touch the ByteBench host. `Ci:WorkDirectory` must be on storage the CI host sees at the same path. This is the safest option.
 
 Whichever you choose, keep `Ci:Network=none` unless jobs need the network (see [CI pipelines](#ci-pipelines)).
 
@@ -1717,9 +1717,9 @@ Settings come from these sources; later ones override earlier ones:
 | Key | Default | Meaning |
 |---|---|---|
 | `Database:Provider` | `Sqlite` | `Sqlite` or `Postgres` (see [PostgreSQL](#postgresql)) |
-| `ConnectionStrings:Default` | `Data Source=gitbench.db` | SQLite file, or the Npgsql connection string when the provider is `Postgres` (required then) |
+| `ConnectionStrings:Default` | `Data Source=bytebench.db` | SQLite file, or the Npgsql connection string when the provider is `Postgres` (required then) |
 | `PublicBaseUrl` | learned from the first request | Absolute site URL for links in API responses and webhooks. **Set it in production** |
-| `AllowedHosts` | `*` | Host header filter (e.g. `gitbench.example.com`) |
+| `AllowedHosts` | `*` | Host header filter (e.g. `bytebench.example.com`) |
 | `Seed:DemoData` | `true` in Development, else `false` | Seed demo users, projects and repositories into an empty database |
 | `Bootstrap:AdminUsers` | none | Usernames made site admins at startup |
 | `Git:RepositoryRoot` | `{ContentRoot}/repos` | Bare repositories |
@@ -1731,7 +1731,7 @@ Settings come from these sources; later ones override earlier ones:
 | `Packages:Root` / `Pages:Root` | `{ContentRoot}/packages` / `{ContentRoot}/pages` | Package registry blobs; static pages |
 | `Backup:*`, `Retention:WebhookDeliveryDays` | see [Backup & restore](#backup--restore) and the [checklist](#production-checklist) | Scheduled backups and retention |
 | `DataProtection:KeysPath` | `{ContentRoot}/keys` | Key ring folder (created with mode 700). Back it up and keep it private |
-| `DataProtection:ApplicationName` | `GitBench` | Keep it the same across deployments that share keys |
+| `DataProtection:ApplicationName` | `ByteBench` | Keep it the same across deployments that share keys |
 | `DataProtection:CertificatePath` / `CertificatePassword` | none | A `.pfx` that encrypts the keys at rest. Recommended on Linux, where the keys are otherwise stored as plain XML |
 | `DataProtection:DecryptionCertificatePaths` | none | Older `.pfx` files that are still accepted for reading keys after a certificate rotation |
 | `ReverseProxy:Enabled` | `false` | Honour `X-Forwarded-For` and `X-Forwarded-Proto` from trusted proxies |
@@ -1802,7 +1802,7 @@ Settings come from these sources; later ones override earlier ones:
 
 ### Reverse proxy
 
-- **TLS and trust.** Terminate TLS at the proxy and forward to GitBench's HTTP port. Set `ReverseProxy__Enabled=true` and put the proxy's address in `KnownProxies` or `KnownNetworks`. The audit log, rate limits and git logs then see the real client IP, and cookies, HSTS and generated links see `https`. Requests from untrusted addresses keep their own IP, so clients can't spoof it with headers.
+- **TLS and trust.** Terminate TLS at the proxy and forward to ByteBench's HTTP port. Set `ReverseProxy__Enabled=true` and put the proxy's address in `KnownProxies` or `KnownNetworks`. The audit log, rate limits and git logs then see the real client IP, and cookies, HSTS and generated links see `https`. Requests from untrusted addresses keep their own IP, so clients can't spoof it with headers.
 - **Headers.** Pass the original `Host` header. Caddy does this by default. With nginx, set `proxy_set_header Host $host;`, plus `X-Forwarded-For $proxy_add_x_forwarded_for` and `X-Forwarded-Proto $scheme`.
 - **WebSockets.** Blazor needs them on `/_blazor`. With nginx, use `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;` and a long `proxy_read_timeout`.
 - **Large and long requests.** Git pushes and uploads need large request bodies and long timeouts. With nginx, set `client_max_body_size 0; proxy_request_buffering off; proxy_buffering off;` for `/git/`.
@@ -1814,7 +1814,7 @@ SQLite is the default and is fine for one server. Set `Database:Provider=Postgre
 
 ```bash
 Database__Provider=Postgres
-ConnectionStrings__Default="Host=db;Database=gitbench;Username=gitbench;Password=…"
+ConnectionStrings__Default="Host=db;Database=bytebench;Username=bytebench;Password=…"
 ```
 
 - **Start-up.** Migrations run at start, as with SQLite, and create the database if the role may `CREATE DATABASE`. `docker-compose.yml` has an optional `postgres:17-alpine` service (`docker compose --profile postgres up -d`) and the matching environment lines.
@@ -1831,11 +1831,11 @@ ConnectionStrings__Default="Host=db;Database=gitbench;Username=gitbench;Password
   - `DateTime` is stored as `timestamptz` and read back as UTC.
   - Three raw-SQL fragments in the model (two index filters and a check constraint) are restated with quoted identifiers and real booleans.
   - GQL `ORDER BY` puts empty values first ascending and last descending on both databases (PostgreSQL treats `NULL` as the largest value).
-- **Test suite.** Set `GITBENCH_TEST_POSTGRES` to a connection string for a server that may create databases and every test fixture gets its own throw-away database there:
+- **Test suite.** Set `BYTEBENCH_TEST_POSTGRES` to a connection string for a server that may create databases and every test fixture gets its own throw-away database there:
 
   ```bash
   docker run -d --name pg -e POSTGRES_PASSWORD=test -p 55432:5432 postgres:17-alpine
-  GITBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=test;Database=postgres" dotnet test
+  BYTEBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=test;Database=postgres" dotnet test
   ```
 
   The whole suite passes on PostgreSQL 17 except that the backup round-trip tests return early there (they need the PostgreSQL client tools; the Postgres backup and restore was checked by hand, see below). Interactive pages that build their form model after an `await` need a `null` guard, because SQLite answers synchronously and Npgsql doesn't (the profile page had the bug).
@@ -1844,43 +1844,43 @@ ConnectionStrings__Default="Host=db;Database=gitbench;Username=gitbench;Password
   - Backups need `pg_dump`/`pg_restore` (the Docker image has them) and only restore into the same provider.
   - Text sort order follows the database's collation (SQLite sorts by bytes). List pages that sort by a nullable column outside GQL may place empty values differently.
   - Connection pooling is Npgsql's (`Maximum Pool Size`, default 100); size it for your PostgreSQL `max_connections`.
-  - Failover, replicas and load were not tested. GitBench is still a single instance: its queues are in-process.
+  - Failover, replicas and load were not tested. ByteBench is still a single instance: its queues are in-process.
 
 ### Backup & restore
 
-One archive holds everything needed to rebuild an installation: `gitbench-backup-<UTC time>.tar.gz`, plus a `.sha256` file with the archive's own hash.
+One archive holds everything needed to rebuild an installation: `bytebench-backup-<UTC time>.tar.gz`, plus a `.sha256` file with the archive's own hash.
 
 | Content | Where it comes from |
 |---|---|
-| `db/gitbench.db` or `db/postgres.dump` | SQLite online backup API (a consistent copy while running, no `-wal`/`-shm`), or `pg_dump --format=custom` |
+| `db/bytebench.db` or `db/postgres.dump` | SQLite online backup API (a consistent copy while running, no `-wal`/`-shm`), or `pg_dump --format=custom` |
 | `repos/`, `attachments/`, `packages/`, `lfs/`, `pages/` | `Git:RepositoryRoot`, `Attachments:Root`, `Packages:Root`, `Lfs:Root`, `Pages:Root` |
 | `keys/` | `DataProtection:KeysPath`: the key ring and the SSH host key (`Backup:IncludeKeys`, default on) |
 | `ci-artifacts/` | off by default (`Backup:IncludeCiArtifacts`) |
-| `manifest.json` (last entry) | format, GitBench version, provider, newest migration, and the size and SHA-256 of every file |
+| `manifest.json` (last entry) | format, ByteBench version, provider, newest migration, and the size and SHA-256 of every file |
 
 The archive stores folder *names*, never absolute paths, so it restores onto any layout. The database is copied first and the files afterwards, so every commit the database mentions is in the repositories. A push that lands during the copy isn't in the archive; git's `*.lock` files, symbolic links and the backup folder itself are skipped.
 
-**Command line** (same configuration and environment as the server; run `dotnet GitBench.dll backup --help`):
+**Command line** (same configuration and environment as the server; run `dotnet ByteBench.dll backup --help`):
 
 ```bash
-dotnet GitBench.dll backup /srv/backups --keep 14      # safe while GitBench runs
-dotnet GitBench.dll restore /srv/backups/gitbench-backup-20261119-023000.tar.gz [--force]
+dotnet ByteBench.dll backup /srv/backups --keep 14      # safe while ByteBench runs
+dotnet ByteBench.dll restore /srv/backups/bytebench-backup-20261119-023000.tar.gz [--force]
 # Docker
-docker compose exec gitbench dotnet GitBench.dll backup
-docker compose stop gitbench
-docker compose run --rm gitbench restore /data/backups/gitbench-backup-….tar.gz
-docker compose start gitbench
+docker compose exec bytebench dotnet ByteBench.dll backup
+docker compose stop bytebench
+docker compose run --rm bytebench restore /data/backups/bytebench-backup-….tar.gz
+docker compose start bytebench
 ```
 
 **Restore checks everything before it touches anything.** The archive is unpacked into a staging folder (`Backup:StagingDirectory`, default the temp folder) and verified:
 
 1. entries are plain files and folders under `db/` or a known section, with no `..`, absolute paths or links;
 2. `manifest.json` is present, of a known format, and from the same database provider;
-3. the backup's newest migration isn't newer than this build's (a backup from a newer GitBench is refused: upgrade first; older backups are fine and migrate at start);
+3. the backup's newest migration isn't newer than this build's (a backup from a newer ByteBench is refused: upgrade first; older backups are fine and migrate at start);
 4. every file matches the manifest's size and SHA-256, and nothing is missing or extra;
 5. the installation is empty: no users or projects in the database and nothing in the storage folders. Otherwise it **refuses** unless `--force` is given, which replaces the database and the contents of each folder in the archive. A database that was only just migrated, with no users or projects, counts as empty.
 
-Stop GitBench before restoring. For Postgres the database is created if it doesn't exist, and `pg_restore --clean --if-exists` replaces its tables. Exit code 0 means success, 1 a backup or restore problem, 2 bad arguments.
+Stop ByteBench before restoring. For Postgres the database is created if it doesn't exist, and `pg_restore --clean --if-exists` replaces its tables. Exit code 0 means success, 1 a backup or restore problem, 2 bad arguments.
 
 **Scheduled backups** run inside the server when `Backup:Enabled=true`; `/admin/backups` has "Back up now", download links and delete, and `/admin/system` shows the last result:
 
@@ -1889,7 +1889,7 @@ Stop GitBench before restoring. For Postgres the database is created if it doesn
 | `Backup:Enabled` | `false` | Run backups on a schedule |
 | `Backup:Directory` | `{ContentRoot}/backups` (`/data/backups` in Docker) | Where archives go. Put it on another disk or share |
 | `Backup:StartTimeUtc` / `Backup:IntervalHours` | `02:30` / `24` | The slots are the start time plus whole intervals |
-| `Backup:KeepLast` / `Backup:KeepDays` | `7` / `0` | Retention: keep the newest N, and delete archives older than N days (0 = off). The newest archive is never deleted. Only `gitbench-backup-*.tar.gz` files are touched |
+| `Backup:KeepLast` / `Backup:KeepDays` | `7` / `0` | Retention: keep the newest N, and delete archives older than N days (0 = off). The newest archive is never deleted. Only `bytebench-backup-*.tar.gz` files are touched |
 | `Backup:IncludeKeys` / `Backup:IncludeCiArtifacts` | `true` / `false` | Optional sections |
 | `Backup:PgDumpPath` / `Backup:PgRestorePath` | `pg_dump` / `pg_restore` | PostgreSQL client tools (must be as new as the server) |
 | `Backup:StagingDirectory` | temp folder | Unpacking area for a restore (needs room for the whole archive) |
@@ -1914,17 +1914,19 @@ The CLI applies `Backup:KeepLast` and `KeepDays` too when it writes to the defau
 
 The same review runs at start-up (warnings and problems go to the log) and is listed on `/admin/system`:
 
-- **TLS and the proxy.** Terminate TLS at a reverse proxy and set `PublicBaseUrl` to the public `https://` URL, `ReverseProxy:Enabled=true` and the proxy in `ReverseProxy:KnownProxies` or `KnownNetworks`. Only then does GitBench see `https`, send HSTS, set `Secure` cookies and log real client addresses. In Production, cookies are `Secure`-only unless `Security:SecureCookies=false`, HSTS is on HTTPS responses (`Security:HstsMaxAgeDays`, default 365) and `Security:HttpsRedirection` redirects plain HTTP (the Docker image turns the redirect off because the proxy does it).
-- **Data Protection keys.** `DataProtection:KeysPath` must be a persistent, backed-up folder (a volume in Docker; the container user is uid 1654). If it isn't set in Production GitBench warns, and if it isn't writable GitBench refuses to start, because every restart would otherwise sign everyone out and lose encrypted webhook and CI secrets. Add `DataProtection:CertificatePath` to encrypt the keys at rest.
+- **TLS and the proxy.** Terminate TLS at a reverse proxy and set `PublicBaseUrl` to the public `https://` URL, `ReverseProxy:Enabled=true` and the proxy in `ReverseProxy:KnownProxies` or `KnownNetworks`. Only then does ByteBench see `https`, send HSTS, set `Secure` cookies and log real client addresses. In Production, cookies are `Secure`-only unless `Security:SecureCookies=false`, HSTS is on HTTPS responses (`Security:HstsMaxAgeDays`, default 365) and `Security:HttpsRedirection` redirects plain HTTP (the Docker image turns the redirect off because the proxy does it).
+- **Data Protection keys.** `DataProtection:KeysPath` must be a persistent, backed-up folder (a volume in Docker; the container user is uid 1654). If it isn't set in Production ByteBench warns, and if it isn't writable ByteBench refuses to start, because every restart would otherwise sign everyone out and lose encrypted webhook and CI secrets. Add `DataProtection:CertificatePath` to encrypt the keys at rest.
 - **Demo data off.** `Seed:DemoData` is `false` outside Development; turning it on in Production is flagged as a problem (the demo users share a published password).
 - **Backups on**, restore tested (see above).
-- **Logs.** Production logs are JSON on stdout (`appsettings.Production.json`). GitBench doesn't rotate them: the Docker json-file driver does (`max-size` and `max-file` in `docker-compose.yml`), journald and Kubernetes have their own limits. Keep `Logging:LogLevel:Default` at `Information`. Data that grows inside the database has retention settings: `Audit:RetentionDays` (default 365) and `Retention:WebhookDeliveryDays` (default 30, `0` keeps them forever).
+- **Logs.** Production logs are JSON on stdout (`appsettings.Production.json`). ByteBench doesn't rotate them: the Docker json-file driver does (`max-size` and `max-file` in `docker-compose.yml`), journald and Kubernetes have their own limits. Keep `Logging:LogLevel:Default` at `Information`. Data that grows inside the database has retention settings: `Audit:RetentionDays` (default 365) and `Retention:WebhookDeliveryDays` (default 30, `0` keeps them forever).
 - **Rate limits on**, `AllowedHosts` set to your host name, and a single instance of the app.
 - **Docker image.** Multi-stage build, non-root user (uid 1654), `git` and `openssh-client` (ssh mirrors), `postgresql-client` (backups on Postgres) and `curl`, with the health check on `/health/ready`.
 
 ### Upgrades
 
-1. **Back up first**: `docker compose exec gitbench dotnet GitBench.dll backup` (see [Backup & restore](#backup--restore)), or let the schedule do it.
+> **Renamed from GitBench.** The product is now ByteBench. Existing installs keep working: the old `gitbench.db` is used when it is the only database file present, `.gitbench-ci.yml` and `.gitbench/` are still read, jobs get both `BYTEBENCH_*` and `GITBENCH_*` variables, and the built-in bot accounts are renamed by a migration. Webhook and SDK headers changed from `X-GitBench-*` to `X-ByteBench-*`. Details: the documentation site, Production → Upgrading.
+
+1. **Back up first**: `docker compose exec bytebench dotnet ByteBench.dll backup` (see [Backup & restore](#backup--restore)), or let the schedule do it.
 2. **Deploy the new version**: `git pull && docker compose up -d --build`, or replace the published files and restart.
 3. **Migrations run automatically at startup.** Watch the log for `Applying migration`, and `/admin/system` for pending migrations. If startup fails, stop it, restore the backup (`restore --force`) and run the previous version. A backup made by a newer version is refused by an older one.
 

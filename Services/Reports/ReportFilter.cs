@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <summary>
 /// What the delivery reports cover. Dates are UTC calendar days, both inclusive; the default range is the last 90 days.

@@ -86,7 +86,7 @@ else if (Repo != null && pipeline != null)
     }
     @foreach (var job in p.Jobs.Where(j => j.Status == PipelineStatus.Manual && j.RequiresApproval))
     {
-        <GitBench.Components.Pipelines.DeploymentApprovalBox @key="job.Id" Repo="Repo" Job="job" />
+        <ByteBench.Components.Pipelines.DeploymentApprovalBox @key="job.Id" Repo="Repo" Job="job" />
     }
 
     @if (p.Jobs.Count > 0)

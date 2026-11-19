@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// Renders a <see cref="ChatMessage"/> as a Microsoft Teams message carrying an Adaptive Card (v1.4), the format both
@@ -69,7 +69,7 @@ public static class TeamsFormat
             ["body"] = body,
         };
         if (url != null)
-            card["actions"] = new JsonArray { new JsonObject { ["type"] = "Action.OpenUrl", ["title"] = "Open in GitBench", ["url"] = url } };
+            card["actions"] = new JsonArray { new JsonObject { ["type"] = "Action.OpenUrl", ["title"] = "Open in ByteBench", ["url"] = url } };
         return card;
     }
 

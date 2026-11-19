@@ -1,4 +1,4 @@
-@* Avatar for a Git author: the matching GitBench user (by e-mail) if there is one, otherwise neutral initials. *@
+@* Avatar for a Git author: the matching ByteBench user (by e-mail) if there is one, otherwise neutral initials. *@
 @if (Users != null && Email != null && Users.TryGetValue(Email, out var user))
 {
     <Avatar User="user" Size="Size" ShowName="ShowName" />

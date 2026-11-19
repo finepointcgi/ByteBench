@@ -27,7 +27,7 @@
                     <div class="d-flex gap-3 align-start">
                         <Avatar User="n.Actor" Size="24" />
                         <div class="flex-grow-1">
-                            <MudText Typo="Typo.body2"><b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind) <span>@n.Title</span></MudText>
+                            <MudText Typo="Typo.body2"><b>@(n.Actor?.DisplayName ?? "ByteBench")</b> @NotificationService.Verb(n.Kind) <span>@n.Title</span></MudText>
                             <MudText Typo="Typo.caption" Class="mud-text-secondary">@Display.Ago(n.CreatedAt)</MudText>
                         </div>
                         @if (!n.IsRead) { <span class="gb-notif-dot" title="Unread"></span> }

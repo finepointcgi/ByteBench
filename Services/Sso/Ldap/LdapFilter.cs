@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace GitBench.Services.Sso.Ldap;
+namespace ByteBench.Services.Sso.Ldap;
 
 /// <summary>Builds LDAP search filters from configured templates with user input escaped per RFC 4515.</summary>
 public static class LdapFilter

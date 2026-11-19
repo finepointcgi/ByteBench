@@ -1,11 +1,11 @@
 @page "/search"
-@using GitBench.Services.Explore
-@using GitBench.Components.Repositories
-@using GitBench.Services.Git
+@using ByteBench.Services.Explore
+@using ByteBench.Components.Repositories
+@using ByteBench.Services.Git
 @inject SearchService Search
 @inject NavigationManager Nav
 
-<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Search" : $"{Q} · Search") · GitBench</PageTitle>
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Search" : $"{Q} · Search") · ByteBench</PageTitle>
 
 <div class="sr">
     <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold mb-3">Search</MudText>

@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
 public static class SecurityServiceCollectionExtensions
 {

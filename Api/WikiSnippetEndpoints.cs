@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Git;
-using GitBench.Services.Snippets;
-using GitBench.Services.Wiki;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Git;
+using ByteBench.Services.Snippets;
+using ByteBench.Services.Wiki;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 // ----- Wiki & snippets wire types -----
 

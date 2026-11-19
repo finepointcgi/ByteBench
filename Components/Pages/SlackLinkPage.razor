@@ -1,10 +1,10 @@
 @page "/integrations/slack/link"
 @attribute [Authorize]
-@using GitBench.Services.ChatIntegrations
+@using ByteBench.Services.ChatIntegrations
 @inject SlackAccountLinks Links
 @inject CurrentUser Me
 
-<PageTitle>Link Slack · GitBench</PageTitle>
+<PageTitle>Link Slack · ByteBench</PageTitle>
 
 <div class="slack-link-page">
     <MudPaper Outlined="true" Class="pa-5 slack-link-panel">
@@ -12,23 +12,23 @@
         @if (done)
         {
             <MudAlert Severity="Severity.Success" Class="mb-3">
-                Linked. You can go back to Slack: <code>/gitbench</code> commands now run as <b>@Me.User?.UserName</b>, with your GitBench permissions.
+                Linked. You can go back to Slack: <code>/bytebench</code> commands now run as <b>@Me.User?.UserName</b>, with your ByteBench permissions.
             </MudAlert>
             <MudButton Href="/account/notifications" Variant="Variant.Outlined" Size="Size.Small">Notification preferences</MudButton>
         }
         else if (request == null)
         {
-            <MudAlert Severity="Severity.Warning">This link is invalid or has expired. Run <code>/gitbench link</code> in Slack to get a new one.</MudAlert>
+            <MudAlert Severity="Severity.Warning">This link is invalid or has expired. Run <code>/bytebench link</code> in Slack to get a new one.</MudAlert>
         }
         else
         {
             <MudText Typo="Typo.body1" Class="mb-2">
                 Slack user <b>@(request.SlackUserName is { } n ? "@" + n : request.SlackUserId)</b> (workspace <span class="mono">@request.TeamId</span>)
-                wants to act as your GitBench account <b>@Me.User?.UserName</b>.
+                wants to act as your ByteBench account <b>@Me.User?.UserName</b>.
             </MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-                Slash commands, buttons and link previews from that Slack account will see and do what you can in GitBench.
-                Only continue if you started this from Slack yourself. You can unlink any time with <code>/gitbench unlink</code>
+                Slash commands, buttons and link previews from that Slack account will see and do what you can in ByteBench.
+                Only continue if you started this from Slack yourself. You can unlink any time with <code>/bytebench unlink</code>
                 or on your notification preferences page.
             </MudText>
             @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }

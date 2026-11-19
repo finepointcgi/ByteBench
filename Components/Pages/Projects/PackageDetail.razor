@@ -1,8 +1,8 @@
 @page "/p/{Key}/packages/{PackageId:int}"
 @using System.Text.Json.Nodes
-@using GitBench.Services.Packages
-@using GitBench.Components.Packages
-@using GitBench.Services.Attachments
+@using ByteBench.Services.Packages
+@using ByteBench.Components.Packages
+@using ByteBench.Services.Attachments
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject PackageService PackageSvc
@@ -10,7 +10,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
-@inject GitBench.Api.PublicBaseUrl PublicUrl
+@inject ByteBench.Api.PublicBaseUrl PublicUrl
 
 <PageTitle>@(package?.Name ?? "Package") · @project?.Name</PageTitle>
 

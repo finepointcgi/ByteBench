@@ -1,7 +1,7 @@
 @page "/account/ssh-keys"
 @attribute [Authorize]
-@using GitBench.Components.Repositories
-@using GitBench.Services.Ssh
+@using ByteBench.Components.Repositories
+@using ByteBench.Services.Ssh
 @using Microsoft.Extensions.Options
 @inject SshKeyService Keys
 @inject CurrentUser Me
@@ -11,7 +11,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 
-<PageTitle>SSH keys · GitBench</PageTitle>
+<PageTitle>SSH keys · ByteBench</PageTitle>
 
 <div class="page-header">
     <div class="gb-min0">

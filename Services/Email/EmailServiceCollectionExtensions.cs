@@ -1,9 +1,9 @@
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 public static class EmailServiceCollectionExtensions
 {

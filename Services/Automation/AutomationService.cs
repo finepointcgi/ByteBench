@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>Where a rule lives: one project, or a group (and so every project below it).</summary>
 public readonly record struct RuleOwner(int? ProjectId, int? GroupId)

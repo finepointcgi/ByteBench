@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>
 /// The editable body of an <see cref="AutomationRule"/>, stored as JSON in <see cref="AutomationRule.Definition"/>: trigger

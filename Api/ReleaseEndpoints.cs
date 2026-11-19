@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Git;
-using GitBench.Services.Releases;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Git;
+using ByteBench.Services.Releases;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record TagDto(string Name, string Sha, string ObjectSha, bool Annotated, string? Message, string? TaggerName, string? TaggerEmail,
     DateTimeOffset? TaggedAt, CommitDto? Commit, string ZipUrl, string TarGzUrl);

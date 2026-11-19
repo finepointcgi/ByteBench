@@ -3,9 +3,9 @@ using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
-/// <summary>A parsed, validated <c>.gitbench-ci.yml</c>.</summary>
+/// <summary>A parsed, validated <c>.bytebench-ci.yml</c>.</summary>
 public sealed record CiDefinition(CiTriggers On, IReadOnlyList<CiJobDefinition> Jobs)
 {
     /// <summary>
@@ -80,7 +80,7 @@ public sealed record CiRule(IReadOnlyList<string>? Branches, CiRuleWhen? When);
 /// <summary>
 /// <c>artifacts:</c>. <see cref="ExpireIn"/> null means they never expire. <see cref="Reports"/> maps a report type
 /// (<see cref="CiFile.ReportTypes"/>: <c>nightowl</c>, <c>sarif</c>) to the file the job writes it to; those files are
-/// always part of <see cref="Paths"/>, and GitBench reads them after the job (Services/Security).
+/// always part of <see cref="Paths"/>, and ByteBench reads them after the job (Services/Security).
 /// </summary>
 public sealed record CiArtifactsDefinition(IReadOnlyList<string> Paths, TimeSpan? ExpireIn, CiArtifactsWhen When,
     IReadOnlyDictionary<string, string>? Reports = null);
@@ -115,7 +115,7 @@ public sealed record CiParseResult(CiDefinition? Definition, string? Error)
 }
 
 /// <summary>
-/// Parser for <c>.gitbench-ci.yml</c>. Format:
+/// Parser for <c>.bytebench-ci.yml</c>. Format:
 /// <code>
 /// image: alpine:3.20                     # default image for jobs (default alpine:3.20)
 /// include: [nightowl]                    # optional built-in jobs (<see cref="CiTemplates"/>); a job of the same name in this file wins
@@ -146,7 +146,13 @@ public sealed record CiParseResult(CiDefinition? Definition, string? Error)
 /// </summary>
 public static partial class CiFile
 {
-    public const string FileName = ".gitbench-ci.yml";
+    public const string FileName = ".bytebench-ci.yml";
+    /// <summary>The file name before the product was renamed from GitBench; still read when <see cref="FileName"/> is absent.</summary>
+    public const string LegacyFileName = ".gitbench-ci.yml";
+
+    /// <summary>The pipeline file at <paramref name="rev"/> (the current name, else the pre-rename one), or null.</summary>
+    public static ByteBench.Services.Git.BlobInfo? GetBlob(string repoPath, string? rev) =>
+        ByteBench.Services.Git.GitOps.GetBlob(repoPath, rev, FileName) ?? ByteBench.Services.Git.GitOps.GetBlob(repoPath, rev, LegacyFileName);
     public const string DefaultImage = "alpine:3.20";
     public const int MaxJobs = 20, MaxStepsPerJob = 50, MaxFileChars = 64 * 1024, MaxPaths = 50, MaxRules = 20;
     public static readonly TimeSpan DefaultArtifactExpiry = TimeSpan.FromDays(30);
@@ -563,7 +569,7 @@ public static partial class CiFile
         var msg = inner.Message;
         var close = msg.IndexOf("): ", StringComparison.Ordinal);
         if (msg.StartsWith('(') && close > 0) msg = msg[(close + 3)..];
-        msg = msg.Replace("GitBench.Services.Ci.CiFile+", "").Replace("Dto", "");
+        msg = msg.Replace("ByteBench.Services.Ci.CiFile+", "").Replace("Dto", "");
         return $"invalid YAML at line {inner.Start.Line}, column {inner.Start.Column}: {msg}";
     }
 

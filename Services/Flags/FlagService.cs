@@ -2,14 +2,14 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
-using GitBench.Api;
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Ci;
-using GitBench.Services.Webhooks;
+using ByteBench.Api;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Flags;
+namespace ByteBench.Services.Flags;
 
 /// <summary>A flag that nobody changed or evaluated for a while.</summary>
 public sealed record FlagStaleness(FeatureFlag Flag, DateTime LastChanged, DateTime? LastEvaluated, int IdleDays);

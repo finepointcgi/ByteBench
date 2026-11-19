@@ -1,19 +1,19 @@
 <h1>Security scanning</h1>
-<p class="lead">Run Night Owl (or any SARIF tool) in a CI job and GitBench turns its report into findings you can triage, track over time and use as a pull request check.</p>
+<p class="lead">Run Night Owl (or any SARIF tool) in a CI job and ByteBench turns its report into findings you can triage, track over time and use as a pull request check.</p>
 
 <h2 id="what-is-night-owl">What Night Owl is</h2>
 <p><b>Night Owl</b> is a separate open-source scanner: <a href="https://github.com/finepointcgi/Night-Owl">github.com/finepointcgi/Night-Owl</a>, with documentation at <a href="https://finepointcgi.github.io/Night-Owl/">finepointcgi.github.io/Night-Owl</a>. It covers dependency vulnerabilities (SCA), licenses, static analysis (SAST), secrets, infrastructure-as-code, container images and code quality, by driving engines such as syft, osv-scanner, gitleaks, opengrep, trivy and lizard.</p>
-<p>GitBench does <b>not</b> bundle or run Night Owl itself. It integrates through Night Owl's command line and report formats only: a CI job runs <code>nightowl scan</code>, writes a JSON report (and SARIF), and GitBench reads those files after the job. Reports from other tools work too if they produce <b>SARIF 2.1</b>.</p>
+<p>ByteBench does <b>not</b> bundle or run Night Owl itself. It integrates through Night Owl's command line and report formats only: a CI job runs <code>nightowl scan</code>, writes a JSON report (and SARIF), and ByteBench reads those files after the job. Reports from other tools work too if they produce <b>SARIF 2.1</b>.</p>
 
 <h2 id="quick-start">Quick start</h2>
 <pre><code>include: [nightowl]
 jobs:
   build:
     steps: [ { run: ./build.sh } ]</code></pre>
-<p>With <code>include: [nightowl]</code> GitBench adds a built-in job named <code>nightowl</code> (see <a href="ci.html#include">include</a>). It installs the Night Owl release using Night Owl's checksum-verifying <code>install.sh</code> and runs:</p>
+<p>With <code>include: [nightowl]</code> ByteBench adds a built-in job named <code>nightowl</code> (see <a href="ci.html#include">include</a>). It installs the Night Owl release using Night Owl's checksum-verifying <code>install.sh</code> and runs:</p>
 <pre><code>nightowl scan "${NIGHTOWL_PATH:-.}" [--fail-on $NIGHTOWL_FAIL_ON] --no-update \
   --format json --output nightowl.json --sarif-output nightowl.sarif --summary-output nightowl.md ${NIGHTOWL_ARGS:-}</code></pre>
-<div class="warn"><b>The stock template alone will not scan.</b> Night Owl runs its engines from local binaries or pinned container images, and <b>GitBench jobs never get a Docker daemon</b>. On the default <code>alpine</code> image the job stops immediately with "This image has no scan engines" (exit 2) instead of failing deep inside the scan. To scan for real you need a <b>runner image</b> that has the <code>nightowl</code> CLI and its engines on <code>PATH</code> (next section).</div>
+<div class="warn"><b>The stock template alone will not scan.</b> Night Owl runs its engines from local binaries or pinned container images, and <b>ByteBench jobs never get a Docker daemon</b>. On the default <code>alpine</code> image the job stops immediately with "This image has no scan engines" (exit 2) instead of failing deep inside the scan. To scan for real you need a <b>runner image</b> that has the <code>nightowl</code> CLI and its engines on <code>PATH</code> (next section).</div>
 
 <h2 id="runner-image">The runner image requirement</h2>
 <ol>
@@ -24,7 +24,7 @@ jobs:
 <pre><code>include: [nightowl]          # optional once you define the job yourself
 jobs:
   nightowl:                  # same name: replaces the template job
-    image: gitbench.example.com/sec/nightowl-runner:1.0
+    image: bytebench.example.com/sec/nightowl-runner:1.0
     artifacts:
       when: always
       paths: [nightowl.md]
@@ -88,18 +88,18 @@ jobs:
 <ul>
 <li><b>Expiry:</b> a decision with an expiry date (must be in the future when set) stops applying after it; the finding becomes open again automatically. Use this for "accepted until the next upgrade".</li>
 <li>Only open findings count in the trend, the pull request comparison, the merge check and alerts. This matches Night Owl's own quality gate.</li>
-<li>A decision carried by the report itself (from the repository's <code>.nightowl/triage.json</code> at scan time) applies too; <b>GitBench's own decision wins</b> over it.</li>
+<li>A decision carried by the report itself (from the repository's <code>.nightowl/triage.json</code> at scan time) applies too; <b>ByteBench's own decision wins</b> over it.</li>
 </ul>
 <h3 id="triage-json">triage.json import and export</h3>
-<p>Night Owl keeps shared decisions in <code>.nightowl/triage.json</code>. GitBench reads and writes the same format:</p>
+<p>Night Owl keeps shared decisions in <code>.nightowl/triage.json</code>. ByteBench reads and writes the same format:</p>
 <pre><code>[
   { "findingId": "3f2a9c...", "state": "accepted-risk", "reason": "Not reachable in our build",
     "by": "alice", "at": "2026-11-01T10:00:00+00:00", "expires": "2027-01-01T00:00:00+00:00",
     "title": "lodash prototype pollution" }
 ]</code></pre>
 <ul>
-<li><b>Export triage</b> (Security tab) downloads GitBench's decisions in this shape. Commit the file to the repository so <code>nightowl scan</code> in CI, and developers running it locally, see the same decisions.</li>
-<li><b>Import triage</b> (Maintainer or higher) reads the file from the default branch, or a pasted one. Each decision replaces GitBench's decision for that fingerprint; <code>"new"</code> removes it. States are <code>false-positive</code>, <code>accepted-risk</code>, <code>confirmed</code>, <code>fixed</code> or <code>new</code>; every decision needs a <code>findingId</code> of at most 64 characters, and a bad file is rejected whole.</li>
+<li><b>Export triage</b> (Security tab) downloads ByteBench's decisions in this shape. Commit the file to the repository so <code>nightowl scan</code> in CI, and developers running it locally, see the same decisions.</li>
+<li><b>Import triage</b> (Maintainer or higher) reads the file from the default branch, or a pasted one. Each decision replaces ByteBench's decision for that fingerprint; <code>"new"</code> removes it. States are <code>false-positive</code>, <code>accepted-risk</code>, <code>confirmed</code>, <code>fixed</code> or <code>new</code>; every decision needs a <code>findingId</code> of at most 64 characters, and a bad file is rejected whole.</li>
 </ul>
 
 <h2 id="pull-requests">Pull requests and the merge check</h2>
@@ -115,7 +115,7 @@ jobs:
 <p>The check only blocks merging if <a href="branch-protection.html">branch protection</a> has "require checks to pass" on the target branch, like every other merge check.</p>
 
 <h2 id="alerts">Alerts and the webhook</h2>
-<p>When a scan of the <b>default branch</b> has open findings at or above the repository's <b>alert severity</b> (Settings → Security, default high) that the previous scan didn't have, GitBench:</p>
+<p>When a scan of the <b>default branch</b> has open findings at or above the repository's <b>alert severity</b> (Settings → Security, default high) that the previous scan didn't have, ByteBench:</p>
 <ul>
 <li>notifies the project's Maintainers and Owners, and whoever triggered the pipeline (notification kind "security findings", in the Pipelines preference group, see <a href="notifications.html">Notifications</a>);</li>
 <li>sends the <code>security.new_findings</code> webhook to hooks subscribed to it.</li>
@@ -123,14 +123,14 @@ jobs:
 <pre><code>{
   "event": "security.new_findings",
   "repository": { "id": 3, "slug": "web-app", "name": "Web App", "defaultBranch": "main" },
-  "pipeline": { "id": 118, "ref": "main", "commitSha": "9f2c1e0...", "url": "https://gitbench.example.com/p/WEB/repos/web-app/pipelines/118" },
+  "pipeline": { "id": 118, "ref": "main", "commitSha": "9f2c1e0...", "url": "https://bytebench.example.com/p/WEB/repos/web-app/pipelines/118" },
   "threshold": "high",
   "findings": [ { "fingerprint": "3f2a9c...", "severity": "critical", "category": "sca", "ruleId": "GHSA-xxxx",
                   "title": "lodash prototype pollution",
                   "package": { "name": "lodash", "version": "4.17.20", "fixedVersions": "4.17.21" },
-                  "file": "package-lock.json", "line": null, "url": "https://gitbench.example.com/p/WEB/repos/web-app/security?finding=3f2a9c..." } ],
+                  "file": "package-lock.json", "line": null, "url": "https://bytebench.example.com/p/WEB/repos/web-app/security?finding=3f2a9c..." } ],
   "total": 1,
-  "url": "https://gitbench.example.com/p/WEB/repos/web-app/security"
+  "url": "https://bytebench.example.com/p/WEB/repos/web-app/security"
 }</code></pre>
 <p>At most 100 findings are listed; <code>total</code> is the full count. The usual envelope fields (delivery id, timestamp, project, sender) are added; see <a href="api.html">REST API and webhooks</a>.</p>
 
@@ -145,12 +145,12 @@ jobs:
 <tr><td><code>GET /security/triage</code>, <code>POST /security/triage</code></td><td>Export, or import (Maintainer+, body is the triage.json array).</td></tr>
 <tr><td><code>GET /pull-requests/{number}/security</code></td><td>New and fixed findings of a pull request.</td></tr>
 </table>
-<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
-  "https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/security/findings?severity=high&amp;state=open"
+<pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  "https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/security/findings?severity=high&amp;state=open"
 
-curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"state":"false-positive","reason":"Test fixture, never shipped"}' \
-  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/security/findings/3f2a9c.../triage</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/security/findings/3f2a9c.../triage</code></pre>
 
 <h2 id="config">Configuration</h2>
 <table>
@@ -166,7 +166,7 @@ on:
   pull_requests: true
 jobs:
   nightowl:
-    image: gitbench.example.com/sec/nightowl-runner:1.0
+    image: bytebench.example.com/sec/nightowl-runner:1.0
     artifacts:
       when: always
       paths: [nightowl.md]

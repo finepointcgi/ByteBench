@@ -1,12 +1,12 @@
 <h1>Package and container registry</h1>
-<p class="lead">Every project has its own private NuGet feed, npm registry and Docker (OCI) registry, with the same sign-in and roles as the rest of GitBench and a ready-made token for CI jobs.</p>
+<p class="lead">Every project has its own private NuGet feed, npm registry and Docker (OCI) registry, with the same sign-in and roles as the rest of ByteBench and a ready-made token for CI jobs.</p>
 
 <h2 id="overview">What you get</h2>
 <table>
 <tr><th>Kind</th><th>Address (replace the host and project key)</th></tr>
-<tr><td>NuGet v3 feed</td><td><code>https://gitbench.example.com/packages/WEB/nuget/index.json</code></td></tr>
-<tr><td>npm registry</td><td><code>https://gitbench.example.com/packages/WEB/npm/</code></td></tr>
-<tr><td>Container registry</td><td><code>gitbench.example.com/web/&lt;image&gt;:&lt;tag&gt;</code> (host and port, then the project key in <b>lowercase</b>, then the image name, which may contain more path segments)</td></tr>
+<tr><td>NuGet v3 feed</td><td><code>https://bytebench.example.com/packages/WEB/nuget/index.json</code></td></tr>
+<tr><td>npm registry</td><td><code>https://bytebench.example.com/packages/WEB/npm/</code></td></tr>
+<tr><td>Container registry</td><td><code>bytebench.example.com/web/&lt;image&gt;:&lt;tag&gt;</code> (host and port, then the project key in <b>lowercase</b>, then the image name, which may contain more path segments)</td></tr>
 </table>
 <p>The Packages page for a project is at <code>/p/{KEY}/packages</code> (filter by type, search by name, click a package for versions, files, install commands and delete). It shows the exact commands for your server. Each project's registry is separate: a package in <code>WEB</code> is not visible from <code>OPS</code>.</p>
 
@@ -17,7 +17,7 @@
 <table>
 <tr><th>Credential</th><th>Use</th></tr>
 <tr><td><b>Personal access token</b> (<code>gbp_...</code>)</td><td>Create one under your profile, <b>Access tokens</b> (<code>/account/profile#tokens</code>). Use it as the password (any user name works for npm and NuGet) or as the NuGet API key. To <b>publish or delete</b> the token needs the <code>write_repository</code> or <code>write_api</code> scope; a read-only token can only download.</td></tr>
-<tr><td><b>CI job token</b> (<code>gbj_...</code>)</td><td>Every CI job gets one as <code>GITBENCH_JOB_TOKEN</code> (also <code>GITBENCH_REGISTRY_PASSWORD</code>). It is valid only while that job runs, counts as a <b>Developer in its own project</b> (so it can publish and pull but not delete), and can <em>read</em> other projects only if the person who triggered the pipeline can view them.</td></tr>
+<tr><td><b>CI job token</b> (<code>gbj_...</code>)</td><td>Every CI job gets one as <code>BYTEBENCH_JOB_TOKEN</code> (also <code>BYTEBENCH_REGISTRY_PASSWORD</code>). It is valid only while that job runs, counts as a <b>Developer in its own project</b> (so it can publish and pull but not delete), and can <em>read</em> other projects only if the person who triggered the pipeline can view them.</td></tr>
 <tr><td>Registry token (<code>gbr_...</code>)</td><td>What <code>docker login</code> trades your credentials for at <code>/v2/token</code>; valid one hour. You never create it by hand.</td></tr>
 <tr><td>Browser session</td><td>Only for downloading files from the Packages page.</td></tr>
 </table>
@@ -35,27 +35,27 @@
 
 <h2 id="nuget">NuGet</h2>
 <pre><code># one-time setup
-dotnet nuget add source https://gitbench.example.com/packages/WEB/nuget/index.json \
-  --name gitbench-web --username you --password &lt;personal access token&gt; --store-password-in-clear-text
+dotnet nuget add source https://bytebench.example.com/packages/WEB/nuget/index.json \
+  --name bytebench-web --username you --password &lt;personal access token&gt; --store-password-in-clear-text
 
 # publish
 dotnet nuget push MyLib.1.2.0.nupkg \
-  --source https://gitbench.example.com/packages/WEB/nuget/index.json \
+  --source https://bytebench.example.com/packages/WEB/nuget/index.json \
   --api-key &lt;personal access token&gt;
 
 # install
 dotnet add package MyLib --version 1.2.0
 
 # delete a version (Maintainer)
-dotnet nuget delete MyLib 1.2.0 --source https://gitbench.example.com/packages/WEB/nuget/index.json --api-key &lt;token&gt; --non-interactive</code></pre>
+dotnet nuget delete MyLib 1.2.0 --source https://bytebench.example.com/packages/WEB/nuget/index.json --api-key &lt;token&gt; --non-interactive</code></pre>
 <p>Pushing an existing id and version returns <b>409</b>: versions are immutable. Ids may have letters, digits, <code>_</code>, <code>.</code>, <code>-</code> (up to 100 characters). The feed supports restore (flat container, registration, search).</p>
 
 <h2 id="npm">npm</h2>
 <pre><code># point npm (or one scope) at the project registry
-npm config set registry https://gitbench.example.com/packages/WEB/npm/
-npm config set -- '//gitbench.example.com/packages/WEB/npm/:_authToken' "$GITBENCH_TOKEN"
+npm config set registry https://bytebench.example.com/packages/WEB/npm/
+npm config set -- '//bytebench.example.com/packages/WEB/npm/:_authToken' "$BYTEBENCH_TOKEN"
 # or only for a scope
-npm config set @acme:registry https://gitbench.example.com/packages/WEB/npm/
+npm config set @acme:registry https://bytebench.example.com/packages/WEB/npm/
 
 npm publish                 # Developer
 npm install @acme/widgets
@@ -65,23 +65,23 @@ npm deprecate @acme/widgets@1.0.0 "Use 1.2"</code></pre>
 <p>Publishing an existing version fails with 403, as on the public registry. Scoped and unscoped names both work; <code>dist-tags</code>, <code>whoami</code>, <code>ping</code> and search are supported. Setting the whole registry means third-party packages are not proxied: use a scope-only registry if you still install from npmjs.</p>
 
 <h2 id="docker">Docker and container images</h2>
-<pre><code>docker login gitbench.example.com -u you -p "$GITBENCH_TOKEN"
+<pre><code>docker login bytebench.example.com -u you -p "$BYTEBENCH_TOKEN"
 
-docker tag app:latest gitbench.example.com/web/app:1.4.0
-docker push gitbench.example.com/web/app:1.4.0
-docker pull gitbench.example.com/web/app:1.4.0</code></pre>
-<p>GitBench implements the registry API (<code>/v2/</code>) that <code>docker push</code>/<code>pull</code> use, including chunked uploads, manifest lists, <code>GET /v2/_catalog</code> and tag lists. The registry is served from the same host and port as GitBench, so it needs <b>HTTPS</b> in practice (Docker only allows plain HTTP for <code>localhost</code> or hosts listed as insecure registries). Deleting a tag is done on the package page.</p>
+docker tag app:latest bytebench.example.com/web/app:1.4.0
+docker push bytebench.example.com/web/app:1.4.0
+docker pull bytebench.example.com/web/app:1.4.0</code></pre>
+<p>ByteBench implements the registry API (<code>/v2/</code>) that <code>docker push</code>/<code>pull</code> use, including chunked uploads, manifest lists, <code>GET /v2/_catalog</code> and tag lists. The registry is served from the same host and port as ByteBench, so it needs <b>HTTPS</b> in practice (Docker only allows plain HTTP for <code>localhost</code> or hosts listed as insecure registries). Deleting a tag is done on the package page.</p>
 
 <h2 id="ci">Using the registry from CI jobs</h2>
 <p>Besides the token, each job gets these variables when the site's base URL is known (<code>PublicBaseUrl</code> setting, or learned from the first request):</p>
 <table>
 <tr><th>Variable</th><th>Value</th></tr>
-<tr><td><code>GITBENCH_REGISTRY</code></td><td>Registry host and port, for <code>docker login</code>, e.g. <code>gitbench.example.com</code></td></tr>
-<tr><td><code>GITBENCH_REGISTRY_IMAGE</code></td><td>The project's image prefix, e.g. <code>gitbench.example.com/web</code></td></tr>
-<tr><td><code>GITBENCH_REGISTRY_USER</code></td><td><code>gitbench-ci-token</code> (any name is accepted)</td></tr>
-<tr><td><code>GITBENCH_JOB_TOKEN</code>, <code>GITBENCH_REGISTRY_PASSWORD</code></td><td>The job token (secret, masked in logs)</td></tr>
-<tr><td><code>GITBENCH_NUGET_SOURCE_URL</code></td><td>NuGet index URL</td></tr>
-<tr><td><code>GITBENCH_NPM_REGISTRY_URL</code></td><td>npm registry URL</td></tr>
+<tr><td><code>BYTEBENCH_REGISTRY</code></td><td>Registry host and port, for <code>docker login</code>, e.g. <code>bytebench.example.com</code></td></tr>
+<tr><td><code>BYTEBENCH_REGISTRY_IMAGE</code></td><td>The project's image prefix, e.g. <code>bytebench.example.com/web</code></td></tr>
+<tr><td><code>BYTEBENCH_REGISTRY_USER</code></td><td><code>bytebench-ci-token</code> (any name is accepted)</td></tr>
+<tr><td><code>BYTEBENCH_JOB_TOKEN</code>, <code>BYTEBENCH_REGISTRY_PASSWORD</code></td><td>The job token (secret, masked in logs)</td></tr>
+<tr><td><code>BYTEBENCH_NUGET_SOURCE_URL</code></td><td>NuGet index URL</td></tr>
+<tr><td><code>BYTEBENCH_NPM_REGISTRY_URL</code></td><td>npm registry URL</td></tr>
 </table>
 <h3 id="ci-nuget">Publish a NuGet package from CI</h3>
 <pre><code>jobs:
@@ -91,8 +91,8 @@ docker pull gitbench.example.com/web/app:1.4.0</code></pre>
     steps:
       - name: Pack and push
         run: |
-          dotnet pack src/MyLib -c Release -p:Version=1.0.$GITBENCH_PIPELINE_ID -o out
-          dotnet nuget push out/*.nupkg --source "$GITBENCH_NUGET_SOURCE_URL" --api-key "$GITBENCH_JOB_TOKEN"</code></pre>
+          dotnet pack src/MyLib -c Release -p:Version=1.0.$BYTEBENCH_PIPELINE_ID -o out
+          dotnet nuget push out/*.nupkg --source "$BYTEBENCH_NUGET_SOURCE_URL" --api-key "$BYTEBENCH_JOB_TOKEN"</code></pre>
 <h3 id="ci-npm">Publish an npm package from CI</h3>
 <pre><code>jobs:
   publish:
@@ -100,10 +100,10 @@ docker pull gitbench.example.com/web/app:1.4.0</code></pre>
     only: [main]
     steps:
       - run: |
-          echo "registry=$GITBENCH_NPM_REGISTRY_URL" &gt; .npmrc
-          HOST_PATH="${GITBENCH_NPM_REGISTRY_URL#https:}"
-          echo "$HOST_PATH:_authToken=$GITBENCH_JOB_TOKEN" &gt;&gt; .npmrc
-          npm version 1.0.$GITBENCH_PIPELINE_ID --no-git-tag-version
+          echo "registry=$BYTEBENCH_NPM_REGISTRY_URL" &gt; .npmrc
+          HOST_PATH="${BYTEBENCH_NPM_REGISTRY_URL#https:}"
+          echo "$HOST_PATH:_authToken=$BYTEBENCH_JOB_TOKEN" &gt;&gt; .npmrc
+          npm version 1.0.$BYTEBENCH_PIPELINE_ID --no-git-tag-version
           npm publish</code></pre>
 <h3 id="ci-docker">Push an image from CI</h3>
 <p>CI jobs have <b>no Docker daemon and no Docker socket</b>, so <code>docker build</code> and <code>docker push</code> do not work inside a job. Use a daemonless builder such as Kaniko, Buildah or Skopeo (in an image that provides it) and log in with the variables above. A complete example is on the <a href="ci.html#example-docker-push">CI page</a>; adapt it to the tool you use. The job's network (<code>Ci:Network</code>) must reach the registry.</p>
@@ -144,5 +144,5 @@ docker pull gitbench.example.com/web/app:1.4.0</code></pre>
 <tr><td>403 "needs the write_repository or write_api scope"</td><td>The token is read-only. Create one with a write scope.</td></tr>
 <tr><td>404 "Project not found, or its package registry is off"</td><td>Wrong project key, you aren't a member, or a Maintainer turned the registry off.</td></tr>
 <tr><td>409 / 403 on publish</td><td>That version already exists (NuGet 409, npm 403). Bump the version.</td></tr>
-<tr><td><code>docker push</code> fails with an HTTP/TLS error</td><td>The registry shares GitBench's host; put it behind HTTPS (see <a href="production.html">Production setup</a>).</td></tr>
+<tr><td><code>docker push</code> fails with an HTTP/TLS error</td><td>The registry shares ByteBench's host; put it behind HTTPS (see <a href="production.html">Production setup</a>).</td></tr>
 </table>

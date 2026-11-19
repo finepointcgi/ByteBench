@@ -1,5 +1,5 @@
 @page "/issues/search"
-@using GitBench.Services.Query
+@using ByteBench.Services.Query
 @inject GqlService Gql
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
@@ -17,7 +17,7 @@
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.FileDownload" OnClick="ExportCsv" Disabled="@(string.IsNullOrWhiteSpace(query))">Export CSV</MudButton>
     </div>
     <MudPaper Outlined="true" Class="pa-3 mb-3">
-        <GitBench.Components.Query.GqlEditor @bind-Value="text" OnRun="Run" Error="error" ErrorQuery="@query" />
+        <ByteBench.Components.Query.GqlEditor @bind-Value="text" OnRun="Run" Error="error" ErrorQuery="@query" />
     </MudPaper>
     @if (query != null && error == null)
     {
@@ -73,12 +73,12 @@
 
     private async Task ExportCsv()
     {
-        var parameters = new DialogParameters<GitBench.Components.Query.CsvExportDialog>
+        var parameters = new DialogParameters<ByteBench.Components.Query.CsvExportDialog>
         {
             { x => x.Path, "/issues/export.csv" },
             { x => x.Query, "gql=" + Uri.EscapeDataString(query ?? "") },
         };
-        await Dialogs.ShowAsync<GitBench.Components.Query.CsvExportDialog>("Export CSV", parameters,
+        await Dialogs.ShowAsync<ByteBench.Components.Query.CsvExportDialog>("Export CSV", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
     }
 

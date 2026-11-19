@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace GitBench.Data.Postgres;
+namespace ByteBench.Data.Postgres;
 
 /// <summary>
 /// The same model as <see cref="AppDbContext"/> on PostgreSQL (<c>Database:Provider=Postgres</c>). The SQLite migrations in
@@ -33,7 +33,7 @@ public sealed class PostgresAppDbContext(DbContextOptions<PostgresAppDbContext> 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
         base.ConfigureConventions(b);
-        // GitBench stores UTC. SQLite keeps no kind (values come back Unspecified); Npgsql's timestamptz insists on UTC kinds,
+        // ByteBench stores UTC. SQLite keeps no kind (values come back Unspecified); Npgsql's timestamptz insists on UTC kinds,
         // so every DateTime is written as UTC and read back as UTC.
         b.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
         b.Properties<DateTime?>().HaveConversion<UtcNullableDateTimeConverter>();
@@ -53,12 +53,12 @@ public sealed class UtcNullableDateTimeConverter() : ValueConverter<DateTime?, D
 public sealed class PostgresDesignTimeFactory : IDesignTimeDbContextFactory<PostgresAppDbContext>
 {
     public PostgresAppDbContext CreateDbContext(string[] args) =>
-        new(new DbContextOptionsBuilder<PostgresAppDbContext>().UseNpgsql("Host=localhost;Database=gitbench_design").Options);
+        new(new DbContextOptionsBuilder<PostgresAppDbContext>().UseNpgsql("Host=localhost;Database=bytebench_design").Options);
 }
 
 /// <summary>Same for the SQLite context, so <c>--context AppDbContext</c> works while there are two contexts.</summary>
 public sealed class SqliteDesignTimeFactory : IDesignTimeDbContextFactory<AppDbContext>
 {
     public AppDbContext CreateDbContext(string[] args) =>
-        new(new DbContextOptionsBuilder<AppDbContext>().UseSqlite("Data Source=gitbench-design.db").Options);
+        new(new DbContextOptionsBuilder<AppDbContext>().UseSqlite("Data Source=bytebench-design.db").Options);
 }

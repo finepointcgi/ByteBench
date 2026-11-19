@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>One delivery a transport wants recorded: the event name shown in the delivery log and the exact body to send.</summary>
 public sealed record WebhookOutgoing(string Event, string Body);

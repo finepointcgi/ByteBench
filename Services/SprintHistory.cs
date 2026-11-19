@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>One day of a sprint burndown. Remaining values are null for days that haven't happened yet.</summary>
 public record BurndownDay(DateTime Date, int? RemainingPoints, int? RemainingCount, double IdealPoints, double IdealCount,

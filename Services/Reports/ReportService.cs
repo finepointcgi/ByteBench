@@ -1,9 +1,9 @@
 using System.Globalization;
-using GitBench.Data;
-using GitBench.Services.Query;
+using ByteBench.Data;
+using ByteBench.Services.Query;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <summary>
 /// Runs a delivery report by name for the REST API and the CSV download, and turns query-string filters into a

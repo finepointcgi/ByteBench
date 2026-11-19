@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>Configuration section <c>Pages</c>.</summary>
 public class PagesOptions
@@ -17,7 +17,7 @@ public class PagesOptions
     /// </summary>
     public string? BaseDomain { get; set; }
     /// <summary>
-    /// Keep serving <c>/pages/{KEY}/{slug}/...</c> on the GitBench host. Those responses are sandboxed (see PagesMiddleware).
+    /// Keep serving <c>/pages/{KEY}/{slug}/...</c> on the ByteBench host. Those responses are sandboxed (see PagesMiddleware).
     /// Set to false together with <see cref="BaseDomain"/> to serve sites only from their own hosts.
     /// </summary>
     public bool PathModeEnabled { get; set; } = true;

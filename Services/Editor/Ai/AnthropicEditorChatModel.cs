@@ -4,9 +4,9 @@ using Anthropic;
 using Anthropic.Helpers;
 using Anthropic.Models.Beta;
 using Anthropic.Models.Beta.Messages;
-using GitBench.Services.Ai;
+using ByteBench.Services.Ai;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>
 /// <see cref="IEditorChatModel"/> on the Anthropic C# SDK through <see cref="AiClient"/>: streaming beta Messages calls

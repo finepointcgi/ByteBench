@@ -1,7 +1,7 @@
-using GitBench.Services;
+using ByteBench.Services;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 /// <summary>
 /// Demo sprints for WEB: six completed sprints, an active one and a planned one, with backdated issue activity

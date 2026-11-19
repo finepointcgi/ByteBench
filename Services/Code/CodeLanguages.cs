@@ -1,7 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Components;
 
-namespace GitBench.Services.Code;
+namespace ByteBench.Services.Code;
 
 /// <summary>
 /// Picks a highlight.js language for a file and renders code lines so <c>wwwroot/js/code-tools.js</c> can

@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using Group = GitBench.Data.Group;
+using ByteBench.Data;
+using Group = ByteBench.Data.Group;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 public sealed record GroupSummary(int Id, string Name, string FullPath, int? ParentId, string? Description, ProjectVisibility Visibility,
     string Color, int SubgroupCount, int ProjectCount)

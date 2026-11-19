@@ -1,7 +1,7 @@
 using System.Text.Json;
-using GitBench.Services.Ai;
+using ByteBench.Services.Ai;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 public sealed partial class ClaudeCodeEditorBackend
 {

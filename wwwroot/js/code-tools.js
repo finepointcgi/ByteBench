@@ -1,4 +1,4 @@
-// Syntax highlighting and linkable line numbers for GitBench (uses the vendored highlight.js in lib/highlightjs).
+// Syntax highlighting and linkable line numbers for ByteBench (uses the vendored highlight.js in lib/highlightjs).
 //
 // Blazor owns the DOM, so this never touches nodes Blazor tracks:
 //  - Code lines are rendered as MarkupString "<span class=hl-line>text</span>". Blazor tracks the span and replaces
@@ -8,8 +8,8 @@
 // enhanced navigation and live updates without any per-component interop.
 (function () {
     "use strict";
-    if (!window.hljs || window.gitbenchCodeTools) return;
-    window.gitbenchCodeTools = true;
+    if (!window.hljs || window.bytebenchCodeTools) return;
+    window.bytebenchCodeTools = true;
     hljs.configure({ ignoreUnescapedHTML: true });
 
     const MAX_CHARS = 200 * 1024;

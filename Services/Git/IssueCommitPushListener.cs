@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// Jira-style smart links: after a push, any commit whose message mentions an issue key

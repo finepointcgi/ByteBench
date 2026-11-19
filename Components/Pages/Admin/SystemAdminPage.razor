@@ -1,12 +1,12 @@
 @page "/admin/system"
-@using GitBench.Services.Attachments
-@using GitBench.Services.Hosting
+@using ByteBench.Services.Attachments
+@using ByteBench.Services.Hosting
 @inject CurrentUser Me
 @inject SystemInfoService Info
 
 @* Read-only operations overview for site administrators: version, database, storage, queues, health, hosting checks, backups. *@
 
-<PageTitle>System · GitBench</PageTitle>
+<PageTitle>System · ByteBench</PageTitle>
 
 @if (Me.User?.IsAdmin != true)
 {
@@ -18,7 +18,7 @@ else
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h1">System</MudText>
             <MudText Class="mud-text-secondary" Typo="Typo.body2">
-                How this GitBench is running. Settings are read-only here: change <code>appsettings</code> or environment variables and restart.
+                How this ByteBench is running. Settings are read-only here: change <code>appsettings</code> or environment variables and restart.
             </MudText>
         </div>
         <span class="flex-grow-1"></span>

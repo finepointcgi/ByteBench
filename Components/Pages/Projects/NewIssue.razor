@@ -21,8 +21,8 @@ else if (project != null)
     <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-2" />
     <MudText Typo="Typo.h5" Class="ni-title mb-4">New issue <span class="ni-muted">in @project.Name</span></MudText>
 
-    <GitBench.Components.Fields.IssueTemplatePicker Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
-    <GitBench.Components.Ai.AiIssueDraft Project="project" Issue="issue" LabelIds="labelIds" OnApplied="DraftApplied" />
+    <ByteBench.Components.Fields.IssueTemplatePicker Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
+    <ByteBench.Components.Ai.AiIssueDraft Project="project" Issue="issue" LabelIds="labelIds" OnApplied="DraftApplied" />
     <EditForm Model="issue" OnValidSubmit="Create" FormName="new-issue">
         <DataAnnotationsValidator />
         <MudGrid Spacing="4">
@@ -31,9 +31,9 @@ else if (project != null)
                     <MudTextField T="string" @bind-Value="issue.Title" For="() => issue.Title" Label="Title" Placeholder="Short summary" AutoFocus="true"
                                   Immediate="true" DebounceInterval="300" OnBlur="() => aiTitle = issue.Title"
                                   Variant="Variant.Outlined" Typo="Typo.h6" Class="mb-1" />
-                    <GitBench.Components.Ai.SimilarIssueHints Project="project" Title="@issue.Title" Description="@issue.Description" />
+                    <ByteBench.Components.Ai.SimilarIssueHints Project="project" Title="@issue.Title" Description="@issue.Description" />
                     @* The AI duplicate check (a model call) waits for the title field to lose focus; the keyword hint above updates while typing. *@
-                    <GitBench.Components.Ai.DuplicateHints Project="project" Title="@aiTitle" Description="@issue.Description" />
+                    <ByteBench.Components.Ai.DuplicateHints Project="project" Title="@aiTitle" Description="@issue.Description" />
                     <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Description</MudText>
                     <MarkdownEditor @bind-Value="issue.Description" Rows="10" ProjectId="project.Id"
                                     Placeholder="Describe the problem or feature. Markdown and task lists (- [ ]) are supported." />
@@ -52,7 +52,7 @@ else if (project != null)
                                    ToStringFunc="@(t => $"{t.Icon()} {t}")">
                             @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
                         </MudSelect>
-                        <GitBench.Components.LinkedWork.NewIssueParentField Project="project" Issue="issue" OnChanged="StateHasChanged" />
+                        <ByteBench.Components.LinkedWork.NewIssueParentField Project="project" Issue="issue" OnChanged="StateHasChanged" />
                         <MudSelect T="int?" @bind-Value="issue.WorkflowStatusId" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
                                    ToStringFunc="@(id => workflow.Statuses.FirstOrDefault(s => s.Id == id)?.Name ?? "")">
                             @foreach (var s in workflow.Statuses) { <MudSelectItem T="int?" Value="s.Id">@s.Name</MudSelectItem> }
@@ -95,7 +95,7 @@ else if (project != null)
                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
                         <MudDatePicker @bind-Date="issue.DueDate" Label="Due date" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
                                        DateFormat="yyyy-MM-dd" Editable="true" />
-                        <GitBench.Components.Fields.NewIssueFields Project="project" Issue="issue" />
+                        <ByteBench.Components.Fields.NewIssueFields Project="project" Issue="issue" />
                     </MudStack>
                 </MudPaper>
             </MudItem>

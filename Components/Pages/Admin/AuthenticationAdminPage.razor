@@ -1,7 +1,7 @@
 @page "/admin/authentication"
-@using GitBench.Services.Sso
-@using GitBench.Services.Sso.Ldap
-@using GitBench.Components.Repositories
+@using ByteBench.Services.Sso
+@using ByteBench.Services.Sso.Ldap
+@using ByteBench.Components.Repositories
 @using Microsoft.Extensions.Options
 @inject CurrentUser Me
 @inject ProjectAccess Access
@@ -13,7 +13,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 
-<PageTitle>Authentication · GitBench</PageTitle>
+<PageTitle>Authentication · ByteBench</PageTitle>
 
 @if (Me.User?.IsAdmin != true)
 {
@@ -56,7 +56,7 @@ else
                                 <tr @key="p.Name">
                                     <td>
                                         <div class="d-flex align-center gap-2">
-                                            <MudIcon Icon="@GitBench.Components.Account.SsoProviderButton.IconFor(p.Icon)" Size="Size.Small" />
+                                            <MudIcon Icon="@ByteBench.Components.Account.SsoProviderButton.IconFor(p.Icon)" Size="Size.Small" />
                                             <div><div>@p.Title</div><div class="mud-text-secondary mono aa-small">@p.Name</div></div>
                                         </div>
                                     </td>
@@ -78,7 +78,7 @@ else
                                         @foreach (var m in p.GroupMappings) { <div><span class="mono">@m.ExternalGroup</span> → @m.Group (@m.Role)</div> }
                                         @if (p.AdminGroups.Count == 0 && p.GroupMappings.Count == 0) { <span class="mud-text-secondary">None</span> }
                                     </td>
-                                    <td class="aa-small">@(p.TwoFactor == SsoTwoFactorPolicy.TrustIdp ? "Trusts the provider's MFA" : "GitBench 2FA")</td>
+                                    <td class="aa-small">@(p.TwoFactor == SsoTwoFactorPolicy.TrustIdp ? "Trusts the provider's MFA" : "ByteBench 2FA")</td>
                                 </tr>
                             }
                         </tbody>

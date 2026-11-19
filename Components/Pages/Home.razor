@@ -2,17 +2,17 @@
 @inject IssueService Issues
 @inject CurrentUser Me
 @inject LiveEvents Live
-@inject GitBench.Services.Explore.UserActivityService Feed
-@inject GitBench.Services.Dashboards.DashboardService Dashboards
+@inject ByteBench.Services.Explore.UserActivityService Feed
+@inject ByteBench.Services.Dashboards.DashboardService Dashboards
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Dashboard · GitBench</PageTitle>
+<PageTitle>Dashboard · ByteBench</PageTitle>
 
 @if (homeId is { } hid)
 {
     @* A pinned dashboard replaces the default layout below (Dashboards → Use as Home). *@
-    <GitBench.Components.Dashboards.DashboardBoard DashboardId="hid" @key="hid" OnMissing="ShowDefault" OnHomeChanged="ShowDefault" />
+    <ByteBench.Components.Dashboards.DashboardBoard DashboardId="hid" @key="hid" OnMissing="ShowDefault" OnHomeChanged="ShowDefault" />
 }
 else
 {
@@ -106,7 +106,7 @@ else
 @code {
     private List<ProjectSummary> projects = [];
     private List<Issue> mine = [];
-    private List<GitBench.Services.Explore.FeedItem> activity = [];
+    private List<ByteBench.Services.Explore.FeedItem> activity = [];
 
     private int? homeId;
 

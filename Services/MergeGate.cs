@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Everything the merge box shows, and whether merging is allowed.</summary>
 /// <param name="Checks">Branch protection lines (approvals, change requests) followed by every external <see cref="IMergeCheck"/> result.</param>
@@ -17,7 +17,7 @@ public sealed record MergeGateResult(
 }
 
 /// <summary>
-/// Collects every registered <see cref="IMergeCheck"/> plus GitBench's own branch-protection results for a pull
+/// Collects every registered <see cref="IMergeCheck"/> plus ByteBench's own branch-protection results for a pull
 /// request, and decides whether it may be merged. Protection applies to the PR's target branch:
 /// <list type="bullet">
 /// <item>Approvals: distinct reviewers other than the author with an "approved" verdict (on the current head when

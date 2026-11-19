@@ -1,6 +1,6 @@
 @page "/p/{Key}/repos/{Slug}/settings/pages"
 @inherits RepoPageBase
-@using GitBench.Services.Pages
+@using ByteBench.Services.Pages
 @inject PagesService PagesSvc
 @inject PagesLinks Links
 @inject ProjectAccess Access
@@ -116,7 +116,7 @@ else if (Repo != null && info != null)
                     else
                     {
                         <span>Sites are served from <code>/pages/@Repo.Project.Key/@Repo.Slug/</code> on this server inside a browser sandbox: scripts run, but without cookies,
-                        local storage or access to GitBench. An administrator can give sites their own addresses with <code>Pages:BaseDomain</code>.</span>
+                        local storage or access to ByteBench. An administrator can give sites their own addresses with <code>Pages:BaseDomain</code>.</span>
                     }
                     Sign-in is checked on every request. Limits: @Bytes(Opts.MaxSiteBytes) per site, @Opts.MaxFiles files, @Bytes(Opts.MaxFileBytes) per file.
                 </MudText>
@@ -150,7 +150,7 @@ else if (Repo != null && info != null)
             <div class="gb-rows">
                 @if (info.Deployments.Count == 0)
                 {
-                    <div class="empty">Nothing deployed yet. Add a <span class="mono">pages</span> job to <span class="mono">.gitbench-ci.yml</span> and push to <span class="mono">@Repo.DefaultBranch</span>.</div>
+                    <div class="empty">Nothing deployed yet. Add a <span class="mono">pages</span> job to <span class="mono">.bytebench-ci.yml</span> and push to <span class="mono">@Repo.DefaultBranch</span>.</div>
                 }
                 @foreach (var d in info.Deployments)
                 {
@@ -266,5 +266,5 @@ else if (Repo != null && info != null)
     }
 
     private static string Short(string sha) => sha.Length > 7 ? sha[..7] : sha;
-    private static string Bytes(long bytes) => GitBench.Services.Ci.CiArtifacts.Format(bytes);
+    private static string Bytes(long bytes) => ByteBench.Services.Ci.CiArtifacts.Format(bytes);
 }

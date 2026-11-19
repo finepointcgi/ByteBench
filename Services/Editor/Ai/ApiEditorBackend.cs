@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
-using GitBench.Services.Ai;
+using ByteBench.Services.Ai;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>A tool call the model made in one turn. <see cref="Input"/> is the parsed input object (validate before use).</summary>
 public sealed record EditorModelToolCall(string Id, string Name, JsonElement Input);

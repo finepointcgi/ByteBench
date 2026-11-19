@@ -9,7 +9,7 @@
 <tr><td><b>State</b></td><td>A flag's setting in one environment: on or off, the <b>default value</b> served when on, and an ordered list of targeting <b>rules</b>.</td></tr>
 <tr><td><b>Rule</b></td><td>"If these conditions match (and the user falls in this percentage), serve this value."</td></tr>
 <tr><td><b>Segment</b></td><td>A named list of user ids that rules can target.</td></tr>
-<tr><td><b>SDK key</b></td><td>A read-only credential, per environment, that your application uses to ask GitBench what value a flag has for a given user.</td></tr>
+<tr><td><b>SDK key</b></td><td>A read-only credential, per environment, that your application uses to ask ByteBench what value a flag has for a given user.</td></tr>
 <tr><td><b>Context</b></td><td>Who you are evaluating for: a <code>userId</code> plus string attributes such as <code>plan=pro</code>.</td></tr>
 </table>
 <p>Find them at <b>Feature flags</b> in a project's sidebar, <code>/p/{KEY}/flags</code>; a single flag is at <code>/p/{KEY}/flags/{flagKey}</code>. Everyone who can view the project can read flags.</p>
@@ -77,8 +77,8 @@
 
 <h3 id="rule-example">Example</h3>
 <p>For <code>new-checkout</code> in <code>production</code>: serve <code>true</code> to the beta segment, 20% of everyone on the pro plan, and the default (<code>false</code>) to the rest:</p>
-<pre><code>curl -X PUT https://gitbench.example.com/api/v1/projects/WEB/flags/new-checkout/environments/2 \
-  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X PUT https://bytebench.example.com/api/v1/projects/WEB/flags/new-checkout/environments/2 \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{
     "enabled": true,
     "defaultValue": false,
@@ -101,10 +101,10 @@
 <tr><td><b>Client</b> (<code>gbsdk_c_</code>)</td><td>Evaluate flags and get their values. Can't see rules. May be sent as <code>?sdkKey=</code> (needed for browser <code>EventSource</code>, which can't set headers).</td><td>Browsers, mobile apps. It reveals only the values flags currently serve, but treat it as semi-public: don't put secrets in flag values.</td></tr>
 <tr><td><b>Server</b> (<code>gbsdk_s_</code>)</td><td>Everything a client key does, plus download <b>definitions</b> (rules and segments) for local evaluation, and the matching <code>ruleId</code> in results. Refused if sent in the URL.</td><td>Your backend only. Keep it secret.</td></tr>
 </table>
-<div class="warn">The client API accepts <b>only SDK keys</b>, never personal access tokens or browser sessions, and answers with <code>Access-Control-Allow-Origin: *</code> and no credentials. Evaluating happens on the GitBench server, so rules of a client key are never sent to the browser.</div>
+<div class="warn">The client API accepts <b>only SDK keys</b>, never personal access tokens or browser sessions, and answers with <code>Access-Control-Allow-Origin: *</code> and no credentials. Evaluating happens on the ByteBench server, so rules of a client key are never sent to the browser.</div>
 
 <h2 id="endpoints">Evaluation endpoints</h2>
-<p>All under <code>/api/v1/flags</code>. Send the key as <code>Authorization: Bearer gbsdk_...</code> or the <code>X-GitBench-SDK-Key</code> header. The context comes from query parameters (<code>user=ID</code> or <code>userId=ID</code> and <code>attr.NAME=value</code>) or a JSON body <code>{ "userId": "...", "attributes": { "plan": "pro" } }</code>. A context may have up to 50 attributes, values up to 500 characters.</p>
+<p>All under <code>/api/v1/flags</code>. Send the key as <code>Authorization: Bearer gbsdk_...</code> or the <code>X-ByteBench-SDK-Key</code> header. The context comes from query parameters (<code>user=ID</code> or <code>userId=ID</code> and <code>attr.NAME=value</code>) or a JSON body <code>{ "userId": "...", "attributes": { "plan": "pro" } }</code>. A context may have up to 50 attributes, values up to 500 characters.</p>
 <table>
 <tr><th>Endpoint</th><th>Purpose</th><th>Key</th></tr>
 <tr><td><code>GET /evaluate?flag=KEY&amp;user=ID&amp;attr.plan=pro</code><br><code>POST /evaluate</code> (body adds <code>"flag"</code>)</td><td>One flag. 404 if the environment has no such flag.</td><td>client or server</td></tr>
@@ -115,21 +115,21 @@
 
 <h3 id="curl">With curl</h3>
 <pre><code># one flag for user 42 on the pro plan
-curl -s "https://gitbench.example.com/api/v1/flags/evaluate?flag=new-checkout&amp;user=42&amp;attr.plan=pro" \
-  -H "Authorization: Bearer $GITBENCH_SDK_KEY"
+curl -s "https://bytebench.example.com/api/v1/flags/evaluate?flag=new-checkout&amp;user=42&amp;attr.plan=pro" \
+  -H "Authorization: Bearer $BYTEBENCH_SDK_KEY"
 # {"key":"new-checkout","type":"boolean","value":true,"reason":"rule","ruleId":null,"version":17}
 
 # everything, with a JSON context
-curl -s -X POST https://gitbench.example.com/api/v1/flags/evaluate-all \
-  -H "Authorization: Bearer $GITBENCH_SDK_KEY" -H "Content-Type: application/json" \
+curl -s -X POST https://bytebench.example.com/api/v1/flags/evaluate-all \
+  -H "Authorization: Bearer $BYTEBENCH_SDK_KEY" -H "Content-Type: application/json" \
   -d '{"userId":"42","attributes":{"plan":"pro","country":"DE"}}'
 # {"version":17,"environment":"production","flags":{"new-checkout":{"key":"new-checkout","type":"boolean","value":true,"reason":"rule"}, ...}}</code></pre>
 <p><code>ruleId</code> is included (and non-null) only for server keys. <code>reason</code> is <code>off</code>, <code>rule</code>, <code>default</code> or <code>archived</code>.</p>
 
 <h3 id="etags">ETags and polling</h3>
 <p>Every evaluate and definitions response carries a strong <code>ETag</code> and <code>Cache-Control: private, no-cache</code>. Send the ETag back as <code>If-None-Match</code>; while nothing that affects the answer has changed you get <b>304 Not Modified</b> with no body. That makes polling cheap:</p>
-<pre><code>curl -i "https://gitbench.example.com/api/v1/flags/evaluate-all?user=42" \
-  -H "Authorization: Bearer $GITBENCH_SDK_KEY" -H 'If-None-Match: "3f9a0c..."'</code></pre>
+<pre><code>curl -i "https://bytebench.example.com/api/v1/flags/evaluate-all?user=42" \
+  -H "Authorization: Bearer $BYTEBENCH_SDK_KEY" -H 'If-None-Match: "3f9a0c..."'</code></pre>
 <p>The <code>version</code> in the body is the environment's change counter; it goes up whenever a flag, rule, segment or value that decides evaluation here changes.</p>
 
 <h3 id="stream">Live updates (stream)</h3>
@@ -145,7 +145,7 @@ using System.Text.Json;
 
 public sealed class FlagClient(HttpClient http)
 {
-    // new HttpClient { BaseAddress = new("https://gitbench.example.com/") }
+    // new HttpClient { BaseAddress = new("https://bytebench.example.com/") }
     // with DefaultRequestHeaders.Authorization = new("Bearer", sdkKey)
 
     public async Task&lt;bool&gt; IsOnAsync(string flag, string userId, string plan)
@@ -164,7 +164,7 @@ if (await flags.IsOnAsync("new-checkout", user.Id, user.Plan)) { /* new path */ 
 
 <h2 id="javascript">JavaScript example</h2>
 <pre><code>// Browser, with a CLIENT key
-const base = "https://gitbench.example.com/api/v1/flags";
+const base = "https://bytebench.example.com/api/v1/flags";
 const sdkKey = "gbsdk_c_...";            // client key only: never ship a server key to a browser
 const ctx = new URLSearchParams({ user: "42", "attr.plan": "pro" });
 
@@ -182,8 +182,8 @@ es.addEventListener("flags", (e) =&gt; {
 <pre><code>// Node, with a SERVER key and cheap polling via ETag
 let etag = null, flags = {};
 async function refresh() {
-  const res = await fetch("https://gitbench.example.com/api/v1/flags/evaluate-all?user=42", {
-    headers: { Authorization: `Bearer ${process.env.GITBENCH_SDK_KEY}`, ...(etag ? { "If-None-Match": etag } : {}) },
+  const res = await fetch("https://bytebench.example.com/api/v1/flags/evaluate-all?user=42", {
+    headers: { Authorization: `Bearer ${process.env.BYTEBENCH_SDK_KEY}`, ...(etag ? { "If-None-Match": etag } : {}) },
   });
   if (res.status === 304) return flags;
   etag = res.headers.get("ETag");
@@ -192,7 +192,7 @@ async function refresh() {
 }</code></pre>
 
 <h2 id="stale">Stale flags</h2>
-<p>Old flags are clutter and risk. GitBench tracks when each flag last <b>changed</b> and when an SDK last <b>evaluated</b> it (recorded at most about once an hour per flag and environment). A flag that has neither changed nor been evaluated for the chosen number of days (default <b>30</b>, adjustable with "Stale after (days)" on the page) is marked <b>stale</b>. Clean up by removing the flag from code, then <b>archive</b> it (kept, but always serves its off value and can't be edited until restored) or delete it. Via API: <code>GET /api/v1/projects/{key}/flags/_stale?days=45</code>.</p>
+<p>Old flags are clutter and risk. ByteBench tracks when each flag last <b>changed</b> and when an SDK last <b>evaluated</b> it (recorded at most about once an hour per flag and environment). A flag that has neither changed nor been evaluated for the chosen number of days (default <b>30</b>, adjustable with "Stale after (days)" on the page) is marked <b>stale</b>. Clean up by removing the flag from code, then <b>archive</b> it (kept, but always serves its off value and can't be edited until restored) or delete it. Via API: <code>GET /api/v1/projects/{key}/flags/_stale?days=45</code>.</p>
 
 <h2 id="history">History and audit</h2>
 <p>Every change is written to the flag's <b>history</b> (who, when, old and new value, which environment): created, toggled, default value, off value, rules, details, issues, archived, unarchived. See it on the flag's page or with <code>GET /api/v1/projects/{key}/flags/{flagKey}/history</code>. The same changes are in the project <a href="admin.html">audit log</a> (<code>flag.created</code>, <code>flag.toggled</code>, <code>flag.rules_changed</code>, <code>flag.default_changed</code>, <code>flag.off_value_changed</code>, <code>flag.updated</code>, <code>flag.archived</code>, <code>flag.unarchived</code>, <code>flag.deleted</code>, plus <code>flag.environment_created</code>, <code>flag.environment_deleted</code>, <code>flag.sdk_key_created</code>, <code>flag.segment_created</code>, <code>flag.segment_updated</code>, <code>flag.segment_deleted</code> and key rotation and revocation events). Deleting a flag removes its history, but the audit log keeps the record.</p>
@@ -204,7 +204,7 @@ async function refresh() {
   "flag": { "id": 5, "key": "new-checkout", "name": "New checkout", "type": "boolean", "archived": false },
   "environment": { "id": 2, "name": "production" },
   "change": { "kind": "toggled", "oldValue": "off", "newValue": "on" },
-  "url": "https://gitbench.example.com/p/WEB/flags/new-checkout"
+  "url": "https://bytebench.example.com/p/WEB/flags/new-checkout"
 }</code></pre>
 <p><code>environment</code> is <code>null</code> for changes that aren't per environment (details, off value, archive). <code>kind</code> is one of <code>created</code>, <code>toggled</code>, <code>default_value</code>, <code>off_value</code>, <code>rules</code>, <code>details</code>, <code>issues</code>, <code>archived</code>, <code>unarchived</code>. Values are clipped to 2000 characters.</p>
 
@@ -229,12 +229,12 @@ async function refresh() {
 <tr><td><code>GET /flag-segments</code>, <code>PUT/DELETE /flag-segments/{segmentKey}</code></td><td>Segments (<code>{ "name", "description", "members": [...] }</code>).</td></tr>
 <tr><td><code>GET/POST /flag-sdk-keys</code>, <code>POST .../{id}/rotate</code>, <code>DELETE .../{id}</code></td><td>SDK keys. Create takes <code>{ "environmentId", "name", "kind": "client|server" }</code>; the secret is in the create/rotate response only.</td></tr>
 </table>
-<pre><code>curl -X POST https://gitbench.example.com/api/v1/projects/WEB/flags \
-  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X POST https://bytebench.example.com/api/v1/projects/WEB/flags \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"key":"new-checkout","name":"New checkout","type":"boolean","defaultValue":true,"offValue":false}'
 
-curl -X POST https://gitbench.example.com/api/v1/projects/WEB/flag-sdk-keys \
-  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X POST https://bytebench.example.com/api/v1/projects/WEB/flag-sdk-keys \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"environmentId":2,"name":"web frontend","kind":"client"}'</code></pre>
 
 <h2 id="limits">Limits at a glance</h2>

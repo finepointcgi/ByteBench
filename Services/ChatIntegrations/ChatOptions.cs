@@ -1,4 +1,4 @@
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// The site's Slack app (section <c>Slack</c>), used by the slash command, interactivity, link unfurling and DMs. Keep

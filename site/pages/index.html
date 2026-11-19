@@ -1,8 +1,8 @@
-<h1>GitBench</h1>
+<h1>ByteBench</h1>
 <p class="lead">One self-hosted place for planning work, hosting Git repositories, reviewing code, running CI and shipping releases: a Jira plus GitLab or Bitbucket style platform written in C# with Blazor on .NET 10.</p>
 
-<h2 id="what">What GitBench is</h2>
-<p>Most teams stitch together an issue tracker, a Git host, a CI server, a package registry and a chat bot. GitBench puts these in a single ASP.NET Core application with one database and a few folders on disk, so you can run the whole thing on one machine with <code>docker compose up</code>.</p>
+<h2 id="what">What ByteBench is</h2>
+<p>Most teams stitch together an issue tracker, a Git host, a CI server, a package registry and a chat bot. ByteBench puts these in a single ASP.NET Core application with one database and a few folders on disk, so you can run the whole thing on one machine with <code>docker compose up</code>.</p>
 <ul>
   <li><strong>Plan.</strong> Projects with issues, workflows, Kanban and Scrum boards, sprints, a roadmap, custom fields, a query language (GQL), dashboards, automation rules and a service desk.</li>
   <li><strong>Code.</strong> Repositories served over Git HTTP and a built-in SSH server, pull requests with reviews and code owners, branch protection, a merge queue, forks, mirroring and Git LFS.</li>
@@ -10,7 +10,7 @@
   <li><strong>Connect.</strong> A REST API, webhooks, Slack and Microsoft Teams, email notifications, single sign-on (OIDC and OAuth) and LDAP.</li>
   <li><strong>Assist.</strong> Optional AI features that use Claude: pull request review, issue triage and an assistant in the web editor. They are off until you give the server an API key or install Claude Code.</li>
 </ul>
-<div class="note">GitBench is meant to run as <strong>one instance</strong>. Its background queues (CI, webhooks, email, AI review) live inside the process, so do not run several replicas against the same data.</div>
+<div class="note">ByteBench is meant to run as <strong>one instance</strong>. Its background queues (CI, webhooks, email, AI review) live inside the process, so do not run several replicas against the same data.</div>
 
 <h2 id="features">Feature overview</h2>
 <p>Every card opens the page that covers that area.</p>
@@ -47,18 +47,18 @@
 <h2 id="quick-links">Quick links</h2>
 <table>
   <tr><th>I want to...</th><th>Go to</th></tr>
-  <tr><td>Try GitBench in ten minutes</td><td><a href="getting-started.html">Getting started</a></td></tr>
+  <tr><td>Try ByteBench in ten minutes</td><td><a href="getting-started.html">Getting started</a></td></tr>
   <tr><td>Understand projects, groups and roles</td><td><a href="concepts.html">Concepts</a></td></tr>
   <tr><td>Change a setting or look up an environment variable</td><td><a href="configuration.html">Configuration reference</a></td></tr>
   <tr><td>Put it on a server with HTTPS, backups and Postgres</td><td><a href="production.html">Production setup</a></td></tr>
   <tr><td>Fix something that does not work</td><td><a href="troubleshooting.html">FAQ and troubleshooting</a></td></tr>
   <tr><td>Look up a word</td><td><a href="glossary.html">Glossary</a></td></tr>
   <tr><td>Write my first CI file</td><td><a href="ci.html">CI pipelines</a></td></tr>
-  <tr><td>Call GitBench from a script</td><td><a href="api.html">REST API and webhooks</a></td></tr>
+  <tr><td>Call ByteBench from a script</td><td><a href="api.html">REST API and webhooks</a></td></tr>
 </table>
 
 <h2 id="map">What is where</h2>
-<p>This is a map of the main places in the GitBench web interface. <code>{KEY}</code> is a project key such as <code>WEB</code> and <code>{slug}</code> is a repository name.</p>
+<p>This is a map of the main places in the ByteBench web interface. <code>{KEY}</code> is a project key such as <code>WEB</code> and <code>{slug}</code> is a repository name.</p>
 <table>
   <tr><th>Address</th><th>What you find there</th></tr>
   <tr><td><code>/</code></td><td>Your dashboard: assigned work, projects and activity</td></tr>
@@ -78,4 +78,4 @@
 </table>
 
 <h2 id="how-docs-work">How this documentation is organised</h2>
-<p>The left menu follows the life of a piece of work: <em>Start here</em>, <em>Plan and track work</em>, <em>Code and review</em>, <em>Build, test and ship</em>, <em>AI features</em>, <em>Integrations and API</em> and <em>Administer</em>. If you only run GitBench for others, read <a href="getting-started.html">Getting started</a>, <a href="configuration.html">Configuration</a>, <a href="production.html">Production setup</a> and <a href="troubleshooting.html">Troubleshooting</a>. If you only use it, start with <a href="concepts.html">Concepts</a>.</p>
+<p>The left menu follows the life of a piece of work: <em>Start here</em>, <em>Plan and track work</em>, <em>Code and review</em>, <em>Build, test and ship</em>, <em>AI features</em>, <em>Integrations and API</em> and <em>Administer</em>. If you only run ByteBench for others, read <a href="getting-started.html">Getting started</a>, <a href="configuration.html">Configuration</a>, <a href="production.html">Production setup</a> and <a href="troubleshooting.html">Troubleshooting</a>. If you only use it, start with <a href="concepts.html">Concepts</a>.</p>

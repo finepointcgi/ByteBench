@@ -1,8 +1,8 @@
 using System.Text;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
 /// <summary>RFC 4180 CSV: writing (with spreadsheet formula-injection escaping, like the audit export) and reading.</summary>
 public static class Csv

@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>
 /// The REST API at /api/v1 (minimal APIs) and its OpenAPI document at /api/v1/openapi.json.
@@ -15,7 +15,7 @@ public static class ApiEndpoints
 {
     public const string DocumentName = "v1";
 
-    public static IServiceCollection AddGitBenchApi(this IServiceCollection services)
+    public static IServiceCollection AddByteBenchApi(this IServiceCollection services)
     {
         services.AddScoped<ApiCaller>();
         services.ConfigureHttpJsonOptions(o => Dto.Configure(o.SerializerOptions));
@@ -26,7 +26,7 @@ public static class ApiEndpoints
             {
                 doc.Info = new OpenApiInfo
                 {
-                    Title = "GitBench API",
+                    Title = "ByteBench API",
                     Version = "v1",
                     Description = "Authenticate with 'Authorization: Bearer gbp_…' (a personal access token with read_api or write_api), " +
                                   "or a signed-in browser session. Errors are RFC 9457 problem details. Lists take ?page= and ?perPage= (max 100) " +
@@ -61,7 +61,7 @@ public static class ApiEndpoints
         return services;
     }
 
-    public static IEndpointRouteBuilder MapGitBenchApi(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapByteBenchApi(this IEndpointRouteBuilder app)
     {
         app.MapOpenApi("/api/{documentName}/openapi.json");
 
@@ -109,7 +109,7 @@ public static class ApiEndpoints
         return app;
     }
 
-    /// <summary>Documents a JSON request body in OpenAPI (see the operation transformer in <see cref="AddGitBenchApi"/>).</summary>
+    /// <summary>Documents a JSON request body in OpenAPI (see the operation transformer in <see cref="AddByteBenchApi"/>).</summary>
     public static RouteHandlerBuilder WithJsonBody<T>(this RouteHandlerBuilder b, bool optional = false) =>
         b.WithMetadata(new JsonBodyMetadata(typeof(T), optional));
 

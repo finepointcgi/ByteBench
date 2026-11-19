@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Linked work hooks: parent changes and issue links notify the watchers of every issue involved.</summary>
 public partial class NotificationService

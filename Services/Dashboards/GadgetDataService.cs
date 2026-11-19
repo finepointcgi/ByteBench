@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Explore;
+using ByteBench.Data;
+using ByteBench.Services.Explore;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Dashboards;
+namespace ByteBench.Services.Dashboards;
 
 /// <summary>Issues behind an issue gadget, or why there are none (<see cref="Problem"/>).</summary>
 public sealed record GadgetIssues(string? ProjectKey, string? ProjectName, string? FilterName, string Query, List<Issue> Issues, string? Problem)

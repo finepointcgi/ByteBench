@@ -6,8 +6,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using GitBench.Services.Git;
-using GitBench.Services.Hosting;
+using ByteBench.Services.Git;
+using ByteBench.Services.Hosting;
 using Microsoft.DevTunnels.Ssh;
 using Microsoft.DevTunnels.Ssh.Algorithms;
 using Microsoft.DevTunnels.Ssh.Events;
@@ -16,7 +16,7 @@ using Microsoft.DevTunnels.Ssh.Messages;
 using Microsoft.Extensions.Options;
 using SshBuffer = Microsoft.DevTunnels.Ssh.Buffer;
 
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 /// <summary>
 /// The embedded SSH server for git: <c>git clone ssh://git@host:2222/WEB/web-app.git</c>. Built on Microsoft.DevTunnels.Ssh
@@ -32,7 +32,7 @@ namespace GitBench.Services.Ssh;
 public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceScopeFactory scopes, IConfiguration config, IHostEnvironment env,
     AppRateLimits rateLimits, RepoStorage storage, ILoggerFactory loggerFactory) : BackgroundService
 {
-    private readonly ILogger log = loggerFactory.CreateLogger("GitBench.Ssh");
+    private readonly ILogger log = loggerFactory.CreateLogger("ByteBench.Ssh");
     private readonly ConcurrentDictionary<SshServerSession, byte> sessions = new();
     private TcpListener? listener;
     private SshSessionConfiguration? sessionConfig;
@@ -135,7 +135,7 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
         listener?.Stop();
         foreach (var s in sessions.Keys)
         {
-            try { await s.CloseAsync(SshDisconnectReason.ByApplication, "GitBench is shutting down."); }
+            try { await s.CloseAsync(SshDisconnectReason.ByApplication, "ByteBench is shutting down."); }
             catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogDebug(ex, "Closing SSH session"); }
         }
         await base.StopAsync(cancellationToken);
@@ -153,7 +153,7 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
         var conn = new Connection(socket.RemoteEndPoint is IPEndPoint ep ? ep.Address.ToString() : "unknown");
         socket.NoDelay = true;
         var stream = new NetworkStream(socket, ownsSocket: true);
-        var session = new SshServerSession(sessionConfig!, new TraceSource("GitBench.Ssh.Library", SourceLevels.Off)) { Credentials = credentials! };
+        var session = new SshServerSession(sessionConfig!, new TraceSource("ByteBench.Ssh.Library", SourceLevels.Off)) { Credentials = credentials! };
         var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         sessions[session] = 0;
         session.Closed += (_, e) =>
@@ -228,7 +228,7 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
         if (conn.Identity == null || e.Request.ChannelType != SshChannel.SessionChannelType)
         {
             e.FailureReason = SshChannelOpenFailureReason.AdministrativelyProhibited;
-            e.FailureDescription = "GitBench only serves git over SSH; port forwarding is disabled.";
+            e.FailureDescription = "ByteBench only serves git over SSH; port forwarding is disabled.";
             return;
         }
         var channel = new ChannelState(e.Channel, new ChannelStream(new SshStream(e.Channel)));
@@ -291,7 +291,7 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
     private string ShellMessage(SshIdentity id)
     {
         var who = id.IsDeployKey ? $"deploy key \"{id.KeyTitle}\"" : id.UserName;
-        return $"Hi {who}! You've successfully authenticated, but GitBench does not provide shell access.\r\n" +
+        return $"Hi {who}! You've successfully authenticated, but ByteBench does not provide shell access.\r\n" +
                $"Use git instead, e.g.: git clone ssh://git@{options.Value.PublicHost ?? "<host>"}:{options.Value.EffectivePublicPort}/KEY/repository.git\r\n";
     }
 

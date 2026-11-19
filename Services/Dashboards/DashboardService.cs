@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Dashboards;
+namespace ByteBench.Services.Dashboards;
 
 /// <summary>A dashboard's gadgets or settings changed (open copies of it refresh).</summary>
 public sealed record DashboardChanged(int DashboardId) : LiveEvent;

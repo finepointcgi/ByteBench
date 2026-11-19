@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 public partial class NotificationService
 {

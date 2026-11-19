@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Mirroring;
+namespace ByteBench.Services.Mirroring;
 
 /// <summary>What the mirroring settings page submits. A blank <see cref="Secret"/> keeps the saved one.</summary>
 public sealed class MirrorInput

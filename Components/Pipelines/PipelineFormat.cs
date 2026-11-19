@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Components.Pipelines;
+namespace ByteBench.Components.Pipelines;
 
 public static class PipelineFormat
 {

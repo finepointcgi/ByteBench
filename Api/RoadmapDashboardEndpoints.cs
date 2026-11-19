@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Dashboards;
-using GitBench.Services.Roadmap;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Dashboards;
+using ByteBench.Services.Roadmap;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record RoadmapItemDto(int Id, string Key, string Title, IssueType Type, IssueStatus Status, DateOnly? StartDate, DateOnly? DueDate,
     UserDto? Assignee, IReadOnlyList<string> Labels, int ChildrenDone, int ChildrenTotal, int Progress, bool CanEdit, string WebUrl,

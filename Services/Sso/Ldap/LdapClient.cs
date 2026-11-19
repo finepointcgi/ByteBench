@@ -2,7 +2,7 @@ using System.Net.Security;
 using Microsoft.Extensions.Options;
 using Novell.Directory.Ldap;
 
-namespace GitBench.Services.Sso.Ldap;
+namespace ByteBench.Services.Sso.Ldap;
 
 /// <summary>A directory entry: its DN and the requested attributes (names case-insensitive, every value as a string).</summary>
 public sealed class LdapDirectoryEntry(string dn, IDictionary<string, string[]> attributes)
@@ -20,7 +20,7 @@ public sealed class LdapDirectoryEntry(string dn, IDictionary<string, string[]> 
 public class LdapUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
-/// The two directory operations GitBench needs, so the logic in <see cref="LdapAuthService"/> can be tested with a fake.
+/// The two directory operations ByteBench needs, so the logic in <see cref="LdapAuthService"/> can be tested with a fake.
 /// Filters arrive already built and escaped (<see cref="LdapFilter"/>).
 /// </summary>
 public interface ILdapClient
@@ -39,7 +39,7 @@ public interface ILdapClient
 /// <summary>
 /// <see cref="ILdapClient"/> on Novell.Directory.Ldap.NETStandard. Chosen over System.DirectoryServices.Protocols because
 /// it's fully managed: no native libldap to install in the container image or on macOS, and the same TLS stack
-/// (SslStream) everywhere. One short-lived connection per operation (GitBench binds rarely: sign-ins and the sync).
+/// (SslStream) everywhere. One short-lived connection per operation (ByteBench binds rarely: sign-ins and the sync).
 /// </summary>
 public sealed class NovellLdapClient(IOptionsMonitor<LdapOptions> options, ILogger<NovellLdapClient> log) : ILdapClient
 {

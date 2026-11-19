@@ -1,15 +1,15 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.Extensions.Primitives;
 
-namespace GitBench.Services.Flags;
+namespace ByteBench.Services.Flags;
 
 /// <summary>
 /// The client API under <c>/api/v1/flags</c>. Authenticated only by an SDK key (<c>Authorization: Bearer gbsdk_...</c>, the
-/// <c>X-GitBench-SDK-Key</c> header, or <c>?sdkKey=</c> for client keys, since browsers' EventSource can't set headers): never by a
+/// <c>X-ByteBench-SDK-Key</c> header, or <c>?sdkKey=</c> for client keys, since browsers' EventSource can't set headers): never by a
 /// personal access token or a browser session, so the endpoints are CORS-open (<c>Access-Control-Allow-Origin: *</c>, no credentials).
 /// Evaluation happens on the server: client keys get values, server keys can also download rules (<c>/definitions</c>).
 /// <list type="bullet">
@@ -22,8 +22,8 @@ namespace GitBench.Services.Flags;
 /// </summary>
 public static class FlagSdkEndpoints
 {
-    private const string PrincipalKey = "gitbench.flags.principal";
-    private const string KeyTextKey = "gitbench.flags.key";
+    private const string PrincipalKey = "bytebench.flags.principal";
+    private const string KeyTextKey = "bytebench.flags.key";
     private static int openStreams;
     private const int MaxStreams = 1000;
 
@@ -55,18 +55,18 @@ public static class FlagSdkEndpoints
         var h = http.Response.Headers;
         h["Access-Control-Allow-Origin"] = "*"; // never with credentials: nothing here reads cookies
         h["Access-Control-Expose-Headers"] = "ETag";
-        h.Vary = "Authorization, X-GitBench-SDK-Key";
+        h.Vary = "Authorization, X-ByteBench-SDK-Key";
         if (HttpMethods.IsOptions(http.Request.Method))
         {
             h["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
-            h["Access-Control-Allow-Headers"] = "Authorization, Content-Type, If-None-Match, X-GitBench-SDK-Key";
+            h["Access-Control-Allow-Headers"] = "Authorization, Content-Type, If-None-Match, X-ByteBench-SDK-Key";
             h["Access-Control-Max-Age"] = "86400";
             return await next(ctx);
         }
 
         var presented = KeyFrom(http.Request, out var viaQuery);
         if (presented == null)
-            return Unauthorized(http, "Send an SDK key: 'Authorization: Bearer gbsdk_...' or the X-GitBench-SDK-Key header.");
+            return Unauthorized(http, "Send an SDK key: 'Authorization: Bearer gbsdk_...' or the X-ByteBench-SDK-Key header.");
         if (!presented.StartsWith(FlagService.SdkKeyPrefix, StringComparison.Ordinal))
             return Unauthorized(http, "These endpoints only accept SDK keys (gbsdk_...), not personal access tokens. Create an SDK key on the project's Flags page.");
         var sdk = http.RequestServices.GetRequiredService<FlagSdkService>();
@@ -101,14 +101,14 @@ public static class FlagSdkEndpoints
         viaQuery = false;
         var auth = r.Headers.Authorization.ToString();
         if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return auth[7..].Trim();
-        if (r.Headers["X-GitBench-SDK-Key"].ToString() is { Length: > 0 } header) return header.Trim();
+        if (r.Headers["X-ByteBench-SDK-Key"].ToString() is { Length: > 0 } header) return header.Trim();
         if (r.Query["sdkKey"].ToString() is { Length: > 0 } q) { viaQuery = true; return q.Trim(); }
         return null;
     }
 
     private static IResult Unauthorized(HttpContext http, string detail)
     {
-        http.Response.Headers.WWWAuthenticate = "Bearer realm=\"GitBench flags\"";
+        http.Response.Headers.WWWAuthenticate = "Bearer realm=\"ByteBench flags\"";
         return ApiResults.Problem(StatusCodes.Status401Unauthorized, "Unauthorized", detail);
     }
 

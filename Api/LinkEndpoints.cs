@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 // ----- Linked work wire types -----
 

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>The outcome of "Sync fork" for the fork's default branch.</summary>
 public enum ForkSyncState { UpToDate, FastForwarded, Ahead, Diverged, NoUpstreamBranch }
@@ -151,7 +151,7 @@ public static partial class GitOps
         {
             // Fetch the source's branches into a scratch namespace (LibGit2Sharp fetches from named remotes only),
             // then drop the scratch refs and the remote again.
-            var name = "gitbench-" + Guid.NewGuid().ToString("N")[..12];
+            var name = "bytebench-" + Guid.NewGuid().ToString("N")[..12];
             r.Network.Remotes.Add(name, path, $"+refs/heads/*:refs/{name}/*");
             try { Commands.Fetch(r, name, [$"+refs/heads/*:refs/{name}/*"], new FetchOptions { TagFetchMode = TagFetchMode.None }, logMessage); }
             finally

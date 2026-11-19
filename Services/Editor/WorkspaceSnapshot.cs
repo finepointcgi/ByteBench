@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Editor;
+namespace ByteBench.Services.Editor;
 
 /// <summary>
 /// A read-only view of a workspace at one moment: the files at <see cref="BaseSha"/> with the working changes laid over

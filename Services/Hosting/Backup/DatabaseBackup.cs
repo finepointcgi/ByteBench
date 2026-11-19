@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Microsoft.Data.Sqlite;
 using Npgsql;
 
-namespace GitBench.Services.Hosting.Backup;
+namespace ByteBench.Services.Hosting.Backup;
 
 /// <summary>
 /// Dumping and restoring the database itself. SQLite: the online backup API (a transactionally consistent copy while the server
@@ -11,7 +11,7 @@ namespace GitBench.Services.Hosting.Backup;
 /// </summary>
 public static class DatabaseBackup
 {
-    public const string SqliteEntry = "db/gitbench.db";
+    public const string SqliteEntry = "db/bytebench.db";
     public const string PostgresEntry = "db/postgres.dump";
 
     public static string EntryFor(DatabaseProvider p) => p == DatabaseProvider.Sqlite ? SqliteEntry : PostgresEntry;
@@ -137,10 +137,10 @@ public static class DatabaseBackup
         catch (Exception ex) when (ex is SqliteException or PostgresException) { return false; } // table missing: not migrated yet
     }
 
-    /// <summary>The newest migration id this build of GitBench knows for the provider.</summary>
+    /// <summary>The newest migration id this build of ByteBench knows for the provider.</summary>
     public static string KnownLatestMigration(DatabaseProvider provider)
     {
-        var contextType = provider == DatabaseProvider.Sqlite ? typeof(GitBench.Data.AppDbContext) : typeof(GitBench.Data.Postgres.PostgresAppDbContext);
+        var contextType = provider == DatabaseProvider.Sqlite ? typeof(ByteBench.Data.AppDbContext) : typeof(ByteBench.Data.Postgres.PostgresAppDbContext);
         return typeof(DatabaseBackup).Assembly.GetTypes()
             .Select(t => (Type: t, Migration: t.GetCustomAttributes(typeof(Microsoft.EntityFrameworkCore.Migrations.MigrationAttribute), false)
                 .OfType<Microsoft.EntityFrameworkCore.Migrations.MigrationAttribute>().FirstOrDefault(),

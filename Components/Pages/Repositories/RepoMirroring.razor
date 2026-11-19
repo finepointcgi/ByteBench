@@ -1,7 +1,7 @@
 @page "/p/{Key}/repos/{Slug}/settings/mirroring"
 @inherits RepoPageBase
 @implements IDisposable
-@using GitBench.Services.Mirroring
+@using ByteBench.Services.Mirroring
 @inject MirrorService Mirrors
 @inject MirrorUrlGuard UrlGuard
 @inject ProjectAccess Access
@@ -29,7 +29,7 @@ else if (Repo != null)
             <div class="mb-4">
                 <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Sync" /> Mirroring</MudText>
                 <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                    A <b>pull mirror</b> keeps this repository a copy of another one: GitBench fetches its branches and tags on an interval,
+                    A <b>pull mirror</b> keeps this repository a copy of another one: ByteBench fetches its branches and tags on an interval,
                     and nobody can push here while it is on. A <b>push mirror</b> sends this repository's branches and tags to another
                     one after every push. URLs must be <code>https://</code>, <code>http://</code> or <code>ssh://</code>
                     @(UrlGuard.AllowPrivateNetworks ? "." : "on a public address (this server blocks private and local networks).")

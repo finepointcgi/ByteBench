@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>
 /// The optional merge check "no unresolved AI blocker findings" (repository setting, off by default). A blocker is an AI

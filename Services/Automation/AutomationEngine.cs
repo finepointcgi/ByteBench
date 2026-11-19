@@ -1,10 +1,10 @@
 using System.Diagnostics;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 public sealed class AutomationOptions
 {

@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// Repository settings: name, description and default branch, rename (with redirects from the old slug),

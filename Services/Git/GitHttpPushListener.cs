@@ -1,4 +1,4 @@
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// Notified after a successful <c>git push</c> over HTTP (a <c>git-receive-pack</c> POST that

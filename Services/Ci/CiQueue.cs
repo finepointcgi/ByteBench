@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// In-memory queue of pipeline ids waiting to run (singleton), plus the cancellation handles of running pipelines.

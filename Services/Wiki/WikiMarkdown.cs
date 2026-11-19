@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using GitBench.Services.Git;
+using ByteBench.Services.Git;
 using Markdig;
 using Markdig.Helpers;
 using Markdig.Parsers;
@@ -9,7 +9,7 @@ using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Microsoft.AspNetCore.Components;
 
-namespace GitBench.Services.Wiki;
+namespace ByteBench.Services.Wiki;
 
 /// <summary>Where a wiki page is rendered: its project, its own path and the pages that exist (for links).</summary>
 public sealed record WikiRenderContext(string ProjectKey, string PagePath, IReadOnlyCollection<string> Pages);

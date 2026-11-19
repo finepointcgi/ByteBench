@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Fields;
-using GitBench.Services.Workbench;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Fields;
+using ByteBench.Services.Workbench;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 // ----- Custom fields, components, versions, estimates & Workbench wire types -----
 
@@ -88,7 +88,7 @@ public static class FieldEndpoints
         p.MapGet("/versions", ListVersions).WithName("ListVersions").WithSummary("List versions")
             .WithDescription("Unreleased first. Issue counts and progress are for issues with the version as fix version.");
         p.MapGet("/issue-templates", ListTemplates).WithName("ListIssueTemplates").WithSummary("List issue templates")
-            .WithDescription("Project templates, then .gitbench/issue_templates/*.md from the default branch of the project's first repository.");
+            .WithDescription("Project templates, then .bytebench/issue_templates/*.md from the default branch of the project's first repository.");
 
         p.MapGet("/workbench", GetWorkbench).WithName("GetWorkbenchMapping").WithSummary("Get the project's Workbench charge code")
             .WithDescription("Time is recorded in Workbench timesheets. timesheetUrl is null when Workbench:BaseUrl isn't configured.");

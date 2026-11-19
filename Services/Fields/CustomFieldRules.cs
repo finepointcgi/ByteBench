@@ -2,9 +2,9 @@ using System.Collections;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 /// <summary>
 /// A custom field's value, whatever its type. Only the member that matches the field's type is set: <see cref="Text"/>

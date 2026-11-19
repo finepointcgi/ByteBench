@@ -1,6 +1,6 @@
-/* ===== GitBench theme ===== */
+/* ===== ByteBench theme ===== */
 :root {
-    /* Mapped onto the MudBlazor palette (Components/Layout/GitBenchTheme.cs) so custom styles follow light/dark mode. */
+    /* Mapped onto the MudBlazor palette (Components/Layout/ByteBenchTheme.cs) so custom styles follow light/dark mode. */
     --bg: var(--mud-palette-background);
     --surface: var(--mud-palette-surface);
     --border: var(--mud-palette-lines-default);

@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Dashboards;
+namespace ByteBench.Services.Dashboards;
 
 /// <summary>One slice or bar of an issue chart. <see cref="Slot"/> is the categorical colour slot (1–8; 0 = "Other").</summary>
 public sealed record ChartSlice(string Label, int Count, int Slot);

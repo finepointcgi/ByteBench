@@ -1,4 +1,4 @@
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// Replaces CI secret values with <c>***</c> in step logs. Values shorter than <see cref="MinLength"/> characters are

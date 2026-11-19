@@ -1,8 +1,8 @@
-using GitBench.Services;
-using GitBench.Services.Query;
-using GitBench.Services.Reports;
+using ByteBench.Services;
+using ByteBench.Services.Query;
+using ByteBench.Services.Reports;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record DoraSettingsDto(string? ProductionEnvironment, int FailureWindowHours, IReadOnlyList<string> Environments);
 public record DoraSettingsRequest(string? ProductionEnvironment = null, int? FailureWindowHours = null);

@@ -1,9 +1,9 @@
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// Turns a generic webhook envelope (the JSON a webhook would receive) into chat messages: which chat events it is

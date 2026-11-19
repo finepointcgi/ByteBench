@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>What <c>claude --version</c> and <c>claude --help</c> said, and when.</summary>
 public sealed record ClaudeCodeStatus(bool Installed, string? Version, string? ExecutablePath, string? Error, DateTime CheckedAt,
@@ -14,7 +14,7 @@ public sealed record ClaudeCodeStatus(bool Installed, string? Version, string? E
 
 /// <summary>
 /// Finds Claude Code on the server (<c>Ai:ClaudeCode:Path</c>, default <c>claude</c> on PATH) by running
-/// <c>claude --version</c>, and reads <c>claude --help</c> to learn which flags this version has (so GitBench never passes one
+/// <c>claude --version</c>, and reads <c>claude --help</c> to learn which flags this version has (so ByteBench never passes one
 /// it doesn't list). Runs at startup (<see cref="ClaudeCodeStartupCheck"/>) and on demand (the AI status pages). Singleton.
 /// </summary>
 public sealed partial class ClaudeCodeDetector(IOptions<ClaudeCodeOptions> options, ILogger<ClaudeCodeDetector> log)

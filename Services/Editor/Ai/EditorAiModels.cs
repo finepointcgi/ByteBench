@@ -1,11 +1,11 @@
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>Which engine runs the web editor's assistant (<c>Ai:Editor:Backend</c>).</summary>
 public enum EditorAiBackendKind
 {
     /// <summary>Claude Code if it is installed on the server, else the Anthropic API if configured, else off.</summary>
     Auto,
-    /// <summary>The Anthropic API through <see cref="GitBench.Services.Ai.AiClient"/> (server-side tool loop).</summary>
+    /// <summary>The Anthropic API through <see cref="ByteBench.Services.Ai.AiClient"/> (server-side tool loop).</summary>
     Api,
     /// <summary>Claude Code installed on the server, run headless in a temporary copy of the workspace.</summary>
     ClaudeCode,

@@ -6,9 +6,9 @@
 @inject SignInManager<User> SignIn
 @inject UserManager<User> Users
 @inject NavigationManager Nav
-@inject GitBench.Services.Audit.AuditLog Audit
+@inject ByteBench.Services.Audit.AuditLog Audit
 
-<PageTitle>Two-factor sign-in · GitBench</PageTitle>
+<PageTitle>Two-factor sign-in · ByteBench</PageTitle>
 
 <div class="profile-page">
     <div class="profile-head">
@@ -158,8 +158,8 @@
             key = await Users.GetAuthenticatorKeyAsync(user!);
         }
         sharedKey = key ?? "";
-        var label = Uri.EscapeDataString("GitBench:" + (user!.UserName ?? ""));
-        var uri = $"otpauth://totp/{label}?secret={sharedKey}&issuer=GitBench&digits=6";
+        var label = Uri.EscapeDataString("ByteBench:" + (user!.UserName ?? ""));
+        var uri = $"otpauth://totp/{label}?secret={sharedKey}&issuer=ByteBench&digits=6";
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(uri, QRCodeGenerator.ECCLevel.M);
         qrSvg = new SvgQRCode(data).GetGraphic(5);

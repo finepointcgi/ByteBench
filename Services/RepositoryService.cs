@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 public record RepoSummary(Repository Repository, int OpenPullRequests);
 public record DevBranch(Repository Repo, BranchInfo Branch);
@@ -32,7 +32,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
         return Task.Run(() => op(path));
     }
 
-    public static GitIdentity IdentityOf(User u) => new(u.DisplayName, u.Email ?? $"{u.UserName}@gitbench.local");
+    public static GitIdentity IdentityOf(User u) => new(u.DisplayName, u.Email ?? $"{u.UserName}@bytebench.local");
 
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]*$")]
     private static partial Regex SlugRx();

@@ -1,8 +1,8 @@
 using System.IO.Compression;
 using System.Text;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// Enforces branch protection on <c>git push</c> over HTTP (and, through the shared pieces below, over SSH). Before the request reaches <c>git http-backend</c> it
@@ -101,7 +101,7 @@ internal static class ProtectedPushGuard
     {
         var protection = services.GetRequiredService<BranchProtectionService>();
         var rules = await protection.RulesForAsync(repositoryId);
-        var dbFactory = services.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<GitBench.Data.AppDbContext>>();
+        var dbFactory = services.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<ByteBench.Data.AppDbContext>>();
         HashSet<string> releaseTags; // tags used by releases can't be deleted by a push
         await using (var db = await dbFactory.CreateDbContextAsync())
             releaseTags = (await Releases.ReleaseService.ReleaseTagsAsync(db, repositoryId)).ToHashSet(StringComparer.Ordinal);
@@ -157,7 +157,7 @@ internal static class ProtectedPushGuard
     public static IReadOnlyDictionary<string, string>? HookEnvironment(RepoStorage storage, IReadOnlyCollection<string> fastForwardOnly)
     {
         if (fastForwardOnly.Count == 0) return null;
-        return HookEnvironment(storage, "GITBENCH_FF_ONLY_REFS", string.Join(' ', fastForwardOnly));
+        return HookEnvironment(storage, "BYTEBENCH_FF_ONLY_REFS", string.Join(' ', fastForwardOnly));
     }
 
     /// <summary>
@@ -165,7 +165,7 @@ internal static class ProtectedPushGuard
     /// fast-forward-only refs from <paramref name="refsFile"/>, which the caller writes once it has read the commands.
     /// </summary>
     public static IReadOnlyDictionary<string, string> HookEnvironmentWithRefsFile(RepoStorage storage, string refsFile) =>
-        HookEnvironment(storage, "GITBENCH_FF_ONLY_FILE", refsFile);
+        HookEnvironment(storage, "BYTEBENCH_FF_ONLY_FILE", refsFile);
 
     private static Dictionary<string, string> HookEnvironment(RepoStorage storage, string variable, string value)
     {
@@ -278,7 +278,7 @@ internal static class ProtectedPushGuard
         {
             var max = caps.Contains("side-band-64k") ? 65515 : 995;
             foreach (var why in refusals.Values.Distinct())
-                Band(output, 2, Encoding.UTF8.GetBytes($"GitBench: push refused: {why}\n"), max);
+                Band(output, 2, Encoding.UTF8.GetBytes($"ByteBench: push refused: {why}\n"), max);
             if (report.Length > 0) Band(output, 1, report.ToArray(), max);
             output.Write("0000"u8);
         }
@@ -313,18 +313,18 @@ internal static class ProtectedPushGuard
 
     private const string HookScript = """
         #!/bin/sh
-        # Installed by GitBench (Services/Git/ProtectedPushGuard.cs) and enabled per push through core.hooksPath.
-        # Declines non-fast-forward updates of the refs listed in GITBENCH_FF_ONLY_REFS (protected branches), plus those
-        # in the file GITBENCH_FF_ONLY_FILE (SSH pushes: the refs are only known after receive-pack has started).
+        # Installed by ByteBench (Services/Git/ProtectedPushGuard.cs) and enabled per push through core.hooksPath.
+        # Declines non-fast-forward updates of the refs listed in BYTEBENCH_FF_ONLY_REFS (protected branches), plus those
+        # in the file BYTEBENCH_FF_ONLY_FILE (SSH pushes: the refs are only known after receive-pack has started).
         status=0
-        refs="$GITBENCH_FF_ONLY_REFS"
-        if [ -n "$GITBENCH_FF_ONLY_FILE" ] && [ -f "$GITBENCH_FF_ONLY_FILE" ]; then refs="$refs $(cat "$GITBENCH_FF_ONLY_FILE")"; fi
+        refs="$BYTEBENCH_FF_ONLY_REFS"
+        if [ -n "$BYTEBENCH_FF_ONLY_FILE" ] && [ -f "$BYTEBENCH_FF_ONLY_FILE" ]; then refs="$refs $(cat "$BYTEBENCH_FF_ONLY_FILE")"; fi
         while read -r old new ref; do
           case " $refs " in *" $ref "*) ;; *) continue ;; esac
           case "$old" in *[!0]*) ;; *) continue ;; esac
           case "$new" in *[!0]*) ;; *) continue ;; esac
           if ! git merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
-            echo "GitBench: push refused: branch '${ref#refs/heads/}' is protected: force pushes are not allowed" >&2
+            echo "ByteBench: push refused: branch '${ref#refs/heads/}' is protected: force pushes are not allowed" >&2
             status=1
           fi
         done

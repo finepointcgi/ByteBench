@@ -5,7 +5,7 @@
 @inject CurrentUser Me
 @inject NavigationManager Nav
 
-<PageTitle>Notifications · GitBench</PageTitle>
+<PageTitle>Notifications · ByteBench</PageTitle>
 
 <div class="notif-page">
     <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-3">
@@ -31,7 +31,7 @@
                     @if (!n.IsRead) { <span class="notif-dot" title="Unread"></span> }
                     <Avatar User="n.Actor" Size="28" />
                     <a class="notif-text" href="@n.Url" @onclick="() => Open(n)" @onclick:preventDefault>
-                        <b>@(n.Actor?.DisplayName ?? "GitBench")</b> @NotificationService.Verb(n.Kind)
+                        <b>@(n.Actor?.DisplayName ?? "ByteBench")</b> @NotificationService.Verb(n.Kind)
                         <span class="notif-title">@n.Title</span>
                     </a>
                     <span class="notif-when">@Display.Ago(n.CreatedAt)</span>

@@ -67,7 +67,7 @@
         if (!firstRender) return;
         try
         {
-            enabled = await JS.InvokeAsync<bool>("gitbenchShortcuts.isEnabled");
+            enabled = await JS.InvokeAsync<bool>("bytebenchShortcuts.isEnabled");
             StateHasChanged();
         }
         catch (JSException) { }
@@ -76,6 +76,6 @@
     private async Task SetEnabled(bool on)
     {
         enabled = on;
-        await JS.InvokeVoidAsync("gitbenchShortcuts.setEnabled", on);
+        await JS.InvokeVoidAsync("bytebenchShortcuts.setEnabled", on);
     }
 }

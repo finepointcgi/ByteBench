@@ -1,4 +1,4 @@
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 public static class FieldsServiceCollectionExtensions
 {

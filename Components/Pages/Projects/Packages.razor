@@ -1,12 +1,12 @@
 @page "/p/{Key}/packages"
-@using GitBench.Services.Packages
-@using GitBench.Components.Packages
-@using GitBench.Services.Attachments
+@using ByteBench.Services.Packages
+@using ByteBench.Components.Packages
+@using ByteBench.Services.Attachments
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject PackageService PackageSvc
 @inject NavigationManager Nav
-@inject GitBench.Api.PublicBaseUrl PublicUrl
+@inject ByteBench.Api.PublicBaseUrl PublicUrl
 
 <PageTitle>Packages · @project?.Name</PageTitle>
 
@@ -80,8 +80,8 @@ else if (project != null)
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Publish &amp; install</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
             Authenticate with your user name and a <MudLink OnClick="OpenTokens" Typo="Typo.body2">personal access token</MudLink> (write_repository or write_api to publish).
-            CI jobs get <span class="mono">GITBENCH_REGISTRY_USER</span> / <span class="mono">GITBENCH_REGISTRY_PASSWORD</span> (a job token for this project),
-            <span class="mono">GITBENCH_REGISTRY</span>, <span class="mono">GITBENCH_NUGET_SOURCE_URL</span> and <span class="mono">GITBENCH_NPM_REGISTRY_URL</span>.
+            CI jobs get <span class="mono">BYTEBENCH_REGISTRY_USER</span> / <span class="mono">BYTEBENCH_REGISTRY_PASSWORD</span> (a job token for this project),
+            <span class="mono">BYTEBENCH_REGISTRY</span>, <span class="mono">BYTEBENCH_NUGET_SOURCE_URL</span> and <span class="mono">BYTEBENCH_NPM_REGISTRY_URL</span>.
         </MudText>
         <MudTabs Elevation="0" Outlined="true" Rounded="true" TabPanelsClass="pa-4" Class="mb-4">
             @foreach (var t in new[] { PackageType.NuGet, PackageType.Npm, PackageType.Container })

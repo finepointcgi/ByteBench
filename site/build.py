@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the GitBench documentation site into ./public (what GitHub Pages serves).
+"""Builds the ByteBench documentation site into ./public (what GitHub Pages serves).
 
 No dependencies: pages are HTML fragments in site/pages, wrapped in one layout.
 Run:  python3 site/build.py            (writes public/)
@@ -9,13 +9,13 @@ import html, json, pathlib, re, shutil, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
 OUT = ROOT.parent / "public"
-REPO_URL = "https://github.com/finepointcgi/GitBench"
+REPO_URL = "https://github.com/finepointcgi/ByteBench"
 
 # (section, [(slug, nav title, one-line summary)]). Order = reading order.
 SECTIONS = [
     ("Start here", [
-        ("index", "Overview", "What GitBench is and everything it does"),
-        ("getting-started", "Getting started", "Run GitBench, sign in and create your first project"),
+        ("index", "Overview", "What ByteBench is and everything it does"),
+        ("getting-started", "Getting started", "Run ByteBench, sign in and create your first project"),
         ("concepts", "Concepts", "Projects, groups, repositories, issues and how they fit together"),
         ("configuration", "Configuration reference", "Every setting, file and environment variable"),
     ]),
@@ -69,7 +69,7 @@ LAYOUT = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} · GitBench</title>
+<title>{title} · ByteBench</title>
 <meta name="description" content="{summary}">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
@@ -77,7 +77,7 @@ LAYOUT = """<!doctype html>
 <body>
 <header class="top">
   <button class="menu" aria-label="Toggle navigation" aria-expanded="false" aria-controls="side">☰</button>
-  <a class="brand" href="index.html"><span class="logo" aria-hidden="true"></span> GitBench</a>
+  <a class="brand" href="index.html"><span class="logo" aria-hidden="true"></span> ByteBench</a>
   <div class="search"><input id="q" type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off"><ul id="results" hidden></ul></div>
   <a class="gh" href="{repo}">Source</a>
 </header>
@@ -90,7 +90,7 @@ LAYOUT = """<!doctype html>
 {body}
     </article>
     <footer class="pager">{prev}{next}</footer>
-    <p class="foot">GitBench documentation. Found a mistake? <a href="{repo}/issues">Open an issue</a>.</p>
+    <p class="foot">ByteBench documentation. Found a mistake? <a href="{repo}/issues">Open an issue</a>.</p>
   </main>
 </div>
 <script src="site.js"></script>

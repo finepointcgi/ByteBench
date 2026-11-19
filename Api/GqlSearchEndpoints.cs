@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Query;
+using ByteBench.Data;
+using ByteBench.Services.Query;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>GET /api/v1/search/issues?gql=: advanced issue search across every project the caller can view.</summary>
 public static class GqlSearchEndpoints
@@ -11,7 +11,7 @@ public static class GqlSearchEndpoints
     {
         api.MapGet("/search/issues", SearchIssues).WithName("SearchIssuesGql").WithTags("Search")
             .WithSummary("Search issues with GQL")
-            .WithDescription("gql is a GitBench Query Language query, e.g. project = WEB AND status in (\"In Progress\", Blocked) AND assignee = currentUser() " +
+            .WithDescription("gql is a ByteBench Query Language query, e.g. project = WEB AND status in (\"In Progress\", Blocked) AND assignee = currentUser() " +
                              "ORDER BY priority DESC. Only projects you can view are searched. Paginated (page, perPage). A query error is a 400 whose " +
                              "problem details carry position (0-based) and length.");
     }

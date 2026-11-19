@@ -1,12 +1,12 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using GitBench.Data;
-using GitBench.Services.Hosting.Backup;
+using ByteBench.Data;
+using ByteBench.Services.Hosting.Backup;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 
-namespace GitBench.Services.Hosting;
+namespace ByteBench.Services.Hosting;
 
 public sealed record StorageEntry(string Name, string Path, bool Exists, long Files, long Bytes, bool Truncated);
 

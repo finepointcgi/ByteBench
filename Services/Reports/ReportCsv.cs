@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text;
-using GitBench.Services.Query;
+using ByteBench.Services.Query;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <summary>CSV for each report (formula-injection safe through <see cref="Csv.Cell"/>; download as UTF-8 with BOM through <see cref="Csv.Utf8WithBom"/>).</summary>
 public static class ReportCsv

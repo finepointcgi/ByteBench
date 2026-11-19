@@ -1,11 +1,11 @@
 using System.Text;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// Git Smart HTTP at /git/{PROJECTKEY}/{slug}.git/..., served by <c>git http-backend</c>.
@@ -15,20 +15,20 @@ namespace GitBench.Services.Git;
 ///   POST git-receive-pack
 /// Everything else under /git is 404 (or 403 for dumb-protocol info/refs). Both reads and writes
 /// require HTTP Basic credentials checked against Identity (username or email + password or personal access
-/// token), honoring lockout. Then project permissions apply (<see cref="GitBench.Services.ProjectAccess"/>):
+/// token), honoring lockout. Then project permissions apply (<see cref="ByteBench.Services.ProjectAccess"/>):
 /// clone/fetch need ViewProject, push needs PushCode (and a token needs the WriteRepository scope). A user who
 /// can't view the project gets 404, so the repository's existence isn't revealed.
 /// </summary>
 public static class GitHttpEndpoints
 {
-    private const string Realm = "GitBench";
+    private const string Realm = "ByteBench";
     private const string UploadPack = "git-upload-pack";
     private const string ReceivePack = "git-receive-pack";
 
     public static IEndpointRouteBuilder MapGitHttp(this IEndpointRouteBuilder app)
     {
         var services = app.ServiceProvider;
-        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("GitBench.GitHttp");
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.GitHttp");
         var gitPath = GitHttpBackend.LocateGit(services.GetRequiredService<IConfiguration>());
         if (gitPath is null)
             logger.LogError("git executable not found (searched PATH and the Git:Executable setting). " +
@@ -104,12 +104,12 @@ public static class GitHttpEndpoints
         if (found is null) { await NotFound(ctx); return; }
 
         // Project permissions. Not viewable → 404 so the repo's existence isn't revealed.
-        var access = ctx.RequestServices.GetRequiredService<GitBench.Services.ProjectAccess>();
+        var access = ctx.RequestServices.GetRequiredService<ByteBench.Services.ProjectAccess>();
         access.ActAs(user.Id); // push listeners run in this scope as the pushing user
         var role = await access.GetRoleAsync(found.ProjectId, user.Id);
         if (role is null || (found.IsWiki && !found.WikiEnabled)) { await NotFound(ctx); return; }
         var writing = service == ReceivePack;
-        if (writing && !GitBench.Services.ProjectAccess.RoleHas(role.Value, GitRepoLookup.WritePermission(found)))
+        if (writing && !ByteBench.Services.ProjectAccess.RoleHas(role.Value, GitRepoLookup.WritePermission(found)))
         {
             logger.LogInformation("Git push to {Key}/{Slug} denied for {User} (role {Role})", found.Key, found.Slug, user.UserName, role);
             await WritePlain(ctx, StatusCodes.Status403Forbidden, $"You don't have permission to push to this repository (requires Developer; you are {role}).");
@@ -230,23 +230,23 @@ public static class GitHttpEndpoints
             }
 
             TokenScopes? scopes = null;
-            if (password.StartsWith(GitBench.Services.AccessTokenService.TokenPrefix, StringComparison.Ordinal)
-                && await ctx.RequestServices.GetRequiredService<GitBench.Services.AccessTokenService>().ValidateAsync(user.Id, password) is { } token)
+            if (password.StartsWith(ByteBench.Services.AccessTokenService.TokenPrefix, StringComparison.Ordinal)
+                && await ctx.RequestServices.GetRequiredService<ByteBench.Services.AccessTokenService>().ValidateAsync(user.Id, password) is { } token)
             {
                 scopes = token.Scopes;
                 logger.LogInformation("Git auth: {User} used access token {Prefix} ({Scopes})", user.UserName, token.Prefix, token.Scopes);
             }
-            else if (await ctx.RequestServices.GetRequiredService<GitBench.Services.Sso.Ldap.LdapAuthService>().CheckGitPasswordAsync(user, password) is
-                     var ldap and not GitBench.Services.Sso.Ldap.GitPasswordCheck.NotDirectoryUser)
+            else if (await ctx.RequestServices.GetRequiredService<ByteBench.Services.Sso.Ldap.LdapAuthService>().CheckGitPasswordAsync(user, password) is
+                     var ldap and not ByteBench.Services.Sso.Ldap.GitPasswordCheck.NotDirectoryUser)
             {
                 // A directory (LDAP) account: its password lives in the directory. Only with Ldap:AllowGitPassword, and
-                // never for 2FA accounts (below). Failures count toward lockout like a GitBench password; /git is rate-limited.
-                if (ldap == GitBench.Services.Sso.Ldap.GitPasswordCheck.NotAllowed)
+                // never for 2FA accounts (below). Failures count toward lockout like a ByteBench password; /git is rate-limited.
+                if (ldap == ByteBench.Services.Sso.Ldap.GitPasswordCheck.NotAllowed)
                 {
                     logger.LogInformation("Git auth refused: {User} is a directory account and LDAP git passwords are off", user.UserName);
                     return (null, null, null);
                 }
-                if (ldap != GitBench.Services.Sso.Ldap.GitPasswordCheck.Valid)
+                if (ldap != ByteBench.Services.Sso.Ldap.GitPasswordCheck.Valid)
                 {
                     await users.AccessFailedAsync(user);
                     logger.LogInformation("Git auth failed: bad LDAP password or token for {User} from {Ip}", user.UserName, ctx.Connection.RemoteIpAddress);

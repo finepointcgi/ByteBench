@@ -1,38 +1,38 @@
 using System.Security.Claims;
-using GitBench.Api;
-using GitBench.Data;
-using GitBench.Services.Hosting;
+using ByteBench.Api;
+using ByteBench.Data;
+using ByteBench.Services.Hosting;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>
 /// Serves deployed sites, and nothing else. It answers (a) any request whose host is under <c>Pages:BaseDomain</c> and (b)
-/// <c>/pages/{KEY}/{slug}/...</c> on the GitBench host, and passes every other request on. It runs before anything of the
-/// Blazor app (routing, antiforgery, static assets), so a site can never reach GitBench's own endpoints through it.
+/// <c>/pages/{KEY}/{slug}/...</c> on the ByteBench host, and passes every other request on. It runs before anything of the
+/// Blazor app (routing, antiforgery, static assets), so a site can never reach ByteBench's own endpoints through it.
 /// <para>
-/// <b>Isolation.</b> User-uploaded HTML/JS is the one thing in this app that must never run with GitBench's privileges:
+/// <b>Isolation.</b> User-uploaded HTML/JS is the one thing in this app that must never run with ByteBench's privileges:
 /// </para>
 /// <list type="bullet">
 /// <item><b>Dedicated host</b> (<c>{slug}.{key}.{BaseDomain}</c>): the site has its own origin, so the browser itself keeps it away
-/// from GitBench's cookies, storage and API. The GitBench sign-in cookie is ignored there (members-only sites use their own
+/// from ByteBench's cookies, storage and API. The ByteBench sign-in cookie is ignored there (members-only sites use their own
 /// host-only cookie, see below).</item>
-/// <item><b>Path mode</b> (<c>/pages/...</c> on the GitBench host) shares GitBench's origin, so every response carries
+/// <item><b>Path mode</b> (<c>/pages/...</c> on the ByteBench host) shares ByteBench's origin, so every response carries
 /// <c>Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...</c> <i>without</i> <c>allow-same-origin</c>: the page
-/// gets an opaque origin, so its scripts can't read GitBench's cookies or storage, call GitBench's API as the user, or touch the
+/// gets an opaque origin, so its scripts can't read ByteBench's cookies or storage, call ByteBench's API as the user, or touch the
 /// app's windows. (Consequence: a site's own <c>localStorage</c>/cookies don't work in path mode; use a dedicated host.)</item>
 /// <item>Always: <c>X-Content-Type-Options: nosniff</c>, a restrictive <c>Permissions-Policy</c>, no cookies set (except the host
-/// login below), no GitBench CSP/headers (this middleware marks the response so the app's headers don't apply). The app's own
+/// login below), no ByteBench CSP/headers (this middleware marks the response so the app's headers don't apply). The app's own
 /// CSP is untouched.</item>
 /// </list>
 /// <para>
 /// <b>Members-only sites</b> (the default; everyone who can view the project): public sites need no sign-in. For members-only
 /// ones every request is checked with ProjectAccess for a user that is proven by (1) on a dedicated host, a host-only HttpOnly
-/// cookie obtained by <c>/pages/-/auth</c> on the GitBench host (which needs the GitBench sign-in) and a one-minute signed code;
-/// (2) in path mode, either the GitBench sign-in cookie on top-level page loads, which are redirected to a URL carrying a
+/// cookie obtained by <c>/pages/-/auth</c> on the ByteBench host (which needs the ByteBench sign-in) and a one-minute signed code;
+/// (2) in path mode, either the ByteBench sign-in cookie on top-level page loads, which are redirected to a URL carrying a
 /// signed, expiring token (<c>/-/t/{token}/</c>), because a sandboxed page's sub-requests don't carry the cookie; relative
 /// links keep working inside that URL. Tokens are bound to the repository, expire (default 1 hour) and are re-checked against
 /// project membership on every request; pages get <c>Referrer-Policy: no-referrer</c> so the token is not leaked.
@@ -140,7 +140,7 @@ public sealed class PagesMiddleware(RequestDelegate next, IOptionsMonitor<PagesO
             case Verdict.Challenge: await Challenge(ctx, r); return;
         }
         var members = !isPublic;
-        // Path mode, signed in with the GitBench cookie: page loads move to a tokenized URL so sub-resources work in the sandbox.
+        // Path mode, signed in with the ByteBench cookie: page loads move to a tokenized URL so sub-resources work in the sandbox.
         if (members && !r.HostMode && viaCookie && IsDocumentRequest(ctx.Request))
         {
             var userId = UserIdOf(ctx.User)!.Value;
@@ -264,7 +264,7 @@ public sealed class PagesMiddleware(RequestDelegate next, IOptionsMonitor<PagesO
     /// <summary>Not signed in (or the token expired): send a page load to sign in, answer anything else 401.</summary>
     private async Task Challenge(HttpContext ctx, Request r)
     {
-        if (!IsDocumentRequest(ctx.Request)) { await Plain(ctx, StatusCodes.Status401Unauthorized, "Sign in to GitBench to see this site.", r.HostMode, true); return; }
+        if (!IsDocumentRequest(ctx.Request)) { await Plain(ctx, StatusCodes.Status401Unauthorized, "Sign in to ByteBench to see this site.", r.HostMode, true); return; }
         Secure(ctx, r.HostMode, true, false);
         ctx.Response.Headers.CacheControl = "no-store";
         if (r.HostMode)
@@ -282,7 +282,7 @@ public sealed class PagesMiddleware(RequestDelegate next, IOptionsMonitor<PagesO
         Redirect(ctx, StatusCodes.Status302Found, $"{ctx.Request.PathBase}/account/login?returnUrl={Uri.EscapeDataString(ctx.Request.PathBase + clean)}", secured: true);
     }
 
-    /// <summary>GET /pages/-/auth?return={URL on a dedicated host}: after GitBench sign-in, hands a one-minute code to that host.</summary>
+    /// <summary>GET /pages/-/auth?return={URL on a dedicated host}: after ByteBench sign-in, hands a one-minute code to that host.</summary>
     private async Task HostAuth(HttpContext ctx)
     {
         if (!HttpMethods.IsGet(ctx.Request.Method)) { await Plain(ctx, 405, "Method not allowed.", false, true); return; }

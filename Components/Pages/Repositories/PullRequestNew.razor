@@ -4,8 +4,8 @@
 @inject PullRequestService PRs
 @inject CurrentUser Me
 @inject NavigationManager Nav
-@inject GitBench.Services.Ai.AiClient Ai
-@inject GitBench.Services.Ai.AiReviewService AiReviews
+@inject ByteBench.Services.Ai.AiClient Ai
+@inject ByteBench.Services.Ai.AiReviewService AiReviews
 @inject ProjectAccess Access
 @inject ReviewerService Reviewers
 @inject BranchProtectionService Protection
@@ -98,7 +98,7 @@ else if (project != null)
                                     {
                                         <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" Disabled="@writing" OnClick="WriteDescriptionWithAi" Class="ml-auto"
                                                    StartIcon="@Icons.Material.Outlined.AutoAwesome"
-                                                   title="Replaces the description with one written by GitBench AI from the commits and diff. You can edit it before creating the pull request.">
+                                                   title="Replaces the description with one written by ByteBench AI from the commits and diff. You can edit it before creating the pull request.">
                                             @(writing ? "Writing…" : "Write description with AI")
                                         </MudButton>
                                     }

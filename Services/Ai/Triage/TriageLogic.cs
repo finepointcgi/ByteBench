@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Ai.Triage;
+namespace ByteBench.Services.Ai.Triage;
 
 /// <summary>Configuration section "Ai:Triage". Every limit exists to bound cost and prompt size.</summary>
 public class TriageOptions

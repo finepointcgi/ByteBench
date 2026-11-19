@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Explore;
+namespace ByteBench.Services.Explore;
 
 public enum ExploreSort { Name, Active, Stars }
 public enum ExploreTab { All, Starred, Mine }

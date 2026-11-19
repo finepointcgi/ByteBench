@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>A sprint (or the backlog, when <see cref="Sprint"/> is null) with its issues in rank order.</summary>
 public record BacklogSection(Sprint? Sprint, List<Issue> Issues)

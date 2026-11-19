@@ -1,11 +1,11 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>
 /// Background delivery: drains <see cref="WebhookDispatcher"/>, writes a <see cref="WebhookDelivery"/> row per hook and

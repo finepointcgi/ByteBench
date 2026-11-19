@@ -1,4 +1,4 @@
-@using GitBench.Services.Ai.Triage
+@using ByteBench.Services.Ai.Triage
 @implements IDisposable
 @inject TriageService Triage
 @inject LiveEvents Live
@@ -31,7 +31,7 @@
         }
         else if (view.Run is null)
         {
-            <div class="tri-body tri-muted">Ask GitBench AI to suggest labels, a component, priority, type, assignee and likely duplicates. Nothing changes until you accept it.</div>
+            <div class="tri-body tri-muted">Ask ByteBench AI to suggest labels, a component, priority, type, assignee and likely duplicates. Nothing changes until you accept it.</div>
         }
         else if (view.Run.Status is TriageRunStatus.Failed or TriageRunStatus.Skipped)
         {

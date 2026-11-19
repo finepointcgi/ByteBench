@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>
 /// In-memory sliding one-hour windows, keyed by sender address (<c>mail:</c>) or client IP (<c>form:</c>). Resets on

@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Ai;
+using ByteBench.Data;
+using ByteBench.Services.Ai;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>One autocomplete row. <see cref="Insert"/> is the text that replaces the typed token (e.g. <c>@bob</c>, <c>WEB-12</c>).</summary>
 public sealed record AutocompleteItem(string Insert, string Label, string? Detail, string? Color, string? Initials);

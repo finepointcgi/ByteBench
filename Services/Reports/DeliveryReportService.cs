@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <summary>A finished issue with its lead time (created → done) and cycle time (first in progress → done), in days.</summary>
 public sealed record IssueTimeRow(int IssueId, string Key, string Title, IssueType Type, string? Assignee, DateTime CreatedAt, DateTime? StartedAt,

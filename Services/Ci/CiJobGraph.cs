@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// A job as the scheduler sees it. <see cref="Manual"/>: <c>when: manual</c>. <see cref="NeedsApproval"/>: it targets a

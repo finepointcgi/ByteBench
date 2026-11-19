@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
 /// <summary>Night Owl integration settings (section <c>NightOwl</c>).</summary>
 public sealed class NightOwlOptions

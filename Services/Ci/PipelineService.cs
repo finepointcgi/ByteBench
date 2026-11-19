@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>A pipeline's status for a commit badge.</summary>
 public sealed record PipelineBadgeInfo(int Id, PipelineStatus Status, string Ref, string CommitSha);
@@ -103,7 +103,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     public async Task<bool> HasPipelineFileAsync(Repository repo, string branch)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
-        return await Task.Run(() => GitOps.GetBlob(path, branch, CiFile.FileName) != null);
+        return await Task.Run(() => CiFile.GetBlob(path, branch) != null);
     }
 
     /// <summary>"Run pipeline" for a branch's current tip (ignores the file's filters). Needs PushCode.</summary>

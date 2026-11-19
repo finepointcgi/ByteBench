@@ -1,7 +1,7 @@
-using GitBench.Services;
-using GitBench.Services.Git;
+using ByteBench.Services;
+using ByteBench.Services.Git;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 /// <summary>
 /// Demo code-hosting data: a <c>web-app</c> repo in project WEB with history on <c>main</c>, a feature branch for
@@ -44,7 +44,7 @@ public static class RepoSeeder
         GitOps.CommitFiles(path, "main", new Dictionary<string, string?>
         {
             [".github/workflows/ci.yml"] = CiYml,
-            [".gitbench-ci.yml"] = GitBenchCiYml,
+            [".bytebench-ci.yml"] = ByteBenchCiYml,
         }, "WEB-1: Add CI workflow\n\nRuns lint, type-check and tests on every push and pull request.", Id("alice"), Ago(17.2));
 
         GitOps.CommitFiles(path, "main", new Dictionary<string, string?>
@@ -140,16 +140,16 @@ public static class RepoSeeder
 
     // ----- file contents -----
 
-    /// <summary>Sample GitBench pipeline (see README "CI pipelines"): small alpine jobs that only echo.</summary>
-    private const string GitBenchCiYml = """
-        # GitBench CI pipeline: runs on every push and pull request.
+    /// <summary>Sample ByteBench pipeline (see README "CI pipelines"): small alpine jobs that only echo.</summary>
+    private const string ByteBenchCiYml = """
+        # ByteBench CI pipeline: runs on every push and pull request.
         image: alpine:3.20
 
         jobs:
           lint:
             steps:
               - name: Lint
-                run: echo "Linting $GITBENCH_REF at $GITBENCH_COMMIT_SHA" && ls
+                run: echo "Linting $BYTEBENCH_REF at $BYTEBENCH_COMMIT_SHA" && ls
           build:
             steps:
               - name: Build
@@ -184,7 +184,7 @@ public static class RepoSeeder
         | `npm test` | Run unit tests with Vitest |
         | `npm run build` | Production build into `dist/` |
 
-        Issues are tracked in GitBench under the `WEB` key — mention them in branch names and commits (e.g. `WEB-3`).
+        Issues are tracked in ByteBench under the `WEB` key — mention them in branch names and commits (e.g. `WEB-3`).
 
         """;
 

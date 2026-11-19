@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Things a user can do in a project. Which roles grant which permission: <see cref="ProjectAccess.MinimumRole"/>.</summary>
 public enum Permission
@@ -76,7 +76,7 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
     /// <summary>
     /// Grants every permission to calls in this scope that don't name a user. For trusted background work only.
     /// <paramref name="onBehalfOf"/> lets the system also vouch for one service account named explicitly as the actor
-    /// (e.g. the GitBench AI bot posting review comments), without making that account a project member.
+    /// (e.g. the ByteBench AI bot posting review comments), without making that account a project member.
     /// </summary>
     public void ActAsSystem(int? onBehalfOf = null) { system = true; actAs = null; systemActor = onBehalfOf; }
 

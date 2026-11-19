@@ -5,7 +5,7 @@
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
-@inject GitBench.Services.Editor.Ai.EditorAiService EditorAi
+@inject ByteBench.Services.Editor.Ai.EditorAiService EditorAi
 @inject CurrentUser Me
 
 <PageTitle>Settings · @project?.Name</PageTitle>
@@ -118,21 +118,21 @@ else if (project != null)
         @if (labelError != null) { <MudText Typo="Typo.caption" Color="Color.Error" HtmlTag="div" Class="mt-2">@labelError</MudText> }
     </MudPaper>
 
-    <GitBench.Components.Workbench.WorkbenchSettings Project="project" />
+    <ByteBench.Components.Workbench.WorkbenchSettings Project="project" />
 
     <AiTriageSettings Project="project" />
 
     @if (perms.Can(Permission.ManageProjectSettings))
     {
-        <GitBench.Components.Wiki.WikiSettings Project="project" />
+        <ByteBench.Components.Wiki.WikiSettings Project="project" />
     }
 
     @if (perms.Can(Permission.DeletePackages))
     {
-        <GitBench.Components.Packages.PackageRegistrySettings Project="project" />
+        <ByteBench.Components.Packages.PackageRegistrySettings Project="project" />
     }
 
-    @if (perms.Can(GitBench.Services.Webhooks.WebhookService.RequiredPermission))
+    @if (perms.Can(ByteBench.Services.Webhooks.WebhookService.RequiredPermission))
     {
         <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
             <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Webhooks</MudText>
@@ -290,7 +290,7 @@ else if (project != null)
     }
 
     private bool editorAi = true;
-    private GitBench.Services.Editor.Ai.EditorAiStatus? editorAiStatus;
+    private ByteBench.Services.Editor.Ai.EditorAiStatus? editorAiStatus;
 
     private async Task SetEditorAi(bool on)
     {

@@ -1,6 +1,6 @@
 using LibGit2Sharp;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>Read-only git lookups the API needs beyond <see cref="Services.Git.GitOps"/> (raw bytes, commit counts).</summary>
 public static class ApiGit

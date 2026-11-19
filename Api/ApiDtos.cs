@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 // Wire types for the REST API (/api/v1) and webhook payloads. EF entities are never serialized directly.
 // JSON is camelCase, enums are camelCase strings, timestamps are ISO 8601 UTC and dates are yyyy-MM-dd.
@@ -166,5 +166,5 @@ public static class Dto
 
     public static PullRequestCommentDto PullRequestComment(PullRequestComment c) =>
         new(c.Id, c.Body, User(c.Author), c.FilePath, c.Line, c.OldLine, Utc(c.CreatedAt), Utc(c.EditedAt),
-            c.ParentId, c.StartLine, c.IsResolved, c.CommitSha, GitBench.Services.Suggestions.Has(c.Body), c.AppliedCommitSha);
+            c.ParentId, c.StartLine, c.IsResolved, c.CommitSha, ByteBench.Services.Suggestions.Has(c.Body), c.AppliedCommitSha);
 }

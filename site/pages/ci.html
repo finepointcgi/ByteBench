@@ -1,15 +1,15 @@
 <h1>CI pipelines</h1>
-<p class="lead">Put a <code>.gitbench-ci.yml</code> in a repository and GitBench runs its jobs in Docker containers on the server: on every push, on pull requests, on a schedule, or by hand.</p>
+<p class="lead">Put a <code>.bytebench-ci.yml</code> in a repository and ByteBench runs its jobs in Docker containers on the server: on every push, on pull requests, on a schedule, or by hand.</p>
 
-<div class="note"><b>Different from GitLab CI.</b> GitBench's format is small on purpose. There are <b>no stages</b> (order comes from <code>needs</code>), no <code>script</code>/<code>before_script</code>/<code>after_script</code> keys (a job has <code>steps</code>), no <code>services</code>, no <code>retry</code>, no per-job <code>timeout</code> or <code>variables</code>, no <code>extends</code>, no <code>trigger</code> and no <code>include</code> of files (only built-in templates). The sections below say what exists, what is not there, and the usual replacement.</div>
+<div class="note"><b>Different from GitLab CI.</b> ByteBench's format is small on purpose. There are <b>no stages</b> (order comes from <code>needs</code>), no <code>script</code>/<code>before_script</code>/<code>after_script</code> keys (a job has <code>steps</code>), no <code>services</code>, no <code>retry</code>, no per-job <code>timeout</code> or <code>variables</code>, no <code>extends</code>, no <code>trigger</code> and no <code>include</code> of files (only built-in templates). The sections below say what exists, what is not there, and the usual replacement.</div>
 
 <h2 id="quick-start">Quick start</h2>
-<p>Create <code>.gitbench-ci.yml</code> at the <b>root</b> of the repository (the name and location are fixed), commit it and push. A pipeline appears on the repository's <b>Pipelines</b> tab.</p>
+<p>Create <code>.bytebench-ci.yml</code> at the <b>root</b> of the repository (the name and location are fixed), commit it and push. A pipeline appears on the repository's <b>Pipelines</b> tab.</p>
 <pre><code>jobs:
   build:
     steps:
       - name: Say hello
-        run: echo "Hello from $GITBENCH_JOB on $GITBENCH_REF"</code></pre>
+        run: echo "Hello from $BYTEBENCH_JOB on $BYTEBENCH_REF"</code></pre>
 <p>Without an <code>image</code> the job runs in <code>alpine:3.20</code>. Everything you need to know to read and write the file is on this page; the sections build from the file layout to security.</p>
 
 <h2 id="file-reference">The file format</h2>
@@ -62,7 +62,7 @@ jobs:
 
 <h3 id="not-supported">What the format does not have</h3>
 <table>
-<tr><th>You might look for</th><th>In GitBench</th></tr>
+<tr><th>You might look for</th><th>In ByteBench</th></tr>
 <tr><td><code>stages:</code> and a job's <code>stage</code></td><td>Not supported. Use <code>needs</code>: a job without <code>needs</code> starts immediately, one with <code>needs</code> waits for them. A "stage" is just a set of jobs that need the previous set.</td></tr>
 <tr><td><code>script</code>, <code>before_script</code>, <code>after_script</code></td><td>Use <code>steps</code>. Put setup in the first step. There is no after-script that runs on failure; later steps are skipped once a step fails.</td></tr>
 <tr><td>File-level or job-level <code>variables:</code></td><td>Not supported. Use <a href="#variables">CI variables</a> in the UI, set values in the <code>run</code> text itself, or schedule variables.</td></tr>
@@ -149,25 +149,25 @@ jobs:
 
 <h2 id="variables">Variables and secrets</h2>
 <h3 id="predefined-variables">Predefined variables</h3>
-<p>Steps always get these, set by GitBench (you cannot override them: the names <code>CI</code> and <code>GITBENCH_*</code> are reserved for CI variables):</p>
+<p>Steps always get these, set by ByteBench (you cannot override them: the names <code>CI</code> and <code>BYTEBENCH_*</code> are reserved for CI variables):</p>
 <table>
 <tr><th>Variable</th><th>Value</th></tr>
-<tr><td><code>CI</code>, <code>GITBENCH_CI</code></td><td><code>true</code></td></tr>
-<tr><td><code>GITBENCH_PIPELINE_ID</code></td><td>The pipeline's numeric id.</td></tr>
-<tr><td><code>GITBENCH_JOB</code></td><td>The job name.</td></tr>
-<tr><td><code>GITBENCH_REF</code></td><td>The branch (for a fork pull request <code>refs/pull/{n}/head</code>; for a merge queue run <code>refs/merge-queue/...</code>).</td></tr>
-<tr><td><code>GITBENCH_COMMIT_SHA</code></td><td>The commit being built.</td></tr>
-<tr><td><code>GITBENCH_REPOSITORY</code></td><td><code>KEY/slug</code>, such as <code>WEB/web-app</code>.</td></tr>
-<tr><td><code>GITBENCH_PIPELINE_SOURCE</code>, <code>CI_PIPELINE_SOURCE</code></td><td><code>push</code>, <code>pull_request</code>, <code>manual</code>, <code>retry</code>, <code>schedule</code> or <code>mergequeue</code>.</td></tr>
+<tr><td><code>CI</code>, <code>BYTEBENCH_CI</code></td><td><code>true</code></td></tr>
+<tr><td><code>BYTEBENCH_PIPELINE_ID</code></td><td>The pipeline's numeric id.</td></tr>
+<tr><td><code>BYTEBENCH_JOB</code></td><td>The job name.</td></tr>
+<tr><td><code>BYTEBENCH_REF</code></td><td>The branch (for a fork pull request <code>refs/pull/{n}/head</code>; for a merge queue run <code>refs/merge-queue/...</code>).</td></tr>
+<tr><td><code>BYTEBENCH_COMMIT_SHA</code></td><td>The commit being built.</td></tr>
+<tr><td><code>BYTEBENCH_REPOSITORY</code></td><td><code>KEY/slug</code>, such as <code>WEB/web-app</code>.</td></tr>
+<tr><td><code>BYTEBENCH_PIPELINE_SOURCE</code>, <code>CI_PIPELINE_SOURCE</code></td><td><code>push</code>, <code>pull_request</code>, <code>manual</code>, <code>retry</code>, <code>schedule</code> or <code>mergequeue</code>.</td></tr>
 <tr><td><code>CI_ENVIRONMENT_NAME</code>, <code>CI_ENVIRONMENT_URL</code></td><td>Only for jobs with an <code>environment:</code> (the URL only if one is set).</td></tr>
-<tr><td><code>GITBENCH_JOB_TOKEN</code>, <code>GITBENCH_REGISTRY_PASSWORD</code></td><td>A short-lived token (<code>gbj_...</code>) for the project's <a href="packages.html">package and container registry</a>. It only works while the job is running. Masked in logs.</td></tr>
-<tr><td><code>GITBENCH_REGISTRY</code>, <code>GITBENCH_REGISTRY_IMAGE</code>, <code>GITBENCH_REGISTRY_USER</code>, <code>GITBENCH_NUGET_SOURCE_URL</code>, <code>GITBENCH_NPM_REGISTRY_URL</code></td><td>Registry addresses and the user name to pair with the token. Only set when the site's public base URL is known (<code>PublicBaseUrl</code> or after the first request).</td></tr>
+<tr><td><code>BYTEBENCH_JOB_TOKEN</code>, <code>BYTEBENCH_REGISTRY_PASSWORD</code></td><td>A short-lived token (<code>gbj_...</code>) for the project's <a href="packages.html">package and container registry</a>. It only works while the job is running. Masked in logs.</td></tr>
+<tr><td><code>BYTEBENCH_REGISTRY</code>, <code>BYTEBENCH_REGISTRY_IMAGE</code>, <code>BYTEBENCH_REGISTRY_USER</code>, <code>BYTEBENCH_NUGET_SOURCE_URL</code>, <code>BYTEBENCH_NPM_REGISTRY_URL</code></td><td>Registry addresses and the user name to pair with the token. Only set when the site's public base URL is known (<code>PublicBaseUrl</code> or after the first request).</td></tr>
 </table>
 
 <h3 id="ci-variables">CI variables (secrets)</h3>
 <p>Secret values are managed in the UI, not in the YAML: <b>project</b> variables under <b>Project settings → CI variables</b> (<code>/p/{KEY}/settings#ci-variables</code>) and <b>repository</b> variables under <b>Repository → Settings → CI variables</b> (<code>/p/{KEY}/repos/{slug}/settings/ci-variables</code>). Managing them needs <b>Maintainer</b> or higher (ManageRepositories).</p>
 <ul>
-<li>Names: letters, digits and underscores, not starting with a digit, up to 100 characters; <code>CI</code> and <code>GITBENCH_*</code> are reserved. Values: a single line, up to 10,000 characters.</li>
+<li>Names: letters, digits and underscores, not starting with a digit, up to 100 characters; <code>CI</code> and <code>BYTEBENCH_*</code> are reserved. Values: a single line, up to 10,000 characters.</li>
 <li>Values are encrypted at rest (ASP.NET Core Data Protection) and are never shown again after saving. If the server's Data Protection keys change, a value can't be decrypted: the log says which variable was skipped and you save it again.</li>
 <li>A repository variable overrides a project variable of the same name.</li>
 <li>They reach the container through a mode-600 env file outside the workspace, never on the <code>docker</code> command line.</li>
@@ -198,7 +198,7 @@ jobs:
 <li>Jobs that <code>needs</code> this job get the files extracted into their workspace before their first step. Extraction refuses names with <code>..</code>, absolute paths and anything that would be written through a symlink.</li>
 <li>The pipeline page lists artifacts with <b>Download</b> (the zip), <b>Browse</b> (file list, each file downloads) and <b>Keep</b> (pin past expiry; PushCode). Downloads need ViewProject and are always served as <code>application/octet-stream</code> attachments with a sandboxing CSP.</li>
 <li>An hourly cleanup deletes expired, un-kept artifacts.</li>
-<li><code>reports</code> accepts only the types <code>nightowl</code> and <code>sarif</code>, each naming one file (no globs). GitBench reads them into <a href="security-scanning.html">Security scanning</a>. There is no JUnit/test report type.</li>
+<li><code>reports</code> accepts only the types <code>nightowl</code> and <code>sarif</code>, each naming one file (no globs). ByteBench reads them into <a href="security-scanning.html">Security scanning</a>. There is no JUnit/test report type.</li>
 </ul>
 
 <h2 id="cache">Cache</h2>
@@ -226,7 +226,7 @@ jobs:
 <h2 id="triggers">What starts a pipeline</h2>
 <table>
 <tr><th>Trigger</th><th><code>CI_PIPELINE_SOURCE</code></th><th>Details</th></tr>
-<tr><td>Push</td><td><code>push</code></td><td>For each branch the push created or moved, if it matches <code>on.branches</code> (or all branches when omitted). Deleted branches are skipped. A merge done in GitBench counts as a push to the target branch.</td></tr>
+<tr><td>Push</td><td><code>push</code></td><td>For each branch the push created or moved, if it matches <code>on.branches</code> (or all branches when omitted). Deleted branches are skipped. A merge done in ByteBench counts as a push to the target branch.</td></tr>
 <tr><td>Pull request</td><td><code>pull_request</code></td><td>Opening a PR (or updating its source) runs a pipeline for the source head if <code>on.pull_requests</code> isn't <code>false</code>, unless that commit already has one on that branch (it is then linked to the PR instead).</td></tr>
 <tr><td>Fork pull request</td><td><code>pull_request</code></td><td>Same, but the pipeline waits for approval and gets no variables. See <a href="#forks">below</a>.</td></tr>
 <tr><td>Merge queue</td><td><code>mergequeue</code></td><td>The <a href="branch-protection.html">merge queue</a> tests the merge result on a temporary <code>refs/merge-queue/...</code> ref with its own pipeline. Jobs are chosen by <code>rules</code> as if the run were on the target branch.</td></tr>
@@ -234,7 +234,7 @@ jobs:
 <tr><td>Manual</td><td><code>manual</code></td><td><b>Run pipeline</b> on the Pipelines tab runs any branch's tip and ignores <code>on.branches</code>. Needs PushCode.</td></tr>
 <tr><td>Retry</td><td><code>retry</code></td><td><b>Re-run</b> runs the same commit again (PushCode).</td></tr>
 </table>
-<p>A commit runs automatically <b>at most once per branch</b>. Push detection works by comparing branch tips, so a branch created in the UI is picked up by the next push. If <code>.gitbench-ci.yml</code> is missing at a commit, nothing runs. Setting <code>Ci:Enabled</code> to <code>false</code> turns off every trigger and the Run button.</p>
+<p>A commit runs automatically <b>at most once per branch</b>. Push detection works by comparing branch tips, so a branch created in the UI is picked up by the next push. If <code>.bytebench-ci.yml</code> is missing at a commit, nothing runs. Setting <code>Ci:Enabled</code> to <code>false</code> turns off every trigger and the Run button.</p>
 
 <h2 id="statuses">Statuses, retries and timeouts</h2>
 <ul>
@@ -262,16 +262,16 @@ jobs:
 <p>A pull request from a <a href="pull-requests.html">fork</a> runs code from outside the project, so its pipeline is created <b>Queued but waiting for approval</b>. A Maintainer (or higher, anyone who can merge pull requests) clicks <b>Approve and run</b> on the pipeline page. Approval covers that one pipeline; the next push to the fork waits again. Even once approved the pipeline gets <b>no CI variables</b>, never publishes <a href="pages.html">Pages</a> sites, and carries no schedule variables.</p>
 
 <h2 id="docker-security">Docker requirement and security model</h2>
-<p>The server needs the <code>docker</code> CLI with a reachable daemon. If it can't connect, pipelines end in <b>Error</b> with "Docker is not available on the server". When GitBench itself runs in a container (see <a href="production.html">Production setup</a>), the daemon must be able to mount <code>Ci:WorkDirectory</code>.</p>
+<p>The server needs the <code>docker</code> CLI with a reachable daemon. If it can't connect, pipelines end in <b>Error</b> with "Docker is not available on the server". When ByteBench itself runs in a container (see <a href="production.html">Production setup</a>), the daemon must be able to mount <code>Ci:WorkDirectory</code>.</p>
 <div class="warn"><b>Pipelines run arbitrary code from the repository on the server host, inside Docker.</b> Anyone who can push (Developer or higher) can run any command in any image. Treat PushCode as "can run code on the CI host". Docker isolation is not a hard security boundary.</div>
 <ul>
 <li>The docker CLI is always started with an argument list, never a shell string; image names are validated so they can't be read as flags.</li>
-<li>Containers never get the Docker socket, the host's environment variables or any GitBench secret. They get the <code>GITBENCH_*</code> variables, the allowed CI variables and the job token.</li>
+<li>Containers never get the Docker socket, the host's environment variables or any ByteBench secret. They get the <code>BYTEBENCH_*</code> variables, the allowed CI variables and the job token.</li>
 <li>Containers run with <code>--security-opt no-new-privileges</code>, memory, CPU and PID limits, a timeout and <code>--rm</code>, as the image's user (often root inside the container).</li>
 <li>Only the exported workspace is mounted. Symlinks in the repository are created after every regular file so nothing is written through them. Submodules aren't fetched.</li>
 <li>Containers have network access by default (<code>bridge</code>). On a shared or exposed server use <code>Ci:Network: none</code>, rootless Docker or a separate CI host, and let only trusted people push.</li>
 </ul>
-<p>GitBench has no separate runner agents: the server itself runs jobs. There are no runner tags or per-runner registration.</p>
+<p>ByteBench has no separate runner agents: the server itself runs jobs. There are no runner tags or per-runner registration.</p>
 
 <h2 id="concurrency">Configuration (Ci:*)</h2>
 <p>Set these in <code>appsettings.json</code> (section <code>Ci</code>) or environment variables such as <code>Ci__MaxConcurrentJobs=4</code>. The shipped <code>appsettings.json</code> sets only the first six; the rest take their code defaults. Restart to apply. See also the <a href="configuration.html">Configuration reference</a>.</p>
@@ -284,7 +284,7 @@ jobs:
 <tr><td><code>Memory</code> / <code>Cpus</code></td><td><code>2g</code> / <code>2</code></td><td><code>--memory</code> / <code>--cpus</code> per step container. Empty means no limit.</td></tr>
 <tr><td><code>PidsLimit</code></td><td><code>1024</code></td><td><code>--pids-limit</code>; <code>0</code> for none.</td></tr>
 <tr><td><code>DockerExecutable</code></td><td><code>docker</code></td><td>Path of the docker CLI.</td></tr>
-<tr><td><code>WorkDirectory</code></td><td><code>{temp}/gitbench-ci/{instance}</code></td><td>Where workspaces are exported. Docker must be able to mount it.</td></tr>
+<tr><td><code>WorkDirectory</code></td><td><code>{temp}/bytebench-ci/{instance}</code></td><td>Where workspaces are exported. Docker must be able to mount it.</td></tr>
 <tr><td><code>MaxLogChars</code></td><td>1,048,576</td><td>Per-step log cap. The page shows the last 200 KB; <b>Raw log</b> has everything stored.</td></tr>
 <tr><td><code>ArtifactsRoot</code> / <code>CacheRoot</code></td><td><code>{ContentRoot}/ci-artifacts</code> / <code>ci-cache</code></td><td>Where zips are stored. Back up the artifacts folder with the database.</td></tr>
 <tr><td><code>MaxArtifactBytes</code></td><td>100 MB</td><td>Largest artifact per job.</td></tr>
@@ -300,7 +300,7 @@ jobs:
 <tr><td>Approve a fork pull request's pipeline</td><td>Maintainer (merge permission)</td></tr>
 <tr><td>Manage CI variables, schedules</td><td>Maintainer (ManageRepositories)</td></tr>
 </table>
-<p>Pipelines are shown at <code>/p/{KEY}/repos/{slug}/pipelines</code> and <code>.../pipelines/{id}</code>. The latest pipeline on a pull request's head is a <a href="branch-protection.html">merge check</a>: Passed, Pending (queued, running, manual-blocked, or none yet) or Failed. It reports nothing if the head has no <code>.gitbench-ci.yml</code>.</p>
+<p>Pipelines are shown at <code>/p/{KEY}/repos/{slug}/pipelines</code> and <code>.../pipelines/{id}</code>. The latest pipeline on a pull request's head is a <a href="branch-protection.html">merge check</a>: Passed, Pending (queued, running, manual-blocked, or none yet) or Failed. It reports nothing if the head has no <code>.bytebench-ci.yml</code>.</p>
 
 <h2 id="examples">Example pipelines</h2>
 
@@ -380,10 +380,10 @@ jobs:
       - name: Build and push
         run: |
           mkdir -p /kaniko/.docker
-          AUTH=$(printf '%s:%s' "$GITBENCH_REGISTRY_USER" "$GITBENCH_REGISTRY_PASSWORD" | base64 | tr -d '\n')
-          printf '{"auths":{"%s":{"auth":"%s"}}}' "$GITBENCH_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+          AUTH=$(printf '%s:%s' "$BYTEBENCH_REGISTRY_USER" "$BYTEBENCH_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+          printf '{"auths":{"%s":{"auth":"%s"}}}' "$BYTEBENCH_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
           /kaniko/executor --context /workspace --dockerfile /workspace/Dockerfile \
-            --destination "$GITBENCH_REGISTRY_IMAGE/web:$GITBENCH_COMMIT_SHA"</code></pre>
+            --destination "$BYTEBENCH_REGISTRY_IMAGE/web:$BYTEBENCH_COMMIT_SHA"</code></pre>
 <p>Jobs get no Docker daemon, so <code>docker build</code> is not available inside a step; a daemonless builder such as Kaniko is one option. The job token only works for the project's own registry and only while the job runs. This example needs <code>Ci:Network</code> to allow reaching the registry, and Kaniko's behaviour with your registry's TLS settings is yours to verify. See <a href="packages.html">Package and container registry</a>.</p>
 
 <h3 id="example-nightly">4. Nightly security scan plus a docs site</h3>
@@ -424,7 +424,7 @@ jobs:
 <table>
 <tr><th>Symptom</th><th>Cause</th></tr>
 <tr><td>Pipeline is <b>Error</b> immediately</td><td>The YAML is invalid (read the message on the pipeline page) or Docker isn't reachable.</td></tr>
-<tr><td>No pipeline after a push</td><td>No <code>.gitbench-ci.yml</code> at that commit, the branch isn't in <code>on.branches</code> and has no open PR, every job's rules excluded the branch, the commit already ran on that branch, or <code>Ci:Enabled</code> is off.</td></tr>
+<tr><td>No pipeline after a push</td><td>No <code>.bytebench-ci.yml</code> at that commit, the branch isn't in <code>on.branches</code> and has no open PR, every job's rules excluded the branch, the commit already ran on that branch, or <code>Ci:Enabled</code> is off.</td></tr>
 <tr><td>Pipeline sits Queued</td><td>All <code>Ci:MaxConcurrentJobs</code> slots are busy, or it is a fork PR waiting for approval.</td></tr>
 <tr><td>A secret is empty in a job</td><td>The variable is protected and the branch isn't, or it's a fork PR pipeline, or its value couldn't be decrypted (check the notes at the top of the first step's log).</td></tr>
 <tr><td><code>command not found</code> in a later step</td><td>Each step is a new container: install tools in the step that uses them.</td></tr>

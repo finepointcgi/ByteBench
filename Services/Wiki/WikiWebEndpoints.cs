@@ -1,14 +1,14 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using GitBench.Data;
-using GitBench.Services.Code;
-using GitBench.Services.Hosting;
-using GitBench.Services.Snippets;
+using ByteBench.Data;
+using ByteBench.Services.Code;
+using ByteBench.Services.Hosting;
+using ByteBench.Services.Snippets;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Net.Http.Headers;
 
-namespace GitBench.Services.Wiki;
+namespace ByteBench.Services.Wiki;
 
 /// <summary>
 /// Browser endpoints (cookie session) for things Blazor pages can't serve:
@@ -95,7 +95,7 @@ public static class WikiWebEndpoints
         var baseUrl = $"{http.Request.Scheme}://{http.Request.Host}";
         var sb = new StringBuilder();
         sb.Append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-        sb.Append("<title>").Append(E(s.Title)).Append(" · GitBench snippet</title>");
+        sb.Append("<title>").Append(E(s.Title)).Append(" · ByteBench snippet</title>");
         sb.Append("<link rel=\"stylesheet\" href=\"/css/code-tools.css\">");
         sb.Append("<style>:root{color-scheme:light}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:Canvas;color:CanvasText}")
           .Append(".snip-head{padding:8px 12px;border-bottom:1px solid #8884;display:flex;gap:8px;align-items:baseline}")
@@ -105,7 +105,7 @@ public static class WikiWebEndpoints
           .Append(".code-table td.ln{width:1%;padding:0 10px;text-align:right;opacity:.5;user-select:none;white-space:nowrap}")
           .Append(".code-table td.code{white-space:pre;padding:0 10px}.wrap{overflow-x:auto}</style></head><body>");
         sb.Append("<div class=\"snip-head\"><a target=\"_top\" href=\"").Append(E(baseUrl + SnippetService.Url(s.Id))).Append("\">")
-          .Append(E(s.Title)).Append("</a><span class=\"muted\">by ").Append(E(s.Author.DisplayName)).Append(" · GitBench</span></div>");
+          .Append(E(s.Title)).Append("</a><span class=\"muted\">by ").Append(E(s.Author.DisplayName)).Append(" · ByteBench</span></div>");
         foreach (var f in view.Revision.Files)
         {
             sb.Append("<div class=\"file\"><div class=\"file-name\"><span>").Append(E(f.FileName)).Append("</span><a target=\"_top\" href=\"")

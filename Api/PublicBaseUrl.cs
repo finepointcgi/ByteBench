@@ -1,7 +1,7 @@
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>
-/// The site's absolute base URL (e.g. <c>https://gitbench.example.com</c>) for links in API responses and webhook
+/// The site's absolute base URL (e.g. <c>https://bytebench.example.com</c>) for links in API responses and webhook
 /// payloads. Uses the <c>PublicBaseUrl</c> setting when present; otherwise it is learned from the first HTTP request
 /// (see <see cref="WebhookPushCaptureMiddleware"/>), and API responses use the current request's host.
 /// </summary>

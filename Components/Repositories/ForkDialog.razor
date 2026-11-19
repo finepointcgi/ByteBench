@@ -1,5 +1,5 @@
 @* "Fork" dialog: pick the project to fork into (Maintainer+), slug and name. Returns DialogResult.Ok(Repository) once forked. *@
-@using GitBench.Services.Forks
+@using ByteBench.Services.Forks
 @inject ForkService Forks
 @inject CurrentUser Me
 
@@ -17,7 +17,7 @@
         else if (targets.Count == 0)
         {
             <MudAlert Severity="Severity.Info" Dense="true">
-                You can only fork into a project where you're a Maintainer or Owner. GitBench has no personal namespaces:
+                You can only fork into a project where you're a Maintainer or Owner. ByteBench has no personal namespaces:
                 <a href="/projects/new">create a project of your own</a> (you'll be its Owner) to hold your forks.
             </MudAlert>
         }

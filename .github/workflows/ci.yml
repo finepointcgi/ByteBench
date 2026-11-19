@@ -13,6 +13,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Build
-        run: dotnet build GitBench.sln -warnaserror
+        run: dotnet build ByteBench.sln -warnaserror
       - name: Test (without Docker)
-        run: dotnet test GitBench.sln --no-build --filter "Category!=Docker" --logger "console;verbosity=normal"
+        run: dotnet test ByteBench.sln --no-build --filter "Category!=Docker" --logger "console;verbosity=normal"

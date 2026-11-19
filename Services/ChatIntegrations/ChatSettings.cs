@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>How an integration posts: a Slack incoming webhook, the Slack Web API with a bot token, or a Teams webhook / Workflows URL.</summary>
 public enum ChatMode { SlackWebhook, SlackBot, TeamsWebhook }

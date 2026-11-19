@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace GitBench.Services.Roadmap;
+namespace ByteBench.Services.Roadmap;
 
 public enum RoadmapZoom { Weeks, Months, Quarters }
 

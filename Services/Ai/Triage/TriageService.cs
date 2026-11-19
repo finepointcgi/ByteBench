@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Fields;
+using ByteBench.Data;
+using ByteBench.Services.Fields;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ai.Triage;
+namespace ByteBench.Services.Ai.Triage;
 
 /// <summary>Thrown when a manual request exceeds a rate limit (the API answers 429).</summary>
 public class TriageLimitException(string message) : InvalidOperationException(message);

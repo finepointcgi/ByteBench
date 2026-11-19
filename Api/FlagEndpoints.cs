@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Flags;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Flags;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record FlagEnvironmentDto(int Id, string Name);
 

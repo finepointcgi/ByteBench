@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GitBench.Services.Git;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 // ----- Structured output shape (matches AiReviewLogic.ResponseSchema) -----
 
@@ -67,7 +67,7 @@ public static class AiReviewLogic
 
     /// <summary>Stable across every review so it's served from the prompt cache.</summary>
     public const string SystemPrompt = """
-        You are GitBench AI, an experienced senior engineer reviewing a pull request in GitBench, a self-hosted code
+        You are ByteBench AI, an experienced senior engineer reviewing a pull request in ByteBench, a self-hosted code
         review tool. Your review is posted on the pull request: each finding becomes an inline comment on the line it
         refers to, and your summary becomes a regular comment. A human reviewer makes the final decision.
 
@@ -107,7 +107,7 @@ public static class AiReviewLogic
         """;
 
     public const string DescriptionSystemPrompt = """
-        You write pull request descriptions for GitBench, a code review tool. Given the commits and the diff of a
+        You write pull request descriptions for ByteBench, a code review tool. Given the commits and the diff of a
         branch, write a clear description in GitHub-flavoured Markdown for the reviewers.
 
         Structure:
@@ -518,7 +518,7 @@ public static class AiReviewLogic
         {
             var body = FindingMarkdown(p.Finding);
             if (p.RequestedLine is { } r)
-                body += $"\n\n_GitBench AI referred to line {r}, which isn't in the diff; this comment is on the nearest changed line._";
+                body += $"\n\n_ByteBench AI referred to line {r}, which isn't in the diff; this comment is on the nearest changed line._";
             return new InlineComment(p.Path, p.Line, body, NormalizeSeverity(p.Finding.Severity), Fingerprint(p.Path, p.Finding.Title));
         }).ToList();
 
@@ -536,7 +536,7 @@ public static class AiReviewLogic
         int droppedFindings = 0, int repeatedFindings = 0)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("### GitBench AI review (automated)");
+        sb.AppendLine("### ByteBench AI review (automated)");
         sb.AppendLine();
 
         var ok = outcomes.Where(o => o.Response != null).ToList();

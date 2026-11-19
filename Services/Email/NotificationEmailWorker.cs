@@ -1,9 +1,9 @@
 using System.Threading.Channels;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 /// <summary>
 /// Turns notifications flagged <see cref="Notification.EmailPending"/> (by <c>NotificationService.DeliverAsync</c>) into

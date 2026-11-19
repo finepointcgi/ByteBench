@@ -3,9 +3,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Flags;
+namespace ByteBench.Services.Flags;
 
 /// <summary>Who a flag is evaluated for: a user id plus free-form string attributes (plan, country, email, ...).</summary>
 public sealed class FlagContext

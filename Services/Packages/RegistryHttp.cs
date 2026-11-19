@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>An authorized registry request: who, and in which project.</summary>
 public sealed record RegistryRequest(RegistryIdentity Identity, Project Project);

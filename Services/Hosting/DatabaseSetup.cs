@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Data.Postgres;
+using ByteBench.Data;
+using ByteBench.Data.Postgres;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Hosting;
+namespace ByteBench.Services.Hosting;
 
 public enum DatabaseProvider { Sqlite, Postgres }
 
@@ -14,7 +14,10 @@ public enum DatabaseProvider { Sqlite, Postgres }
 /// </summary>
 public static class DatabaseSetup
 {
-    public const string DefaultSqliteConnection = "Data Source=gitbench.db";
+    public const string DefaultSqliteConnection = "Data Source=bytebench.db";
+
+    /// <summary>The database file name before the product was renamed from GitBench to ByteBench.</summary>
+    public const string LegacySqliteConnection = "Data Source=gitbench.db";
 
     public static DatabaseProvider GetProvider(IConfiguration config)
     {
@@ -34,11 +37,19 @@ public static class DatabaseSetup
         if (GetProvider(config) == DatabaseProvider.Postgres)
         {
             if (string.IsNullOrWhiteSpace(cs) || cs.TrimStart().StartsWith("Data Source", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Database:Provider is Postgres: set ConnectionStrings:Default to an Npgsql connection string, e.g. \"Host=db;Database=gitbench;Username=gitbench;Password=...\".");
+                throw new InvalidOperationException("Database:Provider is Postgres: set ConnectionStrings:Default to an Npgsql connection string, e.g. \"Host=db;Database=bytebench;Username=bytebench;Password=...\".");
             return cs;
         }
-        return string.IsNullOrWhiteSpace(cs) ? DefaultSqliteConnection : cs;
+        return !string.IsNullOrWhiteSpace(cs) ? cs : DefaultFor(Directory.GetCurrentDirectory());
     }
+
+    /// <summary>
+    /// The connection string used when none is configured. An install that predates the rename keeps working: with only the old
+    /// <c>gitbench.db</c> present in <paramref name="directory"/>, that file is used.
+    /// </summary>
+    public static string DefaultFor(string directory) =>
+        !File.Exists(Path.Combine(directory, "bytebench.db")) && File.Exists(Path.Combine(directory, "gitbench.db"))
+            ? LegacySqliteConnection : DefaultSqliteConnection;
 
     /// <summary>The SQLite database file (absolute), or null on Postgres or for an in-memory database.</summary>
     public static string? SqliteFile(IConfiguration config)
@@ -49,7 +60,7 @@ public static class DatabaseSetup
             ? null : Path.GetFullPath(b.DataSource);
     }
 
-    public static IServiceCollection AddGitBenchDatabase(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddByteBenchDatabase(this IServiceCollection services, IConfiguration config)
     {
         var cs = GetConnectionString(config);
         if (GetProvider(config) == DatabaseProvider.Sqlite)

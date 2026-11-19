@@ -1,8 +1,8 @@
 <h1>Concepts</h1>
-<p class="lead">The handful of ideas that explain how GitBench is organised: groups hold projects, projects hold repositories and issues, and roles flow downwards.</p>
+<p class="lead">The handful of ideas that explain how ByteBench is organised: groups hold projects, projects hold repositories and issues, and roles flow downwards.</p>
 
 <h2 id="hierarchy">The big picture</h2>
-<p>Everything you do in GitBench happens inside a <strong>project</strong>. Projects can be gathered into <strong>groups</strong> (and subgroups, up to four levels deep) to mirror your organisation. Inside a project you find its <strong>repositories</strong>, <strong>issues</strong>, <strong>pull requests</strong>, boards, pipelines and packages.</p>
+<p>Everything you do in ByteBench happens inside a <strong>project</strong>. Projects can be gathered into <strong>groups</strong> (and subgroups, up to four levels deep) to mirror your organisation. Inside a project you find its <strong>repositories</strong>, <strong>issues</strong>, <strong>pull requests</strong>, boards, pipelines and packages.</p>
 <svg viewBox="0 0 640 330" role="img" aria-label="Hierarchy: site contains groups, which contain subgroups and projects; a project contains repositories, issues, members and settings; a repository contains branches, pull requests and pipelines" style="max-width:100%;height:auto;font:13px sans-serif">
   <g fill="none" stroke="var(--line)" stroke-width="1.5">
     <path d="M320 44 V62 M320 62 H160 V80 M320 62 H480 V80"/>
@@ -53,7 +53,7 @@
 <p>The demo seed data contains an Internal group <code>Acme</code> with a subgroup <code>Platform</code> that owns the projects WEB and OPS. Create your own at <code>/groups/new</code>.</p>
 
 <h2 id="repositories">Repositories</h2>
-<p>A repository is a Git repository inside a project; a project can have several. GitBench stores each one as a bare repository on disk and serves it over Git Smart HTTP and the built-in SSH server. Repositories carry branches, tags, releases, pull requests, pipelines, branch protection rules, mirrors and their own settings (<code>/p/{KEY}/repos/{slug}/settings</code>).</p>
+<p>A repository is a Git repository inside a project; a project can have several. ByteBench stores each one as a bare repository on disk and serves it over Git Smart HTTP and the built-in SSH server. Repositories carry branches, tags, releases, pull requests, pipelines, branch protection rules, mirrors and their own settings (<code>/p/{KEY}/repos/{slug}/settings</code>).</p>
 
 <h2 id="issues">Issues</h2>
 <p>Issues track work: a type (task, bug, feature, story, epic, sub-task), a status from the project's workflow, priority, assignee, labels, milestone, story points and due date. They can be linked, nested under epics, put on boards and into sprints, found with the GQL query language and changed by automation rules. Details in <a href="issues.html">Issues and workflows</a>.</p>
@@ -91,10 +91,10 @@
 <div class="note">Direct roles never lower an inherited one. If you want someone to have less access on one project, do not put them in the parent group.</div>
 
 <h2 id="disk">Where data lives on disk</h2>
-<p>GitBench is one process plus a database and some folders. Paths below are the defaults when running from source (relative to the content root, the folder with the app files); the Docker image puts each under <code>/data</code>.</p>
+<p>ByteBench is one process plus a database and some folders. Paths below are the defaults when running from source (relative to the content root, the folder with the app files); the Docker image puts each under <code>/data</code>.</p>
 <table>
   <tr><th>What</th><th>Default (source)</th><th>Docker</th><th>Setting</th></tr>
-  <tr><td>Database (SQLite)</td><td><code>gitbench.db</code></td><td><code>/data/db/gitbench.db</code></td><td><code>ConnectionStrings:Default</code></td></tr>
+  <tr><td>Database (SQLite)</td><td><code>bytebench.db</code></td><td><code>/data/db/bytebench.db</code></td><td><code>ConnectionStrings:Default</code></td></tr>
   <tr><td>Bare Git repositories</td><td><code>repos/</code></td><td><code>/data/repos</code></td><td><code>Git:RepositoryRoot</code></td></tr>
   <tr><td>Attachments and release assets</td><td><code>attachments/</code></td><td><code>/data/attachments</code></td><td><code>Attachments:Root</code></td></tr>
   <tr><td>Package registry blobs</td><td><code>packages/</code></td><td><code>/data/packages</code></td><td><code>Packages:Root</code></td></tr>

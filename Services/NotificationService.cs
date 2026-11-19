@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Issue fields captured before an update, so <see cref="NotificationService.OnIssueUpdatedAsync"/> can tell what changed.</summary>
 public readonly record struct IssueSnapshot(IssueStatus Status, int? AssigneeId, string? Description)

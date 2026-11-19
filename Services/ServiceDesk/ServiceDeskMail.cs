@@ -1,11 +1,11 @@
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
-using GitBench.Services.Email;
+using ByteBench.Services.Email;
 using Microsoft.Extensions.Options;
 using MimeKit;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>What an inbound address points at: a project (by key), a ticket (by reply token), or nothing we know.</summary>
 public readonly record struct InboundTarget(string? ProjectKey, string? ReplyToken)
@@ -27,7 +27,7 @@ public sealed class ServiceDeskAddresses(IOptions<ServiceDeskOptions> options, I
         {
             var a = (options.Value.IncomingAddress ?? "").Trim().ToLowerInvariant();
             var at = a.LastIndexOf('@');
-            return at <= 0 ? ("desk", "gitbench.localhost") : (a[..at], a[(at + 1)..]);
+            return at <= 0 ? ("desk", "bytebench.localhost") : (a[..at], a[(at + 1)..]);
         }
     }
 

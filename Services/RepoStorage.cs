@@ -1,4 +1,4 @@
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// Where bare Git repositories live on disk: {Root}/{PROJECTKEY}/{slug}.git

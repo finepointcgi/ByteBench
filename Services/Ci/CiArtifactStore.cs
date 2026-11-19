@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// Artifacts for the runner and the cleanup service (singleton, no permission checks): saving a job's
@@ -32,13 +32,13 @@ public class CiArtifactStore(IDbContextFactory<AppDbContext> dbFactory, CiStorag
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             log.LogWarning(ex, "Could not collect artifacts of job {Id}", job.Id);
-            return (false, [$"[gitbench] Could not save artifacts: {ex.Message}"]);
+            return (false, [$"[bytebench] Could not save artifacts: {ex.Message}"]);
         }
-        notes.AddRange(r.Notes.Select(n => "[gitbench] Artifacts: " + n));
-        if (!r.Ok) { notes.Add($"[gitbench] Artifacts not saved: {r.Error}."); return (false, notes); }
+        notes.AddRange(r.Notes.Select(n => "[bytebench] Artifacts: " + n));
+        if (!r.Ok) { notes.Add($"[bytebench] Artifacts not saved: {r.Error}."); return (false, notes); }
         if (r.FileCount == 0)
         {
-            notes.Add($"[gitbench] Artifacts: no files matched {string.Join(", ", def.Paths)}.");
+            notes.Add($"[bytebench] Artifacts: no files matched {string.Join(", ", def.Paths)}.");
             return (true, notes);
         }
 
@@ -51,7 +51,7 @@ public class CiArtifactStore(IDbContextFactory<AppDbContext> dbFactory, CiStorag
             FileCount = r.FileCount, CreatedAt = now, ExpiresAt = def.ExpireIn is { } e ? now + e : null,
         });
         await db.SaveChangesAsync();
-        notes.Add($"[gitbench] Saved artifacts: {r.FileCount} file(s), {CiArtifacts.Format(r.ZipBytes)}"
+        notes.Add($"[bytebench] Saved artifacts: {r.FileCount} file(s), {CiArtifacts.Format(r.ZipBytes)}"
             + (def.ExpireIn is { } ex2 ? $", expiring {(now + ex2):yyyy-MM-dd HH:mm} UTC." : ", never expiring."));
         return (true, notes);
     }
@@ -70,10 +70,10 @@ public class CiArtifactStore(IDbContextFactory<AppDbContext> dbFactory, CiStorag
         foreach (var (name, a) in found.OrderBy(x => needs.IndexOf(x.Job)))
         {
             var zip = storage.ArtifactPath(a.StoredName);
-            if (!File.Exists(zip)) { notes.Add($"[gitbench] Artifacts of '{name}' are gone (expired or deleted)."); continue; }
+            if (!File.Exists(zip)) { notes.Add($"[bytebench] Artifacts of '{name}' are gone (expired or deleted)."); continue; }
             var r = await Task.Run(() => CiArtifacts.ExtractSafely(zip, workspace, MaxBytes));
-            notes.Add($"[gitbench] Downloaded artifacts of '{name}': {r.FileCount} file(s).");
-            notes.AddRange(r.Notes.Select(n => $"[gitbench] Artifacts of '{name}': {n}"));
+            notes.Add($"[bytebench] Downloaded artifacts of '{name}': {r.FileCount} file(s).");
+            notes.AddRange(r.Notes.Select(n => $"[bytebench] Artifacts of '{name}': {n}"));
         }
         return notes;
     }

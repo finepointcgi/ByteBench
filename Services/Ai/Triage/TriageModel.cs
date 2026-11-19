@@ -1,6 +1,6 @@
 using Anthropic.Models.Beta.Messages;
 
-namespace GitBench.Services.Ai.Triage;
+namespace ByteBench.Services.Ai.Triage;
 
 /// <summary>
 /// The one place AI triage talks to a model. The default implementation goes through the shared <see cref="AiClient"/>

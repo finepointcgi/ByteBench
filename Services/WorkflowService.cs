@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>A status change worked out by <see cref="IssueService.ReconcileStatusAsync"/>.</summary>
 public sealed record StatusChange(WorkflowStatus? From, WorkflowStatus To, IssueStatus? FromCategory)

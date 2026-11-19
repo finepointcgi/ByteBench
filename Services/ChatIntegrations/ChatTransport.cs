@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Webhooks;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// The Slack / Teams <see cref="IWebhookTransport"/>: formats chat messages from webhook events (Block Kit or Adaptive
@@ -36,9 +36,9 @@ public sealed class ChatTransport(WebhookSecrets secrets, ChatHttp http, IOption
         {
             Event = ChatEvents.Test,
             Summary = key == null && hook.GroupId != null
-                ? "GitBench is connected: this channel will get updates from the projects of this group."
-                : $"GitBench is connected: this channel will get updates from {key}.",
-            Title = key == null ? "GitBench group" : $"{key} {name}".Trim(),
+                ? "ByteBench is connected: this channel will get updates from the projects of this group."
+                : $"ByteBench is connected: this channel will get updates from {key}.",
+            Title = key == null ? "ByteBench group" : $"{key} {name}".Trim(),
             Url = envelope["project"]?["webUrl"]?.GetValue<string>(),
             Status = ChatStatus.Good,
             Actor = actor,

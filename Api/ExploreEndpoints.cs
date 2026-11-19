@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Explore;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Explore;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record StarDto(string Project, bool Starred, int Stars);
 
@@ -78,7 +78,7 @@ public static class ExploreEndpoints
             Has(SearchType.Code)
                 ? r.Code.SelectMany(c => c.Files.SelectMany(f => f.Snippets.SelectMany(s => s).Where(l => l.IsMatch)
                     .Select(l => new SearchCodeMatchDto(c.Repository.Project.Key, c.Repository.Slug, c.Ref, f.Path, l.Number, l.Text,
-                        b + GitBench.Services.Git.RepoUrls.Source(c.Repository, c.Ref, f.Path))))).ToList()
+                        b + ByteBench.Services.Git.RepoUrls.Source(c.Repository, c.Ref, f.Path))))).ToList()
                 : null);
     }
 

@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Ci;
-using GitBench.Services.Git;
-using GitBench.Services.Releases;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Git;
+using ByteBench.Services.Releases;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record DeploymentDto(int Id, int EnvironmentId, string? EnvironmentName, string Status, string Action, string Ref, string CommitSha,
     bool IsRollback, int? RedeployOfId, int PipelineId, int JobId, string? JobName, UserDto? User, DateTimeOffset CreatedAt,

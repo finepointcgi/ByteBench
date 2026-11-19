@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
 /// <summary>
 /// Night Owl's shared triage file, <c>.nightowl/triage.json</c> (its <c>TriageStore</c>): a JSON array of decisions,
-/// camelCase, states in kebab-case, nulls left out, sorted by finding id. GitBench reads and writes the same shape, so
+/// camelCase, states in kebab-case, nulls left out, sorted by finding id. ByteBench reads and writes the same shape, so
 /// decisions made here can be committed to the repository (where <c>nightowl scan</c> in CI applies them) and decisions
 /// committed there can be imported.
 /// <code>

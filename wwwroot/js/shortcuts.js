@@ -3,7 +3,7 @@
 // selects or contenteditable, with modifier keys held, and when the user turned shortcuts off (localStorage).
 (function () {
     "use strict";
-    const STORAGE_KEY = "gitbench-shortcuts";
+    const STORAGE_KEY = "bytebench-shortcuts";
     const CHORD_MS = 1200;
     let dotnet = null;       // MainLayout's DotNetObjectReference (interactive pages only)
     let pendingG = 0;        // time "g" was pressed, for the g-chords
@@ -125,7 +125,7 @@
 
     document.addEventListener("keydown", onKeyDown);
 
-    window.gitbenchShortcuts = {
+    window.bytebenchShortcuts = {
         attach: (ref) => { dotnet = ref; },
         isEnabled,
         setEnabled,

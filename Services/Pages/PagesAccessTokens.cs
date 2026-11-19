@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.DataProtection;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>What a Pages token may be used for; each purpose has its own key, so one can never be replayed as another.</summary>
 public enum PagesTokenKind
 {
     /// <summary>In the URL of a members-only site in path mode (<c>/-/t/{token}/</c>); minted by the sandboxed path itself.</summary>
     PathLink,
-    /// <summary>One-time-ish code handed from GitBench to a dedicated host; exchanged there for a cookie. Lives 1 minute.</summary>
+    /// <summary>One-time-ish code handed from ByteBench to a dedicated host; exchanged there for a cookie. Lives 1 minute.</summary>
     HostExchange,
     /// <summary>The cookie of a dedicated host (host-only, HttpOnly).</summary>
     HostCookie,
@@ -16,12 +16,13 @@ public enum PagesTokenKind
 /// <summary>
 /// Signed, expiring, tamper-proof tokens (ASP.NET Data Protection) naming a user and a repository. They only prove "this
 /// user was allowed to open this repository's site at <c>issued</c>"; every request still asks ProjectAccess, so removing a
-/// member takes effect at once. The GitBench sign-in cookie is never accepted on a dedicated host and never reaches a
+/// member takes effect at once. The ByteBench sign-in cookie is never accepted on a dedicated host and never reaches a
 /// sandboxed page's scripts.
 /// </summary>
 public sealed class PagesAccessTokens(IDataProtectionProvider dataProtection)
 {
     private ITimeLimitedDataProtector Protector(PagesTokenKind kind) =>
+        // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
         dataProtection.CreateProtector("GitBench.Pages.v1." + kind).ToTimeLimitedDataProtector();
 
     public string Create(PagesTokenKind kind, int userId, int repositoryId, TimeSpan lifetime) =>

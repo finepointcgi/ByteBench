@@ -4,7 +4,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 
-<PageTitle>Users · GitBench</PageTitle>
+<PageTitle>Users · ByteBench</PageTitle>
 
 @if (Me.User?.IsAdmin != true)
 {
@@ -16,7 +16,7 @@ else
     <div class="page-header">
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h1">Users</MudText>
-            <MudText Class="mud-text-secondary" Typo="Typo.body2">Every account on this GitBench server. Actions are recorded in the <MudLink Href="/admin/audit" Typo="Typo.body2">audit log</MudLink> as <code>admin.user_*</code>.</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">Every account on this ByteBench server. Actions are recorded in the <MudLink Href="/admin/audit" Typo="Typo.body2">audit log</MudLink> as <code>admin.user_*</code>.</MudText>
         </div>
     </div>
 

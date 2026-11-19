@@ -1,5 +1,5 @@
 <h1>Fields, filters and search</h1>
-<p class="lead">Model your own data with custom fields, components and versions, then find it again with saved filters, quick filters and GQL, GitBench's JQL-style query language.</p>
+<p class="lead">Model your own data with custom fields, components and versions, then find it again with saved filters, quick filters and GQL, ByteBench's JQL-style query language.</p>
 
 <h2 id="settings">Where to configure fields</h2>
 <p>Maintainers and Owners open <code>/p/{KEY}/settings/fields</code> (project <b>Settings</b>, then fields). It has tabs for custom fields, components, issue templates and estimates (hours per day). All definitions are audited as <code>custom_field.*</code>, <code>component.*</code> and <code>version.*</code> events.</p>
@@ -17,9 +17,9 @@
 </table>
 <p>Values are validated: select options must exist, numbers must parse, dates are <code>yyyy-MM-dd</code>, URLs must be http(s), and user fields only accept people who can see the project. Fields appear in the issue sidebar (saved on change and logged: "changed <b>Severity</b> to <b>Critical</b>"), on the new-issue form and as optional columns in the issue list.</p>
 <pre><code># Set custom fields through the API (PATCH changes only the keys you send; null clears)
-curl -X PATCH -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X PATCH -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"customFields":{"severity":"Critical","regression":true}}' \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/12</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/issues/12</code></pre>
 
 <h2 id="components-versions">Components and versions</h2>
 <ul>
@@ -140,10 +140,10 @@ text ~ "avatar safari"</code></pre>
 <p>Each imported issue gets the activity "imported from CSV" and the import is audited as <code>issue.imported</code>. Imports send no notifications or webhooks.</p>
 
 <h2 id="api">Search and fields API</h2>
-<pre><code>curl -G -H "Authorization: Bearer $GITBENCH_TOKEN" \
+<pre><code>curl -G -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
   --data-urlencode 'gql=project = WEB AND type = Bug AND statusCategory != Done ORDER BY priority DESC' \
   --data-urlencode 'perPage=50' \
-  https://gitbench.example.com/api/v1/search/issues</code></pre>
+  https://bytebench.example.com/api/v1/search/issues</code></pre>
 <p>The response is a list of issues with <code>X-Total-Count</code> and <code>Link</code> paging headers. A query error is a <code>400</code> problem document with <code>position</code> (0-based), <code>length</code> and <code>reason</code>. Related endpoints under <code>/api/v1/projects/{key}</code>: <code>/fields</code>, <code>/components</code>, <code>/versions</code>, <code>/issue-templates</code>. Issues carry <code>customFields</code>, <code>components</code>, <code>fixVersions</code>, <code>affectsVersions</code> and <code>estimates</code>. See <a href="api.html">REST API and webhooks</a> for tokens and paging.</p>
 
 <h2 id="config">Configuration keys</h2>

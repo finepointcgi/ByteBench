@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>A user's saved filters or stars in a project changed (sidebar and Filters dropdown refresh).</summary>
 public sealed record SavedFiltersChanged(int ProjectId) : LiveEvent;

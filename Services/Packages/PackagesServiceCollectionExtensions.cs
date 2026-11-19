@@ -1,4 +1,4 @@
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 public static class PackagesServiceCollectionExtensions
 {

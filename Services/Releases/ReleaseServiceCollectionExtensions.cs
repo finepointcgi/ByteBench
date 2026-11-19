@@ -1,6 +1,6 @@
-using GitBench.Services.Git;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Releases;
+namespace ByteBench.Services.Releases;
 
 public static class ReleaseServiceCollectionExtensions
 {

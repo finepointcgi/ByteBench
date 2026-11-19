@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// The protected tag decision, shared by git push (<see cref="ProtectedPushGuard.Policy"/>, HTTP and SSH) and the tag

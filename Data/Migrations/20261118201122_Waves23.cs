@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace GitBench.Data.Migrations
+namespace ByteBench.Data.Migrations
 {
     /// <inheritdoc />
     public partial class Waves23 : Migration

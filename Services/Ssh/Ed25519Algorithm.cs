@@ -3,11 +3,11 @@ using Microsoft.DevTunnels.Ssh.Algorithms;
 using Microsoft.DevTunnels.Ssh.IO;
 using SshBuffer = Microsoft.DevTunnels.Ssh.Buffer;
 
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 /// <summary>
 /// <c>ssh-ed25519</c> (RFC 8709) client-key verification for Microsoft.DevTunnels.Ssh, which ships RSA and ECDSA only.
-/// Signatures are checked with BouncyCastle. Verify-only: GitBench's host key is RSA, so nothing is ever signed with it.
+/// Signatures are checked with BouncyCastle. Verify-only: ByteBench's host key is RSA, so nothing is ever signed with it.
 /// </summary>
 internal sealed class Ed25519Algorithm() : PublicKeyAlgorithm(Name, Name, "SHA512")
 {
@@ -16,10 +16,10 @@ internal sealed class Ed25519Algorithm() : PublicKeyAlgorithm(Name, Name, "SHA51
     public override IKeyPair CreateKeyPair() => new KeyPair();
 
     public override IKeyPair GenerateKeyPair(int? keySizeInBits = null) =>
-        throw new NotSupportedException("GitBench only verifies ed25519 keys.");
+        throw new NotSupportedException("ByteBench only verifies ed25519 keys.");
 
     public override ISigner CreateSigner(IKeyPair keyPair) =>
-        throw new NotSupportedException("GitBench only verifies ed25519 keys.");
+        throw new NotSupportedException("ByteBench only verifies ed25519 keys.");
 
     public override IVerifier CreateVerifier(IKeyPair keyPair) => new Verifier((KeyPair)keyPair);
 

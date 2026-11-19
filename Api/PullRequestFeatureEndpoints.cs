@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Git;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>Pull request extras: update (title, description, draft), thread resolution, suggested changes and branch compare.</summary>
 public static class PullRequestFeatureEndpoints

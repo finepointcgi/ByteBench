@@ -2,9 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
 /// <summary>One finding read from a report, before it is stored.</summary>
 public sealed record ParsedFinding
@@ -123,7 +123,7 @@ public static partial class SecurityReportParser
         return new ParsedReport(NightOwlFormat, "Night Owl", version, Dedupe(list));
     }
 
-    /// <summary>Night Owl's <c>FindingCategory</c> → GitBench's. Vulnerabilities in container images become <see cref="SecurityCategory.Container"/>.</summary>
+    /// <summary>Night Owl's <c>FindingCategory</c> → ByteBench's. Vulnerabilities in container images become <see cref="SecurityCategory.Container"/>.</summary>
     public static SecurityCategory MapNightOwlCategory(string? category, string? ecosystem, IReadOnlyList<string> engines) =>
         (category ?? "").ToLowerInvariant() switch
         {
@@ -234,7 +234,7 @@ public static partial class SecurityReportParser
         if (uri.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) uri = uri[7..];
         uri = Uri.UnescapeDataString(uri).Replace('\\', '/');
         while (uri.StartsWith("./", StringComparison.Ordinal)) uri = uri[2..];
-        // Absolute paths from a CI workspace: keep the part after /workspace/ (GitBench mounts the checkout there).
+        // Absolute paths from a CI workspace: keep the part after /workspace/ (ByteBench mounts the checkout there).
         var ws = uri.IndexOf("/workspace/", StringComparison.Ordinal);
         if (uri.StartsWith('/') && ws >= 0) uri = uri[(ws + "/workspace/".Length)..];
         return uri;

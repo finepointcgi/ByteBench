@@ -1,8 +1,8 @@
 <h1>Configuration reference</h1>
-<p class="lead">Every setting GitBench reads, grouped by area, with its default, what it does and an example, plus how files, environment variables and user-secrets combine.</p>
+<p class="lead">Every setting ByteBench reads, grouped by area, with its default, what it does and an example, plus how files, environment variables and user-secrets combine.</p>
 
 <h2 id="sources">Where settings come from</h2>
-<p>GitBench uses the standard ASP.NET Core configuration system. Later sources override earlier ones:</p>
+<p>ByteBench uses the standard ASP.NET Core configuration system. Later sources override earlier ones:</p>
 <ol>
   <li><code>appsettings.json</code> (shipped defaults)</li>
   <li><code>appsettings.{Environment}.json</code>: <code>appsettings.Development.json</code> or <code>appsettings.Production.json</code></li>
@@ -34,10 +34,10 @@ dotnet user-secrets list</code></pre>
 <p>User-secrets are only read in <code>Development</code>. In production use environment variables (or an <code>env_file</code> with mode 600, or Docker secrets). Keep secrets out of <code>appsettings.json</code> and out of the image.</p>
 
 <h3 id="anthropic-key">ANTHROPIC_API_KEY</h3>
-<p>The AI features need a Claude API key. GitBench uses <code>Ai:ApiKey</code> if set, otherwise the plain environment variable <code>ANTHROPIC_API_KEY</code>. The environment variable is the recommended way:</p>
-<pre><code>export ANTHROPIC_API_KEY=...        # then start GitBench
+<p>The AI features need a Claude API key. ByteBench uses <code>Ai:ApiKey</code> if set, otherwise the plain environment variable <code>ANTHROPIC_API_KEY</code>. The environment variable is the recommended way:</p>
+<pre><code>export ANTHROPIC_API_KEY=...        # then start ByteBench
 # or in docker-compose.yml
-ANTHROPIC_API_KEY: "${GITBENCH_AI_API_KEY}"</code></pre>
+ANTHROPIC_API_KEY: "${BYTEBENCH_AI_API_KEY}"</code></pre>
 <p>With no key and no Claude Code on the server, every AI feature hides itself. See <a href="ai.html">AI overview and setup</a>.</p>
 
 <h3 id="env-other">Other environment variables</h3>
@@ -47,19 +47,19 @@ ANTHROPIC_API_KEY: "${GITBENCH_AI_API_KEY}"</code></pre>
   <tr><td><code>ASPNETCORE_URLS</code>, <code>ASPNETCORE_HTTP_PORTS</code></td><td>Where Kestrel listens. The <code>http</code> launch profile uses <code>http://localhost:5108</code>; the Docker image sets <code>ASPNETCORE_HTTP_PORTS=8080</code></td></tr>
   <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Claude API key, see above</td></tr>
   <tr><td><code>CLAUDE_CODE_OAUTH_TOKEN</code>, <code>CLAUDE_CONFIG_DIR</code></td><td>Passed through to the Claude Code CLI when the web editor uses the Claude Code backend. No other server variables are passed to it</td></tr>
-  <tr><td><code>DOCKER_HOST</code>, <code>DOCKER_TLS_VERIFY</code>, <code>DOCKER_CERT_PATH</code></td><td>Read by the <code>docker</code> CLI that runs CI jobs. Point them at a remote daemon to keep builds off the GitBench host</td></tr>
+  <tr><td><code>DOCKER_HOST</code>, <code>DOCKER_TLS_VERIFY</code>, <code>DOCKER_CERT_PATH</code></td><td>Read by the <code>docker</code> CLI that runs CI jobs. Point them at a remote daemon to keep builds off the ByteBench host</td></tr>
   <tr><td><code>PATH</code></td><td>Used to find <code>git</code> (unless <code>Git:Executable</code> is set) and the <code>claude</code> CLI</td></tr>
-  <tr><td><code>GITBENCH_TEST_POSTGRES</code></td><td>Test suite only: a PostgreSQL connection string that makes <code>dotnet test</code> run against Postgres</td></tr>
+  <tr><td><code>BYTEBENCH_TEST_POSTGRES</code></td><td>Test suite only: a PostgreSQL connection string that makes <code>dotnet test</code> run against Postgres</td></tr>
   <tr><td><code>DOTNET_gcServer</code></td><td>Set to <code>0</code> in the image (workstation garbage collector). Standard .NET setting</td></tr>
 </table>
 
 <h2 id="core">Core, hosting and database</h2>
 <table>
   <tr><th>Key</th><th>Default</th><th>Meaning and example</th></tr>
-  <tr><td><code>PublicBaseUrl</code></td><td>learned from the first request</td><td>Absolute site URL used in API responses, webhooks, chat links and email. <strong>Set it in production</strong>: <code>PublicBaseUrl=https://gitbench.example.com</code></td></tr>
-  <tr><td><code>AllowedHosts</code></td><td><code>*</code></td><td>Host header filter: <code>AllowedHosts=gitbench.example.com</code></td></tr>
+  <tr><td><code>PublicBaseUrl</code></td><td>learned from the first request</td><td>Absolute site URL used in API responses, webhooks, chat links and email. <strong>Set it in production</strong>: <code>PublicBaseUrl=https://bytebench.example.com</code></td></tr>
+  <tr><td><code>AllowedHosts</code></td><td><code>*</code></td><td>Host header filter: <code>AllowedHosts=bytebench.example.com</code></td></tr>
   <tr><td><code>Database:Provider</code></td><td><code>Sqlite</code></td><td><code>Sqlite</code> or <code>Postgres</code></td></tr>
-  <tr><td><code>ConnectionStrings:Default</code></td><td><code>Data Source=gitbench.db</code></td><td>SQLite file or Npgsql connection string. Required when the provider is <code>Postgres</code>: <code>Host=db;Database=gitbench;Username=gitbench;Password=...</code></td></tr>
+  <tr><td><code>ConnectionStrings:Default</code></td><td><code>Data Source=bytebench.db</code></td><td>SQLite file or Npgsql connection string. Required when the provider is <code>Postgres</code>: <code>Host=db;Database=bytebench;Username=bytebench;Password=...</code></td></tr>
   <tr><td><code>Seed:DemoData</code></td><td><code>true</code> in Development, else <code>false</code></td><td>Create demo users, projects and issues in an empty database. Turning it on in Production is reported as a problem on <code>/admin/system</code></td></tr>
   <tr><td><code>Bootstrap:AdminUsers</code></td><td>none</td><td>Usernames promoted to site admin at start-up (list or comma separated). Only ever promotes, so it is safe to leave set: <code>Bootstrap__AdminUsers=alice</code></td></tr>
   <tr><td><code>Git:RepositoryRoot</code></td><td><code>{ContentRoot}/repos</code></td><td>Folder with the bare repositories</td></tr>
@@ -103,8 +103,8 @@ ANTHROPIC_API_KEY: "${GITBENCH_AI_API_KEY}"</code></pre>
   <tr><td><code>Security:ContentSecurityPolicy</code></td><td><code>true</code></td><td>Send the Content-Security-Policy header on HTML pages</td></tr>
   <tr><td><code>Security:ContentSecurityPolicyReportOnly</code></td><td><code>false</code></td><td>Send it as <code>Content-Security-Policy-Report-Only</code> while testing</td></tr>
   <tr><td><code>Security:CspInlineHandlers</code></td><td>none</td><td>Extra inline <code>on...=""</code> handler strings to allow by hash</td></tr>
-  <tr><td><code>DataProtection:KeysPath</code></td><td><code>{ContentRoot}/keys</code></td><td>Key ring folder. Must be persistent; GitBench refuses to start in Production if it is not writable</td></tr>
-  <tr><td><code>DataProtection:ApplicationName</code></td><td><code>GitBench</code></td><td>Keep identical across deployments that share keys</td></tr>
+  <tr><td><code>DataProtection:KeysPath</code></td><td><code>{ContentRoot}/keys</code></td><td>Key ring folder. Must be persistent; ByteBench refuses to start in Production if it is not writable</td></tr>
+  <tr><td><code>DataProtection:ApplicationName</code></td><td><code>ByteBench</code></td><td>Keep identical across deployments that share keys</td></tr>
   <tr><td><code>DataProtection:CertificatePath</code></td><td>none</td><td>A <code>.pfx</code> that encrypts keys at rest (recommended on Linux)</td></tr>
   <tr><td><code>DataProtection:CertificatePassword</code></td><td>none</td><td>Password of that certificate (a secret)</td></tr>
   <tr><td><code>DataProtection:DecryptionCertificatePaths</code></td><td>none</td><td>Older <code>.pfx</code> files still accepted for reading keys after a rotation</td></tr>
@@ -151,7 +151,7 @@ RateLimiting__Auth__PermitLimit=0      # no limit on sign-in POSTs (not advised)
   <tr><td><code>Ci:Cpus</code></td><td><code>2</code></td><td><code>--cpus</code> per step container; empty for no limit</td></tr>
   <tr><td><code>Ci:PidsLimit</code></td><td>1024</td><td><code>--pids-limit</code>; <code>0</code> for none</td></tr>
   <tr><td><code>Ci:DockerExecutable</code></td><td><code>docker</code></td><td>Path of the Docker CLI</td></tr>
-  <tr><td><code>Ci:WorkDirectory</code></td><td><code>{temp}/gitbench-ci/{instance}</code></td><td>Where workspaces are exported. The Docker daemon must see the same path</td></tr>
+  <tr><td><code>Ci:WorkDirectory</code></td><td><code>{temp}/bytebench-ci/{instance}</code></td><td>Where workspaces are exported. The Docker daemon must see the same path</td></tr>
   <tr><td><code>Ci:MaxLogChars</code></td><td>1,048,576</td><td>Per-step log cap in characters</td></tr>
   <tr><td><code>Ci:ArtifactsRoot</code></td><td><code>{ContentRoot}/ci-artifacts</code></td><td>Where artifact zips are stored</td></tr>
   <tr><td><code>Ci:MaxArtifactBytes</code></td><td>100 MB</td><td>Largest artifact per job</td></tr>
@@ -167,7 +167,7 @@ RateLimiting__Auth__PermitLimit=0      # no limit on sign-in POSTs (not advised)
   <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
   <tr><td><code>Email:Enabled</code></td><td><code>false</code></td><td>Master switch. While off, nothing is queued and pending notification emails are dropped</td></tr>
   <tr><td><code>Email:Sender</code></td><td><code>Pickup</code> in Development, else <code>Smtp</code></td><td><code>Pickup</code> writes <code>.eml</code> files; <code>Smtp</code> sends mail</td></tr>
-  <tr><td><code>Email:From</code></td><td><code>GitBench &lt;gitbench@localhost&gt;</code></td><td>Sender address</td></tr>
+  <tr><td><code>Email:From</code></td><td><code>ByteBench &lt;bytebench@localhost&gt;</code></td><td>Sender address</td></tr>
   <tr><td><code>Email:PickupDirectory</code></td><td><code>mail-drop</code></td><td>Folder for <code>.eml</code> files (relative to the content root)</td></tr>
   <tr><td><code>Email:DigestMinutes</code></td><td>0</td><td><code>0</code> sends each notification at once; <code>N</code> sends at most one mail per user every N minutes, batching later ones into a digest</td></tr>
   <tr><td><code>Email:BaseUrl</code></td><td>none</td><td>Site URL for email links; falls back to <code>PublicBaseUrl</code>, then the first request</td></tr>
@@ -178,18 +178,18 @@ RateLimiting__Auth__PermitLimit=0      # no limit on sign-in POSTs (not advised)
 </table>
 <pre><code>Email__Enabled=true
 Email__Sender=Smtp
-Email__From="GitBench &lt;gitbench@example.com&gt;"
+Email__From="ByteBench &lt;bytebench@example.com&gt;"
 Email__Smtp__Host=smtp.example.com
-Email__Smtp__User=gitbench@example.com
+Email__Smtp__User=bytebench@example.com
 Email__Smtp__Password=...</code></pre>
 <p>See <a href="notifications.html">Notifications and email</a>.</p>
 
 <h2 id="service-desk">ServiceDesk</h2>
 <table>
   <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
-  <tr><td><code>ServiceDesk:IncomingAddress</code></td><td><code>desk@gitbench.localhost</code></td><td>Inbound mailbox. Projects get <code>desk+KEY@domain</code> by plus-addressing</td></tr>
+  <tr><td><code>ServiceDesk:IncomingAddress</code></td><td><code>desk@bytebench.localhost</code></td><td>Inbound mailbox. Projects get <code>desk+KEY@domain</code> by plus-addressing</td></tr>
   <tr><td><code>ServiceDesk:WebhookSecret</code></td><td>none</td><td>Shared secret for <code>POST /service-desk/inbound</code> (HMAC-SHA256 signed raw MIME). Empty turns the endpoint off</td></tr>
-  <tr><td><code>ServiceDesk:WebhookToleranceSeconds</code></td><td>300</td><td>How far the <code>X-GitBench-Timestamp</code> may differ from now</td></tr>
+  <tr><td><code>ServiceDesk:WebhookToleranceSeconds</code></td><td>300</td><td>How far the <code>X-ByteBench-Timestamp</code> may differ from now</td></tr>
   <tr><td><code>ServiceDesk:MaxMessageBytes</code></td><td>30 MB</td><td>Largest raw message</td></tr>
   <tr><td><code>ServiceDesk:MaxAttachmentBytes</code></td><td>10 MB</td><td>Per attachment (also capped by <code>Attachments:MaxBytes</code>)</td></tr>
   <tr><td><code>ServiceDesk:MaxAttachmentsPerMessage</code></td><td>10</td><td>Attachments kept per message</td></tr>
@@ -284,7 +284,7 @@ Ai__Review__MaxReviewsPerRepoPerHour=6</code></pre>
   <tr><td><code>Pages:Enabled</code></td><td><code>true</code></td><td>Master switch: when off nothing is deployed or served</td></tr>
   <tr><td><code>Pages:Root</code></td><td><code>{ContentRoot}/pages</code></td><td>Where sites are stored</td></tr>
   <tr><td><code>Pages:BaseDomain</code></td><td>empty</td><td>Serve sites on their own hosts: <code>{slug}.{KEY}.{BaseDomain}</code>. Needs wildcard DNS and a certificate. Empty means path mode only</td></tr>
-  <tr><td><code>Pages:PathModeEnabled</code></td><td><code>true</code></td><td>Keep serving <code>/pages/{KEY}/{slug}/...</code> on the GitBench host (sandboxed)</td></tr>
+  <tr><td><code>Pages:PathModeEnabled</code></td><td><code>true</code></td><td>Keep serving <code>/pages/{KEY}/{slug}/...</code> on the ByteBench host (sandboxed)</td></tr>
   <tr><td><code>Pages:MaxSiteBytes</code></td><td>100 MB</td><td>Largest site</td></tr>
   <tr><td><code>Pages:MaxFileBytes</code></td><td>50 MB</td><td>Largest single file</td></tr>
   <tr><td><code>Pages:MaxFiles</code></td><td>10000</td><td>Most files in a site</td></tr>
@@ -331,7 +331,7 @@ Ai__Review__MaxReviewsPerRepoPerHour=6</code></pre>
   <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
   <tr><td><code>NightOwl:DashboardUrl</code></td><td>none</td><td>Optional http(s) URL of a Night Owl dashboard, linked from the Security pages. Anything that is not an absolute http or https URL is ignored</td></tr>
 </table>
-<p>This is the only Night Owl setting in GitBench. Which severities block merges, and when alerts are sent, are repository settings. See <a href="security-scanning.html">Security scanning</a>. The scan itself is a CI job; CI variables such as <code>NIGHTOWL_FAIL_ON</code> tune it.</p>
+<p>This is the only Night Owl setting in ByteBench. Which severities block merges, and when alerts are sent, are repository settings. See <a href="security-scanning.html">Security scanning</a>. The scan itself is a CI job; CI variables such as <code>NIGHTOWL_FAIL_ON</code> tune it.</p>
 
 <h2 id="authentication">Authentication (SSO and LDAP)</h2>
 <p>Providers are configured as list items. This is the shape; the details and a guided setup are in <a href="accounts.html">Accounts, sign-in and SSO</a>. Invalid entries are left out and shown on <code>/admin/authentication</code> instead of stopping the app.</p>
@@ -352,8 +352,8 @@ Ai__Review__MaxReviewsPerRepoPerHour=6</code></pre>
   <tr><td><code>TrustEmailVerified</code></td><td><code>false</code></td><td>Treat the provider's email as verified without the claim</td></tr>
   <tr><td><code>AllowedEmailDomains</code></td><td>empty</td><td>Only verified emails in these domains may sign in</td></tr>
   <tr><td><code>AdminGroups</code></td><td>empty</td><td>Group claim values that make a user a site admin</td></tr>
-  <tr><td><code>GroupMappings</code></td><td>empty</td><td>List of <code>ExternalGroup</code>, <code>Group</code> (GitBench group path), <code>Role</code></td></tr>
-  <tr><td><code>TwoFactor</code></td><td><code>GitBench</code></td><td><code>GitBench</code> or <code>TrustIdp</code> (skip GitBench's code when the provider did MFA)</td></tr>
+  <tr><td><code>GroupMappings</code></td><td>empty</td><td>List of <code>ExternalGroup</code>, <code>Group</code> (ByteBench group path), <code>Role</code></td></tr>
+  <tr><td><code>TwoFactor</code></td><td><code>ByteBench</code></td><td><code>ByteBench</code> or <code>TrustIdp</code> (skip ByteBench's code when the provider did MFA)</td></tr>
   <tr><td><code>RequireHttpsMetadata</code></td><td><code>true</code></td><td>Only turn off for a local test provider</td></tr>
   <tr><td><code>UseUserInfoEndpoint</code></td><td><code>true</code></td><td>Also read claims from the userinfo endpoint</td></tr>
 </table>
@@ -379,13 +379,13 @@ Ai__Review__MaxReviewsPerRepoPerHour=6</code></pre>
 <pre><code>Authentication__Oidc__Providers__0__Name=keycloak
 Authentication__Oidc__Providers__0__Type=Oidc
 Authentication__Oidc__Providers__0__Authority=https://sso.example.com/realms/acme
-Authentication__Oidc__Providers__0__ClientId=gitbench
+Authentication__Oidc__Providers__0__ClientId=bytebench
 Authentication__Oidc__Providers__0__ClientSecret=...   # keep in a secret store</code></pre>
 
 <h2 id="examples">A realistic production snippet</h2>
-<pre><code># docker-compose.yml, under services.gitbench.environment
-PublicBaseUrl: "https://gitbench.example.com"
-AllowedHosts: "gitbench.example.com"
+<pre><code># docker-compose.yml, under services.bytebench.environment
+PublicBaseUrl: "https://bytebench.example.com"
+AllowedHosts: "bytebench.example.com"
 ReverseProxy__Enabled: "true"
 ReverseProxy__KnownNetworks__0: "172.16.0.0/12"
 Bootstrap__AdminUsers: "alice"
@@ -393,7 +393,7 @@ Backup__Enabled: "true"
 Backup__KeepLast: "14"
 Email__Enabled: "true"
 Email__Smtp__Host: "smtp.example.com"
-Email__Smtp__Password: "${GITBENCH_SMTP_PASSWORD}"
-ANTHROPIC_API_KEY: "${GITBENCH_AI_API_KEY}"</code></pre>
+Email__Smtp__Password: "${BYTEBENCH_SMTP_PASSWORD}"
+ANTHROPIC_API_KEY: "${BYTEBENCH_AI_API_KEY}"</code></pre>
 <div class="note">Not every value can be changed without a restart. Treat all of the above as read at start-up unless a page says otherwise; restart the app after changing configuration.</div>
 <p>Settings that live in the interface instead of configuration (branch protection, per-project AI review, deploy approvals, webhooks and so on) are covered on their feature pages. Operating advice is in <a href="production.html">Production setup</a>.</p>

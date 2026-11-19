@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>
 /// The "Service Desk" system account that creates issues and posts requesters' replies (the requester is recorded on the
@@ -9,7 +9,7 @@ namespace GitBench.Services.ServiceDesk;
 /// </summary>
 public static class ServiceDeskBot
 {
-    public const string UserName = "gitbench-service-desk";
+    public const string UserName = "bytebench-service-desk";
     public const string DisplayName = "Service Desk";
 
     public static bool IsBot(User? u) => u?.UserName == UserName;
@@ -21,7 +21,7 @@ public static class ServiceDeskBot
         var id = await db.Users.Where(u => u.NormalizedUserName == normalized).Select(u => (int?)u.Id).FirstOrDefaultAsync(ct);
         if (id is { } existing) return existing;
 
-        const string email = "gitbench-service-desk@gitbench.local";
+        const string email = "bytebench-service-desk@bytebench.local";
         var bot = new User
         {
             UserName = UserName, NormalizedUserName = normalized,

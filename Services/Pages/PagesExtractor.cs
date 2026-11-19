@@ -1,6 +1,6 @@
 using System.IO.Compression;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>A deployment was refused (unsafe or too large); the message says why.</summary>
 public sealed class PagesException(string message) : Exception(message);

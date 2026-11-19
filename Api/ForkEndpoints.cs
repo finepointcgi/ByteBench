@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Forks;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Forks;
+using ByteBench.Services.Git;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>A fork (or any repository) with the upstream it was forked from.</summary>
 /// <param name="ForkedFrom">"KEY/slug" of the upstream; null for an original, or when you can't see it.</param>

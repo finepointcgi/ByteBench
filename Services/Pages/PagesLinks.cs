@@ -1,8 +1,8 @@
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>Where a request or a link points: a project key, a repository slug and a slot ("" main site, else a review site).</summary>
 public sealed record PagesTarget(string Key, string Slug, string Slot);

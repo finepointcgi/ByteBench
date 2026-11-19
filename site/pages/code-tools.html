@@ -54,8 +54,8 @@
 <p>Only the files in the searched commit are indexed on demand; there is no background index, so very large repositories search slower. The web editor's find-in-files uses the same engine plus your uncommitted changes.</p>
 
 <h2 id="languages">Languages and syntax highlighting</h2>
-<p>Code is highlighted in your browser with highlight.js 11.11.1, shipped inside GitBench (no CDN is contacted). It covers about 35 common languages plus Dockerfile, PowerShell and F#. The language comes from the file extension or name. Highlighting applies to the file viewer, diffs (commit view, pull request files, new-PR preview) and fenced code blocks in Markdown (<code>```csharp</code>) in issues, comments, README files and wiki pages. Unknown file types, and files or diffs over 200 KB, stay plain. Token colours follow the light or dark theme.</p>
-<p>GitBench does not compute a per-language percentage bar for repositories.</p>
+<p>Code is highlighted in your browser with highlight.js 11.11.1, shipped inside ByteBench (no CDN is contacted). It covers about 35 common languages plus Dockerfile, PowerShell and F#. The language comes from the file extension or name. Highlighting applies to the file viewer, diffs (commit view, pull request files, new-PR preview) and fenced code blocks in Markdown (<code>```csharp</code>) in issues, comments, README files and wiki pages. Unknown file types, and files or diffs over 200 KB, stay plain. Token colours follow the light or dark theme.</p>
+<p>ByteBench does not compute a per-language percentage bar for repositories.</p>
 
 <h2 id="tags">Tags</h2>
 <p>The <strong>Tags</strong> tab (<code>/p/{KEY}/repos/{slug}/tags</code>) lists every tag, newest first, with its commit, the release that uses it, <strong>zip</strong> and <strong>tar.gz</strong> downloads, and for annotated tags the tagger, date and message.</p>
@@ -108,6 +108,6 @@
   <tr><td><code>GET .../repos/{slug}/releases</code>, <code>/releases/latest</code>, <code>/releases/{id}</code>, <code>/releases/tags/{tag}</code></td><td>Releases (drafts only for Developers and above)</td></tr>
   <tr><td><code>POST .../repos/{slug}/releases</code></td><td>Create a release: <code>tagName</code>, <code>target</code> (branch or SHA for a new tag), <code>tagMessage</code>, <code>generateNotes</code>, plus <code>title</code>, <code>notes</code>, <code>prerelease</code>, <code>draft</code></td></tr>
 </table>
-<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
-  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/releases/latest</code></pre>
+<pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/releases/latest</code></pre>
 <p>There is no code search API. See <a href="api.html">REST API and webhooks</a> for authentication.</p>

@@ -1,6 +1,6 @@
 @* App-bar search: debounced suggestions (top 3 issues, pull requests, projects and users) and, first, either the issue
    a typed key like WEB-12 names or "all results", so Enter goes to /search?q=… (which jumps straight to a key's issue). *@
-@using GitBench.Services.Explore
+@using ByteBench.Services.Explore
 @inject SearchService Search
 @inject NavigationManager Nav
 
@@ -10,7 +10,7 @@
                      Placeholder="Search or jump to…  ( / )" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Inherit"
                      AnchorOrigin="Origin.BottomLeft" TransformOrigin="Origin.TopLeft" PopoverClass="gb-search-popover"
-                     ShowProgressIndicator="false" SelectOnActivation="true" aria-label="Search GitBench">
+                     ShowProgressIndicator="false" SelectOnActivation="true" aria-label="Search ByteBench">
         <ItemTemplate Context="s">
             @if (s.Group != null)
             {

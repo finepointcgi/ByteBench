@@ -2,7 +2,7 @@ using System.Text;
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 // Repository settings and code search helpers.
 public static partial class GitOps

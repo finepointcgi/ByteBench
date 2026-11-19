@@ -1,4 +1,4 @@
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Outcome of one check that can gate merging a pull request.</summary>
 public enum MergeCheckState { Passed, Pending, Failed, Neutral }

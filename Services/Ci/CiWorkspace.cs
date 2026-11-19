@@ -1,7 +1,7 @@
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>Exports a commit's tree into a plain directory that a job's containers mount at <c>/workspace</c>.</summary>
 public static class CiWorkspace

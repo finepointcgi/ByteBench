@@ -5,10 +5,10 @@
 @inject CurrentUser Me
 @inject ProjectAccess Access
 @inject IJSRuntime JS
-@inject GitBench.Services.Explore.StarService Stars
+@inject ByteBench.Services.Explore.StarService Stars
 @inject IDialogService Dialogs
 
-<MudThemeProvider @ref="themeProvider" Theme="GitBenchTheme.Theme" @bind-IsDarkMode="isDark" />
+<MudThemeProvider @ref="themeProvider" Theme="ByteBenchTheme.Theme" @bind-IsDarkMode="isDark" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -16,7 +16,7 @@
 <MudLayout>
     <MudAppBar Elevation="0" Dense="true" Class="gb-appbar">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => drawerOpen = !drawerOpen" aria-label="Toggle navigation" />
-        <MudLink Href="/" Class="gb-brand" Underline="Underline.None"><span class="gb-brand-mark">◆</span> GitBench</MudLink>
+        <MudLink Href="/" Class="gb-brand" Underline="Underline.None"><span class="gb-brand-mark">◆</span> ByteBench</MudLink>
 
         @if (projects.Count > 0)
         {
@@ -153,7 +153,7 @@
             {
                 @if (CurrentProject is { } crumbProject)
                 {
-                    <GitBench.Components.Groups.GroupBreadcrumbs ProjectKey="@crumbProject.Key" ProjectName="@crumbProject.Name" />
+                    <ByteBench.Components.Groups.GroupBreadcrumbs ProjectKey="@crumbProject.Key" ProjectName="@crumbProject.Name" />
                 }
                 @Body
             }
@@ -225,7 +225,7 @@
         // Saved choice first, else the OS preference. Interactive renders only (JS isn't available while prerendering).
         try
         {
-            var saved = await JS.InvokeAsync<string?>("gitbenchTheme.get");
+            var saved = await JS.InvokeAsync<string?>("bytebenchTheme.get");
             isDark = saved is "dark" || (saved is null && themeProvider != null && await themeProvider.GetSystemDarkModeAsync());
             StateHasChanged();
         }
@@ -236,7 +236,7 @@
         try
         {
             shortcutsRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("gitbenchShortcuts.attach", shortcutsRef);
+            await JS.InvokeVoidAsync("bytebenchShortcuts.attach", shortcutsRef);
         }
         catch (InvalidOperationException) { }
         catch (JSException) { }
@@ -262,7 +262,7 @@
     private async Task ToggleDark()
     {
         isDark = !isDark;
-        await JS.InvokeVoidAsync("gitbenchTheme.set", isDark ? "dark" : "light");
+        await JS.InvokeVoidAsync("bytebenchTheme.set", isDark ? "dark" : "light");
     }
 
     private void OpenProfile() => Nav.NavigateTo("account/profile", forceLoad: true);

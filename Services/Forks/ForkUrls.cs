@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Forks;
+namespace ByteBench.Services.Forks;
 
 /// <summary>Routes for the fork pages.</summary>
 public static class ForkUrls

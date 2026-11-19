@@ -1,11 +1,11 @@
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Ci;
-using GitBench.Services.Git;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Git;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.MergeQueue;
+namespace ByteBench.Services.MergeQueue;
 
 /// <summary>
 /// Processes merge queues (scoped; run acting as the system). Everything is derived from the database and the bare

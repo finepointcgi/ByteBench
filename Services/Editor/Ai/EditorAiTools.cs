@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>A client tool offered to the model: name, description and JSON-schema properties.</summary>
 public sealed record EditorToolDefinition(string Name, string Description, IReadOnlyDictionary<string, JsonElement> Properties, IReadOnlyList<string> Required);

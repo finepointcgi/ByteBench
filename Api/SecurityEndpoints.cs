@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Security;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Security;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record SecurityPackageDto(string Name, string? Version, string? Ecosystem, IReadOnlyList<string> FixedVersions);
 
@@ -45,7 +45,7 @@ public static class SecurityEndpoints
             .WithDescription("Oldest first, up to ?take= (default 30) pipelines of ?branch= (default: the default branch).");
         g.MapGet("/security/triage", ExportTriage).WithName("ExportSecurityTriage").WithSummary("Triage decisions as Night Owl's .nightowl/triage.json");
         g.MapPost("/security/triage", ImportTriage).WithName("ImportSecurityTriage").WithSummary("Import a Night Owl triage file")
-            .WithDescription("Needs Maintainer+. The body is the JSON array of .nightowl/triage.json; each decision replaces GitBench's for that fingerprint.")
+            .WithDescription("Needs Maintainer+. The body is the JSON array of .nightowl/triage.json; each decision replaces ByteBench's for that fingerprint.")
             .WithJsonBody<List<NightOwlTriageFile.Decision>>();
         g.MapGet("/pull-requests/{number:int}/security", PullRequest).WithName("GetPullRequestSecurity")
             .WithSummary("New and fixed security findings of a pull request").WithDescription("The head's latest scan compared with the target branch's latest scan.");

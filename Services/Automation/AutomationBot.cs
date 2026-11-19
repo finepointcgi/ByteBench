@@ -1,16 +1,16 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>
-/// The "GitBench Automation" bot account that automation rules act as (see <see cref="AutomationEngine"/>). It has no password hash, so it can't sign in
+/// The "ByteBench Automation" bot account that automation rules act as (see <see cref="AutomationEngine"/>). It has no password hash, so it can't sign in
 /// (web or Git), and is locked out permanently as a second guard.
 /// </summary>
 public static class AutomationBot
 {
-    public const string UserName = "gitbench-automation";
-    public const string DisplayName = "GitBench Automation";
+    public const string UserName = "bytebench-automation";
+    public const string DisplayName = "ByteBench Automation";
 
     public static bool IsBot(User? u) => u?.UserName == UserName;
 
@@ -21,7 +21,7 @@ public static class AutomationBot
         var id = await db.Users.Where(u => u.NormalizedUserName == normalized).Select(u => (int?)u.Id).FirstOrDefaultAsync(ct);
         if (id is { } existing) return existing;
 
-        const string email = "gitbench-automation@gitbench.local";
+        const string email = "bytebench-automation@bytebench.local";
         var bot = new User
         {
             UserName = UserName, NormalizedUserName = normalized,

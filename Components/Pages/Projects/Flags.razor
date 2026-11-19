@@ -1,14 +1,14 @@
 @page "/p/{Key}/flags"
-@using GitBench.Services.Flags
-@using GitBench.Components.Flags
-@using GitBench.Components.Repositories
+@using ByteBench.Services.Flags
+@using ByteBench.Components.Flags
+@using ByteBench.Components.Repositories
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject FlagService FlagSvc
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
-@inject GitBench.Api.PublicBaseUrl PublicUrl
+@inject ByteBench.Api.PublicBaseUrl PublicUrl
 
 <PageTitle>Feature flags · @project?.Name</PageTitle>
 
@@ -314,9 +314,9 @@ else if (project != null)
     }
 
     private string CSharpSnippet => $$"""
-        // Server-side: ask GitBench to evaluate; the SDK key stays on your server.
+        // Server-side: ask ByteBench to evaluate; the SDK key stays on your server.
         using var http = new HttpClient { BaseAddress = new Uri("{{BaseUrl}}") };
-        http.DefaultRequestHeaders.Authorization = new("Bearer", Environment.GetEnvironmentVariable("GITBENCH_SDK_KEY"));
+        http.DefaultRequestHeaders.Authorization = new("Bearer", Environment.GetEnvironmentVariable("BYTEBENCH_SDK_KEY"));
 
         var url = $"/api/v1/flags/evaluate?flag=new-checkout&user={Uri.EscapeDataString(userId)}&attr.plan=pro";
         using var doc = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(url));

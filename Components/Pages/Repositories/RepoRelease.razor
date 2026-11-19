@@ -1,7 +1,7 @@
 @page "/p/{Key}/repos/{Slug}/releases/{Id:int}"
-@using GitBench.Services.Releases
-@using GitBench.Services.Attachments
-@using GitBench.Components.Releases
+@using ByteBench.Services.Releases
+@using ByteBench.Services.Attachments
+@using ByteBench.Components.Releases
 @inherits RepoPageBase
 @inject ReleaseService Releases
 @inject ProjectAccess Access
@@ -40,7 +40,7 @@ else if (Repo != null && release != null)
 
     <MudPaper Outlined="true" Class="pa-4 mt-3 mb-3">
         <MudText Typo="Typo.subtitle2" HtmlTag="h2" Class="mb-1">Deployed to</MudText>
-        <GitBench.Components.Pipelines.DeployedToPanel Repo="Repo" Tag="@release.TagName" ShowEmpty="true" EmptyText="This release's tag isn't deployed to any environment yet." />
+        <ByteBench.Components.Pipelines.DeployedToPanel Repo="Repo" Tag="@release.TagName" ShowEmpty="true" EmptyText="This release's tag isn't deployed to any environment yet." />
     </MudPaper>
 
     @if (CanEdit)

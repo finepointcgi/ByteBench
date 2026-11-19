@@ -2,7 +2,7 @@
 <p class="lead">Publish a folder of HTML, CSS and JavaScript from a CI job as your repository's website, with versions you can roll back and temporary review sites for branches.</p>
 
 <h2 id="quick-start">Quick start</h2>
-<p>Add a job named <code>pages</code> to <a href="ci.html"><code>.gitbench-ci.yml</code></a> that leaves its files in <code>public/</code>, and push to the default branch:</p>
+<p>Add a job named <code>pages</code> to <a href="ci.html"><code>.bytebench-ci.yml</code></a> that leaves its files in <code>public/</code>, and push to the default branch:</p>
 <pre><code>jobs:
   pages:
     image: python:3.13-alpine
@@ -22,7 +22,7 @@
 <tr><td><code>pages: false</code></td><td>Switches off the implicit publishing of a job named <code>pages</code>.</td></tr>
 </table>
 <p>The folder must be a plain relative path (no <code>*</code> or <code>?</code>, no <code>..</code>) and must not be, or sit inside, a symbolic link. Unknown keys inside the mapping are errors (<code>use path, review or expire_in</code>).</p>
-<div class="note">A Pages job does not need <code>artifacts</code>: GitBench reads the folder straight from the job's workspace. It runs after the job's steps, cache and artifacts are handled. If publishing fails (folder missing, empty, over a limit, unsafe contents) the <b>job fails</b> with an explanation in its log. If the job simply isn't allowed to publish (see below), it passes and the log says why nothing was published.</div>
+<div class="note">A Pages job does not need <code>artifacts</code>: ByteBench reads the folder straight from the job's workspace. It runs after the job's steps, cache and artifacts are handled. If publishing fails (folder missing, empty, over a limit, unsafe contents) the <b>job fails</b> with an explanation in its log. If the job simply isn't allowed to publish (see below), it passes and the log says why nothing was published.</div>
 
 <h2 id="when-published">Which pipelines publish</h2>
 <ul>
@@ -42,10 +42,10 @@
 <h2 id="urls">Where the site lives</h2>
 <table>
 <tr><th>Mode</th><th>Main site</th><th>Review site</th></tr>
-<tr><td><b>Path mode</b> (always available unless disabled)</td><td><code>https://gitbench.example.com/pages/WEB/web-app/</code></td><td><code>https://gitbench.example.com/pages/WEB/web-app/-/r/feature-login/</code></td></tr>
+<tr><td><b>Path mode</b> (always available unless disabled)</td><td><code>https://bytebench.example.com/pages/WEB/web-app/</code></td><td><code>https://bytebench.example.com/pages/WEB/web-app/-/r/feature-login/</code></td></tr>
 <tr><td><b>Host mode</b> (when <code>Pages:BaseDomain</code> is set)</td><td><code>https://web-app.web.pages.example.com/</code></td><td><code>https://feature-login.web-app.web.pages.example.com/</code></td></tr>
 </table>
-<p>Host mode is <code>{slug}.{key}.{BaseDomain}</code> (project key lowercased). It needs <b>wildcard DNS and a wildcard TLS certificate</b> for <code>*.*.pages.example.com</code> pointing at GitBench (a reverse proxy usually does this), because each site gets its own origin. Repository slugs containing <code>.</code> or <code>_</code> are not valid host names and stay path-only. Set <code>Pages:PathModeEnabled=false</code> to serve <em>only</em> dedicated hosts.</p>
+<p>Host mode is <code>{slug}.{key}.{BaseDomain}</code> (project key lowercased). It needs <b>wildcard DNS and a wildcard TLS certificate</b> for <code>*.*.pages.example.com</code> pointing at ByteBench (a reverse proxy usually does this), because each site gets its own origin. Repository slugs containing <code>.</code> or <code>_</code> are not valid host names and stay path-only. Set <code>Pages:PathModeEnabled=false</code> to serve <em>only</em> dedicated hosts.</p>
 <p>Behaviour of the server: <code>index.html</code> for folders, clean URLs (<code>/about</code> serves <code>about.html</code>), <code>404.html</code> when present, optional single-page-app fallback, <code>ETag</code>/<code>If-None-Match</code>, byte <code>Range</code> requests and <code>HEAD</code>. The top-level folder named <code>-</code> is reserved in path mode.</p>
 
 <h2 id="visibility">Who can open a site</h2>
@@ -56,14 +56,14 @@
 </table>
 <p>Other settings on the Pages settings page (Maintainer or Owner): enable or disable Pages for the repository, what unknown addresses do (<b>show the site's 404.html</b>, or <b>always a plain 404</b>), a <b>single-page-app</b> option (serve <code>index.html</code> for paths without a file extension), whether review sites are allowed and for how many days, and <b>Delete site</b>.</p>
 <p>A signed-in person who can see the project but not the site gets a 404; an anonymous visitor to a members-only site is sent to sign in, which reveals that the address exists.</p>
-<p><b>How sign-in works for members-only sites.</b> On a dedicated host, an unauthenticated visitor is bounced to GitBench's sign-in, which hands back a one-minute signed code; the site's host then sets its own host-only <code>gb_pages</code> cookie that lasts <code>Pages:HostCookieHours</code> (8). In path mode, a visit with the GitBench cookie is redirected to a URL containing a signed token (<code>/-/t/{token}/...</code>, valid <code>Pages:PathTokenMinutes</code>, 60) because the sandbox below prevents sub-requests from carrying cookies; relative links keep working but don't share that link publicly, it grants access until it expires.</p>
+<p><b>How sign-in works for members-only sites.</b> On a dedicated host, an unauthenticated visitor is bounced to ByteBench's sign-in, which hands back a one-minute signed code; the site's host then sets its own host-only <code>gb_pages</code> cookie that lasts <code>Pages:HostCookieHours</code> (8). In path mode, a visit with the ByteBench cookie is redirected to a URL containing a signed token (<code>/-/t/{token}/...</code>, valid <code>Pages:PathTokenMinutes</code>, 60) because the sandbox below prevents sub-requests from carrying cookies; relative links keep working but don't share that link publicly, it grants access until it expires.</p>
 
-<h2 id="security">Why sites can't hurt GitBench (plain terms)</h2>
-<p>A Pages site is whatever HTML and JavaScript someone pushed. If it ran with GitBench's privileges it could read other people's cookies or call the API as them. GitBench prevents that in two ways, depending on mode:</p>
+<h2 id="security">Why sites can't hurt ByteBench (plain terms)</h2>
+<p>A Pages site is whatever HTML and JavaScript someone pushed. If it ran with ByteBench's privileges it could read other people's cookies or call the API as them. ByteBench prevents that in two ways, depending on mode:</p>
 <ul>
-<li><b>Host mode:</b> each site has its own host name, so the browser's normal same-origin rules already keep it apart from GitBench. GitBench's sign-in cookie is never sent to site hosts and is ignored there. Put <code>Pages:BaseDomain</code> on a registrable domain (or a Public Suffix List entry) <b>different from GitBench's</b> so one site can't set cookies for the others or for GitBench.</li>
-<li><b>Path mode:</b> the site shares GitBench's address, so every response carries <code>Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...</code> <b>without</b> <code>allow-same-origin</code>. The page runs in an "opaque origin": scripts work, but they can't read GitBench cookies or storage or call its API as you. The side effect is that a site's own <code>localStorage</code>, cookies and same-origin requests <b>don't work in path mode</b>. Use host mode for sites that need them.</li>
-<li>Always: <code>X-Content-Type-Options: nosniff</code>, a restrictive <code>Permissions-Policy</code>, and no <code>Set-Cookie</code> from GitBench except the host sign-in cookie. Pages responses set their own full header set; GitBench's own CSP is unchanged.</li>
+<li><b>Host mode:</b> each site has its own host name, so the browser's normal same-origin rules already keep it apart from ByteBench. ByteBench's sign-in cookie is never sent to site hosts and is ignored there. Put <code>Pages:BaseDomain</code> on a registrable domain (or a Public Suffix List entry) <b>different from ByteBench's</b> so one site can't set cookies for the others or for ByteBench.</li>
+<li><b>Path mode:</b> the site shares ByteBench's address, so every response carries <code>Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...</code> <b>without</b> <code>allow-same-origin</code>. The page runs in an "opaque origin": scripts work, but they can't read ByteBench cookies or storage or call its API as you. The side effect is that a site's own <code>localStorage</code>, cookies and same-origin requests <b>don't work in path mode</b>. Use host mode for sites that need them.</li>
+<li>Always: <code>X-Content-Type-Options: nosniff</code>, a restrictive <code>Permissions-Policy</code>, and no <code>Set-Cookie</code> from ByteBench except the host sign-in cookie. Pages responses set their own full header set; ByteBench's own CSP is unchanged.</li>
 <li>Uploads are checked: the whole archive is refused for <code>..</code>, absolute, drive-letter or backslash names, symlinks and other non-regular entries, duplicates (also by case), and file/folder name clashes. Symlinks in the workspace are skipped and nothing is ever served through a link.</li>
 </ul>
 
@@ -82,7 +82,7 @@
 <tr><td><code>Enabled</code></td><td><code>true</code></td><td>Master switch: when false nothing is deployed or served.</td></tr>
 <tr><td><code>Root</code></td><td><code>{ContentRoot}/pages</code></td><td>Storage: <code>{Root}/{repositoryId}/{32 hex}/</code> per deployment. Back it up with the database.</td></tr>
 <tr><td><code>BaseDomain</code></td><td>(empty)</td><td>Turns on host mode, e.g. <code>pages.example.com</code>.</td></tr>
-<tr><td><code>PathModeEnabled</code></td><td><code>true</code></td><td>Serve <code>/pages/...</code> on the GitBench host. Set false (with BaseDomain) to serve only dedicated hosts.</td></tr>
+<tr><td><code>PathModeEnabled</code></td><td><code>true</code></td><td>Serve <code>/pages/...</code> on the ByteBench host. Set false (with BaseDomain) to serve only dedicated hosts.</td></tr>
 <tr><td><code>MaxSiteBytes</code></td><td>100 MB</td><td>Largest site, uncompressed.</td></tr>
 <tr><td><code>MaxFileBytes</code></td><td>50 MB</td><td>Largest single file.</td></tr>
 <tr><td><code>MaxFiles</code></td><td><code>10000</code></td><td>Most files in a site.</td></tr>

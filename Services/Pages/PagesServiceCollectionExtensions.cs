@@ -1,4 +1,4 @@
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 public static class PagesServiceCollectionExtensions
 {

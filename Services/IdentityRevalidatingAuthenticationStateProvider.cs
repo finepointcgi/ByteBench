@@ -1,11 +1,11 @@
 using System.Security.Claims;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// Re-checks the user's security stamp every minute while a Blazor circuit is open, so a password

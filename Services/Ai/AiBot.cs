@@ -1,16 +1,16 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>
-/// The "GitBench AI" bot account that authors AI review comments. It has no password hash, so it can't sign in
+/// The "ByteBench AI" bot account that authors AI review comments. It has no password hash, so it can't sign in
 /// (web or Git), and is locked out permanently as a second guard.
 /// </summary>
 public static class AiBot
 {
-    public const string UserName = "gitbench-ai";
-    public const string DisplayName = "GitBench AI";
+    public const string UserName = "bytebench-ai";
+    public const string DisplayName = "ByteBench AI";
 
     public static bool IsBot(User? u) => u?.UserName == UserName;
 
@@ -21,7 +21,7 @@ public static class AiBot
         var id = await db.Users.Where(u => u.NormalizedUserName == normalized).Select(u => (int?)u.Id).FirstOrDefaultAsync(ct);
         if (id is { } existing) return existing;
 
-        const string email = "gitbench-ai@gitbench.local";
+        const string email = "bytebench-ai@bytebench.local";
         var bot = new User
         {
             UserName = UserName, NormalizedUserName = normalized,

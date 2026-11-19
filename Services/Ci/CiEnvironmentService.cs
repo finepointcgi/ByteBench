@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>An environment with its current (last successful) and latest deployments.</summary>
 public sealed record CiEnvironmentInfo(CiEnvironment Environment, Deployment? Current, Deployment? Latest, int Count)

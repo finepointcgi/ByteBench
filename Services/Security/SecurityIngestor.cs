@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Ci;
+using ByteBench.Data;
+using ByteBench.Services.Ci;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
 /// <summary>What one ingestion did.</summary>
 public sealed record SecurityIngestResult(int? ScanId, int FindingCount, int NewAlerts, string? Error)
@@ -34,16 +34,16 @@ public class SecurityIngestor(IDbContextFactory<AppDbContext> dbFactory, IServic
         {
             if (type == SecurityReportParser.SarifFormat && nightOwlRead)
             {
-                notes.Add($"[gitbench] Security report {file} (sarif): kept as an artifact; findings were read from the Night Owl JSON report.");
+                notes.Add($"[bytebench] Security report {file} (sarif): kept as an artifact; findings were read from the Night Owl JSON report.");
                 continue;
             }
             var text = ReadReport(workspace, file, out var problem);
-            if (text == null) { notes.Add($"[gitbench] Security report '{file}' ({type}): {problem}"); continue; }
+            if (text == null) { notes.Add($"[bytebench] Security report '{file}' ({type}): {problem}"); continue; }
             var r = await IngestAsync(pipelineId, jobId, type, text);
             if (r.Ok && type == SecurityReportParser.NightOwlFormat) nightOwlRead = true;
             notes.Add(r.Ok
-                ? $"[gitbench] Security report {file} ({type}): {r.FindingCount} finding(s)" + (r.NewAlerts > 0 ? $", {r.NewAlerts} new at the alert threshold." : ".")
-                : $"[gitbench] Security report {file} ({type}) could not be read: {r.Error}");
+                ? $"[bytebench] Security report {file} ({type}): {r.FindingCount} finding(s)" + (r.NewAlerts > 0 ? $", {r.NewAlerts} new at the alert threshold." : ".")
+                : $"[bytebench] Security report {file} ({type}) could not be read: {r.Error}");
         }
         return notes;
     }

@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>A job that deploys to a protected environment: its rule, the approvals so far, and whether the user may approve.</summary>
 public sealed record DeploymentGateInfo(CiEnvironment? Environment, int Required, List<DeploymentApproval> Approvals, bool CanApprove,

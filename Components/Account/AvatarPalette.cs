@@ -1,4 +1,4 @@
-namespace GitBench.Components.Account;
+namespace ByteBench.Components.Account;
 
 /// <summary>Avatar colors offered to users (new accounts get a random one).</summary>
 internal static class AvatarPalette

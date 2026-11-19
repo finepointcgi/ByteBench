@@ -1,11 +1,11 @@
 @* Breadcrumb, title and tab strip shared by every page of a repository. *@
 @inject ProjectAccess Access
 @inject NavigationManager Nav
-@inject GitBench.Services.Forks.ForkService Forks
+@inject ByteBench.Services.Forks.ForkService Forks
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject CurrentUser Me
-@inject GitBench.Services.Pages.PagesService Pages
+@inject ByteBench.Services.Pages.PagesService Pages
 <div class="repo-crumbs"><MudBreadcrumbs Items="Crumbs" Class="px-0 pt-0 pb-2" /></div>
 <div class="repo-header">
     <div class="repo-title">
@@ -52,7 +52,7 @@
         @if (forkInfo.Parent != null && canCreatePr)
         {
             <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.MergeType"
-                       Href="@GitBench.Services.Forks.ForkUrls.NewPullRequest(Repo)">PR to upstream</MudButton>
+                       Href="@ByteBench.Services.Forks.ForkUrls.NewPullRequest(Repo)">PR to upstream</MudButton>
         }
         @if (siteUrl != null)
         {
@@ -62,7 +62,7 @@
         }
         <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
             <MudButton StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="Fork">Fork</MudButton>
-            <MudButton Href="@GitBench.Services.Forks.ForkUrls.List(Repo)" title="Forks of this repository" aria-label="@($"{forkInfo.ForkCount} forks")">@forkInfo.ForkCount</MudButton>
+            <MudButton Href="@ByteBench.Services.Forks.ForkUrls.List(Repo)" title="Forks of this repository" aria-label="@($"{forkInfo.ForkCount} forks")">@forkInfo.ForkCount</MudButton>
         </MudButtonGroup>
         @ChildContent
     </div>
@@ -77,12 +77,12 @@
     <TabLink Active="@(Active == "source")" Href="@RepoUrls.Source(Repo, Ref)" Icon="@Icons.Material.Outlined.Code">Source</TabLink>
     <TabLink Active="@(Active == "commits")" Href="@RepoUrls.Commits(Repo, Ref)" Icon="@Icons.Material.Outlined.Commit">Commits</TabLink>
     <TabLink Active="@(Active == "branches")" Href="@RepoUrls.Branches(Repo)" Icon="@Icons.Material.Outlined.AccountTree">Branches</TabLink>
-    <TabLink Active="@(Active == "tags")" Href="@GitBench.Services.Releases.ReleaseUrls.Tags(Repo)" Icon="@Icons.Material.Outlined.LocalOffer">Tags</TabLink>
-    <TabLink Active="@(Active == "releases")" Href="@GitBench.Services.Releases.ReleaseUrls.List(Repo)" Icon="@Icons.Material.Outlined.NewReleases">Releases</TabLink>
+    <TabLink Active="@(Active == "tags")" Href="@ByteBench.Services.Releases.ReleaseUrls.Tags(Repo)" Icon="@Icons.Material.Outlined.LocalOffer">Tags</TabLink>
+    <TabLink Active="@(Active == "releases")" Href="@ByteBench.Services.Releases.ReleaseUrls.List(Repo)" Icon="@Icons.Material.Outlined.NewReleases">Releases</TabLink>
     <TabLink Active="@(Active == "prs")" Href="@RepoUrls.RepoPullRequests(Repo)" Icon="@Icons.Material.Outlined.MergeType">Pull requests</TabLink>
     <TabLink Active="@(Active == "pipelines")" Href="@PipelineUrls.List(Repo)" Icon="@Icons.Material.Outlined.PlayCircleOutline">Pipelines</TabLink>
     <TabLink Active="@(Active == "environments")" Href="@PipelineUrls.Environments(Repo)" Icon="@Icons.Material.Outlined.Cloud">Environments</TabLink>
-    <TabLink Active="@(Active == "security")" Href="@GitBench.Services.Security.SecurityUrls.Repo(Repo)" Icon="@Icons.Material.Outlined.Shield">Security</TabLink>
+    <TabLink Active="@(Active == "security")" Href="@ByteBench.Services.Security.SecurityUrls.Repo(Repo)" Icon="@Icons.Material.Outlined.Shield">Security</TabLink>
     <TabLink Active="@(Active == "search")" Href="@CodeUrls.Search(Repo, null, Ref)" Icon="@Icons.Material.Outlined.Search">Search</TabLink>
     @if (canManage)
     {
@@ -100,7 +100,7 @@
 
     private bool canManage, canPush, canCreatePr, syncing;
     private int? permsFor;
-    private GitBench.Services.Forks.ForkInfo forkInfo = new(null, false, 0);
+    private ByteBench.Services.Forks.ForkInfo forkInfo = new(null, false, 0);
     private string? query;
     private string? siteUrl;
 

@@ -3,10 +3,10 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace GitBench.Services.Hosting.Backup;
+namespace ByteBench.Services.Hosting.Backup;
 
 /// <summary>
-/// Writes one <c>gitbench-backup-&lt;UTC time&gt;.tar.gz</c>: the database (consistent snapshot, taken first), every storage
+/// Writes one <c>bytebench-backup-&lt;UTC time&gt;.tar.gz</c>: the database (consistent snapshot, taken first), every storage
 /// folder (<c>repos/</c>, <c>attachments/</c>, <c>packages/</c>, <c>lfs/</c>, <c>pages/</c>, <c>keys/</c>), and last
 /// <c>manifest.json</c> with the SHA-256 of each file. Alongside it goes <c>.sha256</c> (the archive's own hash).
 /// </summary>
@@ -17,11 +17,14 @@ namespace GitBench.Services.Hosting.Backup;
 /// </remarks>
 public static class BackupArchive
 {
-    public const string NamePrefix = "gitbench-backup-";
+    public const string NamePrefix = "bytebench-backup-";
     public const string Extension = ".tar.gz";
 
+    /// <summary>Archives made before the rename from GitBench are still listed (and restorable).</summary>
+    public const string LegacyNamePrefix = "gitbench-backup-";
+
     public static bool IsBackupName(string name) =>
-        name.StartsWith(NamePrefix, StringComparison.Ordinal) && name.EndsWith(Extension, StringComparison.Ordinal)
+        (name.StartsWith(NamePrefix, StringComparison.Ordinal) || name.StartsWith(LegacyNamePrefix, StringComparison.Ordinal)) && name.EndsWith(Extension, StringComparison.Ordinal)
         && name.IndexOfAny(['/', '\\']) < 0 && !name.Contains("..", StringComparison.Ordinal);
 
     public static async Task<BackupResult> CreateAsync(BackupLayout layout, BackupOptions options, string? destinationDir, Action<string>? log, CancellationToken ct)

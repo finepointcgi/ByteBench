@@ -1,5 +1,5 @@
 <h1>Issues and workflows</h1>
-<p class="lead">Issues are the unit of work in a GitBench project: they have a type, a status from your project's workflow, people, labels, links to other issues, files, and a live view of the code that implements them.</p>
+<p class="lead">Issues are the unit of work in a ByteBench project: they have a type, a status from your project's workflow, people, labels, links to other issues, files, and a live view of the code that implements them.</p>
 
 <p>Every issue belongs to one <a href="concepts.html">project</a> and is numbered per project, so the third issue of project <code>WEB</code> is <code>WEB-3</code>. That key is what you type in commit messages, branch names, pull request titles and comments to refer to it. Open the issue list at <code>/p/{KEY}/issues</code> (sidebar: <b>Issues</b>) and an issue at <code>/p/{KEY}/issues/{number}</code>.</p>
 
@@ -64,9 +64,9 @@
 </table>
 <p>You cannot define extra link types. Links can cross projects, but only to issues you can view; links to issues you cannot view are hidden. Self-links and a second link of the same type between the same two issues are refused. An open "is blocked by" link shows a blocked marker on the board card, list row and links panel; moving a blocked issue still works but warns you. "Blocks" links also appear as arrows on the <a href="boards-sprints.html#roadmap">roadmap</a>.</p>
 <pre><code># Link WEB-5 as blocking OPS-2
-curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"type":"blocks","issue":"OPS-2"}' \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/5/links</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/issues/5/links</code></pre>
 <p>The API also has <code>GET /links</code>, <code>DELETE /links/{linkId}</code> and <code>GET /children</code> under the issue path. Adding a link needs EditIssues on this issue and view access to the other.</p>
 
 <h2 id="comments-mentions">Comments and mentions</h2>
@@ -78,14 +78,14 @@ curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: applic
 <h2 id="attachments">Attachments</h2>
 <p>Attach files from the <b>Attachments</b> panel, or by picking, dragging or pasting into a description or comment editor (images insert as <code>![name](url)</code>). Uploading needs Developer or above. Limits are set by <code>Attachments:MaxBytes</code> (default 25 MB per file) and <code>Attachments:MaxPerIssue</code> (default 50); see <a href="configuration.html">Configuration reference</a>. Files are stored on disk under <code>Attachments:Root</code> (default <code>attachments/</code> next to the app) with random names. The uploader can delete their own files and Maintainers can delete anyone's.</p>
 <p>Downloads need a signed-in user who can view the project. Only PNG, JPEG, GIF and WebP are shown inline, and only if the bytes match; everything else, including SVG, HTML and PDF, is served as a download with <code>nosniff</code> and a sandboxing Content-Security-Policy.</p>
-<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" -F "file=@screenshot.png" \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/12/attachments</code></pre>
+<pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" -F "file=@screenshot.png" \
+  https://bytebench.example.com/api/v1/projects/WEB/issues/12/attachments</code></pre>
 
 <h2 id="bulk-edit">Bulk edit</h2>
 <p>With Developer or above, tick issues in the list (or select all on the page). A sticky bar offers status, assignee, priority, milestone, add label, remove label, and Delete (Maintainer only, with confirmation). Permissions and values are validated for every issue first, then everything is applied in one transaction with a per-issue activity entry. If one issue may not move (for example because of a workflow transition), nothing changes and the message names that issue. Each watcher gets one batched notification, for example "2 issues in WEB: WEB-5, WEB-10".</p>
 
 <h2 id="templates">Issue templates</h2>
-<p>Templates pre-fill the new-issue form with a title prefix, type, Markdown body and default labels. Maintainers define them at <code>/p/{KEY}/settings/fields</code> (the Templates tab); pick one with the <b>Template</b> selector or open <code>/p/{KEY}/issues/new?template=t{id}</code>. GitBench also offers Markdown files from <code>.gitbench/issue_templates/*.md</code> on the default branch of the project's first repository, with optional front matter:</p>
+<p>Templates pre-fill the new-issue form with a title prefix, type, Markdown body and default labels. Maintainers define them at <code>/p/{KEY}/settings/fields</code> (the Templates tab); pick one with the <b>Template</b> selector or open <code>/p/{KEY}/issues/new?template=t{id}</code>. ByteBench also offers Markdown files from <code>.bytebench/issue_templates/*.md</code> on the default branch of the project's first repository, with optional front matter:</p>
 <pre><code>---
 name: Bug report
 title: "[Bug] "

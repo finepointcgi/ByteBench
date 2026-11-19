@@ -1,4 +1,4 @@
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// A 5-field cron expression (minute hour day-of-month month day-of-week), evaluated in UTC. Fields take <c>*</c>,

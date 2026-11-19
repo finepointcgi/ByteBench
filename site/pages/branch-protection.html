@@ -31,14 +31,14 @@
 
 <h3 id="enforcement">Where rules are enforced</h3>
 <ul>
-  <li><strong>Git push over HTTP and SSH.</strong> Before git sees a push, GitBench reads the ref updates and refuses deletes, creates and direct pushes with a normal report, so git prints <code>! [remote rejected] main -> main (branch 'main' is protected: changes must go through a pull request)</code> and nothing is written. A force push can only be recognised once the data arrives, so for those branches a small <code>pre-receive</code> hook checks that the new commit descends from the old one (this needs git 2.31 or newer on the server).</li>
+  <li><strong>Git push over HTTP and SSH.</strong> Before git sees a push, ByteBench reads the ref updates and refuses deletes, creates and direct pushes with a normal report, so git prints <code>! [remote rejected] main -> main (branch 'main' is protected: changes must go through a pull request)</code> and nothing is written. A force push can only be recognised once the data arrives, so for those branches a small <code>pre-receive</code> hook checks that the new commit descends from the old one (this needs git 2.31 or newer on the server).</li>
   <li><strong>Branch creation and deletion</strong> in the UI and API.</li>
   <li><strong>Pull request merges</strong>, direct and through the queue, which refuse with the list of reasons.</li>
   <li><strong>The web editor</strong>: committing to a branch with "block direct pushes" is refused and the editor offers a new branch plus pull request instead (see <a href="web-editor.html">Web editor</a>).</li>
 </ul>
 
 <h3 id="push-rules">What about "push rules"?</h3>
-<p>GitBench has no separate "push rules" feature (no commit message regexes, file size or author checks at push time). What is checked on every push, by every route, is: branch protection, <a href="#protected-tags">protected tags</a>, tags used by a release (cannot be deleted), archived repositories, and pull mirrors (read-only). Two further things are refused when any rule exists: signed pushes (<code>git push --signed</code>) because they cannot be checked, and any push to <code>refs/merge-queue/</code>, which belongs to the merge queue.</p>
+<p>ByteBench has no separate "push rules" feature (no commit message regexes, file size or author checks at push time). What is checked on every push, by every route, is: branch protection, <a href="#protected-tags">protected tags</a>, tags used by a release (cannot be deleted), archived repositories, and pull mirrors (read-only). Two further things are refused when any rule exists: signed pushes (<code>git push --signed</code>) because they cannot be checked, and any push to <code>refs/merge-queue/</code>, which belongs to the merge queue.</p>
 
 <h3 id="admin-bypass">Admin bypass</h3>
 <p>Only rules with <strong>Allow admins to bypass</strong> can be bypassed, and only by site admins and project Owners. They then see <strong>Merge (bypass protection)</strong> on blocked PRs, can push directly, and (if the rule allows it) can merge directly into a branch that has a merge queue. Drafts cannot be bypassed. Deploy keys never bypass.</p>
@@ -101,7 +101,7 @@
 </svg>
 <ol>
   <li>A person with merge rights clicks <strong>Add to merge queue</strong> on a PR that passes every other check. The PR joins the end of its target branch's queue (each branch has its own queue).</li>
-  <li>GitBench builds a <strong>speculative commit</strong> for each of the first <em>batch size</em> entries: the target tip plus every entry ahead, merged with the configured method. It is stored under <code>refs/merge-queue/{branch}/{id}</code> and a pipeline runs on it.</li>
+  <li>ByteBench builds a <strong>speculative commit</strong> for each of the first <em>batch size</em> entries: the target tip plus every entry ahead, merged with the configured method. It is stored under <code>refs/merge-queue/{branch}/{id}</code> and a pipeline runs on it.</li>
   <li>When an entry's pipeline passes it is <strong>Passed</strong>. The furthest passed entry merges <em>together with every entry ahead of it</em> (its commit already contains them): the target is fast-forwarded to that commit, only if the target has not moved meanwhile, and each PR is closed as merged by whoever queued it. Webhooks, CI, smart commits and notifications run as for a normal push, and queue pipelines no longer needed are cancelled.</li>
   <li>If the target moved, an entry ahead left, or the order changed, the affected entries are rebuilt automatically (their old pipelines are cancelled).</li>
 </ol>
@@ -113,7 +113,7 @@
   <tr><th>Setting</th><th>Default</th><th>Range</th><th>Effect</th></tr>
   <tr><td>Max batch size</td><td>5</td><td>1 to 20</td><td>How many entries are built and tested at once (the length of the train). Entries beyond it wait as Queued</td></tr>
   <tr><td>Merge method</td><td>repository default</td><td>merge, squash or rebase</td><td>Must be allowed in the repository's merge settings, otherwise the default is used</td></tr>
-  <tr><td>Require CI</td><td>on</td><td>on/off</td><td>On: a pipeline must pass on the speculative commit; a missing <code>.gitbench-ci.yml</code> or CI turned off removes the entry. Off: entries pass at once with no pipeline</td></tr>
+  <tr><td>Require CI</td><td>on</td><td>on/off</td><td>On: a pipeline must pass on the speculative commit; a missing <code>.bytebench-ci.yml</code> or CI turned off removes the entry. Off: entries pass at once with no pipeline</td></tr>
   <tr><td>Pipeline timeout (minutes)</td><td>60</td><td>1 to 1440</td><td>A running queue pipeline that has not finished by then fails its entry</td></tr>
   <tr><td>Approval timeout (minutes)</td><td>1440</td><td>1 to 10080</td><td>How long a pipeline may sit on a manual job (an approval gate) before the entry is removed</td></tr>
 </table>
@@ -161,10 +161,10 @@
   <tr><td><code>POST .../pull-requests/{n}/merge-queue/move-to-front</code></td><td>Maintainers only</td></tr>
 </table>
 <p>An entry has <code>state</code> (<code>queued</code>, <code>testing</code>, <code>passed</code>, <code>merged</code>, <code>failed</code>, <code>removed</code>), <code>position</code>, <code>strategy</code>, <code>headSha</code>, <code>baseSha</code>, <code>speculativeSha</code>, <code>pipelineId</code>, <code>pipelineStatus</code> and <code>message</code>.</p>
-<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" \
-  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests/12/merge-queue
+<pre><code>curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests/12/merge-queue
 
-curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
-  "https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/merge-queue?branch=main"</code></pre>
+curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  "https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/merge-queue?branch=main"</code></pre>
 <p>Audit events: <code>merge_queue.enqueued</code>, <code>merge_queue.enqueued_bypassing_protection</code>, <code>merge_queue.merged</code>, <code>merge_queue.failed</code>, <code>merge_queue.removed</code>, <code>merge_queue.moved_to_front</code>. Pipelines started by the queue have the trigger <code>MergeQueue</code>. There is no dedicated webhook for queue events; merged PRs send the normal <code>pull_request.merged</code> and the target's push event. The queue state shows in the admin system page (<a href="admin.html">Administration</a>).</p>
 <div class="note">Related: the PR side of the story is in <a href="pull-requests.html#merge-box">Pull requests</a>, and CI details in <a href="ci.html">CI pipelines</a>.</div>

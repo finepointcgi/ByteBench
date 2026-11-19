@@ -1,11 +1,11 @@
 using System.Text.Json;
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>An API error that becomes a ProblemDetails response.</summary>
 public sealed class ApiException(int status, string title, string? detail = null, IDictionary<string, object?>? extensions = null) : Exception(detail ?? title)
@@ -121,7 +121,7 @@ public sealed class ApiFilter(AccessTokenService tokens, UserManager<User> users
 
     private static IResult Unauthorized(HttpContext http, string detail, bool invalidToken = false)
     {
-        http.Response.Headers.WWWAuthenticate = invalidToken ? "Bearer realm=\"GitBench\", error=\"invalid_token\"" : "Bearer realm=\"GitBench\"";
+        http.Response.Headers.WWWAuthenticate = invalidToken ? "Bearer realm=\"ByteBench\", error=\"invalid_token\"" : "Bearer realm=\"ByteBench\"";
         return ApiResults.Problem(StatusCodes.Status401Unauthorized, "Unauthorized", detail);
     }
 }

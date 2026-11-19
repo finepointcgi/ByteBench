@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 /// <summary>An issue's original and remaining estimates, in minutes.</summary>
 public sealed record EstimateSummary(int? OriginalMinutes, int? RemainingMinutes, int HoursPerDay)

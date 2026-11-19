@@ -1,9 +1,9 @@
 using System.Security.Claims;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// The signed-in user for the current circuit/request, loaded from the authentication state.

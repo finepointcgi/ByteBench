@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>A sprint with its current issue counts. Committed* is the snapshot taken when it started, Completed* when it ended.</summary>
 public record SprintDto(int Id, string Name, string? Goal, SprintState State, DateOnly? StartDate, DateOnly? EndDate,

@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>What <see cref="CiArtifacts.CollectToZip"/> did.</summary>
 public sealed record CiCollectResult(int FileCount, long UncompressedBytes, long ZipBytes, IReadOnlyList<string> Notes, string? Error)

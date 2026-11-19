@@ -223,7 +223,7 @@
                                 <MudTextField T="string" @bind-Value="a.Text" Label="Message (smart values; default: issue key and title)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
                                 break;
                             case AutomationActionType.SendWebhook:
-                                <MudTextField T="string" @bind-Value="a.Url" Label="URL" Placeholder="https://example.com/hooks/gitbench" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
+                                <MudTextField T="string" @bind-Value="a.Url" Label="URL" Placeholder="https://example.com/hooks/bytebench" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" />
                                 <MudText Typo="Typo.caption" Class="mud-text-secondary">POSTs the rule, issue, pull request and initiator as JSON (event <code>automation</code>, unsigned).</MudText>
                                 break;
                         }

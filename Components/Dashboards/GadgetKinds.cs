@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using MudBlazor;
 
-namespace GitBench.Components.Dashboards;
+namespace ByteBench.Components.Dashboards;
 
 /// <summary>Display metadata for each <see cref="GadgetKind"/>.</summary>
 public static class GadgetKinds

@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
 /// <summary>
 /// Everything a field needs to translate a clause: the database context the query runs on (expressions may use its

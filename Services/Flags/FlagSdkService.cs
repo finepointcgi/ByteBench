@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Flags;
+namespace ByteBench.Services.Flags;
 
 /// <summary>An authenticated SDK key: which environment it reads, and whether it may download rules.</summary>
 public sealed record SdkPrincipal(int KeyId, int EnvironmentId, int ProjectId, string EnvironmentName, SdkKeyKind Kind)

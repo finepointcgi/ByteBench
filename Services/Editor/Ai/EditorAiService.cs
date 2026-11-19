@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
-using GitBench.Data;
-using GitBench.Services.Ai;
+using ByteBench.Data;
+using ByteBench.Services.Ai;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>Whether the editor's AI features are on for a project, which backend runs them, and why not when they're off.</summary>
 public sealed record EditorAiStatus(bool Enabled, EditorAiBackendKind? Backend, string? BackendName, string? DisabledReason,

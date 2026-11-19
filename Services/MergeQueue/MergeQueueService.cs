@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Ci;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.MergeQueue;
+namespace ByteBench.Services.MergeQueue;
 
 /// <summary>A PR's place in its target's merge queue.</summary>
 /// <param name="Config">The queue settings of the target branch (null: no queue there).</param>

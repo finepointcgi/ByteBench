@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Editor.Ai;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Editor.Ai;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>Configuration section <c>Ai:Review</c>: server-wide guardrails for AI pull request review.</summary>
 public class AiReviewOptions

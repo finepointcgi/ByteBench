@@ -1,12 +1,12 @@
 using System.Diagnostics;
-using GitBench.Data;
-using GitBench.Services.Attachments;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Attachments;
+using ByteBench.Services.Git;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Net.Http.Headers;
 
-namespace GitBench.Services.Releases;
+namespace ByteBench.Services.Releases;
 
 /// <summary>Configuration section <c>Archives</c>: limits for source archive downloads.</summary>
 public sealed class ArchiveOptions
@@ -35,7 +35,7 @@ public static class ReleaseDownloads
     public static IEndpointRouteBuilder MapReleaseDownloads(this IEndpointRouteBuilder app)
     {
         var services = app.ServiceProvider;
-        var log = services.GetRequiredService<ILoggerFactory>().CreateLogger("GitBench.Archives");
+        var log = services.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.Archives");
         var gitPath = GitHttpBackend.LocateGit(services.GetRequiredService<IConfiguration>());
         var options = services.GetRequiredService<IConfiguration>().GetSection("Archives").Get<ArchiveOptions>() ?? new ArchiveOptions();
         var gate = new SemaphoreSlim(Math.Max(1, options.MaxConcurrent));

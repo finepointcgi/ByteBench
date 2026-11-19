@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Sso;
+namespace ByteBench.Services.Sso;
 
 /// <summary>Which protocol and defaults a provider uses. Presets fill in the authority, scopes, claim names and icon.</summary>
 public enum SsoProviderType
@@ -15,21 +15,21 @@ public enum SsoProviderType
     GitHub,
 }
 
-/// <summary>What GitBench does about its own two-factor sign-in for users who sign in through this provider.</summary>
+/// <summary>What ByteBench does about its own two-factor sign-in for users who sign in through this provider.</summary>
 public enum SsoTwoFactorPolicy
 {
-    /// <summary>Users who turned on GitBench 2FA must also enter their GitBench code (the default).</summary>
-    GitBench,
-    /// <summary>Skip the GitBench code when the provider says it did multi-factor authentication (the <c>amr</c> claim).</summary>
+    /// <summary>Users who turned on ByteBench 2FA must also enter their ByteBench code (the default).</summary>
+    ByteBench,
+    /// <summary>Skip the ByteBench code when the provider says it did multi-factor authentication (the <c>amr</c> claim).</summary>
     TrustIdp,
 }
 
-/// <summary>Maps an external group (a group claim value, an LDAP group DN) to a GitBench group membership.</summary>
+/// <summary>Maps an external group (a group claim value, an LDAP group DN) to a ByteBench group membership.</summary>
 public sealed class ExternalGroupMapping
 {
     /// <summary>The value in the provider's group claim (<c>engineering</c>, a GUID for Entra, <c>org/team</c> for GitHub).</summary>
     public string ExternalGroup { get; set; } = "";
-    /// <summary>The GitBench group's full path, e.g. <c>acme/platform</c>.</summary>
+    /// <summary>The ByteBench group's full path, e.g. <c>acme/platform</c>.</summary>
     public string Group { get; set; } = "";
     public ProjectRole Role { get; set; } = ProjectRole.Developer;
 }
@@ -66,11 +66,11 @@ public sealed class SsoProviderOptions
     /// <summary>Null: the preset's scopes.</summary>
     public List<string>? Scopes { get; set; }
     public SsoClaimMappings ClaimMappings { get; set; } = new();
-    /// <summary>Create a GitBench account on the first sign-in (needs a verified email). Otherwise only linked accounts can sign in.</summary>
+    /// <summary>Create a ByteBench account on the first sign-in (needs a verified email). Otherwise only linked accounts can sign in.</summary>
     public bool AutoCreateUsers { get; set; } = true;
     /// <summary>
     /// Link to an existing account with the same email on the first sign-in, only when the provider says the email is
-    /// verified and the GitBench account's email is confirmed too (or it has no password). Otherwise users link from their profile.
+    /// verified and the ByteBench account's email is confirmed too (or it has no password). Otherwise users link from their profile.
     /// </summary>
     public bool LinkByVerifiedEmail { get; set; } = true;
     /// <summary>Treat the provider's email as verified even without an <c>email_verified</c> claim (e.g. your own Entra tenant).</summary>
@@ -82,7 +82,7 @@ public sealed class SsoProviderOptions
     public List<ExternalGroupMapping> GroupMappings { get; set; } = [];
     /// <summary><c>google</c>, <c>github</c>, <c>microsoft</c>, <c>key</c>, or a site-relative image path like <c>/img/keycloak.svg</c>.</summary>
     public string? Icon { get; set; }
-    public SsoTwoFactorPolicy TwoFactor { get; set; } = SsoTwoFactorPolicy.GitBench;
+    public SsoTwoFactorPolicy TwoFactor { get; set; } = SsoTwoFactorPolicy.ByteBench;
     /// <summary>Only turn off for a local test provider over plain HTTP.</summary>
     public bool RequireHttpsMetadata { get; set; } = true;
     /// <summary>OIDC: also read claims from the userinfo endpoint.</summary>

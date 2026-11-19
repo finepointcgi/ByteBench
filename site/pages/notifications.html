@@ -1,5 +1,5 @@
 <h1>Notifications and email</h1>
-<p class="lead">GitBench tells you about the things that involve you through a live bell in the top bar, optional emails and, if you use Slack, direct messages, and every kind can be tuned from one preferences page.</p>
+<p class="lead">ByteBench tells you about the things that involve you through a live bell in the top bar, optional emails and, if you use Slack, direct messages, and every kind can be tuned from one preferences page.</p>
 
 <h2 id="in-app">In-app notifications</h2>
 <p>The bell in the top bar shows a live unread count and a dropdown with the latest 10 notifications. Click one to mark it read and open the item, or use <strong>Mark all read</strong>. The full list is at <code>/notifications</code>, with <strong>All</strong> and <strong>Unread</strong> tabs and paging.</p>
@@ -23,14 +23,14 @@
 </ul>
 
 <h2 id="live-updates">Live updates</h2>
-<p>Boards, issue lists, issue and pull request pages, the dashboard activity feed, the notifications page and the bell update on their own through GitBench's in-process event hub. Two browsers on the same board see a card move without reloading. A refresh replaces only the loaded data, so text you are typing in a description, title or comment is not touched.</p>
-<div class="note">The event hub lives inside one server process. A deployment with several GitBench servers behind a load balancer would need a shared backplane for live updates; see <a href="production.html">production setup</a>.</div>
+<p>Boards, issue lists, issue and pull request pages, the dashboard activity feed, the notifications page and the bell update on their own through ByteBench's in-process event hub. Two browsers on the same board see a card move without reloading. A refresh replaces only the loaded data, so text you are typing in a description, title or comment is not touched.</p>
+<div class="note">The event hub lives inside one server process. A deployment with several ByteBench servers behind a load balancer would need a shared backplane for live updates; see <a href="production.html">production setup</a>.</div>
 
 <h2 id="watching">Watching and muting</h2>
 <ul>
 <li>You <strong>watch</strong> an issue automatically when you report it, are assigned to it or comment on it. You watch a pull request when you author it, review it, are a reviewer or comment on it. The <strong>Watch / Watching</strong> button on the issue and pull request pages toggles it.</li>
 <li><strong>Mute</strong> (next to Watching) keeps the watch but stops watcher notifications. Direct notifications still arrive: assigned to you, mentioned, review requested, reviews of your own pull request.</li>
-<li>Unwatching is not the same as muting. GitBench auto-watches you again when you comment, are assigned or review, so an unwatch may not stick, while a mute does. Unwatching also clears the mute.</li>
+<li>Unwatching is not the same as muting. ByteBench auto-watches you again when you comment, are assigned or review, so an unwatch may not stick, while a mute does. Unwatching also clears the mute.</li>
 </ul>
 
 <h2 id="mentions">Mentions and autocomplete</h2>
@@ -66,10 +66,10 @@ Email__Enabled=true
 Email__Sender=Smtp
 Email__Smtp__Host=smtp.example.com
 Email__Smtp__Port=587
-Email__Smtp__User=gitbench@example.com
+Email__Smtp__User=bytebench@example.com
 Email__Smtp__Password=&lt;from your secret store&gt;
-Email__From=GitBench &lt;gitbench@example.com&gt;
-Email__BaseUrl=https://gitbench.example.com
+Email__From=ByteBench &lt;bytebench@example.com&gt;
+Email__BaseUrl=https://bytebench.example.com
 
 # development
 dotnet user-secrets set "Email:Enabled" "true"
@@ -79,7 +79,7 @@ dotnet user-secrets set "Email:Sender" "Smtp"</code></pre>
 <tbody>
 <tr><td><code>Email:Enabled</code></td><td><code>false</code></td><td>Master switch</td></tr>
 <tr><td><code>Email:Sender</code></td><td><code>Pickup</code> in Development, otherwise <code>Smtp</code></td><td><code>Pickup</code> writes <code>.eml</code> files to a folder and sends nothing; <code>Smtp</code> sends through an SMTP server</td></tr>
-<tr><td><code>Email:From</code></td><td><code>GitBench &lt;gitbench@localhost&gt;</code></td><td>Sender address</td></tr>
+<tr><td><code>Email:From</code></td><td><code>ByteBench &lt;bytebench@localhost&gt;</code></td><td>Sender address</td></tr>
 <tr><td><code>Email:PickupDirectory</code></td><td><code>mail-drop</code></td><td>Folder for <code>.eml</code> files (relative to the content root)</td></tr>
 <tr><td><code>Email:DigestMinutes</code></td><td><code>0</code></td><td><code>0</code> sends each notification at once. <code>N</code> sends at most one email per user every N minutes: the first at once, later ones batched into a digest</td></tr>
 <tr><td><code>Email:BaseUrl</code></td><td>none</td><td>Absolute site URL for links in emails. Falls back to <code>PublicBaseUrl</code>, then the first request's URL</td></tr>

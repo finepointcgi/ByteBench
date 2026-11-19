@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>What the settings page edits.</summary>
 public sealed record PagesSettingsInput(bool Enabled, PagesVisibility Visibility, PagesNotFoundMode NotFound, bool ReviewSites, int ReviewExpireDays);

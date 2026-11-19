@@ -1,8 +1,8 @@
 @page "/p/{Key}/repos/{Slug}/edit/{Branch}"
 @page "/p/{Key}/repos/{Slug}/edit/{Branch}/{*FilePath}"
 @inherits RepoPageBase
-@using GitBench.Services.Editor
-@using GitBench.Services.Editor.Ai
+@using ByteBench.Services.Editor
+@using ByteBench.Services.Editor.Ai
 @implements IAsyncDisposable
 @inject EditorWorkspaceService Workspace
 @inject EditorAiService Ai

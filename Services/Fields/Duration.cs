@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 /// <summary>
 /// Jira-style durations for estimates: <c>2h 30m</c>, <c>1d</c>, <c>1.5h</c>, <c>1w 2d</c>. A day is the project's

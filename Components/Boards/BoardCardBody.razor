@@ -13,7 +13,7 @@
 <div class="board-card-foot">
     @if (Has(BoardCardFields.Type)) { <span title="@Issue.Type">@Issue.Type.Icon()</span> }
     @if (Has(BoardCardFields.Key)) { <span class="mono board-key">@Issue.Key</span> }
-    @if (Has(BoardCardFields.LinkedWork)) { <GitBench.Components.LinkedWork.IssueWorkChips Issue="Issue" Links Compact /> }
+    @if (Has(BoardCardFields.LinkedWork)) { <ByteBench.Components.LinkedWork.IssueWorkChips Issue="Issue" Links Compact /> }
     @if (Has(BoardCardFields.Priority)) { <PriorityIcon Priority="Issue.Priority" /> }
     @if (Has(BoardCardFields.StoryPoints) && Issue.StoryPoints is { } sp) { <span class="board-points" title="Story points">@sp</span> }
     @if (Has(BoardCardFields.DueDate) && Issue.DueDate is { } due)

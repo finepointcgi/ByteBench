@@ -8,7 +8,7 @@
   from subgroup paths. Old paths (after a rename or move) redirect to the current one, keeping the section.
 *@
 
-<PageTitle>@(group == null ? "Group" : $"{SectionTitle} · {group.Name}") · GitBench</PageTitle>
+<PageTitle>@(group == null ? "Group" : $"{SectionTitle} · {group.Name}") · ByteBench</PageTitle>
 
 @if (notFound)
 {
@@ -68,7 +68,7 @@ else if (group != null)
         {
             case "": <GroupOverview Group="group" Perms="perms" /> break;
             case "issues": <GroupIssues Group="group" /> break;
-            case "roadmap": <GitBench.Components.Roadmap.RoadmapView GroupId="group.Id" @key="group.Id" /> break;
+            case "roadmap": <ByteBench.Components.Roadmap.RoadmapView GroupId="group.Id" @key="group.Id" /> break;
             case "pull-requests": <GroupPullRequests Group="group" /> break;
             case "labels": <GroupLabels Group="group" Perms="perms" /> break;
             case "members": <GroupMembers Group="group" Perms="perms" /> break;
@@ -76,7 +76,7 @@ else if (group != null)
             case "integrations" when perms.Can(GroupPermission.ManageGroupSettings): <GroupIntegrations Group="group" Perms="perms" /> break;
             case "integrations": <Forbidden Message="Only Owners can manage this group's chat integrations." BackHref="@Url("")" /> break;
             case "automation" when perms.Can(GroupPermission.ManageGroupLabelsAndMilestones):
-                <GitBench.Components.Automation.AutomationRules Owner="GitBench.Services.Automation.RuleOwner.Group(group.Id)" BaseHref="@Url("automation")" /> break;
+                <ByteBench.Components.Automation.AutomationRules Owner="ByteBench.Services.Automation.RuleOwner.Group(group.Id)" BaseHref="@Url("automation")" /> break;
             case "automation": <Forbidden Message="Only Maintainers and Owners of this group can manage its automation rules." BackHref="@Url("")" /> break;
             case "settings": <Forbidden Message="Only Owners can change this group's settings." BackHref="@Url("")" /> break;
             default: <ProjectNotFound Message="This page does not exist." /> break;

@@ -1,15 +1,15 @@
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
-using GitBench.Data;
-using GitBench.Services.Sso.Ldap;
+using ByteBench.Data;
+using ByteBench.Services.Sso.Ldap;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
-namespace GitBench.Services.Sso;
+namespace ByteBench.Services.Sso;
 
 /// <summary>
 /// Wires single sign-on (OIDC providers and GitHub OAuth from <c>Authentication:Oidc:Providers</c>) and LDAP
@@ -24,7 +24,7 @@ namespace GitBench.Services.Sso;
 /// </summary>
 public static class SsoAuthentication
 {
-    public static WebApplicationBuilder AddGitBenchSso(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddByteBenchSso(this WebApplicationBuilder builder)
     {
         var services = builder.Services;
         var settings = SsoSettings.Load(builder.Configuration);
@@ -110,7 +110,7 @@ public static class SsoAuthentication
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ctx.AccessToken);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            req.Headers.UserAgent.Add(new ProductInfoHeaderValue("GitBench", "1.0"));
+            req.Headers.UserAgent.Add(new ProductInfoHeaderValue("ByteBench", "1.0"));
             using var res = await ctx.Backchannel.SendAsync(req, ctx.HttpContext.RequestAborted);
             if (!res.IsSuccessStatusCode) return null;
             return JsonDocument.Parse(await res.Content.ReadAsStringAsync(ctx.HttpContext.RequestAborted)).RootElement.Clone();
@@ -169,7 +169,7 @@ public static class SsoAuthentication
     {
         var cancelled = ctx.Failure?.Message.Contains("access_denied", StringComparison.OrdinalIgnoreCase) == true;
         var reason = cancelled ? SsoErrors.Cancelled : SsoErrors.Failed;
-        ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("GitBench.Sso")
+        ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.Sso")
             .LogWarning(ctx.Failure, "SSO callback from {Provider} failed", p.Name);
         await ctx.HttpContext.RequestServices.GetRequiredService<Audit.AuditLog>().RecordAsync("auth.sso_failed",
             details: new { provider = p.Name, reason, error = ctx.Failure?.Message }, anonymous: true);
@@ -182,7 +182,7 @@ public static class SsoAuthentication
 
     // ------------------------------------------------------------------ endpoints
 
-    public static IEndpointRouteBuilder MapGitBenchSso(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapByteBenchSso(this IEndpointRouteBuilder app)
     {
         // Start sign-in: a GET link from the login page.
         app.MapGet("/account/sso/{provider}", (string provider, string? returnUrl, SsoSettings settings, SignInManager<User> signIn) =>

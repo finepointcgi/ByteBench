@@ -1,8 +1,8 @@
-using GitBench.Components.Repositories;
-using GitBench.Data;
+using ByteBench.Components.Repositories;
+using ByteBench.Data;
 using MudBlazor;
 
-namespace GitBench.Components.Pipelines;
+namespace ByteBench.Components.Pipelines;
 
 /// <summary>Small helpers shared by the environment and deployment views.</summary>
 public static class DeploymentUi

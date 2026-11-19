@@ -1,8 +1,8 @@
 using System.Text;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
-// GitBench Query Language (GQL): the tokenizer, the AST and the recursive-descent parser. Translation to EF lives in
+// ByteBench Query Language (GQL): the tokenizer, the AST and the recursive-descent parser. Translation to EF lives in
 // GqlService/GqlFields; nothing here touches the database. Grammar (keywords are case-insensitive):
 //
 //   query    := [or] [ORDER BY sort ("," sort)*]

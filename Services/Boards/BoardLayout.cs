@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Boards;
+namespace ByteBench.Services.Boards;
 
 /// <summary>A board column as shown: its workflow statuses (in drop preference order) and WIP limit.</summary>
 /// <param name="Key">Stable id for the UI and API: <c>c{columnId}</c> for a stored column, <c>s{statusId}</c> for a column of a board that follows the workflow.</param>

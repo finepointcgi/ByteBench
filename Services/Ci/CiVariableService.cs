@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>A CI variable as the UI sees it: never its value.</summary>
 public sealed record CiVariableInfo(int Id, string Name, bool IsProtected, int? RepositoryId, DateTime UpdatedAt, string? UpdatedBy);
@@ -25,6 +25,7 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
     ProjectAccess access, BranchProtectionService protection, Audit.AuditLog audit, ILogger<CiVariableService> log)
 {
     public const int MaxValueLength = 10_000;
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     private readonly IDataProtector protector = dataProtection.CreateProtector("GitBench.CiVariables.v1");
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,99}$")]
@@ -34,8 +35,8 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
     public static string? ValidateName(string name)
     {
         if (!NamePattern().IsMatch(name)) return "Use letters, digits and underscores, not starting with a digit (max 100 characters).";
-        if (name == "CI" || name.StartsWith("GITBENCH_", StringComparison.OrdinalIgnoreCase))
-            return "CI and GITBENCH_* are set by GitBench itself.";
+        if (name == "CI" || name.StartsWith("BYTEBENCH_", StringComparison.OrdinalIgnoreCase) || name.StartsWith("GITBENCH_", StringComparison.OrdinalIgnoreCase))
+            return "CI, BYTEBENCH_* and the old GITBENCH_* names are set by ByteBench itself.";
         return null;
     }
 
@@ -113,7 +114,7 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
 
     /// <summary>
     /// The branch whose protection decides which CI variables (and cache scope) a pipeline gets: normally its own ref. A
-    /// merge queue pipeline runs on <c>refs/merge-queue/…</c>, which GitBench itself created, so it would never see
+    /// merge queue pipeline runs on <c>refs/merge-queue/…</c>, which ByteBench itself created, so it would never see
     /// protected variables. It is treated as running on its target branch only when ALL of these hold: it belongs to an
     /// active queue entry of this repository, its PR is not from a fork, and the user who queued it can merge pull
     /// requests in the project right now (so they could already have merged this very code, whose pipeline on the target
@@ -143,7 +144,7 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
     public async Task<CiResolvedVariables> ResolveAsync(int projectId, int repositoryId, string branch, bool forkPullRequest = false)
     {
         if (forkPullRequest)
-            return new(new Dictionary<string, string>(), ["[gitbench] This pipeline runs code from a fork's pull request: no CI variables are exposed to it."]);
+            return new(new Dictionary<string, string>(), ["[bytebench] This pipeline runs code from a fork's pull request: no CI variables are exposed to it."]);
         await using var db = await dbFactory.CreateDbContextAsync();
         var rows = await db.CiVariables.AsNoTracking()
             .Where(v => v.ProjectId == projectId && (v.RepositoryId == null || v.RepositoryId == repositoryId))
@@ -162,11 +163,11 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
             catch (CryptographicException ex)
             {
                 log.LogWarning(ex, "CI variable {Name} (id {Id}) could not be decrypted; the Data Protection key may be missing", v.Name, v.Id);
-                notes.Add($"[gitbench] CI variable {v.Name} could not be decrypted and was skipped (the server's Data Protection keys changed). Save it again.");
+                notes.Add($"[bytebench] CI variable {v.Name} could not be decrypted and was skipped (the server's Data Protection keys changed). Save it again.");
             }
         }
         if (skippedProtected > 0)
-            notes.Add($"[gitbench] {skippedProtected} protected CI variable(s) not exposed: branch '{branch}' is not protected.");
+            notes.Add($"[bytebench] {skippedProtected} protected CI variable(s) not exposed: branch '{branch}' is not protected.");
         return new(values, notes);
     }
 

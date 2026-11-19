@@ -1,5 +1,5 @@
 <h1>Glossary</h1>
-<p class="lead">Plain-language definitions of the terms used throughout GitBench and its documentation.</p>
+<p class="lead">Plain-language definitions of the terms used throughout ByteBench and its documentation.</p>
 <p><a href="#letter-a">A</a> <a href="#letter-b">B</a> <a href="#letter-c">C</a> <a href="#letter-d">D</a> <a href="#letter-e">E</a> <a href="#letter-f">F</a> <a href="#letter-g">G</a> <a href="#letter-h">H</a> <a href="#letter-i">I</a> <a href="#letter-j">J</a> <a href="#letter-k">K</a> <a href="#letter-l">L</a> <a href="#letter-m">M</a> <a href="#letter-n">N</a> <a href="#letter-o">O</a> <a href="#letter-p">P</a> <a href="#letter-r">R</a> <a href="#letter-s">S</a> <a href="#letter-t">T</a> <a href="#letter-u">U</a> <a href="#letter-v">V</a> <a href="#letter-w">W</a></p>
 <h2 id="letter-a">A</h2>
 <dl>
@@ -7,13 +7,13 @@
 <dt id="archived-repository">Archived repository</dt><dd>A repository that refuses pushes. It stays readable.</dd>
 <dt id="artifact-ci">Artifact (CI)</dt><dd>Files a CI job saves for later jobs or for download, declared with artifacts in the CI file. Stored zipped under Ci:ArtifactsRoot. <a href="ci.html">More</a>.</dd>
 <dt id="audit-log">Audit log</dt><dd>A record of security-relevant actions (sign-ins, permission changes, key additions, settings changes). Site admins read it at /admin/audit. Kept for Audit:RetentionDays. <a href="admin.html">More</a>.</dd>
-<dt id="automation-rule">Automation rule</dt><dd>A trigger, optional conditions and actions that GitBench runs for you, executed by an automation bot. <a href="automation.html">More</a>.</dd>
+<dt id="automation-rule">Automation rule</dt><dd>A trigger, optional conditions and actions that ByteBench runs for you, executed by an automation bot. <a href="automation.html">More</a>.</dd>
 </dl>
 <h2 id="letter-b">B</h2>
 <dl>
 <dt id="backlog">Backlog</dt><dd>The ordered list of issues not yet in a sprint. <a href="boards-sprints.html">More</a>.</dd>
-<dt id="backup-archive">Backup archive</dt><dd>A single gitbench-backup-(time).tar.gz file holding the database, repositories, files and keys, with a manifest and a .sha256 file. <a href="production.html#backup">More</a>.</dd>
-<dt id="bare-repository">Bare repository</dt><dd>A Git repository without a working copy. GitBench stores every repository as one under Git:RepositoryRoot.</dd>
+<dt id="backup-archive">Backup archive</dt><dd>A single bytebench-backup-(time).tar.gz file holding the database, repositories, files and keys, with a manifest and a .sha256 file. <a href="production.html#backup">More</a>.</dd>
+<dt id="bare-repository">Bare repository</dt><dd>A Git repository without a working copy. ByteBench stores every repository as one under Git:RepositoryRoot.</dd>
 <dt id="board">Board</dt><dd>A Kanban or Scrum view of a project&#x27;s issues in columns. A project can have several. <a href="boards-sprints.html">More</a>.</dd>
 <dt id="bootstrap-admin">Bootstrap admin</dt><dd>A user listed in Bootstrap:AdminUsers who is made a site admin at start-up. <a href="production.html#docker">More</a>.</dd>
 <dt id="branch-protection">Branch protection</dt><dd>Rules for matching branches: required reviews, required checks, no force pushes, optional merge queue. <a href="branch-protection.html">More</a>.</dd>
@@ -21,13 +21,13 @@
 <h2 id="letter-c">C</h2>
 <dl>
 <dt id="cache-ci">Cache (CI)</dt><dd>Files kept between pipeline runs, such as package downloads, to speed up jobs. Limited per cache and per repository. <a href="ci.html">More</a>.</dd>
-<dt id="ci-continuous-integration">CI (continuous integration)</dt><dd>Running builds and tests automatically on every push or pull request. GitBench runs jobs in Docker containers from a .gitbench-ci.yml file. <a href="ci.html">More</a>.</dd>
+<dt id="ci-continuous-integration">CI (continuous integration)</dt><dd>Running builds and tests automatically on every push or pull request. ByteBench runs jobs in Docker containers from a .bytebench-ci.yml file. <a href="ci.html">More</a>.</dd>
 <dt id="circuit">Circuit</dt><dd>The live connection between a browser and the Blazor server. Pages are interactive while the circuit is open.</dd>
-<dt id="claude-code">Claude Code</dt><dd>Anthropic&#x27;s command-line coding agent. GitBench can run it on the server as a backend for the web editor assistant and AI review. <a href="ai.html">More</a>.</dd>
+<dt id="claude-code">Claude Code</dt><dd>Anthropic&#x27;s command-line coding agent. ByteBench can run it on the server as a backend for the web editor assistant and AI review. <a href="ai.html">More</a>.</dd>
 <dt id="code-owners">Code owners</dt><dd>A file mapping paths to people or teams who are automatically asked to review changes to them. <a href="pull-requests.html">More</a>.</dd>
 <dt id="component">Component</dt><dd>A part of a project (for example Backend or UI) that issues can be assigned to. <a href="fields-filters.html">More</a>.</dd>
 <dt id="content-root">Content root</dt><dd>The folder containing the application files. Default data folders (repos, attachments and so on) are created beneath it when running from source. <a href="configuration.html#core">More</a>.</dd>
-<dt id="content-security-policy-csp">Content Security Policy (CSP)</dt><dd>A browser header that limits where scripts, styles and workers may load from. GitBench sends one on HTML pages. <a href="troubleshooting.html#csp">More</a>.</dd>
+<dt id="content-security-policy-csp">Content Security Policy (CSP)</dt><dd>A browser header that limits where scripts, styles and workers may load from. ByteBench sends one on HTML pages. <a href="troubleshooting.html#csp">More</a>.</dd>
 <dt id="cycle-time">Cycle time</dt><dd>How long an issue takes from started to done. A delivery report metric. <a href="reports.html">More</a>.</dd>
 </dl>
 <h2 id="letter-d">D</h2>
@@ -57,8 +57,8 @@
 <h2 id="letter-g">G</h2>
 <dl>
 <dt id="gadget">Gadget</dt><dd>A single widget on a dashboard, such as an issue list or a burndown chart. <a href="reports.html">More</a>.</dd>
-<dt id="git-lfs">Git LFS</dt><dd>Git Large File Storage: keeps big files outside the repository history. GitBench stores objects under Lfs:Root. <a href="repositories.html">More</a>.</dd>
-<dt id="gql">GQL</dt><dd>GitBench Query Language, the search syntax for issues. <a href="fields-filters.html">More</a>.</dd>
+<dt id="git-lfs">Git LFS</dt><dd>Git Large File Storage: keeps big files outside the repository history. ByteBench stores objects under Lfs:Root. <a href="repositories.html">More</a>.</dd>
+<dt id="gql">GQL</dt><dd>ByteBench Query Language, the search syntax for issues. <a href="fields-filters.html">More</a>.</dd>
 <dt id="group">Group</dt><dd>A namespace that owns projects and subgroups, with members whose roles are inherited by everything below it. Nests up to four levels. <a href="concepts.html#groups">More</a>.</dd>
 <dt id="group-label-milestone">Group label / milestone</dt><dd>A label or milestone defined on a group and inherited by every project below it. <a href="concepts.html#groups">More</a>.</dd>
 </dl>
@@ -83,7 +83,7 @@
 </dl>
 <h2 id="letter-l">L</h2>
 <dl>
-<dt id="ldap">LDAP</dt><dd>A directory protocol (Active Directory, OpenLDAP). GitBench can authenticate users against it and map directory groups to GitBench groups. <a href="accounts.html">More</a>.</dd>
+<dt id="ldap">LDAP</dt><dd>A directory protocol (Active Directory, OpenLDAP). ByteBench can authenticate users against it and map directory groups to ByteBench groups. <a href="accounts.html">More</a>.</dd>
 </dl>
 <h2 id="letter-m">M</h2>
 <dl>
@@ -91,24 +91,24 @@
 <dt id="member">Member</dt><dd>A user with a role on a project or group. <a href="permissions.html">More</a>.</dd>
 <dt id="merge-queue">Merge queue</dt><dd>A per-branch queue that tests and merges approved pull requests in order, in batches, so the target branch stays green. <a href="branch-protection.html">More</a>.</dd>
 <dt id="merge-strategy">Merge strategy</dt><dd>How a pull request is merged: merge commit, squash or rebase, as allowed by the repository. <a href="pull-requests.html">More</a>.</dd>
-<dt id="migration">Migration</dt><dd>A versioned database schema change. GitBench applies pending migrations automatically at start-up. <a href="production.html#upgrades">More</a>.</dd>
+<dt id="migration">Migration</dt><dd>A versioned database schema change. ByteBench applies pending migrations automatically at start-up. <a href="production.html#upgrades">More</a>.</dd>
 <dt id="milestone">Milestone</dt><dd>A target with an optional date that issues are attached to, with progress tracking. <a href="issues.html">More</a>.</dd>
 <dt id="mirror">Mirror</dt><dd>A repository kept in sync with another one: pull mirrors fetch from a remote, push mirrors push to one. <a href="repositories.html">More</a>.</dd>
 </dl>
 <h2 id="letter-n">N</h2>
 <dl>
-<dt id="night-owl">Night Owl</dt><dd>An open-source security scanner. GitBench ingests its JSON and SARIF reports from CI into findings. <a href="security-scanning.html">More</a>.</dd>
+<dt id="night-owl">Night Owl</dt><dd>An open-source security scanner. ByteBench ingests its JSON and SARIF reports from CI into findings. <a href="security-scanning.html">More</a>.</dd>
 <dt id="notification">Notification</dt><dd>An in-app (and optionally email or chat) message about something you are involved in. <a href="notifications.html">More</a>.</dd>
 </dl>
 <h2 id="letter-o">O</h2>
 <dl>
-<dt id="oauth-oidc">OAuth / OIDC</dt><dd>Protocols for single sign-on. GitBench supports OpenID Connect providers and GitHub&#x27;s OAuth. <a href="accounts.html">More</a>.</dd>
+<dt id="oauth-oidc">OAuth / OIDC</dt><dd>Protocols for single sign-on. ByteBench supports OpenID Connect providers and GitHub&#x27;s OAuth. <a href="accounts.html">More</a>.</dd>
 <dt id="oci-registry">OCI registry</dt><dd>The container image registry built into each project, served under /v2. <a href="packages.html">More</a>.</dd>
 <dt id="owner">Owner</dt><dd>The highest project role: also manages members, settings and visibility, and can delete the project. <a href="permissions.html">More</a>.</dd>
 </dl>
 <h2 id="letter-p">P</h2>
 <dl>
-<dt id="pages">Pages</dt><dd>Static websites published from a CI job and served by GitBench. <a href="pages.html">More</a>.</dd>
+<dt id="pages">Pages</dt><dd>Static websites published from a CI job and served by ByteBench. <a href="pages.html">More</a>.</dd>
 <dt id="pipeline">Pipeline</dt><dd>One run of a repository&#x27;s CI file for a commit. Statuses: Queued, Running, Passed, Failed, Canceled, Error, Manual. <a href="ci.html">More</a>.</dd>
 <dt id="postgres">Postgres</dt><dd>PostgreSQL 14 or newer, the optional alternative to SQLite. <a href="production.html#postgres">More</a>.</dd>
 <dt id="private-visibility">Private (visibility)</dt><dd>Visible only to members. <a href="concepts.html#visibility">More</a>.</dd>
@@ -121,7 +121,7 @@
 <dt id="rate-limit">Rate limit</dt><dd>A cap on requests per time window. Over it you get HTTP 429 with Retry-After. <a href="troubleshooting.html#rate-limits">More</a>.</dd>
 <dt id="release">Release</dt><dd>A tagged version of a repository with notes and downloadable assets. <a href="code-tools.html">More</a>.</dd>
 <dt id="repository">Repository</dt><dd>A Git repository inside a project. A project can have several, each with a slug. <a href="concepts.html#repositories">More</a>.</dd>
-<dt id="reverse-proxy">Reverse proxy</dt><dd>A web server (Caddy, nginx) in front of GitBench that terminates TLS and forwards requests. <a href="production.html#reverse-proxy">More</a>.</dd>
+<dt id="reverse-proxy">Reverse proxy</dt><dd>A web server (Caddy, nginx) in front of ByteBench that terminates TLS and forwards requests. <a href="production.html#reverse-proxy">More</a>.</dd>
 <dt id="review-site">Review site</dt><dd>A temporary Pages site published for a non-default branch. <a href="pages.html">More</a>.</dd>
 <dt id="roadmap">Roadmap</dt><dd>A timeline of epics per project or group. <a href="boards-sprints.html">More</a>.</dd>
 <dt id="role">Role</dt><dd>Viewer, Developer, Maintainer or Owner: what a member may do. <a href="permissions.html">More</a>.</dd>
@@ -159,9 +159,9 @@
 </dl>
 <h2 id="letter-w">W</h2>
 <dl>
-<dt id="webhook">Webhook</dt><dd>An HTTP callback GitBench sends when something happens (push, issue, pull request, pipeline and more), signed and retried. <a href="api.html">More</a>.</dd>
+<dt id="webhook">Webhook</dt><dd>An HTTP callback ByteBench sends when something happens (push, issue, pull request, pipeline and more), signed and retried. <a href="api.html">More</a>.</dd>
 <dt id="wiki">Wiki</dt><dd>A Markdown knowledge base per project. <a href="wiki-snippets.html">More</a>.</dd>
-<dt id="workbench">Workbench</dt><dd>The company ERP where time and cost are recorded. GitBench links to its timesheets but does not track time itself. <a href="workbench.html">More</a>.</dd>
+<dt id="workbench">Workbench</dt><dd>The company ERP where time and cost are recorded. ByteBench links to its timesheets but does not track time itself. <a href="workbench.html">More</a>.</dd>
 <dt id="workflow">Workflow</dt><dd>The set of statuses and allowed transitions for a project&#x27;s issues. <a href="issues.html">More</a>.</dd>
 <dt id="workspace-ci">Workspace (CI)</dt><dd>The folder with a commit&#x27;s files mounted at /workspace in every job container. <a href="ci.html">More</a>.</dd>
 <dt id="workspace-web-editor">Workspace (web editor)</dt><dd>Your private, uncommitted set of edits to a repository branch in the web editor. <a href="web-editor.html">More</a>.</dd>

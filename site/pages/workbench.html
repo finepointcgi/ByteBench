@@ -1,10 +1,10 @@
 <h1>Estimates and Workbench</h1>
-<p class="lead">GitBench plans work with story points and estimates, but it does not record time. Hours are logged in Workbench, and GitBench links straight to your timesheet with the right charge code.</p>
+<p class="lead">ByteBench plans work with story points and estimates, but it does not record time. Hours are logged in Workbench, and ByteBench links straight to your timesheet with the right charge code.</p>
 
-<h2 id="why-no-time">Why GitBench does not record time</h2>
-<p>Hours worked are a financial record. In a company that bills by the hour, or that needs DCAA-compliant timekeeping (daily entry, a single system of record, corrections made with a reason), the timesheet is where hours are charged to a charge code, certified and approved, and from where they flow into labour cost, billing and the audit trail. A second set of hours inside an issue tracker would be a second record that can disagree with the books. So GitBench has <b>no work log and no timer</b>. Instead it tells people which charge code to use and sends them to the timesheet.</p>
-<p>The timesheet system is <b>Workbench</b>, an ERP project at <a href="https://github.com/finepointcgi/Workbench">github.com/finepointcgi/Workbench</a>. GitBench only needs its web address; nothing is installed or synchronised.</p>
-<div class="warn">Older GitBench versions had a time-tracking feature (work logs). The <code>RemoveTimeTracking</code> migration drops the <code>WorkLogs</code> table, so <b>existing work logs are deleted</b> when you upgrade. Take a database backup and export any hours you still need first. Estimates are kept.</div>
+<h2 id="why-no-time">Why ByteBench does not record time</h2>
+<p>Hours worked are a financial record. In a company that bills by the hour, or that needs DCAA-compliant timekeeping (daily entry, a single system of record, corrections made with a reason), the timesheet is where hours are charged to a charge code, certified and approved, and from where they flow into labour cost, billing and the audit trail. A second set of hours inside an issue tracker would be a second record that can disagree with the books. So ByteBench has <b>no work log and no timer</b>. Instead it tells people which charge code to use and sends them to the timesheet.</p>
+<p>The timesheet system is <b>Workbench</b>, an ERP project at <a href="https://github.com/finepointcgi/Workbench">github.com/finepointcgi/Workbench</a>. ByteBench only needs its web address; nothing is installed or synchronised.</p>
+<div class="warn">Older ByteBench versions had a time-tracking feature (work logs). The <code>RemoveTimeTracking</code> migration drops the <code>WorkLogs</code> table, so <b>existing work logs are deleted</b> when you upgrade. Take a database backup and export any hours you still need first. Estimates are kept.</div>
 
 <h2 id="story-points">Story points and estimates</h2>
 <p>Three planning fields describe the size of an issue. None of them records time spent.</p>
@@ -16,9 +16,9 @@
 </table>
 <p>Durations are written like <code>2h 30m</code>, <code>1d</code>, <code>1.5h</code> or <code>1w</code>. A bare number means hours. A day is the project's <b>hours per day</b> (default 8, 1 to 24, set under <b>Settings, Fields, Estimates</b> at <code>/p/{KEY}/settings/fields</code>, Maintainer), and a week is 5 days. If you set only the original estimate on an issue that has no remaining estimate, the remaining estimate starts at the same value; after that each is edited independently, and changes are recorded in the issue's activity ("changed the estimate from 3 to 5 story points"). Unestimated issues count as 0 points in sprint reports.</p>
 <pre><code># Estimate via the API
-curl -X PATCH -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X PATCH -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"storyPoints":5,"originalEstimate":"1d 4h","remainingEstimate":"1d"}' \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/12</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/issues/12</code></pre>
 <p>Search by estimate in <a href="fields-filters.html#gql">GQL</a>: <code>remainingEstimate &gt; "2d"</code>, <code>storyPoints &gt;= 8</code>, <code>originalEstimate is EMPTY</code>.</p>
 
 <h2 id="link">The Workbench link</h2>
@@ -63,14 +63,14 @@ environment:
 <tr><td><code>PATCH .../issues/{n}</code></td><td><code>{"workbenchWbs": "4.5.6"}</code> sets the override; <code>null</code> clears it</td></tr>
 <tr><td>GQL</td><td><code>wbs = "1.2.3"</code> (alias <code>chargeCode</code>), case-insensitive; matches the issue's override, else its project's code. <code>wbs is EMPTY</code> finds issues with neither</td></tr>
 </table>
-<pre><code>curl -X PUT -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X PUT -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"wbs":"1.2.3","projectCode":"ACME-WEB"}' \
-  https://gitbench.example.com/api/v1/projects/WEB/workbench</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/workbench</code></pre>
 <p>A handy audit query: <code>wbs is EMPTY AND statusCategory = "In Progress"</code> lists active work nobody knows how to charge.</p>
 
 <h2 id="faq">Common questions</h2>
 <ul>
 <li><b>Can I log hours on an issue?</b> No. Use the Workbench button; hours live only in Workbench.</li>
-<li><b>Is anything sent to Workbench?</b> No. The link is a plain URL opened by your browser. GitBench never calls Workbench's API.</li>
-<li><b>Can I get cost reports from GitBench?</b> No; reports of time and cost come from Workbench. GitBench's <a href="reports.html">delivery reports</a> measure how long issues take on the calendar (lead and cycle time), not hours worked.</li>
+<li><b>Is anything sent to Workbench?</b> No. The link is a plain URL opened by your browser. ByteBench never calls Workbench's API.</li>
+<li><b>Can I get cost reports from ByteBench?</b> No; reports of time and cost come from Workbench. ByteBench's <a href="reports.html">delivery reports</a> measure how long issues take on the calendar (lead and cycle time), not hours worked.</li>
 </ul>

@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
-/// <summary>When a repository's pull requests are reviewed by GitBench AI without anyone asking.</summary>
+/// <summary>When a repository's pull requests are reviewed by ByteBench AI without anyone asking.</summary>
 public enum AiReviewMode
 {
     /// <summary>Only when someone clicks "Review with AI".</summary>
@@ -15,7 +15,7 @@ public enum AiReviewMode
 
 /// <summary>
 /// Per-repository AI pull request review settings (Maintainer+). Absent row = everything off. Read by
-/// <see cref="GitBench.Services.Ai.AiReviewSettingsService"/>.
+/// <see cref="ByteBench.Services.Ai.AiReviewSettingsService"/>.
 /// </summary>
 public class RepositoryAiReviewSettings
 {

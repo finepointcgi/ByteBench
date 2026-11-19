@@ -1,6 +1,6 @@
-@using GitBench.Services.Git
-@using GitBench.Services.Releases
-@using GitBench.Services.Attachments
+@using ByteBench.Services.Git
+@using ByteBench.Services.Releases
+@using ByteBench.Services.Attachments
 @* One release: title, badges, author/date, notes, assets and source archives. Used by the list and the detail page. *@
 <article class="rel-card">
     <MudPaper Outlined="true" Class="@("rel-paper pa-4" + (Release.IsDraft ? " draft" : ""))">

@@ -1,6 +1,6 @@
 using MimeKit;
 
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 /// <summary>One email, with an HTML and a plain-text body. Bodies are complete and already escaped.</summary>
 public sealed record EmailMessage(string To, string? ToName, string Subject, string Html, string Text)

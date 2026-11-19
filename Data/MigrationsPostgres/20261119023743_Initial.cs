@@ -5,7 +5,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace GitBench.Data.MigrationsPostgres
+namespace ByteBench.Data.MigrationsPostgres
 {
     /// <inheritdoc />
     public partial class Initial : Migration

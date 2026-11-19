@@ -1,7 +1,7 @@
 @* Issue sidebar: "Log time in Workbench" with the issue's charge code (its override, else the project's WBS code). Shown only
    when Workbench:BaseUrl is set and there's a code; otherwise nothing, or a hint for Maintainers. Editors can override
    the code for this issue. *@
-@using GitBench.Services.Workbench
+@using ByteBench.Services.Workbench
 @inject WorkbenchService Workbench
 
 @if (Workbench.IsConfigured)

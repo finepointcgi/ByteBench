@@ -5,8 +5,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
-using GitBench.Data;
-using GitBench.Services.Ci;
+using ByteBench.Data;
+using ByteBench.Services.Ci;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -18,10 +18,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Hosting;
+namespace ByteBench.Services.Hosting;
 
 /// <summary>
-/// Everything needed to run GitBench in production, wired from Program.cs with a few calls:
+/// Everything needed to run ByteBench in production, wired from Program.cs with a few calls:
 /// <list type="bullet">
 /// <item>Data Protection keys persisted to <c>DataProtection:KeysPath</c> (optionally encrypted with a certificate), so
 /// sign-in cookies, antiforgery tokens and encrypted secrets survive restarts.</item>
@@ -34,15 +34,15 @@ namespace GitBench.Services.Hosting;
 /// </summary>
 public static class ProductionSetup
 {
-    public const string CspNonceKey = "gitbench.csp-nonce";
+    public const string CspNonceKey = "bytebench.csp-nonce";
     /// <summary>An <c>HttpContext.Items</c> key: when present, X-Frame-Options is SAMEORIGIN instead of DENY.</summary>
-    public const string AllowSameOriginFramingKey = "gitbench.allow-framing";
+    public const string AllowSameOriginFramingKey = "bytebench.allow-framing";
     /// <summary>Set by Pages (Services/Pages): the response carries its own full header set, so none of the app's security headers or CSP are added.</summary>
-    public const string OwnSecurityHeadersKey = "gitbench.own-security-headers";
+    public const string OwnSecurityHeadersKey = "bytebench.own-security-headers";
 
     // ------------------------------------------------------------------ services
 
-    public static WebApplicationBuilder AddGitBenchHosting(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddByteBenchHosting(this WebApplicationBuilder builder)
     {
         var config = builder.Configuration;
         var env = builder.Environment;
@@ -58,6 +58,7 @@ public static class ProductionSetup
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* not ours to chmod: leave it */ }
         }
         var dp = services.AddDataProtection()
+            // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
             .SetApplicationName(config["DataProtection:ApplicationName"] is { Length: > 0 } app ? app : "GitBench")
             .PersistKeysToFileSystem(new DirectoryInfo(keysPath));
         if (config["DataProtection:CertificatePath"] is { Length: > 0 } certPath)
@@ -140,7 +141,7 @@ public static class ProductionSetup
     // ------------------------------------------------------------------ middleware
 
     /// <summary>First in the pipeline: when <c>ReverseProxy:Enabled</c>, trusts X-Forwarded-For/-Proto from known proxies.</summary>
-    public static WebApplication UseGitBenchForwardedHeaders(this WebApplication app)
+    public static WebApplication UseByteBenchForwardedHeaders(this WebApplication app)
     {
         if (app.Configuration.GetValue("ReverseProxy:Enabled", false)) app.UseForwardedHeaders();
         if (SecureCookies(app.Configuration, app.Environment))
@@ -151,7 +152,7 @@ public static class ProductionSetup
             {
                 if (!ctx.Request.IsHttps && !ctx.Request.Path.StartsWithSegments("/health") && Interlocked.Exchange(ref warned, 1) == 0)
                     app.Logger.LogWarning("Plain-HTTP request to {Host} while Security:SecureCookies is on: sign-in only works over HTTPS. " +
-                        "Put GitBench behind a TLS proxy (with ReverseProxy:Enabled), or set Security:SecureCookies=false for a trial.", ctx.Request.Host);
+                        "Put ByteBench behind a TLS proxy (with ReverseProxy:Enabled), or set Security:SecureCookies=false for a trial.", ctx.Request.Host);
                 return next(ctx);
             });
         }
@@ -159,7 +160,7 @@ public static class ProductionSetup
     }
 
     /// <summary>HSTS and HTTPS redirection (outside Development, unless <c>Security:HttpsRedirection</c> is false).</summary>
-    public static WebApplication UseGitBenchHttps(this WebApplication app)
+    public static WebApplication UseByteBenchHttps(this WebApplication app)
     {
         if (app.Environment.IsDevelopment()) return app;
         app.UseHsts();
@@ -174,7 +175,7 @@ public static class ProductionSetup
     /// set <c>style=""</c> attributes (label colours, chart sizes). Blazor's circuit needs <c>connect-src</c> to this
     /// host's ws/wss.
     /// </summary>
-    public static WebApplication UseGitBenchSecurityHeaders(this WebApplication app)
+    public static WebApplication UseByteBenchSecurityHeaders(this WebApplication app)
     {
         var config = app.Configuration;
         var cspEnabled = config.GetValue("Security:ContentSecurityPolicy", true);
@@ -240,7 +241,7 @@ public static class ProductionSetup
     ];
 
     /// <summary><c>/health/live</c> (process up) and <c>/health/ready</c> (database, storage, Docker as "degraded").</summary>
-    public static WebApplication MapGitBenchHealth(this WebApplication app)
+    public static WebApplication MapByteBenchHealth(this WebApplication app)
     {
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = WriteJsonAsync })
             .DisableRateLimiting().AllowAnonymous();
@@ -444,7 +445,7 @@ public sealed class AppRateLimits(IOptions<RateLimitSettings> options)
         http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         http.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
         http.Response.Headers.CacheControl = "no-store";
-        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("GitBench.RateLimiting")
+        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.RateLimiting")
             .LogWarning("Rate limit hit: {Method} {Path} from {Ip}", http.Request.Method, http.Request.Path, http.Connection.RemoteIpAddress);
         if (http.Request.Path.StartsWithSegments("/api"))
         {

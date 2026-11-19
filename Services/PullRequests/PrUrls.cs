@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Routes for the pull request feature pages (compare, merge settings).</summary>
 public static class PrUrls

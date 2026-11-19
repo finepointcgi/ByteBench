@@ -1,15 +1,15 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>A running CI job a job token was issued for.</summary>
 public sealed record CiJobIdentity(int JobId, int PipelineId, int ProjectId, int? TriggeredById, string JobName);
 
 /// <summary>
-/// CI job tokens (<c>gbj_…</c>): handed to every job as <c>GITBENCH_JOB_TOKEN</c> (and <c>GITBENCH_REGISTRY_PASSWORD</c>)
+/// CI job tokens (<c>gbj_…</c>): handed to every job as <c>BYTEBENCH_JOB_TOKEN</c> (and <c>BYTEBENCH_REGISTRY_PASSWORD</c>)
 /// so its scripts can publish to and read from the project's package and container registry without a personal token.
 /// A token is the job id protected with Data Protection (time-limited to the job timeout plus a margin); it is only
 /// accepted while that job is still running, so it dies with the job. What it may do is decided by
@@ -19,8 +19,9 @@ public sealed class CiJobTokens(IDataProtectionProvider dataProtection, IDbConte
 {
     public const string Prefix = "gbj_";
     /// <summary>The user name to pair with a job token in Basic credentials (any name is accepted).</summary>
-    public const string UserName = "gitbench-ci-token";
+    public const string UserName = "bytebench-ci-token";
 
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     private ITimeLimitedDataProtector Protector => dataProtection.CreateProtector("GitBench.Ci.JobToken.v1").ToTimeLimitedDataProtector();
 
     public string Create(int jobId) =>

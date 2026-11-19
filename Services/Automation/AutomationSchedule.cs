@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>Pure schedule arithmetic for the "scheduled" trigger (all times UTC).</summary>
 public static class AutomationSchedule

@@ -1,7 +1,7 @@
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>The version of a deployed commit: a tag at it, or the nearest tag below it and how many commits follow.</summary>
 public sealed record CommitVersion(string Tag, int Distance)

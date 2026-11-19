@@ -9,7 +9,7 @@
 @inject ProjectAccess Access
 @inject LinkedWorkService LinkedWork
 @inject WorkflowService Workflows
-@inject GitBench.Services.ServiceDesk.ServiceDeskService Desk
+@inject ByteBench.Services.ServiceDesk.ServiceDeskService Desk
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -21,7 +21,7 @@ else if (issue != null && project != null)
 {
 <div class="id-page">
     <MudBreadcrumbs Items="Crumbs" Class="px-0 pt-0 pb-1" />
-    <GitBench.Components.LinkedWork.ParentBreadcrumb Issue="issue" />
+    <ByteBench.Components.LinkedWork.ParentBreadcrumb Issue="issue" />
 
     <div class="id-header">
         @if (editingTitle)
@@ -43,7 +43,7 @@ else if (issue != null && project != null)
             {
             <div class="id-actions">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" IssueId="issue.Id" />
-                <GitBench.Components.Automation.AutomationMenu IssueId="issue.Id" />
+                <ByteBench.Components.Automation.AutomationMenu IssueId="issue.Id" />
                 <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="StartEditTitle">Edit title</MudButton>
                 @if (issue.Status.IsClosed())
                 {
@@ -63,7 +63,7 @@ else if (issue != null && project != null)
         }
     </div>
     @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" ShowCloseIcon="true" CloseIconClicked="() => error = null" Class="mb-3">@error</MudAlert> }
-    <GitBench.Components.LinkedWork.BlockedStatusWarning Issue="issue" />
+    <ByteBench.Components.LinkedWork.BlockedStatusWarning Issue="issue" />
     <div class="id-subhead">
         <StatusBadge Issue="issue" />
         <span class="id-muted">
@@ -74,8 +74,8 @@ else if (issue != null && project != null)
 
     <MudGrid Spacing="4">
         <MudItem xs="12" md="8" lg="9" Class="id-main">
-            <GitBench.Components.Ai.AiTriagePanel Issue="issue" />
-            <GitBench.Components.Ai.AiSummary Issue="issue" />
+            <ByteBench.Components.Ai.AiTriagePanel Issue="issue" />
+            <ByteBench.Components.Ai.AiSummary Issue="issue" />
             <!-- Description -->
             <MudPaper Outlined="true" Class="id-card">
                 <div class="id-card-head">
@@ -106,8 +106,8 @@ else if (issue != null && project != null)
                 </div>
             </MudPaper>
 
-            <GitBench.Components.LinkedWork.ChildIssuesPanel Issue="issue" />
-            <GitBench.Components.LinkedWork.LinkedIssuesPanel Issue="issue" />
+            <ByteBench.Components.LinkedWork.ChildIssuesPanel Issue="issue" />
+            <ByteBench.Components.LinkedWork.LinkedIssuesPanel Issue="issue" />
             <AttachmentsPanel IssueId="issue.Id" Perms="perms" />
 
             <!-- Timeline: comments + activity -->
@@ -252,7 +252,7 @@ else if (issue != null && project != null)
                                Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" ToStringFunc="@(t => $"{t.Icon()} {t}")">
                         @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem Value="t">@t.Icon() @t</MudSelectItem> }
                     </MudSelect>
-                    <GitBench.Components.LinkedWork.ParentField Issue="issue" />
+                    <ByteBench.Components.LinkedWork.ParentField Issue="issue" />
                     @* 0 stands for "None". *@
                     <MudSelect T="int" @key="(nameof(SetMilestone), fieldsVersion)" Value="@(issue.MilestoneId ?? 0)" ValueChanged="SetMilestone" Label="Milestone"
                                Disabled="@(!CanEdit)" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
@@ -284,10 +284,10 @@ else if (issue != null && project != null)
                     <MudDatePicker @key="(nameof(SetDue), fieldsVersion)" Date="issue.DueDate" DateChanged="SetDue" Label="Due date" Disabled="@(!CanEdit)"
                                    Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DateFormat="yyyy-MM-dd" Editable="true" />
                 </MudStack>
-                <GitBench.Components.Fields.IssueFieldsPanel Issue="issue" />
-                <GitBench.Components.Workbench.WorkbenchIssuePanel Issue="issue" Project="project" Perms="perms" />
-                <GitBench.Components.Repositories.DevelopmentPanel Issue="issue" />
-                @if (desk != null) { <GitBench.Components.ServiceDesk.ServiceDeskIssuePanel Info="desk" /> }
+                <ByteBench.Components.Fields.IssueFieldsPanel Issue="issue" />
+                <ByteBench.Components.Workbench.WorkbenchIssuePanel Issue="issue" Project="project" Perms="perms" />
+                <ByteBench.Components.Repositories.DevelopmentPanel Issue="issue" />
+                @if (desk != null) { <ByteBench.Components.ServiceDesk.ServiceDeskIssuePanel Info="desk" /> }
                 <div class="id-reporter">
                     <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName Link /></div>
                     <div>Created @issue.CreatedAt.ToLocalTime().ToString("g")</div>
@@ -339,7 +339,7 @@ else if (issue != null && project != null)
     private string? descDraft, newComment, commentEditDraft;
     private int? editingCommentId;
     private MarkdownEditor? commentEditor;
-    private GitBench.Services.ServiceDesk.ServiceDeskIssueInfo? desk; // set when the issue came in through the service desk
+    private ByteBench.Services.ServiceDesk.ServiceDeskIssueInfo? desk; // set when the issue came in through the service desk
     private bool replyToRequester;
 
     private IEnumerable<object> Timeline => issue!.Comments.Select(c => (when: c.CreatedAt, item: (object)c))
@@ -506,7 +506,7 @@ else if (issue != null && project != null)
     {
         DateTime? d = value?.Date;
         if (d != null && i.DueDate is { } due && d > due.Date) throw new InvalidOperationException("The start date must be on or before the due date.");
-        var text = GitBench.Services.Roadmap.RoadmapService.DatesText(i.StartDate, i.DueDate, d, i.DueDate);
+        var text = ByteBench.Services.Roadmap.RoadmapService.DatesText(i.StartDate, i.DueDate, d, i.DueDate);
         i.StartDate = d;
         return text;
     });

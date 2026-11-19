@@ -5,14 +5,14 @@
 @inject UserManager<User> Users
 @inject NavigationManager Nav
 @inject ILogger<Login> Log
-@inject GitBench.Services.Audit.AuditLog Audit
-@inject GitBench.Services.Sso.SsoSettings Sso
-@inject GitBench.Services.Sso.Ldap.LdapAuthService Ldap
+@inject ByteBench.Services.Audit.AuditLog Audit
+@inject ByteBench.Services.Sso.SsoSettings Sso
+@inject ByteBench.Services.Sso.Ldap.LdapAuthService Ldap
 
-<PageTitle>Sign in · GitBench</PageTitle>
+<PageTitle>Sign in · ByteBench</PageTitle>
 
 <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Sign in</MudText>
-<MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Welcome back. Sign in to continue to GitBench.</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Welcome back. Sign in to continue to ByteBench.</MudText>
 
 @if (error != null)
 {
@@ -59,7 +59,7 @@
 }
 
 <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">
-    New to GitBench? <a href="@RegisterHref">Create an account</a>
+    New to ByteBench? <a href="@RegisterHref">Create an account</a>
 </MudText>
 
 @code {
@@ -72,7 +72,7 @@
     {
         Input ??= new();
         if (SsoError != null && HttpMethods.IsGet(HttpContext.Request.Method))
-            error = GitBench.Services.Sso.SsoErrors.Message(SsoError, Sso.Find(SsoProvider)?.Title ?? "the identity provider");
+            error = ByteBench.Services.Sso.SsoErrors.Message(SsoError, Sso.Find(SsoProvider)?.Title ?? "the identity provider");
     }
 
     [CascadingParameter]
@@ -88,7 +88,7 @@
     [SupplyParameterFromQuery(Name = "provider")]
     private string? SsoProvider { get; set; }
 
-    private string SsoHref(GitBench.Services.Sso.SsoProviderOptions p) =>
+    private string SsoHref(ByteBench.Services.Sso.SsoProviderOptions p) =>
         $"account/sso/{p.Name}" + (AccountUrls.IsLocal(ReturnUrl) ? $"?returnUrl={Uri.EscapeDataString(ReturnUrl!)}" : "");
 
     private string RegisterHref => AccountUrls.IsLocal(ReturnUrl)
@@ -122,23 +122,23 @@
         var r = await Ldap.AuthenticateAsync(login, Input!.Password);
         switch (r.Status)
         {
-            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Success:
-                // Through Identity's external-login sign-in, so lockout and GitBench two-factor sign-in apply as usual.
-                var result = await SignIn.ExternalLoginSignInAsync(GitBench.Services.Sso.Ldap.LdapAuthService.LoginProvider, r.Key!, Input!.RememberMe, bypassTwoFactor: false);
+            case ByteBench.Services.Sso.Ldap.LdapLoginStatus.Success:
+                // Through Identity's external-login sign-in, so lockout and ByteBench two-factor sign-in apply as usual.
+                var result = await SignIn.ExternalLoginSignInAsync(ByteBench.Services.Sso.Ldap.LdapAuthService.LoginProvider, r.Key!, Input!.RememberMe, bypassTwoFactor: false);
                 if (result.Succeeded) await Audit.RecordAsync("auth.sign_in", "user", r.User!.Id, details: new { method = "ldap" }, actorId: r.User.Id);
                 else if (!result.RequiresTwoFactor) await Audit.SignInAttemptAsync(r.User!.UserName!, result);
                 Finish(r.User!.UserName!, result);
                 break;
-            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Locked:
+            case ByteBench.Services.Sso.Ldap.LdapLoginStatus.Locked:
                 error = "This account is locked or deactivated.";
                 break;
-            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Conflict:
-                error = "A GitBench account with this username or email already exists, so the directory account can't sign in to it. Ask a site admin.";
+            case ByteBench.Services.Sso.Ldap.LdapLoginStatus.Conflict:
+                error = "A ByteBench account with this username or email already exists, so the directory account can't sign in to it. Ask a site admin.";
                 break;
-            case GitBench.Services.Sso.Ldap.LdapLoginStatus.NoAccount:
-                error = "Your directory account doesn't have a GitBench account. Ask a site admin.";
+            case ByteBench.Services.Sso.Ldap.LdapLoginStatus.NoAccount:
+                error = "Your directory account doesn't have a ByteBench account. Ask a site admin.";
                 break;
-            case GitBench.Services.Sso.Ldap.LdapLoginStatus.Unavailable:
+            case ByteBench.Services.Sso.Ldap.LdapLoginStatus.Unavailable:
                 error = "The directory server can't be reached right now. Try again later.";
                 break;
             default:

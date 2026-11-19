@@ -1,7 +1,7 @@
 @page "/admin/audit"
 @inject CurrentUser Me
 
-<PageTitle>Audit log · GitBench</PageTitle>
+<PageTitle>Audit log · ByteBench</PageTitle>
 
 @if (Me.User?.IsAdmin != true)
 {
@@ -12,7 +12,7 @@ else
     <div class="page-header">
         <div>
             <MudText Typo="Typo.h5" HtmlTag="h1">Audit log</MudText>
-            <MudText Class="mud-text-secondary" Typo="Typo.body2">Sign-ins, access tokens, membership, settings, repositories, branch protection, webhooks and workflows across GitBench.</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">Sign-ins, access tokens, membership, settings, repositories, branch protection, webhooks and workflows across ByteBench.</MudText>
         </div>
     </div>
     <AuditViewer />

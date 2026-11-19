@@ -1,16 +1,16 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Code;
+using ByteBench.Data;
+using ByteBench.Services.Code;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Explore;
+namespace ByteBench.Services.Explore;
 
 public enum SearchType { Issues, PullRequests, Projects, Users, Code, Wiki }
 
-/// <summary>A wiki page (<see cref="GitBench.Services.Wiki.WikiService"/>) whose title or Markdown matches.</summary>
+/// <summary>A wiki page (<see cref="ByteBench.Services.Wiki.WikiService"/>) whose title or Markdown matches.</summary>
 public sealed record WikiHit(string ProjectKey, string ProjectName, string Path, string Title, string? Excerpt, DateTime UpdatedAt)
 {
-    public string Url => GitBench.Services.Wiki.WikiPaths.Url(ProjectKey, Path);
+    public string Url => ByteBench.Services.Wiki.WikiPaths.Url(ProjectKey, Path);
 }
 
 public sealed record IssueHit(int Id, string Key, string ProjectKey, int Number, string Title, IssueType Type, IssueStatus Status, DateTime UpdatedAt)

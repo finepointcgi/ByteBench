@@ -6,7 +6,7 @@
 @inject ProjectAccess Access
 @inject WorkflowService Workflows
 @inject NavigationManager Nav
-@inject GitBench.Services.Query.GqlService Gql
+@inject ByteBench.Services.Query.GqlService Gql
 @inject IDialogService Dialogs
 
 <PageTitle>Issues · @project?.Name</PageTitle>
@@ -42,7 +42,7 @@ else if (project != null)
     @if (Advanced)
     {
         <MudPaper Outlined="true" Class="il-filters il-advanced">
-            <GitBench.Components.Query.GqlEditor @ref="gqlEditor" @bind-Value="gqlText" OnRun="RunGql" Scope="@([project.Id])" Error="gqlError" ErrorQuery="@filter.Gql" />
+            <ByteBench.Components.Query.GqlEditor @ref="gqlEditor" @bind-Value="gqlText" OnRun="RunGql" Scope="@([project.Id])" Error="gqlError" ErrorQuery="@filter.Gql" />
             <div class="il-advanced-actions">
                 <span class="il-muted">@(gqlError == null ? $"{gqlTotal} matching issue{(gqlTotal == 1 ? "" : "s")} in {project.Key}" + (gqlTotal > issues.Count ? $" (showing the first {issues.Count})" : "") : "")</span>
                 <MudButton Variant="Variant.Text" Size="Size.Small" Href="@($"/issues/search?gql={Uri.EscapeDataString(gqlText ?? "")}")">Search all projects</MudButton>
@@ -68,7 +68,7 @@ else if (project != null)
         <MudTextField T="string" @bind-Value="filter.Search" @bind-Value:after="Apply" Immediate="true" Placeholder="@($"Search title, description or {project.Key}-123…")"
                       Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
                       Clearable="true" Class="il-search" aria-label="Search issues" />
-        <GitBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Apply" />
+        <ByteBench.Components.Ai.AiSearchBox Project="project" Users="users" Filter="filter" OnApplied="Apply" />
 
         @* "c:{category}" = any status in that category, "w:{id}" = one workflow status. *@
         <MudSelect T="string" @bind-Value="StatusFilter" @bind-Value:after="Apply" Label="Status" Clearable="true" Dense="true"
@@ -100,8 +100,8 @@ else if (project != null)
                    Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(t => t is { } v ? $"{v.Icon()} {v}" : "")">
             @foreach (var t in Enum.GetValues<IssueType>()) { <MudSelectItem T="IssueType?" Value="t">@t.Icon() @t</MudSelectItem> }
         </MudSelect>
-        <GitBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Apply" />
-        <GitBench.Components.Fields.IssueFieldFilters Project="project" Filter="filter" Issues="issues" Data="columnData" OnChanged="Apply" OnDataLoaded="StateHasChanged" />
+        <ByteBench.Components.LinkedWork.HierarchyFilters Project="project" Filter="filter" OnChanged="Apply" />
+        <ByteBench.Components.Fields.IssueFieldFilters Project="project" Filter="filter" Issues="issues" Data="columnData" OnChanged="Apply" OnDataLoaded="StateHasChanged" />
         <MudSelect T="IssuePriority?" @bind-Value="filter.Priority" @bind-Value:after="Apply" Label="Priority" Clearable="true" Dense="true"
                    Variant="Variant.Outlined" Margin="Margin.Dense" ToStringFunc="@(p => p?.ToString() ?? "")">
             @foreach (var p in Enum.GetValues<IssuePriority>().Reverse())
@@ -148,12 +148,12 @@ else if (project != null)
                 <div class="il-row @(selected.Contains(i.Id) ? "selected" : "")" @key="i.Id">
                     <MudCheckBox T="bool" Value="@selected.Contains(i.Id)" ValueChanged="_ => Toggle(i.Id)" Dense="true" Size="Size.Small"
                                  AriaLabel="@($"Select {i.Key}")" Class="il-row-check" />
-                    <IssueRow Issue="i" /><GitBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" />
+                    <IssueRow Issue="i" /><ByteBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" />
                 </div>
             }
             else
             {
-                <div class="il-row" @key="i.Id"><IssueRow Issue="i" /><GitBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" /></div>
+                <div class="il-row" @key="i.Id"><IssueRow Issue="i" /><ByteBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" /></div>
             }
         }
     </MudPaper>
@@ -171,7 +171,7 @@ else if (project != null)
     // The whole filter state. It round-trips through the URL query string (IssueFilterQuery), so a filter is
     // addressable and a saved filter is just a stored query string; new IssueFilter properties come along for free.
     private IssueFilter filter = new();
-    private readonly GitBench.Components.Fields.IssueColumnData columnData = new(); // optional columns (IssueFieldFilters loads, IssueFieldCells shows)
+    private readonly ByteBench.Components.Fields.IssueColumnData columnData = new(); // optional columns (IssueFieldFilters loads, IssueFieldCells shows)
     private (int open, int closed) counts;
     private readonly HashSet<int> selected = [];
 
@@ -252,9 +252,9 @@ else if (project != null)
     private const int MaxGqlRows = 500;
     private bool Advanced => filter.Gql != null;
     private string? gqlText;
-    private GitBench.Services.Query.GqlException? gqlError;
+    private ByteBench.Services.Query.GqlException? gqlError;
     private int gqlTotal;
-    private GitBench.Components.Query.GqlEditor? gqlEditor;
+    private ByteBench.Components.Query.GqlEditor? gqlEditor;
 
     private async Task LoadGql()
     {
@@ -264,7 +264,7 @@ else if (project != null)
             var result = await Gql.SearchAsync(filter.Gql!, [project!.Id], take: MaxGqlRows);
             (issues, gqlTotal, gqlError) = (result.Issues, result.Total, null);
         }
-        catch (GitBench.Services.Query.GqlException ex)
+        catch (ByteBench.Services.Query.GqlException ex)
         {
             (issues, gqlTotal, gqlError) = ([], 0, ex);
         }
@@ -296,12 +296,12 @@ else if (project != null)
     private async Task ExportCsv()
     {
         if (project == null) return;
-        var parameters = new DialogParameters<GitBench.Components.Query.CsvExportDialog>
+        var parameters = new DialogParameters<ByteBench.Components.Query.CsvExportDialog>
         {
             { x => x.Path, $"/p/{project.Key}/issues/export.csv" },
             { x => x.Query, IssueFilterQuery.ToQueryString(filter) },
         };
-        await Dialogs.ShowAsync<GitBench.Components.Query.CsvExportDialog>("Export CSV", parameters,
+        await Dialogs.ShowAsync<ByteBench.Components.Query.CsvExportDialog>("Export CSV", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
     }
 

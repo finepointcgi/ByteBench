@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Releases;
+namespace ByteBench.Services.Releases;
 
 /// <summary>Routes for tags, releases, release assets and source archives.</summary>
 public static class ReleaseUrls

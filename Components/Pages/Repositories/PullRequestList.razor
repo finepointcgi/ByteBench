@@ -10,7 +10,7 @@
 @inject ReviewerService Reviewers
 @inject CurrentUser Me
 @inject RepositorySettingsService RepoSettings
-@inject GitBench.Services.MergeQueue.MergeQueueService MergeQueues
+@inject ByteBench.Services.MergeQueue.MergeQueueService MergeQueues
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -65,7 +65,7 @@ else if (project != null)
             }
             @if (scopedRepo != null && queueBranches.Count > 0)
             {
-                <MudButton Href="@GitBench.Services.MergeQueue.MergeQueueUrls.Queue(scopedRepo)" Variant="Variant.Outlined" Size="Size.Small"
+                <MudButton Href="@ByteBench.Services.MergeQueue.MergeQueueUrls.Queue(scopedRepo)" Variant="Variant.Outlined" Size="Size.Small"
                            StartIcon="@Icons.Material.Outlined.Train" Class="gb-nowrap">Merge queue</MudButton>
             }
             @if (repos.Count > 0 && canCreate)

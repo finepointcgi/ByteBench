@@ -3,12 +3,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>
 /// A NuGet v3 feed per project at <c>/packages/{KEY}/nuget/index.json</c>:
@@ -23,7 +23,7 @@ namespace GitBench.Services.Packages;
 /// </summary>
 public static partial class NuGetEndpoints
 {
-    private const string Challenge = "Basic realm=\"GitBench NuGet\"";
+    private const string Challenge = "Basic realm=\"ByteBench NuGet\"";
 
     [GeneratedRegex(@"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,99}$")]
     private static partial Regex IdPattern();

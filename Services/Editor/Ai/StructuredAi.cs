@@ -1,7 +1,7 @@
 using System.Text.Json;
-using GitBench.Services.Ai;
+using ByteBench.Services.Ai;
 
-namespace GitBench.Services.Editor.Ai;
+namespace ByteBench.Services.Editor.Ai;
 
 /// <summary>
 /// One tool-less, structured-output request to whichever editor AI backend is configured (<c>Ai:Editor:Backend</c>).

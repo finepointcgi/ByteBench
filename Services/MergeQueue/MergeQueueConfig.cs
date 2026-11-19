@@ -1,6 +1,6 @@
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.MergeQueue;
+namespace ByteBench.Services.MergeQueue;
 
 /// <summary>A branch's merge queue changed: entries added, removed, reordered, built, tested or merged.</summary>
 public sealed record MergeQueueChanged(int RepositoryId, string TargetBranch) : LiveEvent;

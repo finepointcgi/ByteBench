@@ -2,7 +2,7 @@ using System.Text;
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>One edit of a tree: write <see cref="Content"/> at <see cref="Path"/>, or remove it when Content is null.</summary>
 /// <param name="ModeOf">For a write: keep the file mode (and CRLF line endings) of this path in the parent, if it is there
@@ -118,7 +118,7 @@ public static partial class GitOps
     private static (Tree? Tree, List<string> Conflicts) Merge(LgRepository r, Commit b, Commit h, IReadOnlyList<TreeEdit> edits)
     {
         var tree = BuildTree(r, b, edits);
-        var sig = new Signature("GitBench", "gitbench@localhost", DateTimeOffset.Now);
+        var sig = new Signature("ByteBench", "bytebench@localhost", DateTimeOffset.Now);
         var mine = r.ObjectDatabase.CreateCommit(sig, sig, "web editor workspace", tree, [b], prettifyMessage: false);
         var result = r.ObjectDatabase.MergeCommits(h, mine, new MergeTreeOptions { FailOnConflict = false, SkipReuc = true });
         return result.Status == MergeTreeStatus.Conflicts ? (null, ConflictPaths(result)) : (result.Tree, []);

@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Boards;
+namespace ByteBench.Services.Boards;
 
 /// <summary>The editable settings of a board (everything but its columns and quick filters).</summary>
 public sealed record BoardSettings(

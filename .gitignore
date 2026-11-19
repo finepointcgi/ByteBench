@@ -482,6 +482,8 @@ $RECYCLE.BIN/
 *.swp
 
 # Local SQLite database
+bytebench.db*
+# The database file name before the rename from GitBench
 gitbench.db*
 
 # Hosted bare git repositories
@@ -514,7 +516,7 @@ gitbench.db*
 !/Services/Packages/**
 !/Components/Packages/**
 
-# GitBench source folder (not Visual Studio backups)
+# ByteBench source folder (not Visual Studio backups)
 !Services/Hosting/Backup/
 backups/
 *.tar.gz.partial

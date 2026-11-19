@@ -1,7 +1,7 @@
 using System.Text.Json;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Dashboards;
+namespace ByteBench.Services.Dashboards;
 
 /// <summary>
 /// A gadget's settings, stored as JSON in <see cref="DashboardGadget.Config"/>. One shape for every kind; each kind reads

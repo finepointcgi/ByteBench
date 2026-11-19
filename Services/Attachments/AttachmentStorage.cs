@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.StaticFiles;
 
-namespace GitBench.Services.Attachments;
+namespace ByteBench.Services.Attachments;
 
 /// <summary>
 /// Where attachment bytes live: <c>{Root}/{storedName}</c>, where storedName is a random 32-hex-character id (the user's

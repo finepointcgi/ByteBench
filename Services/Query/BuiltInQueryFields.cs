@@ -1,11 +1,11 @@
 using System.Linq.Expressions;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
-/// <summary>The fields GitBench itself defines. Other features add theirs with their own <see cref="IQueryFieldProvider"/>.</summary>
+/// <summary>The fields ByteBench itself defines. Other features add theirs with their own <see cref="IQueryFieldProvider"/>.</summary>
 public sealed class BuiltInQueryFields : IQueryFieldProvider
 {
     public IEnumerable<IQueryField> GetFields() =>

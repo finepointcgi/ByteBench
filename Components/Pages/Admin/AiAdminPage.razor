@@ -1,6 +1,6 @@
 @page "/admin/ai"
-@using GitBench.Services.Ai
-@using GitBench.Services.Editor.Ai
+@using ByteBench.Services.Ai
+@using ByteBench.Services.Editor.Ai
 @using Microsoft.Extensions.Options
 @inject CurrentUser Me
 @inject ProjectAccess Access
@@ -13,7 +13,7 @@
 
 @* Read-only status of the AI backends: the Anthropic API (AiClient) and Claude Code on the server (web editor). *@
 
-<PageTitle>AI · GitBench</PageTitle>
+<PageTitle>AI · ByteBench</PageTitle>
 
 @if (Me.User?.IsAdmin != true)
 {
@@ -24,7 +24,7 @@ else
     <div class="page-header mb-4">
         <MudText Typo="Typo.h5" HtmlTag="h1">AI</MudText>
         <MudText Class="mud-text-secondary" Typo="Typo.body2">
-            What GitBench's AI features run on (read-only: change <code>Ai:*</code> in the configuration and restart).
+            What ByteBench's AI features run on (read-only: change <code>Ai:*</code> in the configuration and restart).
         </MudText>
     </div>
 
@@ -57,7 +57,7 @@ else
             </tbody>
         </MudSimpleTable>
         <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
-            Claude Code runs as the server's account and uses that account's Claude Code login or subscription. GitBench only runs
+            Claude Code runs as the server's account and uses that account's Claude Code login or subscription. ByteBench only runs
             <code>claude --version</code> and <code>claude --help</code> here; editor requests run <code>claude -p</code> with read/edit tools only.
         </MudText>
     </MudPaper>

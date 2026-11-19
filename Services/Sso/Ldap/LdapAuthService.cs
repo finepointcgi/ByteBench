@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Sso.Ldap;
+namespace ByteBench.Services.Sso.Ldap;
 
 public enum LdapLoginStatus { Success, InvalidCredentials, Conflict, NoAccount, Locked, Unavailable }
 
@@ -13,7 +13,7 @@ public sealed record LdapLoginResult(LdapLoginStatus Status, User? User = null, 
 
 public enum GitPasswordCheck
 {
-    /// <summary>Not a directory account: check the GitBench password as usual.</summary>
+    /// <summary>Not a directory account: check the ByteBench password as usual.</summary>
     NotDirectoryUser,
     Valid,
     Invalid,
@@ -24,7 +24,7 @@ public enum GitPasswordCheck
 /// <summary>
 /// LDAP / Active Directory sign-in (<c>Authentication:Ldap</c>): search for the user as the service account with the
 /// configured filter (input escaped per RFC 4515), bind as the found DN with the given password, then create or update
-/// the GitBench account (linked through an AspNetUserLogins row, provider <c>ldap</c>, key = the lower-cased username
+/// the ByteBench account (linked through an AspNetUserLogins row, provider <c>ldap</c>, key = the lower-cased username
 /// attribute) and sync admin and group memberships. Also the git Basic-auth check and the periodic directory sync.
 /// <para>
 /// A directory login never takes over a local account: if a non-directory account already uses the username or the
@@ -158,7 +158,7 @@ public class LdapAuthService(IOptionsMonitor<LdapOptions> options, ILdapClient c
     public static string NormalizeDn(string dn) => DnEquals.Replace(DnSpaces.Replace(dn.Trim(), ","), "=").ToLowerInvariant();
 
     /// <summary>
-    /// Finds (or, with <paramref name="create"/> and AutoCreateUsers, creates) the GitBench account for a directory entry,
+    /// Finds (or, with <paramref name="create"/> and AutoCreateUsers, creates) the ByteBench account for a directory entry,
     /// updates its name and email, and syncs admin and groups.
     /// </summary>
     public async Task<(User? User, LdapLoginStatus Status)> ProvisionAsync(LdapDirectoryEntry entry, bool create, CancellationToken ct = default)
@@ -182,7 +182,7 @@ public class LdapAuthService(IOptionsMonitor<LdapOptions> options, ILdapClient c
                 UserName = key, Email = email, EmailConfirmed = true, DisplayName = displayName,
                 Color = Components.Account.AvatarPalette.Random(), LockoutEnabled = true,
             };
-            var r = await users.CreateAsync(user); // no GitBench password: the directory checks it
+            var r = await users.CreateAsync(user); // no ByteBench password: the directory checks it
             if (!r.Succeeded)
             {
                 log.LogWarning("Could not create LDAP user {User}: {Errors}", key, string.Join(" ", r.Errors.Select(e => e.Description)));
@@ -283,7 +283,7 @@ public class LdapAuthService(IOptionsMonitor<LdapOptions> options, ILdapClient c
         if (!Enabled) return (false, "LDAP is not enabled (Authentication:Ldap:Enabled and Server).");
         try
         {
-            var filter = LdapFilter.Format(o.UserFilter, "gitbench-connection-test");
+            var filter = LdapFilter.Format(o.UserFilter, "bytebench-connection-test");
             await client.SearchAsync(o.UserSearchBase, filter, AttributesToLoad, ct);
             return (true, $"Connected to {o.Server}:{o.EffectivePort} ({o.Security}), bound as {(o.BindDn.Length > 0 ? o.BindDn : "anonymous")} and searched {o.UserSearchBase}.");
         }

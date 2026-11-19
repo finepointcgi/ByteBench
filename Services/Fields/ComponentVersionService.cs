@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 public sealed record ComponentSummary(ProjectComponent Component, int OpenIssues, int TotalIssues);
 

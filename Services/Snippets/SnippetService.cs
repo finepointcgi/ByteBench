@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Snippets;
+namespace ByteBench.Services.Snippets;
 
 public sealed record SnippetFileInput(string FileName, string Content);
 

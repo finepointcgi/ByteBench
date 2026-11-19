@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>How to merge a pull request.</summary>
 /// <param name="AllowFastForward">Merge strategy only: move the target to the source tip instead of writing a merge commit, when possible.</param>

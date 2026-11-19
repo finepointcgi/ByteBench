@@ -1,7 +1,7 @@
-using GitBench.Services.Webhooks;
+using ByteBench.Services.Webhooks;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 public static class ChatServiceCollectionExtensions
 {
@@ -19,7 +19,7 @@ public static class ChatServiceCollectionExtensions
         services.AddHttpClient(ChatHttp.ClientName, c =>
             {
                 c.Timeout = Timeout.InfiniteTimeSpan; // ChatHttp applies its own per-request timeout
-                c.DefaultRequestHeaders.UserAgent.ParseAdd("GitBench-Chat/1.0");
+                c.DefaultRequestHeaders.UserAgent.ParseAdd("ByteBench-Chat/1.0");
             })
             .ConfigurePrimaryHttpMessageHandler(sp => sp.GetRequiredService<WebhookSender>().CreateGuardedHandler());
         services.AddSingleton<ChatHttp>();

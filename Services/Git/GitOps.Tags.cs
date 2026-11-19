@@ -1,7 +1,7 @@
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>A tag: the commit it points at and, for annotated tags, the tagger, date and message.</summary>
 public record TagInfo(string Name, string ObjectSha, CommitInfo? Commit, bool IsAnnotated,

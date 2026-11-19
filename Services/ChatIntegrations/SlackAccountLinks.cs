@@ -1,23 +1,24 @@
 using System.Security.Cryptography;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>A decoded account-link token: which Slack user asked to be linked.</summary>
 public sealed record SlackLinkRequest(string TeamId, string SlackUserId, string? SlackUserName, string Nonce, DateTimeOffset Expires);
 
 /// <summary>
-/// Maps Slack users to GitBench users. A Slack user who isn't linked gets a link to <c>/integrations/slack/link?t=…</c>:
+/// Maps Slack users to ByteBench users. A Slack user who isn't linked gets a link to <c>/integrations/slack/link?t=…</c>:
 /// the token is signed and encrypted with Data Protection, expires after <see cref="TokenLifetime"/>, and carries a
-/// nonce that is stored with the link, so each token links at most once. The signed-in GitBench user confirms on that
+/// nonce that is stored with the link, so each token links at most once. The signed-in ByteBench user confirms on that
 /// page. Until linked, slash commands, buttons and unfurls do nothing for that Slack user: every action runs as the linked
 /// user through <see cref="ProjectAccess"/>.
 /// </summary>
 public sealed class SlackAccountLinks(IDbContextFactory<AppDbContext> dbFactory, IDataProtectionProvider provider, Audit.AuditLog audit)
 {
     public const string Provider = "slack";
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     public const string Purpose = "GitBench.Chat.SlackLink.v1";
     public static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(10);
 
@@ -49,12 +50,12 @@ public sealed class SlackAccountLinks(IDbContextFactory<AppDbContext> dbFactory,
     /// <summary>Links the Slack user in <paramref name="token"/> to <paramref name="userId"/>. Throws with a message for the page if it can't.</summary>
     public async Task<ChatUserLink> LinkAsync(string token, int userId)
     {
-        var request = Read(token) ?? throw new InvalidOperationException("This link is invalid or has expired. Run /gitbench link in Slack to get a new one.");
+        var request = Read(token) ?? throw new InvalidOperationException("This link is invalid or has expired. Run /bytebench link in Slack to get a new one.");
         await using var db = await dbFactory.CreateDbContextAsync();
         if (await db.ChatUserLinks.AnyAsync(l => l.Nonce == request.Nonce))
-            throw new InvalidOperationException("This link has already been used. Run /gitbench link in Slack to get a new one.");
+            throw new InvalidOperationException("This link has already been used. Run /bytebench link in Slack to get a new one.");
         if (await db.ChatUserLinks.AnyAsync(l => l.Provider == Provider && l.TeamId == request.TeamId && l.ExternalUserId == request.SlackUserId && l.RevokedAt == null))
-            throw new InvalidOperationException("This Slack account is already linked to a GitBench account. Run /gitbench unlink in Slack first.");
+            throw new InvalidOperationException("This Slack account is already linked to a ByteBench account. Run /bytebench unlink in Slack first.");
         var link = new ChatUserLink
         {
             Provider = Provider, TeamId = request.TeamId, ExternalUserId = request.SlackUserId,
@@ -63,12 +64,12 @@ public sealed class SlackAccountLinks(IDbContextFactory<AppDbContext> dbFactory,
         };
         db.ChatUserLinks.Add(link);
         try { await db.SaveChangesAsync(); }
-        catch (DbUpdateException) { throw new InvalidOperationException("This link has already been used. Run /gitbench link in Slack to get a new one."); }
+        catch (DbUpdateException) { throw new InvalidOperationException("This link has already been used. Run /bytebench link in Slack to get a new one."); }
         await audit.RecordAsync("chat.slack_linked", "user", userId, details: new { team = request.TeamId, slackUser = request.SlackUserId }, actorId: userId);
         return link;
     }
 
-    /// <summary>The GitBench user linked to this Slack user, if any (and not deactivated).</summary>
+    /// <summary>The ByteBench user linked to this Slack user, if any (and not deactivated).</summary>
     public async Task<int?> FindUserAsync(string? teamId, string? slackUserId)
     {
         if (string.IsNullOrEmpty(teamId) || string.IsNullOrEmpty(slackUserId)) return null;
@@ -84,7 +85,7 @@ public sealed class SlackAccountLinks(IDbContextFactory<AppDbContext> dbFactory,
         return await db.ChatUserLinks.AsNoTracking().Where(l => l.UserId == userId && l.RevokedAt == null).OrderBy(l => l.CreatedAt).ToListAsync();
     }
 
-    /// <summary>Unlinks from Slack (<c>/gitbench unlink</c>).</summary>
+    /// <summary>Unlinks from Slack (<c>/bytebench unlink</c>).</summary>
     public async Task<bool> UnlinkAsync(string teamId, string slackUserId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -96,7 +97,7 @@ public sealed class SlackAccountLinks(IDbContextFactory<AppDbContext> dbFactory,
         return true;
     }
 
-    /// <summary>Unlinks from GitBench (the user's own preferences page).</summary>
+    /// <summary>Unlinks from ByteBench (the user's own preferences page).</summary>
     public async Task UnlinkForUserAsync(int userId, int linkId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

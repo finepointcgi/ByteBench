@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Things a user can do in a group. Which roles grant which: <see cref="ProjectAccess.MinimumRole(GroupPermission)"/>.</summary>
 public enum GroupPermission

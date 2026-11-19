@@ -1,10 +1,10 @@
 using System.Text;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ai.Triage;
+namespace ByteBench.Services.Ai.Triage;
 
 /// <summary>
 /// Runs one queued triage: gathers the allowed vocabulary (labels, components, Developer+ members, duplicate candidates),

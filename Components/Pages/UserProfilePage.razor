@@ -1,10 +1,10 @@
 @page "/u/{UserName}"
-@using GitBench.Services.Explore
+@using ByteBench.Services.Explore
 @inject UserActivityService Activity
 @inject CurrentUser Me
 @inject NavigationManager Nav
 
-<PageTitle>@(profile?.User.DisplayName ?? UserName) · GitBench</PageTitle>
+<PageTitle>@(profile?.User.DisplayName ?? UserName) · ByteBench</PageTitle>
 
 @if (notFound)
 {

@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 
-namespace GitBench.Services.Mirroring;
+namespace ByteBench.Services.Mirroring;
 
 /// <summary>
 /// Encrypts mirror passwords and tokens at rest with ASP.NET Core Data Protection (like <see cref="Webhooks.WebhookSecrets"/>).
@@ -12,6 +12,7 @@ namespace GitBench.Services.Mirroring;
 /// </summary>
 public sealed class MirrorCredentials(IDataProtectionProvider provider)
 {
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     public const string Purpose = "GitBench.Mirroring.Credentials.v1";
     private readonly IDataProtector protector = provider.CreateProtector(Purpose);
 
@@ -70,9 +71,9 @@ internal sealed class MirrorGit(string gitPath, MirrorOptions options, string co
                     remote.TempDir = CreatePrivateDirectory();
                     var file = Path.Combine(remote.TempDir, "credentials");
                     WritePrivateFile(file, $"username={user}\npassword={secret}\n");
-                    remote.Environment["GITBENCH_MIRROR_CREDENTIALS"] = file;
+                    remote.Environment["BYTEBENCH_MIRROR_CREDENTIALS"] = file;
                     // Answers "get" from the file; "store"/"erase" do nothing. The script holds no secret, only the variable name.
-                    remote.Config.Add(("credential.helper", "!f() { test \"$1\" = get && cat \"$GITBENCH_MIRROR_CREDENTIALS\"; }; f"));
+                    remote.Config.Add(("credential.helper", "!f() { test \"$1\" = get && cat \"$BYTEBENCH_MIRROR_CREDENTIALS\"; }; f"));
                 }
             }
             else // ssh
@@ -182,7 +183,7 @@ internal sealed class MirrorGit(string gitPath, MirrorOptions options, string co
 
     private static string CreatePrivateDirectory()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "gitbench-mirror-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "bytebench-mirror-" + Guid.NewGuid().ToString("N"));
         if (OperatingSystem.IsWindows()) Directory.CreateDirectory(dir);
         else Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return dir;

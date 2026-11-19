@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>Merge queue plumbing: speculative merge commits under <c>refs/merge-queue/</c> and compare-and-swap fast-forwards.</summary>
 public static partial class GitOps

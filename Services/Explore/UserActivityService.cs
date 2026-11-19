@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Explore;
+namespace ByteBench.Services.Explore;
 
 public enum FeedKind { IssueOpened, IssueClosed, IssueComment, PullRequestOpened, PullRequestMerged, PullRequestComment, Push }
 

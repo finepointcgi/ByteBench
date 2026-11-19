@@ -1,10 +1,10 @@
-using GitBench.Data;
-using GitBench.Services.Code;
-using GitBench.Services.Git;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Code;
+using ByteBench.Services.Git;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Editor;
+namespace ByteBench.Services.Editor;
 
 /// <summary>
 /// The web editor's workspaces (<see cref="EditorWorkspace"/>): one per user, repository and branch, holding uncommitted

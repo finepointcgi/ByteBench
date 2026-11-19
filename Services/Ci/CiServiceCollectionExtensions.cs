@@ -1,8 +1,8 @@
 using System.Security.Claims;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 public static class CiServiceCollectionExtensions
 {

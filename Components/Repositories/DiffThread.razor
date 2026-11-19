@@ -5,7 +5,7 @@
         @if (Root.AiFingerprint != null && Root.AiSeverity != null)
         {
             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(Root.AiSeverity is "bug" or "security" ? Color.Error : Color.Default)" Class="ma-0 ai-finding-chip"
-                     title="Finding from the GitBench AI review">AI · @Root.AiSeverity</MudChip>
+                     title="Finding from the ByteBench AI review">AI · @Root.AiSeverity</MudChip>
         }
         @if (Root.IsResolved)
         {

@@ -1,9 +1,9 @@
 using System.Globalization;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
 /// <summary>Limits for CSV import (configuration section <c>CsvImport</c>).</summary>
 public sealed class CsvImportOptions

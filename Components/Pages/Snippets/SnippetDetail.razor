@@ -1,14 +1,14 @@
 @page "/snippets/{Id:int}"
-@using GitBench.Services.Snippets
-@using GitBench.Components.Snippets
-@using GitBench.Components.Repositories
+@using ByteBench.Services.Snippets
+@using ByteBench.Components.Snippets
+@using ByteBench.Components.Repositories
 @inject SnippetService Snippets
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
-<PageTitle>@(view?.Snippet.Title ?? "Snippet") · Snippets · GitBench</PageTitle>
+<PageTitle>@(view?.Snippet.Title ?? "Snippet") · Snippets · ByteBench</PageTitle>
 
 @if (notFound)
 {
@@ -142,7 +142,7 @@ else if (view != null)
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", code);
-            Snackbar.Add("Embed code copied. It works on pages served from this GitBench site, for signed-in viewers.", Severity.Normal);
+            Snackbar.Add("Embed code copied. It works on pages served from this ByteBench site, for signed-in viewers.", Severity.Normal);
         }
         catch (JSException)
         {

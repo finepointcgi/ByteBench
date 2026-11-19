@@ -1,10 +1,10 @@
 using System.Collections.Immutable;
 using System.Threading.Channels;
-using GitBench.Data;
-using GitBench.Services.Ci;
+using ByteBench.Data;
+using ByteBench.Services.Ci;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.MergeQueue;
+namespace ByteBench.Services.MergeQueue;
 
 /// <summary>
 /// Singleton coordination for the merge queue: wakes <see cref="MergeQueueProcessor"/>, serializes processing (one pass at a

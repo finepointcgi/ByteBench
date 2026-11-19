@@ -1,11 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services;
+using ByteBench.Data;
+using ByteBench.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>/api/v1/projects/{key}/issues…, labels and milestones. All writes go through <see cref="IssueService"/>.</summary>
 public static class IssueEndpoints

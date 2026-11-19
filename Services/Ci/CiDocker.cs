@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
-/// A step's container to run: image, script, workspace and the non-secret <c>GITBENCH_*</c> variables. CI secret
+/// A step's container to run: image, script, workspace and the non-secret <c>BYTEBENCH_*</c> variables. CI secret
 /// variables go through <paramref name="EnvFile"/> (a mode-600 temp file, see <see cref="CiRunner"/>) so their values
 /// never appear on a command line.
 /// </summary>
@@ -21,12 +21,12 @@ public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
 {
     /// <summary>
     /// Identifies this server instance (from its install path). Containers are labelled with it, so startup cleanup
-    /// only removes this instance's leftovers when several GitBench servers share one Docker daemon.
+    /// only removes this instance's leftovers when several ByteBench servers share one Docker daemon.
     /// </summary>
     public static readonly string InstanceKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
         System.Text.Encoding.UTF8.GetBytes(AppContext.BaseDirectory)))[..12].ToLowerInvariant();
 
-    private static readonly string InstanceLabel = "gitbench-ci=" + InstanceKey;
+    private static readonly string InstanceLabel = "bytebench-ci=" + InstanceKey;
 
     private readonly SemaphoreSlim checkGate = new(1, 1);
     private (bool Ok, DateTime At) lastCheck;

@@ -3,10 +3,10 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Anthropic.Models.Beta;
 using Anthropic.Models.Beta.Messages;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>
 /// AI features for issues: drafting, duplicate hints, "catch me up" summaries, natural-language search and

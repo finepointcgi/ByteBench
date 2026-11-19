@@ -1,7 +1,7 @@
 using System.Threading.Channels;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 public enum AutomationEventKind
 {

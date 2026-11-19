@@ -1,13 +1,13 @@
 using System.Text;
-using GitBench.Api;
-using GitBench.Data;
-using GitBench.Services.Attachments;
-using GitBench.Services.Audit;
-using GitBench.Services.Git;
-using GitBench.Services.Webhooks;
+using ByteBench.Api;
+using ByteBench.Data;
+using ByteBench.Services.Attachments;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Git;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Releases;
+namespace ByteBench.Services.Releases;
 
 /// <summary>What the release form (or the API) submits.</summary>
 public sealed class ReleaseInput

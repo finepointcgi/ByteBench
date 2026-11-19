@@ -1,10 +1,10 @@
 using System.Text;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>Routes for the pipeline pages.</summary>
 public static class PipelineUrls
@@ -40,7 +40,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
 
     // Default: one folder per server instance (keyed by content root), so instances never clear each other's workspaces.
     private string WorkRoot => Path.GetFullPath(Options.WorkDirectory is { Length: > 0 } w
-        ? w : Path.Combine(Path.GetTempPath(), "gitbench-ci", CiDocker.InstanceKey));
+        ? w : Path.Combine(Path.GetTempPath(), "bytebench-ci", CiDocker.InstanceKey));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -66,6 +66,13 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         Task[] remaining;
         lock (activeGate) remaining = [.. active];
         await Task.WhenAll(remaining);
+    }
+
+    /// <summary>Pipelines written before the rename from GitBench read <c>GITBENCH_*</c>: every <c>BYTEBENCH_*</c> variable is also set under the old name.</summary>
+    private static void AddLegacyAliases(Dictionary<string, string> vars)
+    {
+        foreach (var k in vars.Keys.Where(k => k.StartsWith("BYTEBENCH_", StringComparison.Ordinal)).ToList())
+            vars.TryAdd("GITBENCH_" + k["BYTEBENCH_".Length..], vars[k]);
     }
 
     /// <summary>
@@ -350,7 +357,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                     postNotes.AddRange(notes);
                     if (!ok && result == PipelineStatus.Passed)
                     {
-                        postNotes.Add("[gitbench] The job failed because its artifacts could not be saved.");
+                        postNotes.Add("[bytebench] The job failed because its artifacts could not be saved.");
                         result = PipelineStatus.Failed;
                     }
                 }
@@ -358,7 +365,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 log.LogWarning(ex, "Saving the cache or artifacts of job {Job} failed", job.Id);
-                postNotes.Add($"[gitbench] Could not save the cache or artifacts: {ex.Message}");
+                postNotes.Add($"[bytebench] Could not save the cache or artifacts: {ex.Message}");
                 if (extras.Artifacts != null && result == PipelineStatus.Passed) result = PipelineStatus.Failed;
             }
             // Pages: a passed job with pages:/publish: (or named "pages") publishes its folder as the repository's site.
@@ -368,12 +375,12 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 {
                     var (ok, notes) = await pages.DeployFromWorkspaceAsync(p, job, workspace, pagesDef);
                     postNotes.AddRange(notes);
-                    if (!ok) { postNotes.Add("[gitbench] The job failed because its site could not be published."); result = PipelineStatus.Failed; }
+                    if (!ok) { postNotes.Add("[bytebench] The job failed because its site could not be published."); result = PipelineStatus.Failed; }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     log.LogWarning(ex, "Publishing the Pages site of job {Job} failed", job.Id);
-                    postNotes.Add($"[gitbench] Could not publish the site: {ex.Message}");
+                    postNotes.Add($"[bytebench] Could not publish the site: {ex.Message}");
                     result = PipelineStatus.Failed;
                 }
             }
@@ -389,7 +396,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     log.LogWarning(ex, "Reading the security reports of job {Job} failed", job.Id);
-                    postNotes.Add($"[gitbench] Could not read the security reports: {ex.Message}");
+                    postNotes.Add($"[bytebench] Could not read the security reports: {ex.Message}");
                 }
             }
             if (postNotes.Count > 0 && lastStarted != null) await AppendLogAsync(lastStarted.Id, postNotes, run.Variables);
@@ -438,11 +445,11 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             }
         }
         buffer.Append($"$ {step.Run.TrimEnd().Replace("\n", "\n$ ")}");
-        buffer.Append($"[gitbench] image {job.Image}");
+        buffer.Append($"[bytebench] image {job.Image}");
         foreach (var note in variables.Notes) buffer.Append(note);
-        if (variables.Values.Count > 0) buffer.Append($"[gitbench] CI variables: {string.Join(", ", variables.Values.Keys.Order(StringComparer.Ordinal))}");
-        if (run.PipelineVariables.Count > 0) buffer.Append($"[gitbench] Pipeline variables: {string.Join(", ", run.PipelineVariables.Keys.Order(StringComparer.Ordinal))}");
-        if (job.EnvironmentName != null) buffer.Append($"[gitbench] Deploying to environment '{job.EnvironmentName}'.");
+        if (variables.Values.Count > 0) buffer.Append($"[bytebench] CI variables: {string.Join(", ", variables.Values.Keys.Order(StringComparer.Ordinal))}");
+        if (run.PipelineVariables.Count > 0) buffer.Append($"[bytebench] Pipeline variables: {string.Join(", ", run.PipelineVariables.Keys.Order(StringComparer.Ordinal))}");
+        if (job.EnvironmentName != null) buffer.Append($"[bytebench] Deploying to environment '{job.EnvironmentName}'.");
         foreach (var note in preNotes) buffer.Append(note);
         Publish(p);
 
@@ -461,26 +468,28 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         // Secret CI variables, then the pipeline's own (schedule) variables, which win on a clash.
         var fileValues = new Dictionary<string, string>(variables.Values, StringComparer.Ordinal);
         foreach (var (k, v) in run.PipelineVariables) fileValues[k] = v;
-        fileValues["GITBENCH_JOB_TOKEN"] = jobToken;
-        fileValues["GITBENCH_REGISTRY_PASSWORD"] = jobToken;
+        fileValues["BYTEBENCH_JOB_TOKEN"] = jobToken;
+        fileValues["BYTEBENCH_REGISTRY_PASSWORD"] = jobToken;
+        AddLegacyAliases(fileValues);
         var envFile = WriteEnvFile(step.Id, fileValues);
         var env = new Dictionary<string, string>
         {
             ["CI"] = "true",
-            ["GITBENCH_CI"] = "true",
-            ["GITBENCH_PIPELINE_ID"] = p.Id.ToString(),
-            ["GITBENCH_JOB"] = job.Name,
-            ["GITBENCH_REF"] = p.Ref,
-            ["GITBENCH_COMMIT_SHA"] = p.CommitSha,
-            ["GITBENCH_REPOSITORY"] = $"{p.Repository.Project.Key}/{p.Repository.Slug}",
-            ["GITBENCH_PIPELINE_SOURCE"] = SourceName(p.Trigger),
+            ["BYTEBENCH_CI"] = "true",
+            ["BYTEBENCH_PIPELINE_ID"] = p.Id.ToString(),
+            ["BYTEBENCH_JOB"] = job.Name,
+            ["BYTEBENCH_REF"] = p.Ref,
+            ["BYTEBENCH_COMMIT_SHA"] = p.CommitSha,
+            ["BYTEBENCH_REPOSITORY"] = $"{p.Repository.Project.Key}/{p.Repository.Slug}",
+            ["BYTEBENCH_PIPELINE_SOURCE"] = SourceName(p.Trigger),
             ["CI_PIPELINE_SOURCE"] = SourceName(p.Trigger),
         };
-        if (baseUrl.Value is { Length: > 0 } site) // registry URLs (GITBENCH_REGISTRY, GITBENCH_NUGET_SOURCE_URL, ...)
+        if (baseUrl.Value is { Length: > 0 } site) // registry URLs (BYTEBENCH_REGISTRY, BYTEBENCH_NUGET_SOURCE_URL, ...)
             foreach (var (k, v) in Packages.PackageUrls.CiVariables(site, p.Repository.Project.Key)) env[k] = v;
+        AddLegacyAliases(env);
         if (job.EnvironmentName != null) env["CI_ENVIRONMENT_NAME"] = job.EnvironmentName;
         if (job.EnvironmentUrl != null) env["CI_ENVIRONMENT_URL"] = job.EnvironmentUrl;
-        var spec = new CiContainerSpec($"gitbench-ci-{step.Id}", job.Image, step.Run, workspace, env, envFile);
+        var spec = new CiContainerSpec($"bytebench-ci-{step.Id}", job.Image, step.Run, workspace, env, envFile);
 
         PipelineStatus status;
         int? exit = null;
@@ -490,23 +499,23 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             if (canceled.IsCancellationRequested)
             {
                 status = PipelineStatus.Canceled;
-                buffer.Append("[gitbench] Canceled.");
+                buffer.Append("[bytebench] Canceled.");
             }
             else if (timeout.IsCancellationRequested)
             {
                 status = PipelineStatus.Failed;
-                buffer.Append($"[gitbench] Job timed out after {Options.JobTimeoutMinutes} minutes; the container was killed.");
+                buffer.Append($"[bytebench] Job timed out after {Options.JobTimeoutMinutes} minutes; the container was killed.");
             }
             else
             {
                 status = exit == 0 ? PipelineStatus.Passed : PipelineStatus.Failed;
-                if (exit != 0) buffer.Append($"[gitbench] Step failed with exit code {exit}." + (exit == 125 ? " (Docker could not start the container.)" : ""));
+                if (exit != 0) buffer.Append($"[bytebench] Step failed with exit code {exit}." + (exit == 125 ? " (Docker could not start the container.)" : ""));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             log.LogWarning(ex, "Step {Id} could not run", step.Id);
-            buffer.Append($"[gitbench] Could not run docker: {ex.Message}");
+            buffer.Append($"[bytebench] Could not run docker: {ex.Message}");
             status = PipelineStatus.Error;
         }
         finally
@@ -670,8 +679,8 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         var s = await db.PipelineSteps.Include(x => x.Log).FirstAsync(x => x.Id == step.Id);
         s.Status = PipelineStatus.Failed;
         s.StartedAt = s.FinishedAt = now;
-        if (s.Log == null) s.Log = new PipelineStepLog { StepId = s.Id, Text = "[gitbench] " + message };
-        else s.Log.Text += "\n[gitbench] " + message;
+        if (s.Log == null) s.Log = new PipelineStepLog { StepId = s.Id, Text = "[bytebench] " + message };
+        else s.Log.Text += "\n[bytebench] " + message;
         await db.SaveChangesAsync();
         step.Status = PipelineStatus.Failed;
     }
@@ -723,7 +732,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 if (sb.Length + line.Length + 1 > maxChars)
                 {
                     truncated = true;
-                    sb.Append($"\n[gitbench] Log truncated: it exceeded {maxChars / 1024} KB. Later output was discarded.\n");
+                    sb.Append($"\n[bytebench] Log truncated: it exceeded {maxChars / 1024} KB. Later output was discarded.\n");
                 }
                 else
                 {

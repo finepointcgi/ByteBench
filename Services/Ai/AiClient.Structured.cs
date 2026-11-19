@@ -2,7 +2,7 @@ using System.Text.Json;
 using Anthropic.Models.Beta;
 using Anthropic.Models.Beta.Messages;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>
 /// Result of <see cref="AiClient.CompleteJsonAsync{T}"/>. <see cref="Value"/> is null when the model refused,

@@ -34,8 +34,8 @@
 <p>Rules: the source must have commits that the target lacks, source and target must differ, there can be only one open PR from a given source into a given target, and archived repositories refuse new PRs. When a PR is created, assigned reviewers, default reviewers from <a href="branch-protection.html">branch protection</a> and <a href="#code-owners">code owners</a> are notified (unless it is a draft), and the PR is queued for an <a href="ai-review-triage.html">AI review</a> if that is turned on for the repository.</p>
 
 <h3 id="templates">PR templates</h3>
-<p>The description is prefilled from a template file on the <strong>target</strong> branch. GitBench looks, in order, for <code>.gitbench/pull_request_template.md</code>, <code>PULL_REQUEST_TEMPLATE.md</code>, <code>.github/pull_request_template.md</code> and <code>.github/PULL_REQUEST_TEMPLATE.md</code>.</p>
-<pre><code>&lt;!-- .gitbench/pull_request_template.md --&gt;
+<p>The description is prefilled from a template file on the <strong>target</strong> branch. ByteBench looks, in order, for <code>.bytebench/pull_request_template.md</code>, <code>PULL_REQUEST_TEMPLATE.md</code>, <code>.github/pull_request_template.md</code> and <code>.github/PULL_REQUEST_TEMPLATE.md</code>.</p>
+<pre><code>&lt;!-- .bytebench/pull_request_template.md --&gt;
 ## What changed
 
 ## How to test
@@ -71,8 +71,8 @@ const timeoutSeconds = 30;
 <p>It renders as a small diff with <strong>Apply suggestion</strong>. Applying writes a commit to the source branch authored by the person who applied it, with the message "Apply suggestion from @user" and a <code>Co-authored-by</code> trailer for the suggester, and resolves the thread. <strong>Apply all suggestions</strong> commits every pending one in a single commit. Both are refused (nothing written) if the suggested lines changed since the comment or two suggestions overlap. The button appears only for people who may push to the source branch; the repository must not be archived.</p>
 
 <h2 id="code-owners">Code owners (CODEOWNERS)</h2>
-<p>A <code>CODEOWNERS</code> file on the <strong>target</strong> branch says who must look at which files. GitBench uses the first one it finds: <code>.gitbench/CODEOWNERS</code>, then <code>CODEOWNERS</code>, then <code>docs/CODEOWNERS</code>. The syntax is GitHub's: one rule per line, <code>pattern owner owner...</code>, <code>#</code> for comments, and the <strong>last matching rule wins</strong>. Patterns follow .gitignore rules (<code>*.md</code>, <code>/build/</code>, <code>docs/*</code>, <code>src/**/test.cs</code>). Negation (<code>!</code>) and <code>[ ]</code> classes are not supported and show as a warning.</p>
-<pre><code># .gitbench/CODEOWNERS
+<p>A <code>CODEOWNERS</code> file on the <strong>target</strong> branch says who must look at which files. ByteBench uses the first one it finds: <code>.bytebench/CODEOWNERS</code>, then <code>CODEOWNERS</code>, then <code>docs/CODEOWNERS</code>. The syntax is GitHub's: one rule per line, <code>pattern owner owner...</code>, <code>#</code> for comments, and the <strong>last matching rule wins</strong>. Patterns follow .gitignore rules (<code>*.md</code>, <code>/build/</code>, <code>docs/*</code>, <code>src/**/test.cs</code>). Negation (<code>!</code>) and <code>[ ]</code> classes are not supported and show as a warning.</p>
+<pre><code># .bytebench/CODEOWNERS
 *                @alice
 /docs/           @bob carol@example.com
 *.cs             @acme/backend
@@ -93,7 +93,7 @@ const timeoutSeconds = 30;
 <p>The <strong>Merge</strong> section in the PR sidebar lists every check with its state, and the button is disabled while anything blocks. Checks come from:</p>
 <ul>
   <li><strong>Draft</strong>: a draft can never merge.</li>
-  <li><strong>Conflicts</strong>: GitBench computes the merge in memory; conflicting files are listed and nothing is written.</li>
+  <li><strong>Conflicts</strong>: ByteBench computes the merge in memory; conflicting files are listed and nothing is written.</li>
   <li><strong>Approvals</strong>, <strong>Change requests</strong>, <strong>Threads</strong> and <strong>Code owners</strong>, from the target branch's <a href="branch-protection.html">protection rule</a>.</li>
   <li><strong>External checks</strong> such as the CI pipeline, which block when pending or failed if the rule has <em>Require checks to pass</em>. A neutral result never blocks. Pipelines are described in <a href="ci.html">CI pipelines</a>.</li>
   <li><strong>AI review</strong>: when enabled for the repository, unresolved blocker findings block merging (see <a href="ai-review-triage.html">AI review and triage</a>).</li>
@@ -114,7 +114,7 @@ const timeoutSeconds = 30;
 
 <h2 id="linked-issues">Linked issues</h2>
 <p>An issue key such as <code>WEB-3</code> in a PR title, in its source branch name, or in its commit messages links the PR to that issue. The PR lists its linked issues, and each issue's <strong>Development</strong> panel shows the branches, PRs and recent commits that mention it. Merging adds "merged pull request web-app#N into main" to each linked issue's activity.</p>
-<div class="note">GitBench does <strong>not</strong> close or transition an issue automatically when its PR merges (there are no "Closes WEB-3" keywords). To do that, use an <a href="automation.html">automation rule</a> with the trigger <em>Pull request merged</em>.</div>
+<div class="note">ByteBench does <strong>not</strong> close or transition an issue automatically when its PR merges (there are no "Closes WEB-3" keywords). To do that, use an <a href="automation.html">automation rule</a> with the trigger <em>Pull request merged</em>.</div>
 
 <h2 id="forks">Forks and cross-fork pull requests</h2>
 <p>To propose a change to a repository you cannot push to, <a href="repositories.html#forks">fork it</a>, push a branch to your fork, and click <strong>PR to upstream</strong> in the fork's header (<code>/p/{KEY}/repos/{slug}/fork-pull-request</code>). It can target any repository in the same fork network. You need <code>CreatePullRequest</code> in the fork's project and only <code>ViewProject</code> in the target. The PR belongs to the target repository and appears in its lists as <code>KEY/slug:branch</code>.</p>
@@ -144,11 +144,11 @@ const timeoutSeconds = 30;
   <tr><td><code>POST .../pull-requests/{n}/merge-queue</code> and friends</td><td>See <a href="branch-protection.html#queue-api">merge queue API</a></td></tr>
   <tr><td><code>GET .../repos/{slug}/compare?base=&amp;head=</code></td><td>Commits and changed files</td></tr>
 </table>
-<pre><code>curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+<pre><code>curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"title":"WEB-12: faster list","sourceBranch":"feature/WEB-12-list","targetBranch":"main","draft":true}' \
-  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests
+  https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests
 
-curl -X POST -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
   -d '{"strategy":"squash","deleteSourceBranch":true}' \
-  https://gitbench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests/12/merge</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/pull-requests/12/merge</code></pre>
 <p>There are no API endpoints for approving, requesting changes or editing reviewers; use the web UI. Comments carry <code>parentId</code>, <code>startLine</code>, <code>resolved</code>, <code>commitSha</code>, <code>hasSuggestion</code> and <code>appliedCommitSha</code>; pull requests carry <code>isDraft</code>, <code>mergeStrategy</code>, <code>isCrossFork</code> and <code>sourceRepository</code>.</p>

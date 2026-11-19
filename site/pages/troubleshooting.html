@@ -1,16 +1,16 @@
 <h1>FAQ and troubleshooting</h1>
 <p class="lead">Realistic problems with their causes and fixes, followed by an honest list of what has only been tested with fakes.</p>
-<p>Most start-up problems show up in two places: the log (<code>docker compose logs -f gitbench</code>) and, for site admins, the <code>/admin/system</code> page, which lists the hosting review and pending migrations.</p>
+<p>Most start-up problems show up in two places: the log (<code>docker compose logs -f bytebench</code>) and, for site admins, the <code>/admin/system</code> page, which lists the hosting review and pending migrations.</p>
 
 <h2 id="sign-in">Sign-in and cookies</h2>
 
 <h3 id="cant-sign-in">I can sign in but I am bounced back to the login page (Docker or production)</h3>
-<p><strong>Cause:</strong> outside Development, sign-in cookies are <code>Secure</code>-only, so a browser will not keep them on plain <code>http://</code>. GitBench logs "Plain-HTTP request ... sign-in only works over HTTPS" once.</p>
-<p><strong>Fix:</strong> put GitBench behind an HTTPS proxy and set <code>ReverseProxy__Enabled=true</code> (see <a href="production.html#reverse-proxy">Reverse proxy</a>). For a quick local trial only, set <code>Security__SecureCookies=false</code>.</p>
+<p><strong>Cause:</strong> outside Development, sign-in cookies are <code>Secure</code>-only, so a browser will not keep them on plain <code>http://</code>. ByteBench logs "Plain-HTTP request ... sign-in only works over HTTPS" once.</p>
+<p><strong>Fix:</strong> put ByteBench behind an HTTPS proxy and set <code>ReverseProxy__Enabled=true</code> (see <a href="production.html#reverse-proxy">Reverse proxy</a>). For a quick local trial only, set <code>Security__SecureCookies=false</code>.</p>
 
 <h3 id="signed-out-restart">Everyone is signed out after every restart or deployment</h3>
 <p><strong>Cause:</strong> the Data Protection key ring is not on a persistent volume, so a new one is made each time. Encrypted webhook and CI secrets are lost too.</p>
-<p><strong>Fix:</strong> point <code>DataProtection__KeysPath</code> at a persistent, backed-up folder (<code>/data/keys</code> in the image) and make sure the container user (uid 1654) can write it. In Production GitBench refuses to start if the folder is not writable.</p>
+<p><strong>Fix:</strong> point <code>DataProtection__KeysPath</code> at a persistent, backed-up folder (<code>/data/keys</code> in the image) and make sure the container user (uid 1654) can write it. In Production ByteBench refuses to start if the folder is not writable.</p>
 
 <h3 id="locked-out">Account locked</h3>
 <p>Five failed sign-ins lock an account for five minutes. In addition, sign-in POSTs are rate limited per IP (10 per minute by default); see <a href="#rate-limits">rate limits</a>. A site admin can manage accounts at <code>/admin/users</code>.</p>
@@ -35,11 +35,11 @@
 <h2 id="forwarded">Reverse proxy and forwarded headers</h2>
 
 <h3 id="wrong-ip">The audit log and rate limits show the proxy's address, links use http://</h3>
-<p><strong>Cause:</strong> forwarded headers are only trusted from known proxies. With <code>ReverseProxy:Enabled</code> off, or with a proxy address that is not in <code>KnownProxies</code>/<code>KnownNetworks</code> (only loopback is trusted by default), GitBench sees the proxy as the client and the request as HTTP. Then HSTS is not sent, cookies and generated links are wrong and every user shares one rate limit bucket.</p>
+<p><strong>Cause:</strong> forwarded headers are only trusted from known proxies. With <code>ReverseProxy:Enabled</code> off, or with a proxy address that is not in <code>KnownProxies</code>/<code>KnownNetworks</code> (only loopback is trusted by default), ByteBench sees the proxy as the client and the request as HTTP. Then HSTS is not sent, cookies and generated links are wrong and every user shares one rate limit bucket.</p>
 <p><strong>Fix:</strong></p>
 <pre><code>ReverseProxy__Enabled=true
 ReverseProxy__KnownNetworks__0=172.16.0.0/12     # the network your proxy runs on
-PublicBaseUrl=https://gitbench.example.com</code></pre>
+PublicBaseUrl=https://bytebench.example.com</code></pre>
 <p>The start-up review and <code>/admin/system</code> warn when <code>PublicBaseUrl</code> is https but the proxy setting is off.</p>
 
 <h3 id="push-too-large">Git push fails with 413 or hangs behind nginx</h3>
@@ -50,9 +50,9 @@ PublicBaseUrl=https://gitbench.example.com</code></pre>
 <h3 id="pending-migrations">Pending migrations</h3>
 <p>Migrations are applied automatically at start-up, in both SQLite and Postgres. If <code>/admin/system</code> shows pending migrations, or the app fails to start with a migration error, check the log first: it usually names the failing step (permissions, a locked SQLite file, or a PostgreSQL role that may not alter tables).</p>
 <ul>
-  <li>Make sure only one GitBench instance uses the database.</li>
+  <li>Make sure only one ByteBench instance uses the database.</li>
   <li>If an upgrade failed half-way: stop, restore the pre-upgrade backup with <code>restore --force</code> and start the previous version.</li>
-  <li>A backup made by a <em>newer</em> GitBench is refused by an older build; upgrade first.</li>
+  <li>A backup made by a <em>newer</em> ByteBench is refused by an older build; upgrade first.</li>
   <li>Developers: after a model change add one migration <em>per provider</em> (<code>--context AppDbContext</code> and <code>--context PostgresAppDbContext</code>). A test fails when either snapshot is behind the model.</li>
 </ul>
 
@@ -65,7 +65,7 @@ PublicBaseUrl=https://gitbench.example.com</code></pre>
 <h2 id="ssh">Git over SSH</h2>
 
 <h3 id="ssh-port">"The SSH server could not listen on port 2222"</h3>
-<p><strong>Cause:</strong> something else (often another GitBench run or a local sshd) holds the port, or the process may not bind it. GitBench logs the error and carries on without SSH; HTTP still works.</p>
+<p><strong>Cause:</strong> something else (often another ByteBench run or a local sshd) holds the port, or the process may not bind it. ByteBench logs the error and carries on without SSH; HTTP still works.</p>
 <p><strong>Fix:</strong> stop the other process or choose a port with <code>Ssh__Port=2223</code>, or turn SSH off with <code>Ssh__Enabled=false</code>. In Docker, map the host port you want (<code>"2223:2222"</code>) and set <code>Ssh__PublicPort</code> so clone URLs show it.</p>
 
 <h3 id="ssh-clone">Clone fails: permission denied (publickey)</h3>
@@ -78,14 +78,14 @@ PublicBaseUrl=https://gitbench.example.com</code></pre>
 <h2 id="ci-faq">CI and Docker</h2>
 
 <h3 id="docker-ci">Pipelines end in Error: "Docker is not available on the server"</h3>
-<p><strong>Cause:</strong> the <code>docker</code> CLI that GitBench runs cannot reach a daemon. In the official image there is no daemon and no CLI, and <code>Ci__Enabled</code> is <code>false</code>. When CI is on, <code>/health/ready</code> reports <em>Degraded</em> and the log says "Docker is not available".</p>
-<p><strong>Fix:</strong> run <code>docker version</code> as the same user as GitBench. For the container, choose one of the three options in <a href="production.html#ci-in-docker">CI in the container</a> (mounted socket plus <code>WITH_DOCKER_CLI</code>, run on the host, or a remote <code>DOCKER_HOST</code>). Also check <code>Ci:DockerExecutable</code> and that <code>Ci:WorkDirectory</code> exists at the same path on the host.</p>
+<p><strong>Cause:</strong> the <code>docker</code> CLI that ByteBench runs cannot reach a daemon. In the official image there is no daemon and no CLI, and <code>Ci__Enabled</code> is <code>false</code>. When CI is on, <code>/health/ready</code> reports <em>Degraded</em> and the log says "Docker is not available".</p>
+<p><strong>Fix:</strong> run <code>docker version</code> as the same user as ByteBench. For the container, choose one of the three options in <a href="production.html#ci-in-docker">CI in the container</a> (mounted socket plus <code>WITH_DOCKER_CLI</code>, run on the host, or a remote <code>DOCKER_HOST</code>). Also check <code>Ci:DockerExecutable</code> and that <code>Ci:WorkDirectory</code> exists at the same path on the host.</p>
 
 <h3 id="ci-stuck">Pipelines stay Queued, or jobs are killed</h3>
 <p>Only <code>Ci:MaxConcurrentJobs</code> (default 2) jobs run at once across all pipelines, and a job is killed after <code>Ci:JobTimeoutMinutes</code> (20). Out-of-memory kills come from <code>Ci:Memory</code> (2g). Raise them if the host has capacity. Pipelines that were running when the server stopped are marked Error; queued ones run again.</p>
 
 <h3 id="ci-yaml-error">A pipeline is in Error with a YAML message</h3>
-<p>The file <code>.gitbench-ci.yml</code> is validated strictly: unknown keys, a step without <code>run</code>, unknown or circular <code>needs</code> and invalid image names are errors with a line and column. Limits: 20 jobs, 50 steps per job, 64 KB per file. See <a href="ci.html">CI pipelines</a>.</p>
+<p>The file <code>.bytebench-ci.yml</code> is validated strictly: unknown keys, a step without <code>run</code>, unknown or circular <code>needs</code> and invalid image names are errors with a line and column. Limits: 20 jobs, 50 steps per job, 64 KB per file. See <a href="ci.html">CI pipelines</a>.</p>
 
 <h2 id="email-faq">Email</h2>
 
@@ -114,7 +114,7 @@ PublicBaseUrl=https://gitbench.example.com</code></pre>
 <p>That is deliberate: if you cannot view the project, git sees 404, the same as for a missing repository. Check your role and the project's visibility. A <em>Viewer</em> who pushes gets 403.</p>
 
 <h3 id="lfs-missing">git LFS is missing</h3>
-<p>Two different things. On <strong>your machine</strong>, <code>git-lfs</code> must be installed (<code>git lfs install</code>) to push or pull LFS files; without it you get small pointer files instead of the content. On the <strong>server</strong>, GitBench implements the LFS Batch API itself and does not need git-lfs installed. Notes: objects over <code>Lfs:MaxObjectBytes</code> (2 GB) get 413; the locks API is not implemented, so git-lfs prints a one-time warning (silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>); and with an SSH remote you must set <code>lfs.url</code> to the HTTPS LFS URL, because <code>git-lfs-authenticate</code> over SSH is not implemented.</p>
+<p>Two different things. On <strong>your machine</strong>, <code>git-lfs</code> must be installed (<code>git lfs install</code>) to push or pull LFS files; without it you get small pointer files instead of the content. On the <strong>server</strong>, ByteBench implements the LFS Batch API itself and does not need git-lfs installed. Notes: objects over <code>Lfs:MaxObjectBytes</code> (2 GB) get 413; the locks API is not implemented, so git-lfs prints a one-time warning (silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>); and with an SSH remote you must set <code>lfs.url</code> to the HTTPS LFS URL, because <code>git-lfs-authenticate</code> over SSH is not implemented.</p>
 
 <h3 id="push-rejected">A push is rejected with "remote rejected"</h3>
 <p>Branch protection, protected tags, an archived repository or a pull mirror. The message after <code>(</code> names the reason. Force pushes to protected branches are refused by the pre-receive hook.</p>
@@ -123,14 +123,14 @@ PublicBaseUrl=https://gitbench.example.com</code></pre>
 <p>All AI features hide themselves unless <code>Ai:Enabled</code> is true <em>and</em> a key exists (<code>ANTHROPIC_API_KEY</code> or <code>Ai:ApiKey</code>), or, for the web editor and AI review, Claude Code is installed for the server's account. The site admin page <code>/admin/ai</code> shows what was detected and has a <em>Check again</em> button. See <a href="ai.html">AI overview and setup</a>.</p>
 
 <h2 id="known-limits">Known limits and what was only tested with fakes</h2>
-<p>GitBench has a large automated test suite, but a test suite is not the same as years of production use. These are the places where the honest answer is "tested against a stand-in, not the real thing":</p>
+<p>ByteBench has a large automated test suite, but a test suite is not the same as years of production use. These are the places where the honest answer is "tested against a stand-in, not the real thing":</p>
 <table>
   <tr><th>Area</th><th>What was tested</th><th>What was not</th></tr>
   <tr><td><strong>Slack and Microsoft Teams</strong></td><td>Message formatting, signature checks, slash commands, link previews and delivery against a fake HTTP handler</td><td>No live calls to Slack or Teams. Your first real workspace is the first real test, including Slack app scopes and Teams Workflows URLs</td></tr>
   <tr><td><strong>Service desk email (IMAP)</strong></td><td>Intake, spam rules, replies and the signed inbound webhook, with a fake email sender</td><td>I found no automated test that talks to a real IMAP server. Try it against a test mailbox before pointing it at a real one</td></tr>
   <tr><td><strong>Email (SMTP)</strong></td><td>Composition, queue and retries; pickup files</td><td>Delivery through a real SMTP provider</td></tr>
   <tr><td><strong>Anthropic API and Claude Code</strong></td><td>AI review, triage and the web editor against fake models; the Claude Code backend against a fake <code>claude</code> script</td><td>The real API and the real Claude Code CLI are never called by the tests. Output quality, cost and rate limits are unknown until you run it</td></tr>
-  <tr><td><strong>Night Owl scans</strong></td><td>Parsing and ingesting Night Owl JSON and SARIF fixture reports, triage, pull request checks</td><td>A real Night Owl scan running inside a GitBench CI job (including the install step and engine images) was not exercised end to end</td></tr>
+  <tr><td><strong>Night Owl scans</strong></td><td>Parsing and ingesting Night Owl JSON and SARIF fixture reports, triage, pull request checks</td><td>A real Night Owl scan running inside a ByteBench CI job (including the install step and engine images) was not exercised end to end</td></tr>
   <tr><td><strong>Single sign-on</strong></td><td>A built-in mock OIDC provider with GitHub-style endpoints</td><td>Real Google, GitHub, Entra or Keycloak tenants</td></tr>
   <tr><td><strong>LDAP</strong></td><td>An in-memory fake directory that evaluates filters; a Docker test against an OpenLDAP container (skipped without Docker)</td><td>Real Active Directory</td></tr>
   <tr><td><strong>CI on Docker</strong></td><td>A pipeline test runs real containers when a daemon exists (skipped otherwise); GitHub Actions excludes it</td><td>Remote Docker hosts, rootless Docker and large parallel loads</td></tr>
@@ -146,4 +146,4 @@ PublicBaseUrl=https://gitbench.example.com</code></pre>
   <li><strong>Git over HTTP</strong>: protocol v2 works, the legacy "dumb" protocol does not.</li>
   <li><strong>Single instance only</strong>, SQLite or PostgreSQL, no clustering.</li>
 </ul>
-<p>Found something broken that is not listed here? Open an issue in the <a href="https://github.com/finepointcgi/GitBench">GitBench repository</a>.</p>
+<p>Found something broken that is not listed here? Open an issue in the <a href="https://github.com/finepointcgi/ByteBench">ByteBench repository</a>.</p>

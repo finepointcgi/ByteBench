@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>One row of the user administration list.</summary>
 public sealed record AdminUserRow(int Id, string UserName, string DisplayName, string? Email, string Color, bool IsAdmin,
@@ -58,7 +58,7 @@ public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServic
             if (!isAdmin && await db.Users.CountAsync(u => u.IsAdmin && u.Id != user.Id) == 0)
                 throw new InvalidOperationException(user.Id == me
                     ? "You are the last site admin. Make someone else an admin before revoking your own admin rights."
-                    : "This is the last site admin; GitBench needs at least one.");
+                    : "This is the last site admin; ByteBench needs at least one.");
             user.IsAdmin = isAdmin;
             Check(await users.UpdateAsync(user));
             return null;
@@ -117,7 +117,7 @@ public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServic
         await using var scope = scopes.CreateAsyncScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var user = await users.FindByIdAsync(userId.ToString()) ?? throw new InvalidOperationException("That user no longer exists.");
-        if (Ai.AiBot.IsBot(user)) throw new InvalidOperationException("The GitBench AI bot account can't be changed.");
+        if (Ai.AiBot.IsBot(user)) throw new InvalidOperationException("The ByteBench AI bot account can't be changed.");
         await using var db = await dbFactory.CreateDbContextAsync();
         var details = await op(users, user, db, me);
         await audit.RecordAsync(action, "user", user.Id, details: new { user = user.UserName, extra = details }, actorId: me);

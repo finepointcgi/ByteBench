@@ -1,11 +1,11 @@
-using GitBench.Api;
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Git;
-using GitBench.Services.Webhooks;
+using ByteBench.Api;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Git;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Releases;
+namespace ByteBench.Services.Releases;
 
 /// <summary>
 /// After a push: raises <c>tag.created</c> / <c>tag.deleted</c> webhooks for the tags the push created or deleted (read

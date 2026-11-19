@@ -1,5 +1,5 @@
 <h1>AI overview and setup</h1>
-<p class="lead">GitBench can use Claude to draft issues, review pull requests, triage new issues and assist in the web editor, and every AI feature stays hidden until you give the server an API key or a Claude Code login.</p>
+<p class="lead">ByteBench can use Claude to draft issues, review pull requests, triage new issues and assist in the web editor, and every AI feature stays hidden until you give the server an API key or a Claude Code login.</p>
 
 <p>AI never changes your data by itself. Each feature returns text, filters, comments or proposals that a person reviews, accepts or ignores. The AI review bot is the one exception that writes on its own: it posts comments on pull requests, and it never approves or merges.</p>
 
@@ -10,8 +10,8 @@ export ANTHROPIC_API_KEY=&lt;your key&gt;
 
 # or .NET user-secrets in development (run "dotnet user-secrets init" once if needed)
 dotnet user-secrets set "Ai:ApiKey" "&lt;your key&gt;"</code></pre>
-<p>In Docker Compose, pass it as an environment variable (<code>ANTHROPIC_API_KEY</code>) from a <code>.env</code> file that is not committed. Restart GitBench afterwards. The key is read when the first AI call is made, and the configuration is read at start-up.</p>
-<div class="warn">Treat the key like a password. The <code>/admin/ai</code> page never shows it, and GitBench never sends it to the browser.</div>
+<p>In Docker Compose, pass it as an environment variable (<code>ANTHROPIC_API_KEY</code>) from a <code>.env</code> file that is not committed. Restart ByteBench afterwards. The key is read when the first AI call is made, and the configuration is read at start-up.</p>
+<div class="warn">Treat the key like a password. The <code>/admin/ai</code> page never shows it, and ByteBench never sends it to the browser.</div>
 
 <h2 id="settings">The Ai:* settings</h2>
 <p>These keys live under the <code>Ai</code> section. Change them in the environment (<code>Ai__Review__MaxFindings=20</code> style) or in your own configuration file and restart. Defaults below come from the code.</p>
@@ -37,10 +37,10 @@ dotnet user-secrets set "Ai:ApiKey" "&lt;your key&gt;"</code></pre>
 <tr><td><code>Ai:Review:*</code></td><td>see <a href="ai-review-triage.html#review-limits">AI review limits</a></td><td>Server-wide guardrails for pull request review.</td></tr>
 <tr><td><code>Ai:Triage:*</code></td><td>see <a href="ai-review-triage.html#triage-limits">triage limits</a></td><td>Prompt-size and rate limits for issue triage.</td></tr>
 </tbody></table>
-<p>The full list of GitBench settings is in the <a href="configuration.html">configuration reference</a>.</p>
+<p>The full list of ByteBench settings is in the <a href="configuration.html">configuration reference</a>.</p>
 
 <h2 id="claude-code">The Claude Code backend</h2>
-<p>Instead of an API key you can install the <code>claude</code> command-line tool on the server and sign it in once as the account GitBench runs as (run <code>claude</code> interactively, or create a token with <code>claude setup-token</code> and set <code>CLAUDE_CODE_OAUTH_TOKEN</code>). The web editor and AI pull request review then use <strong>that account's Claude Code login or subscription</strong> for every user. Usage and billing belong to the server account, not to individual users.</p>
+<p>Instead of an API key you can install the <code>claude</code> command-line tool on the server and sign it in once as the account ByteBench runs as (run <code>claude</code> interactively, or create a token with <code>claude setup-token</code> and set <code>CLAUDE_CODE_OAUTH_TOKEN</code>). The web editor and AI pull request review then use <strong>that account's Claude Code login or subscription</strong> for every user. Usage and billing belong to the server account, not to individual users.</p>
 
 <h3 id="claude-code-sandbox">How it is sandboxed</h3>
 <ul>
@@ -48,7 +48,7 @@ dotnet user-secrets set "Ai:ApiKey" "&lt;your key&gt;"</code></pre>
 <li><code>claude -p</code> runs headless there with the prompt on standard input (never on a command line), file tools only (<code>Read</code>, <code>Grep</code>, <code>Glob</code>, <code>Edit</code>, <code>Write</code>), and shell, web fetch, web search and sub-agent tools explicitly denied. Permission mode is <code>dontAsk</code>: nothing ever prompts, and anything not allowed is refused.</li>
 <li>The environment is clean. None of the server's variables (database strings, API keys, cloud credentials) are passed. Only what Claude Code needs to find itself and its login: <code>HOME</code>, <code>USER</code>, <code>PATH</code>, locale and temp variables, plus <code>CLAUDE_CONFIG_DIR</code> and <code>CLAUDE_CODE_OAUTH_TOKEN</code> when set.</li>
 <li>When the run ends, the directory is compared with what was written. Every changed file becomes a <em>proposal</em> in the editor. Nothing is applied automatically.</li>
-<li>GitBench reads <code>claude --help</code> at start-up and only passes the optional flags that version lists.</li>
+<li>ByteBench reads <code>claude --help</code> at start-up and only passes the optional flags that version lists.</li>
 </ul>
 <div class="note">Ghost-text completions need the API backend, because the CLI is too slow for them. With the Claude Code backend the toggle is hidden.</div>
 
@@ -73,7 +73,7 @@ dotnet user-secrets set "Ai:ApiKey" "&lt;your key&gt;"</code></pre>
 <p>Site administrators find a read-only status page at <code>/admin/ai</code>. It shows three blocks:</p>
 <ul>
 <li><strong>Anthropic API</strong>: whether a key is configured, the model in use, and which features use it.</li>
-<li><strong>Claude Code on the server</strong>: installed or not, version, executable path, last check time, limits (concurrent runs, timeout, turns) and the model. The <strong>Check again</strong> button re-detects the CLI without restarting GitBench. GitBench only runs <code>claude --version</code> and <code>claude --help</code> from this page.</li>
+<li><strong>Claude Code on the server</strong>: installed or not, version, executable path, last check time, limits (concurrent runs, timeout, turns) and the model. The <strong>Check again</strong> button re-detects the CLI without restarting ByteBench. ByteBench only runs <code>claude --version</code> and <code>claude --help</code> from this page.</li>
 <li><strong>Web editor</strong>: the configured backend setting, the backend actually in use, whether inline completions are available, and the per-request and per-user limits.</li>
 </ul>
 <p>To change anything, edit the <code>Ai:*</code> settings and restart. Other users who open the page see "Only site administrators can see the AI configuration."</p>

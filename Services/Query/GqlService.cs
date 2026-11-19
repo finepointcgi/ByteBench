@@ -1,8 +1,8 @@
 using System.Linq.Expressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Query;
+namespace ByteBench.Services.Query;
 
 /// <summary>One page of GQL results. <see cref="Total"/> counts every match.</summary>
 public sealed record GqlSearchResult(List<Issue> Issues, int Total);
@@ -14,7 +14,7 @@ public sealed record GqlCompletion(int Start, int End, IReadOnlyList<GqlSuggesti
 }
 
 /// <summary>
-/// Runs GitBench Query Language (GQL) searches. Every query is limited to the projects the user can view (and to
+/// Runs ByteBench Query Language (GQL) searches. Every query is limited to the projects the user can view (and to
 /// <c>scope</c> when given) before any field is translated, and values are always EF parameters (never SQL text).
 /// <para>
 /// For other features (automation rules, boards…): <see cref="ApplyAsync"/> filters and orders any

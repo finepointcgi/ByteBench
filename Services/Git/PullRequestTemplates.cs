@@ -1,4 +1,4 @@
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>Pull request description templates, read from the target branch of a new PR.</summary>
 public static class PullRequestTemplates
@@ -6,10 +6,11 @@ public static class PullRequestTemplates
     /// <summary>Paths tried in order; the first text file found wins.</summary>
     public static readonly string[] Paths =
     [
-        ".gitbench/pull_request_template.md",
+        ".bytebench/pull_request_template.md",
         "PULL_REQUEST_TEMPLATE.md",
         ".github/pull_request_template.md",
         ".github/PULL_REQUEST_TEMPLATE.md",
+        ".gitbench/pull_request_template.md", // before the rename from GitBench
     ];
 
     /// <summary>The template (and where it was found) on <paramref name="branch"/> of the bare repo at <paramref name="repoPath"/>, or null.</summary>

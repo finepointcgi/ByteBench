@@ -10,10 +10,10 @@
 @implements IDisposable
 @inject ProjectAccess Access
 @inject MergeGate MergeGateSvc
-@inject GitBench.Services.Ai.AiReviewService AiReviews
+@inject ByteBench.Services.Ai.AiReviewService AiReviews
 @inject RepositorySettingsService RepoSettings
 @inject CodeOwnersService CodeOwners
-@inject GitBench.Services.MergeQueue.MergeQueueService MergeQueues
+@inject ByteBench.Services.MergeQueue.MergeQueueService MergeQueues
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -121,7 +121,7 @@ else if (pr != null)
             }
             else if (CurrentTab == "security")
             {
-                <GitBench.Components.Security.PrSecurityPanel PullRequest="pr" />
+                <ByteBench.Components.Security.PrSecurityPanel PullRequest="pr" />
             }
             else if (CurrentTab == "files")
             {
@@ -337,7 +337,7 @@ else if (pr != null)
                     {
                         <div class="mt-2">
                             <span class="gb-section-label">Deployments</span>
-                            <GitBench.Components.Pipelines.DeployedToPanel PullRequest="pr" ShowEmpty="true" EmptyText="The merge commit isn't deployed yet." />
+                            <ByteBench.Components.Pipelines.DeployedToPanel PullRequest="pr" ShowEmpty="true" EmptyText="The merge commit isn't deployed yet." />
                         </div>
                     }
                 }
@@ -524,7 +524,7 @@ else if (pr != null)
         perms = await Access.GetPermissionsAsync(pr.Repository.ProjectId);
         canComment = perms.Can(Permission.Comment) || (pr.IsCrossFork && pr.AuthorId == Me.Id);
         gate = pr.State == PullRequestState.Open ? await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id) : null;
-        queue = pr.State == PullRequestState.Open ? await MergeQueues.StatusAsync(pr.Id, Me.Id) : GitBench.Services.MergeQueue.MergeQueueStatus.None;
+        queue = pr.State == PullRequestState.Open ? await MergeQueues.StatusAsync(pr.Id, Me.Id) : ByteBench.Services.MergeQueue.MergeQueueStatus.None;
         if (full)
         {
             changes = await PRs.GetChangesAsync(pr);
@@ -553,18 +553,18 @@ else if (pr != null)
     // Reload replaces `pr` (and, when the state changed, diff/merge status); drafts and editing flags are separate
     // fields, and DiffView keeps its own inline-comment drafts, so unsaved edits survive.
     private IDisposable? liveSubscription, pipelineSubscription, queueSubscription;
-    private GitBench.Services.MergeQueue.MergeQueueStatus queue = GitBench.Services.MergeQueue.MergeQueueStatus.None;
+    private ByteBench.Services.MergeQueue.MergeQueueStatus queue = ByteBench.Services.MergeQueue.MergeQueueStatus.None;
 
     protected override void OnAfterRender(bool firstRender)
     {
         if (!firstRender) return;
         liveSubscription = Live.Subscribe<PullRequestChanged>(OnPullRequestChanged);
         pipelineSubscription = Live.Subscribe<PipelineChanged>(OnPipelineChanged);
-        queueSubscription = Live.Subscribe<GitBench.Services.MergeQueue.MergeQueueChanged>(OnQueueChanged);
+        queueSubscription = Live.Subscribe<ByteBench.Services.MergeQueue.MergeQueueChanged>(OnQueueChanged);
     }
 
     // The target's merge queue moved on (built, tested, merged, reordered): refresh this PR's place in it.
-    private Task OnQueueChanged(GitBench.Services.MergeQueue.MergeQueueChanged e) =>
+    private Task OnQueueChanged(ByteBench.Services.MergeQueue.MergeQueueChanged e) =>
         pr == null || pr.RepositoryId != e.RepositoryId || pr.TargetBranch != e.TargetBranch || pr.State != PullRequestState.Open ? Task.CompletedTask : InvokeAsync(async () =>
         {
             queue = await MergeQueues.StatusAsync(pr.Id, Me.Id);

@@ -1,9 +1,9 @@
 using System.Threading.Channels;
-using GitBench.Data;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>
 /// Status changes of issues, queued by <see cref="Webhooks.WebhookNotifier.IssueUpdatedAsync"/> (which every issue update

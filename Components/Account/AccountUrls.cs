@@ -1,4 +1,4 @@
-namespace GitBench.Components.Account;
+namespace ByteBench.Components.Account;
 
 internal static class AccountUrls
 {

@@ -1,8 +1,8 @@
-namespace GitBench.Services.Hosting.Backup;
+namespace ByteBench.Services.Hosting.Backup;
 
 /// <summary>
-/// <c>dotnet GitBench.dll backup [dir] [--keep N]</c> and <c>dotnet GitBench.dll restore &lt;file&gt; [--force]</c>, handled before the
-/// web host starts (Program.cs), with the same configuration the server reads: appsettings, <c>GitBench__*</c>-style environment
+/// <c>dotnet ByteBench.dll backup [dir] [--keep N]</c> and <c>dotnet ByteBench.dll restore &lt;file&gt; [--force]</c>, handled before the
+/// web host starts (Program.cs), with the same configuration the server reads: appsettings, <c>ByteBench__*</c>-style environment
 /// variables, user secrets. Exit code 0 on success, 1 on a backup/restore problem, 2 on bad arguments.
 /// </summary>
 public static class BackupCli
@@ -10,16 +10,16 @@ public static class BackupCli
     public static bool IsCommand(string[] args) => args.Length > 0 && args[0] is "backup" or "restore";
 
     private const string Usage = """
-        GitBench backup and restore (run with the same configuration/environment as the server).
+        ByteBench backup and restore (run with the same configuration/environment as the server).
 
-          dotnet GitBench.dll backup [<dir>] [--keep <n>]
-              Writes gitbench-backup-<UTC time>.tar.gz (+ .sha256) into <dir> (default: Backup:Directory, else ./backups).
-              Safe while GitBench runs: the database is copied with SQLite's online backup API (or pg_dump on Postgres).
+          dotnet ByteBench.dll backup [<dir>] [--keep <n>]
+              Writes bytebench-backup-<UTC time>.tar.gz (+ .sha256) into <dir> (default: Backup:Directory, else ./backups).
+              Safe while ByteBench runs: the database is copied with SQLite's online backup API (or pg_dump on Postgres).
               --keep <n>   afterwards delete all but the newest <n> archives in <dir>.
 
-          dotnet GitBench.dll restore <file> [--force]
+          dotnet ByteBench.dll restore <file> [--force]
               Verifies the archive (manifest, SHA-256 of every file, version, database provider), then restores database,
-              repositories, attachments, packages, LFS, pages and keys. Stop GitBench first. Refuses to overwrite a non-empty
+              repositories, attachments, packages, LFS, pages and keys. Stop ByteBench first. Refuses to overwrite a non-empty
               installation unless --force is given (then the contents of each folder and the database are replaced).
         """;
 
@@ -60,7 +60,7 @@ public static class BackupCli
             var file = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"));
             if (file == null || args.Skip(1).Any(a => a.StartsWith("--") && a != "--force")) { Console.Error.WriteLine(Usage); return 2; }
             var restored = await BackupRestorer.RestoreAsync(Path.GetFullPath(file), layout, options, force, Log, CancellationToken.None);
-            Console.WriteLine($"Restored {restored.Files} files ({restored.Bytes:N0} bytes) from a GitBench {restored.Manifest.AppVersion} backup of {restored.Manifest.CreatedAtUtc:u}. Start GitBench to apply any newer migrations.");
+            Console.WriteLine($"Restored {restored.Files} files ({restored.Bytes:N0} bytes) from a ByteBench {restored.Manifest.AppVersion} backup of {restored.Manifest.CreatedAtUtc:u}. Start ByteBench to apply any newer migrations.");
             return 0;
         }
         catch (BackupException ex)

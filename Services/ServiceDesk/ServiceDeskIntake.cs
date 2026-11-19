@@ -1,12 +1,12 @@
 using System.Security.Cryptography;
-using GitBench.Data;
-using GitBench.Services.Attachments;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Attachments;
+using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MimeKit;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 public enum InboundOutcome { Created, Commented, Ignored, Rejected }
 

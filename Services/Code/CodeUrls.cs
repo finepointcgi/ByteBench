@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Code;
+namespace ByteBench.Services.Code;
 
 /// <summary>Route builders for code search and repository settings (see <see cref="RepoUrls"/> for the rest).</summary>
 public static class CodeUrls

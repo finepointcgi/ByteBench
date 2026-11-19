@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// Renders a <see cref="ChatMessage"/> as a Slack message with Block Kit blocks inside a coloured attachment.

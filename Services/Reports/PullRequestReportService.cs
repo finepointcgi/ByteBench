@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <param name="Size">Lines changed (additions + deletions), or null when the diff could not be measured.</param>
 public sealed record PullRequestRow(int Id, string Repository, int Number, string Title, string Author, PullRequestState State, bool IsDraft, DateTime CreatedAt,

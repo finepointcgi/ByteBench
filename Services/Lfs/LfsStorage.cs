@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Lfs;
+namespace ByteBench.Services.Lfs;
 
 /// <summary>An upload that doesn't match its oid or is over the limit.</summary>
 public sealed class LfsUploadException(int status, string message) : Exception(message)

@@ -1,21 +1,23 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Fields;
+namespace ByteBench.Services.Fields;
 
 /// <summary>A template offered on the new-issue form: one defined in the project, or a file in its first repository.</summary>
 /// <param name="Id"><c>t{id}</c> for a project template, <c>repo:{file name}</c> for a repository one.</param>
 public sealed record IssueTemplateChoice(string Id, string Name, IssueType Type, string? TitlePrefix, string? Body, IReadOnlyList<int> LabelIds, string? Source);
 
 /// <summary>
-/// Issue templates: defined per project (Maintainer+), plus Markdown files in <c>.gitbench/issue_templates/</c> on the
+/// Issue templates: defined per project (Maintainer+), plus Markdown files in <c>.bytebench/issue_templates/</c> on the
 /// default branch of the project's first repository, with optional GitHub-style front matter
 /// (<c>name</c>, <c>title</c>, <c>labels</c>, <c>type</c>).
 /// </summary>
 public class IssueTemplateService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, RepoStorage repoStorage)
 {
-    public const string RepoFolder = ".gitbench/issue_templates";
+    public const string RepoFolder = ".bytebench/issue_templates";
+    /// <summary>The folder before the product was renamed from GitBench; still read, after <see cref="RepoFolder"/>.</summary>
+    public const string LegacyRepoFolder = ".gitbench/issue_templates";
     private const int MaxRepoTemplates = 20;
 
     public async Task<List<IssueTemplate>> GetTemplatesAsync(int projectId)
@@ -43,8 +45,9 @@ public class IssueTemplateService(IDbContextFactory<AppDbContext> dbFactory, Pro
         if (repo == null) return [];
         var path = repoStorage.PathFor(project.Key, repo.Slug);
         if (!Directory.Exists(path)) return [];
-        var files = GitOps.ListTree(path, repo.DefaultBranch, RepoFolder, withLastCommit: false);
-        if (files == null) return [];
+        var files = (GitOps.ListTree(path, repo.DefaultBranch, RepoFolder, withLastCommit: false) ?? [])
+            .Concat(GitOps.ListTree(path, repo.DefaultBranch, LegacyRepoFolder, withLastCommit: false) ?? []).ToList();
+        if (files.Count == 0) return [];
         var result = new List<IssueTemplateChoice>();
         foreach (var f in files.Where(f => !f.IsDirectory && f.Name.EndsWith(".md", StringComparison.OrdinalIgnoreCase)).Take(MaxRepoTemplates))
         {

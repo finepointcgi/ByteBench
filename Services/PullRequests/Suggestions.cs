@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>A suggested change parsed from a comment: the replacement lines, and the comment text around the block.</summary>
 /// <param name="Lines">Replacement for the commented line(s); empty deletes them.</param>

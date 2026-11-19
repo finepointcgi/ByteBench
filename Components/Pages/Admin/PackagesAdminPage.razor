@@ -1,13 +1,13 @@
 @page "/admin/packages"
-@using GitBench.Services.Packages
-@using GitBench.Services.Attachments
+@using ByteBench.Services.Packages
+@using ByteBench.Services.Attachments
 @inject CurrentUser Me
 @inject PackageService PackageSvc
 @inject PackageStorage Storage
 
 @* Site-wide registry storage: every project's packages, versions and bytes (each distinct blob counted once per project). *@
 
-<PageTitle>Packages · GitBench</PageTitle>
+<PageTitle>Packages · ByteBench</PageTitle>
 
 @if (Me.User?.IsAdmin != true)
 {

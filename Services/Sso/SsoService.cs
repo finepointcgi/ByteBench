@@ -1,12 +1,12 @@
 using System.Security.Claims;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Sso;
+namespace ByteBench.Services.Sso;
 
 /// <summary>What an identity provider told us about the user, after the claim mappings.</summary>
 public sealed record ExternalIdentity(string Provider, string ProviderKey, string? Email, bool EmailVerified, string? UserName,
@@ -28,14 +28,14 @@ public static class SsoErrors
     public static string Message(string? code, string provider) => code switch
     {
         Cancelled => $"Sign-in with {provider} was cancelled.",
-        Domain => $"Your {provider} account's email domain isn't allowed to sign in to GitBench.",
-        Unverified => $"Your {provider} account's email address isn't verified, so GitBench can't use it. Verify it with {provider} and try again.",
-        NoEmail => $"{provider} didn't share an email address, which GitBench needs.",
-        Exists => $"A GitBench account with this email already exists. Sign in with your password, then connect {provider} under Profile → Connected accounts.",
-        NoAccount => $"No GitBench account is connected to this {provider} account, and new accounts can't be created this way. Ask a site admin.",
+        Domain => $"Your {provider} account's email domain isn't allowed to sign in to ByteBench.",
+        Unverified => $"Your {provider} account's email address isn't verified, so ByteBench can't use it. Verify it with {provider} and try again.",
+        NoEmail => $"{provider} didn't share an email address, which ByteBench needs.",
+        Exists => $"A ByteBench account with this email already exists. Sign in with your password, then connect {provider} under Profile → Connected accounts.",
+        NoAccount => $"No ByteBench account is connected to this {provider} account, and new accounts can't be created this way. Ask a site admin.",
         Locked => "This account is locked or deactivated.",
         NotAllowed => "This account is not allowed to sign in.",
-        LinkedElsewhere => $"That {provider} account is already connected to another GitBench user.",
+        LinkedElsewhere => $"That {provider} account is already connected to another ByteBench user.",
         UnknownProvider => "That sign-in provider isn't configured.",
         Expired => "The link expired. Try again.",
         LastLogin => $"You can't disconnect {provider}: it's the only way to sign in to this account. Connect another provider first.",
@@ -44,12 +44,12 @@ public static class SsoErrors
 }
 
 /// <summary>
-/// The GitBench side of SSO: after the OIDC/OAuth handler validated the provider's response (state, nonce, PKCE, token
-/// signature) into the external cookie, this finds, links or creates the GitBench account, applies the provider's
+/// The ByteBench side of SSO: after the OIDC/OAuth handler validated the provider's response (state, nonce, PKCE, token
+/// signature) into the external cookie, this finds, links or creates the ByteBench account, applies the provider's
 /// admin and group claims, and signs in (honouring lockout, deactivation and the two-factor policy).
 /// <para>
 /// <b>Account matching</b>, in order: an existing link (AspNetUserLogins); else, with <c>LinkByVerifiedEmail</c>, an account
-/// with the same email, but only if the provider says the email is verified and the GitBench account's own email is
+/// with the same email, but only if the provider says the email is verified and the ByteBench account's own email is
 /// confirmed (or it has no password), so nobody can pre-register someone's address and wait for their SSO sign-in;
 /// else a new account (<c>AutoCreateUsers</c>, verified email required). Anything else is refused with a message telling
 /// the user to sign in and link from the profile.
@@ -172,6 +172,7 @@ public class SsoService(SsoSettings settings, UserManager<User> users, SignInMan
 
     // ------------------------------------------------------------------ linking from the profile
 
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     private const string LinkPurpose = "GitBench.SsoLink.v1";
 
     /// <summary>A short-lived token for the profile's "Connect" link, so another site can't start a link for the signed-in user.</summary>

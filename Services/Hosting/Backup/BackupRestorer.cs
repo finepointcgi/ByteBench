@@ -2,7 +2,7 @@ using System.Formats.Tar;
 using System.IO.Compression;
 using System.Security.Cryptography;
 
-namespace GitBench.Services.Hosting.Backup;
+namespace ByteBench.Services.Hosting.Backup;
 
 public sealed record RestoreResult(BackupManifest Manifest, int Files, long Bytes, IReadOnlyList<string> Sections);
 
@@ -12,12 +12,12 @@ public sealed record RestoreResult(BackupManifest Manifest, int Files, long Byte
 /// <list type="number">
 /// <item>entries must be plain files and folders under <c>db/</c> or a known section (no <c>..</c>, no links);</item>
 /// <item><c>manifest.json</c> must be there, of a known format, from the same database provider, and not newer than this
-/// build's migrations (a backup from a newer GitBench is refused: upgrade first);</item>
+/// build's migrations (a backup from a newer ByteBench is refused: upgrade first);</item>
 /// <item>every file must match the manifest's size and SHA-256, and nothing may be missing or extra;</item>
 /// <item>the installation must be empty (no users or projects in the database, nothing in the storage folders) unless
 /// <c>force</c> is set, which replaces the contents of each folder and the database.</item>
 /// </list>
-/// Stop GitBench before restoring. Migrations of newer builds than the backup apply at the next start.
+/// Stop ByteBench before restoring. Migrations of newer builds than the backup apply at the next start.
 /// </summary>
 public static class BackupRestorer
 {
@@ -27,7 +27,7 @@ public static class BackupRestorer
         if (!File.Exists(archivePath)) throw new BackupException($"{archivePath} does not exist.");
         var stagingParent = options.StagingDirectory is { Length: > 0 } sd ? Path.GetFullPath(sd) : Path.GetTempPath();
         Directory.CreateDirectory(stagingParent);
-        var staging = Path.Combine(stagingParent, "gitbench-restore-" + Guid.NewGuid().ToString("N")[..10]);
+        var staging = Path.Combine(stagingParent, "bytebench-restore-" + Guid.NewGuid().ToString("N")[..10]);
         Directory.CreateDirectory(staging);
         try
         {
@@ -36,7 +36,7 @@ public static class BackupRestorer
             var (manifest, seen) = await ExtractAsync(archivePath, staging, ct);
             Verify(manifest, seen);
             CheckCompatible(manifest, layout);
-            log?.Invoke($"Archive is valid: GitBench {manifest.AppVersion}, {manifest.Provider}, {manifest.Files.Count} files, made {manifest.CreatedAtUtc:u}");
+            log?.Invoke($"Archive is valid: ByteBench {manifest.AppVersion}, {manifest.Provider}, {manifest.Files.Count} files, made {manifest.CreatedAtUtc:u}");
 
             // 2. Is anything in the way?
             var targets = layout.Sections.Where(s => manifest.Sections.ContainsKey(s.Name) && Directory.Exists(Path.Combine(staging, s.Name))).ToList();
@@ -126,7 +126,7 @@ public static class BackupRestorer
                     throw new BackupException($"'{entry.Name}' is a {entry.EntryType}; backups only contain plain files and folders.");
             }
         }
-        if (manifest == null) throw new BackupException("This is not a GitBench backup: manifest.json is missing (an incomplete or damaged archive?).");
+        if (manifest == null) throw new BackupException("This is not a ByteBench backup: manifest.json is missing (an incomplete or damaged archive?).");
         // Folder modes last (a read-only folder would block unpacking into it).
         if (!OperatingSystem.IsWindows())
             foreach (var (path, mode) in dirModes.AsEnumerable().Reverse())
@@ -146,8 +146,8 @@ public static class BackupRestorer
     private static void Verify(BackupManifest m, Dictionary<string, (long Size, string Sha)> seen)
     {
         if (m.Format < 1 || m.Format > BackupManifest.CurrentFormat)
-            throw new BackupException($"The archive has format {m.Format}; this GitBench reads format {BackupManifest.CurrentFormat}. It was made by a newer version: upgrade GitBench first.");
-        if (m.App != "GitBench") throw new BackupException("This is not a GitBench backup.");
+            throw new BackupException($"The archive has format {m.Format}; this ByteBench reads format {BackupManifest.CurrentFormat}. It was made by a newer version: upgrade ByteBench first.");
+        if (m.App != "ByteBench" && m.App != "GitBench") throw new BackupException("This is not a ByteBench backup.");
         var listed = new HashSet<string>(StringComparer.Ordinal);
         foreach (var f in m.Files)
         {
@@ -169,8 +169,8 @@ public static class BackupRestorer
                 "A backup only restores into the same provider; use a database export/import tool to move between SQLite and Postgres.");
         var known = DatabaseBackup.KnownLatestMigration(layout.Provider);
         if (m.Migration.Length > 0 && string.CompareOrdinal(m.Migration, known) > 0)
-            throw new BackupException($"The backup's database is at migration {m.Migration}, newer than this GitBench ({known}). " +
-                $"It was made by GitBench {m.AppVersion}; run that version or newer to restore it.");
+            throw new BackupException($"The backup's database is at migration {m.Migration}, newer than this ByteBench ({known}). " +
+                $"It was made by ByteBench {m.AppVersion}; run that version or newer to restore it.");
     }
 
     // ------------------------------------------------------------------ file moves

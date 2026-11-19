@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>
 /// An npm registry per project at <c>/packages/{KEY}/npm/</c> (set it as the registry, or as a scope's registry, with
@@ -23,7 +23,7 @@ namespace GitBench.Services.Packages;
 /// </summary>
 public static partial class NpmEndpoints
 {
-    private const string Challenge = "Basic realm=\"GitBench npm\"";
+    private const string Challenge = "Basic realm=\"ByteBench npm\"";
     public const int MaxNameLength = 214;
 
     [GeneratedRegex(@"^(@[a-z0-9\-~][a-z0-9\-._~]*/)?[a-z0-9\-~][a-z0-9\-._~]*$")]

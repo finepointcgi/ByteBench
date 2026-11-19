@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Roadmap;
+namespace ByteBench.Services.Roadmap;
 
 /// <summary>Which epics a roadmap shows: an epic is kept when it or one of its children matches (and then only matching children are listed).</summary>
 public sealed record RoadmapFilter(int? LabelId = null, int? AssigneeId = null);

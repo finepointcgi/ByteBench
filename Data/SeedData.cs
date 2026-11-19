@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 public static class SeedData
 {
     /// <summary>Password for every seeded demo account. Development data only.</summary>
-    public const string DemoPassword = "GitBench123";
+    public const string DemoPassword = "ByteBench123";
 
     private static User DemoUser(string userName, string displayName, string color)
     {

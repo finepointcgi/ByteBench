@@ -1,6 +1,6 @@
-using GitBench.Services.Webhooks;
+using ByteBench.Services.Webhooks;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>Event groups: each can post to its own channel (bot token) or incoming webhook.</summary>
 public enum ChatEventGroup { Issues, PullRequests, Pipelines, Releases, Mentions }

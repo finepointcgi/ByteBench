@@ -1,8 +1,8 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>
 /// What git over HTTP (<see cref="GitHttpEndpoints"/>) and over SSH (<see cref="Ssh.SshGitServer"/>) share: strict

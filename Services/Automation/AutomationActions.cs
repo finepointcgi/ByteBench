@@ -1,10 +1,10 @@
 using System.Text;
 using System.Text.Json;
-using GitBench.Data;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>
 /// Performs a rule's actions through the normal services of one DI scope (whose <see cref="ProjectAccess"/> already acts

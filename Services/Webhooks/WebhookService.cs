@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>
 /// Managing a project's webhooks and viewing their deliveries. Everything here requires

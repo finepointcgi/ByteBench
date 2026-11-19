@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 /// <summary>Who an SSH public key authenticates as: a user (with their project permissions) or one repository's deploy key.</summary>
 public sealed record SshIdentity(int KeyId, string Fingerprint, int? UserId, string? UserName,

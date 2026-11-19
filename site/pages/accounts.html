@@ -1,7 +1,7 @@
 <h1>Accounts, sign-in and SSO</h1>
 <p class="lead">How people register and sign in with a password, two-factor codes, single sign-on (OIDC, GitHub, Entra ID) or LDAP, and how they manage tokens and their profile.</p>
 
-<p>Every GitBench page requires a signed-in user. Anonymous requests are redirected to <code>/account/login</code>. Sign-in uses ASP.NET Core Identity with a cookie.</p>
+<p>Every ByteBench page requires a signed-in user. Anonymous requests are redirected to <code>/account/login</code>. Sign-in uses ASP.NET Core Identity with a cookie.</p>
 
 <h2 id="sign-in">Registration and sign-in</h2>
 <ul>
@@ -17,8 +17,8 @@
 <ul>
 <li>At least 8 characters. Symbols are not required.</li>
 <li>Change your password under <strong>Profile</strong> (<code>/account/profile</code>, click your avatar). You need the current password.</li>
-<li>Accounts created by SSO or LDAP have <strong>no GitBench password</strong>, and the profile says so. They use personal access tokens for Git over HTTP.</li>
-<li>GitBench has no "forgot password" email flow and site admins cannot set another user's password from the admin page. Someone who lost their password needs a different sign-in route (SSO or LDAP if configured) or an operator who can repair the account in the database; plan for this before going live.</li>
+<li>Accounts created by SSO or LDAP have <strong>no ByteBench password</strong>, and the profile says so. They use personal access tokens for Git over HTTP.</li>
+<li>ByteBench has no "forgot password" email flow and site admins cannot set another user's password from the admin page. Someone who lost their password needs a different sign-in route (SSO or LDAP if configured) or an operator who can repair the account in the database; plan for this before going live.</li>
 </ul>
 
 <h2 id="sessions">Sessions</h2>
@@ -32,7 +32,7 @@
 <ol>
 <li>Open the page, scan the QR code (or type the key shown) in your authenticator app.</li>
 <li>Enter a current code to turn two-factor on.</li>
-<li>GitBench shows <strong>10 recovery codes once</strong>. Store them safely. Each works one time.</li>
+<li>ByteBench shows <strong>10 recovery codes once</strong>. Store them safely. Each works one time.</li>
 </ol>
 <ul>
 <li><strong>Signing in:</strong> after your password, <code>/account/login-2fa</code> asks for a code, with <strong>Remember this device</strong> (14 days), or you can enter a recovery code instead. Wrong codes count toward lockout.</li>
@@ -47,7 +47,7 @@
 <ol>
 <li>Give the token a name (for example "Laptop git").</li>
 <li>Tick the scopes you need (below) and choose an expiry: 7, 30 (default), 90, 365 days or never.</li>
-<li>Press <strong>Create token</strong> and copy it immediately. It starts with <code>gbp_</code> and is shown only once. GitBench stores only a SHA-256 hash.</li>
+<li>Press <strong>Create token</strong> and copy it immediately. It starts with <code>gbp_</code> and is shown only once. ByteBench stores only a SHA-256 hash.</li>
 </ol>
 <table>
 <thead><tr><th>Scope</th><th>Allows</th></tr></thead>
@@ -60,21 +60,21 @@
 <p>Use a token as the password with any username for Git over HTTP, or as <code>Authorization: Bearer gbp_...</code> for the API. The list shows each token's scopes, creation, expiry and last use, with a <strong>Revoke</strong> button. A token can never do more than its owner's roles allow. Tokens of a deactivated or locked user stop working.</p>
 
 <h2 id="sso">Single sign-on (OIDC and OAuth)</h2>
-<p>GitBench can sign people in through OpenID Connect providers (Google, Microsoft Entra ID, Keycloak, Okta and others) and GitHub, next to local accounts. Nothing changes until you configure a provider. The sign-in page then shows a <strong>Sign in with ...</strong> button per provider.</p>
+<p>ByteBench can sign people in through OpenID Connect providers (Google, Microsoft Entra ID, Keycloak, Okta and others) and GitHub, next to local accounts. Nothing changes until you configure a provider. The sign-in page then shows a <strong>Sign in with ...</strong> button per provider.</p>
 
 <h3 id="sso-flow">How sign-in works</h3>
 <ul>
-<li>It uses the authorization code flow with PKCE. The provider redirects back to <code>/signin-sso/{name}</code>, so register <code>https://gitbench.example.com/signin-sso/{name}</code> as the redirect URI. <code>/admin/authentication</code> shows the exact URL for each provider.</li>
-<li>GitBench then finds or creates the account:
+<li>It uses the authorization code flow with PKCE. The provider redirects back to <code>/signin-sso/{name}</code>, so register <code>https://bytebench.example.com/signin-sso/{name}</code> as the redirect URI. <code>/admin/authentication</code> shows the exact URL for each provider.</li>
+<li>ByteBench then finds or creates the account:
 <ol>
 <li>an account already <strong>linked</strong> to this provider and user id; else</li>
-<li>with <code>LinkByVerifiedEmail</code> (default on), the account with the <strong>same email</strong>, but only if the provider says the email is verified <em>and</em> the GitBench account's email is confirmed too (or it has no password). Otherwise the user must sign in with their password and connect the provider from the profile; else</li>
+<li>with <code>LinkByVerifiedEmail</code> (default on), the account with the <strong>same email</strong>, but only if the provider says the email is verified <em>and</em> the ByteBench account's email is confirmed too (or it has no password). Otherwise the user must sign in with their password and connect the provider from the profile; else</li>
 <li>with <code>AutoCreateUsers</code> (default on), a <strong>new account</strong> with that verified email, a username from <code>preferred_username</code> (or the email) and no password.</li>
 </ol></li>
 <li>An unverified email never links or creates an account. With <code>AllowedEmailDomains</code>, only verified emails in those domains get in.</li>
 <li>Locked and deactivated accounts are refused.</li>
-<li><strong>Two-factor:</strong> with <code>TwoFactor: GitBench</code> (default), users who enabled GitBench two-factor enter their code after the provider. With <code>TrustIdp</code>, the code is skipped when the ID token shows multi-factor authentication (<code>amr</code> claim).</li>
-<li><strong>Admins and groups:</strong> group claim values in <code>AdminGroups</code> make the user a site admin (revoked again when they leave the group, never for the last admin). <code>GroupMappings</code> turn group values into GitBench <a href="permissions.html#groups">group</a> memberships with a role (highest wins). Memberships created by the provider follow the claim on each sign-in; memberships added by hand are never touched.</li>
+<li><strong>Two-factor:</strong> with <code>TwoFactor: ByteBench</code> (default), users who enabled ByteBench two-factor enter their code after the provider. With <code>TrustIdp</code>, the code is skipped when the ID token shows multi-factor authentication (<code>amr</code> claim).</li>
+<li><strong>Admins and groups:</strong> group claim values in <code>AdminGroups</code> make the user a site admin (revoked again when they leave the group, never for the last admin). <code>GroupMappings</code> turn group values into ByteBench <a href="permissions.html#groups">group</a> memberships with a role (highest wins). Memberships created by the provider follow the claim on each sign-in; memberships added by hand are never touched.</li>
 <li><strong>Connected accounts:</strong> <strong>Connect</strong> links another provider to the signed-in account (the link is valid 15 minutes). <strong>Disconnect</strong> is refused if the account would be left with no password and no other login.</li>
 </ul>
 
@@ -98,7 +98,7 @@
 <tr><td><code>AllowedEmailDomains</code></td><td>all</td><td>For example <code>["example.com"]</code></td></tr>
 <tr><td><code>AdminGroups</code></td><td>none</td><td>Group claim values that make site admins</td></tr>
 <tr><td><code>GroupMappings</code></td><td>none</td><td><code>[{ "ExternalGroup": "...", "Group": "acme/platform", "Role": "Developer" }]</code></td></tr>
-<tr><td><code>TwoFactor</code></td><td><code>GitBench</code></td><td>Or <code>TrustIdp</code></td></tr>
+<tr><td><code>TwoFactor</code></td><td><code>ByteBench</code></td><td>Or <code>TrustIdp</code></td></tr>
 <tr><td><code>Icon</code></td><td>preset</td><td><code>google</code>, <code>github</code>, <code>microsoft</code>, <code>key</code>, or a site image path</td></tr>
 <tr><td><code>RequireHttpsMetadata</code></td><td><code>true</code></td><td>Turn off only for a local test provider over plain HTTP</td></tr>
 <tr><td><code>UseUserInfoEndpoint</code></td><td><code>true</code></td><td>Also read claims from the userinfo endpoint</td></tr>
@@ -106,31 +106,31 @@
 </tbody></table>
 
 <h3 id="sso-examples">Examples</h3>
-<p><strong>Google</strong> (OAuth client of type Web application, redirect URI <code>https://gitbench.example.com/signin-sso/google</code>):</p>
+<p><strong>Google</strong> (OAuth client of type Web application, redirect URI <code>https://bytebench.example.com/signin-sso/google</code>):</p>
 <pre><code>"Authentication": { "Oidc": { "Providers": [
   { "Name": "google", "Type": "Google", "ClientId": "1234-abc.apps.googleusercontent.com",
     "AllowedEmailDomains": [ "example.com" ] }
 ] } }</code></pre>
-<p><strong>GitHub</strong> (OAuth App, callback <code>https://gitbench.example.com/signin-sso/github</code>). GitHub is not OIDC, so GitBench reads the profile and uses the primary <em>verified</em> address. Organizations (<code>acme</code>) and teams (<code>acme/platform-devs</code>) can serve as groups:</p>
+<p><strong>GitHub</strong> (OAuth App, callback <code>https://bytebench.example.com/signin-sso/github</code>). GitHub is not OIDC, so ByteBench reads the profile and uses the primary <em>verified</em> address. Organizations (<code>acme</code>) and teams (<code>acme/platform-devs</code>) can serve as groups:</p>
 <pre><code>{ "Name": "github", "Type": "GitHub", "ClientId": "Iv1.0123456789abcdef",
-  "AdminGroups": [ "acme/gitbench-admins" ],
+  "AdminGroups": [ "acme/bytebench-admins" ],
   "GroupMappings": [ { "ExternalGroup": "acme/platform-devs", "Group": "acme/platform", "Role": "Developer" } ] }</code></pre>
 <p>For GitHub Enterprise Server add <code>"Authority": "https://github.example.com"</code>.</p>
-<p><strong>Microsoft Entra ID</strong> (app registration, redirect URI type Web, <code>https://gitbench.example.com/signin-sso/entra</code>). For group mappings add the <code>groups</code> claim in Token configuration; values are group object ids. Entra does not send <code>email_verified</code>, so set <code>TrustEmailVerified</code> only for your own tenant. Multi-tenant (<code>common</code>) is not supported.</p>
+<p><strong>Microsoft Entra ID</strong> (app registration, redirect URI type Web, <code>https://bytebench.example.com/signin-sso/entra</code>). For group mappings add the <code>groups</code> claim in Token configuration; values are group object ids. Entra does not send <code>email_verified</code>, so set <code>TrustEmailVerified</code> only for your own tenant. Multi-tenant (<code>common</code>) is not supported.</p>
 <pre><code>{ "Name": "entra", "Type": "Microsoft", "TenantId": "00000000-0000-0000-0000-000000000000",
   "ClientId": "11111111-1111-1111-1111-111111111111", "TrustEmailVerified": true, "TwoFactor": "TrustIdp",
   "AdminGroups": [ "22222222-2222-2222-2222-222222222222" ] }</code></pre>
 <p><strong>Keycloak or any OIDC provider</strong> (for groups, add a Group Membership mapper with claim name <code>groups</code> and "Full group path" off):</p>
 <pre><code>{ "Name": "keycloak", "DisplayName": "Acme SSO", "Authority": "https://sso.example.com/realms/acme",
-  "ClientId": "gitbench", "AdminGroups": [ "gitbench-admins" ],
+  "ClientId": "bytebench", "AdminGroups": [ "bytebench-admins" ],
   "GroupMappings": [ { "ExternalGroup": "developers", "Group": "acme", "Role": "Developer" },
                      { "ExternalGroup": "leads", "Group": "acme", "Role": "Maintainer" } ] }</code></pre>
 
 <h2 id="ldap">LDAP and Active Directory</h2>
-<p>With <code>Authentication:Ldap:Enabled</code> the normal sign-in form also checks your directory. GitBench uses a fully managed LDAP library, so no native libraries are needed in the container.</p>
+<p>With <code>Authentication:Ldap:Enabled</code> the normal sign-in form also checks your directory. ByteBench uses a fully managed LDAP library, so no native libraries are needed in the container.</p>
 <ul>
-<li><strong>Who goes to LDAP:</strong> a login with the <code>ldap:</code> prefix, a login that no local account has, and accounts that came from the directory. Everyone else uses their GitBench password. A directory user never takes over a local account with the same username or email; that sign-in is refused.</li>
-<li><strong>How it signs in:</strong> GitBench binds as the service account (<code>BindDn</code>), searches <code>UserSearchBase</code> with <code>UserFilter</code> (<code>{0}</code> is the login, escaped so filter injection is not possible), then binds as the entry it found with the given password. Empty passwords are refused. It creates the account (with no GitBench password) or updates name and email, and the sign-in goes through Identity, so lockout and GitBench two-factor apply.</li>
+<li><strong>Who goes to LDAP:</strong> a login with the <code>ldap:</code> prefix, a login that no local account has, and accounts that came from the directory. Everyone else uses their ByteBench password. A directory user never takes over a local account with the same username or email; that sign-in is refused.</li>
+<li><strong>How it signs in:</strong> ByteBench binds as the service account (<code>BindDn</code>), searches <code>UserSearchBase</code> with <code>UserFilter</code> (<code>{0}</code> is the login, escaped so filter injection is not possible), then binds as the entry it found with the given password. Empty passwords are refused. It creates the account (with no ByteBench password) or updates name and email, and the sign-in goes through Identity, so lockout and ByteBench two-factor apply.</li>
 <li><strong>Groups</strong> come from <code>memberOf</code>, or from a search of <code>GroupSearchBase</code> with <code>GroupFilter</code> when <code>Attributes:MemberOf</code> is empty. <code>AdminGroupDn</code> and <code>GroupMappings</code> work like their SSO counterparts.</li>
 <li><strong>Git over HTTP:</strong> directory users use personal access tokens. With <code>AllowGitPassword: true</code> their LDAP password also works, except for accounts with two-factor.</li>
 <li><strong>Directory sync:</strong> with <code>Sync:IntervalMinutes</code> above 0, every directory account is re-read on that schedule (names, emails, admin, groups). With <code>Sync:DeactivateMissingUsers</code>, accounts the directory no longer returns are deactivated (locked, signed out, tokens revoked). Site admins are never deactivated automatically, and an unreachable directory deactivates no one.</li>
@@ -154,14 +154,14 @@
 <p>Active Directory example:</p>
 <pre><code>"Authentication": { "Ldap": {
   "Enabled": true, "DisplayName": "Corp AD", "Server": "dc1.corp.example", "Security": "Ssl",
-  "BindDn": "CN=svc-gitbench,OU=Service Accounts,DC=corp,DC=example",
+  "BindDn": "CN=svc-bytebench,OU=Service Accounts,DC=corp,DC=example",
   "UserSearchBase": "OU=Staff,DC=corp,DC=example",
   "UserFilter": "(&amp;(objectClass=user)(objectCategory=person)(sAMAccountName={0})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
-  "AdminGroupDn": "CN=GitBench Admins,OU=Groups,DC=corp,DC=example",
+  "AdminGroupDn": "CN=ByteBench Admins,OU=Groups,DC=corp,DC=example",
   "GroupMappings": [ { "GroupDn": "CN=Developers,OU=Groups,DC=corp,DC=example", "Group": "acme", "Role": "Developer" } ],
   "Sync": { "IntervalMinutes": 60, "DeactivateMissingUsers": true }
 } }</code></pre>
-<p>The <code>userAccountControl</code> clause leaves out disabled AD accounts, so the sync deactivates them in GitBench too. For OpenLDAP use for example <code>"UserFilter": "(&amp;(objectClass=inetOrgPerson)(uid={0}))"</code> with <code>"Attributes": { "UserName": "uid" }</code>. Set the bind password with <code>Authentication__Ldap__BindPassword</code>.</p>
+<p>The <code>userAccountControl</code> clause leaves out disabled AD accounts, so the sync deactivates them in ByteBench too. For OpenLDAP use for example <code>"UserFilter": "(&amp;(objectClass=inetOrgPerson)(uid={0}))"</code> with <code>"Attributes": { "UserName": "uid" }</code>. Set the bind password with <code>Authentication__Ldap__BindPassword</code>.</p>
 
 <h2 id="admin-authentication">/admin/authentication</h2>
 <p>Site admins open <strong>Authentication</strong> in the admin sidebar. For each provider it shows the type, authority, client id and scopes, whether a secret is set (never the secret), the callback URL to register, the account and mapping rules, the two-factor policy and any configuration errors. For LDAP it shows server, security, service account (password only as "set"), filters, mappings and the last sync result, with <strong>Test connection</strong> (connect, bind and run the user filter) and <strong>Sync now</strong>.</p>

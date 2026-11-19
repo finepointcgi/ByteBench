@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// One bulk edit from the issue list. Null fields are left alone; <see cref="SetAssignee"/>/<see cref="SetMilestone"/>

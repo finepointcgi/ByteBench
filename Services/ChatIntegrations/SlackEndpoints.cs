@@ -1,16 +1,16 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using GitBench.Api;
+using ByteBench.Api;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// The Slack app's request URLs. Configure them in the Slack app as
-/// <c>{PublicBaseUrl}/integrations/slack/commands</c> (slash command <c>/gitbench</c>),
+/// <c>{PublicBaseUrl}/integrations/slack/commands</c> (slash command <c>/bytebench</c>),
 /// <c>…/interactivity</c> (Interactivity &amp; Shortcuts) and <c>…/events</c> (Event Subscriptions, bot event
-/// <c>link_shared</c>, with the GitBench domain under App unfurl domains). Every request must carry a valid Slack
+/// <c>link_shared</c>, with the ByteBench domain under App unfurl domains). Every request must carry a valid Slack
 /// signature (<see cref="SlackSignature"/>); without <c>Slack:SigningSecret</c> the endpoints answer 404.
 /// </summary>
 public static class SlackEndpoints
@@ -79,7 +79,7 @@ public static class SlackEndpoints
             ctx.Request.Headers[SlackSignature.TimestampHeader].ToString(), ctx.Request.Headers[SlackSignature.SignatureHeader].ToString(), body);
         if (result != SlackSignatureResult.Valid)
         {
-            ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("GitBench.Slack")
+            ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.Slack")
                 .LogWarning("Rejected a Slack request to {Path}: {Result}", ctx.Request.Path, result);
             return (body, Results.Unauthorized());
         }

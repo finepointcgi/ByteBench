@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.DataProtection;
 
-namespace GitBench.Services.Webhooks;
+namespace ByteBench.Services.Webhooks;
 
 /// <summary>
 /// Encrypts webhook signing secrets at rest with ASP.NET Core Data Protection. Stored values carry the <see cref="Prefix"/>
@@ -12,6 +12,7 @@ namespace GitBench.Services.Webhooks;
 /// </summary>
 public sealed class WebhookSecrets(IDataProtectionProvider provider)
 {
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     public const string Purpose = "GitBench.Webhooks.Secret.v1";
     public const string Prefix = "dp:";
 

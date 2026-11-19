@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Attachments;
+namespace ByteBench.Services.Attachments;
 
 /// <summary>
 /// Issue attachments: list, upload, delete and download lookups. Uploads need EditIssues (or Comment when made from a

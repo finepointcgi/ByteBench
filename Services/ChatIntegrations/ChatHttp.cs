@@ -2,10 +2,10 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
-using GitBench.Services.Webhooks;
+using ByteBench.Services.Webhooks;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
 /// Outgoing HTTP for chat integrations and the Slack app: the named client <see cref="ClientName"/> (SSRF-guarded like
@@ -14,7 +14,7 @@ namespace GitBench.Services.ChatIntegrations;
 /// </summary>
 public sealed class ChatHttp(IHttpClientFactory factory, IOptionsMonitor<SlackOptions> slack)
 {
-    public const string ClientName = "GitBench.Chat";
+    public const string ClientName = "ByteBench.Chat";
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
     public const int MaxResponseChars = 4096;
 

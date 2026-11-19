@@ -1,38 +1,38 @@
-using GitBench.Components;
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Git;
-using GitBench.Services.Ai;
-using GitBench.Services.Ai.Triage;
-using GitBench.Services.Ci;
-using GitBench.Services.Webhooks;
-using GitBench.Api;
-using GitBench.Services.Audit;
-using GitBench.Services.Releases;
-using GitBench.Services.Hosting;
-using GitBench.Services.Ssh;
-using GitBench.Services.Automation;
-using GitBench.Services.Query;
-using GitBench.Services.Sso;
-using GitBench.Services.Fields;
+using ByteBench.Components;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Git;
+using ByteBench.Services.Ai;
+using ByteBench.Services.Ai.Triage;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Webhooks;
+using ByteBench.Api;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Releases;
+using ByteBench.Services.Hosting;
+using ByteBench.Services.Ssh;
+using ByteBench.Services.Automation;
+using ByteBench.Services.Query;
+using ByteBench.Services.Sso;
+using ByteBench.Services.Fields;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using MudBlazor.Services;
 using Microsoft.EntityFrameworkCore;
 
-// `dotnet GitBench.dll backup|restore ...` run before (instead of) the web host.
-if (GitBench.Services.Hosting.Backup.BackupCli.IsCommand(args)) return await GitBench.Services.Hosting.Backup.BackupCli.RunAsync(args);
+// `dotnet ByteBench.dll backup|restore ...` run before (instead of) the web host.
+if (ByteBench.Services.Hosting.Backup.BackupCli.IsCommand(args)) return await ByteBench.Services.Hosting.Backup.BackupCli.RunAsync(args);
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddGitBenchHosting();
-GitBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.AddBackups(builder.Services, builder.Configuration); // backup/restore, scheduled backups, /admin/system, retention jobs // data protection keys, forwarded headers, cookies, rate limits, health checks
+builder.AddByteBenchHosting();
+ByteBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.AddBackups(builder.Services, builder.Configuration); // backup/restore, scheduled backups, /admin/system, retention jobs // data protection keys, forwarded headers, cookies, rate limits, health checks
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMudServices(); // MudBlazor UI components (dialogs, snackbars, popovers)
 
-builder.Services.AddGitBenchDatabase(builder.Configuration); // Database:Provider = Sqlite (default) | Postgres
+builder.Services.AddByteBenchDatabase(builder.Configuration); // Database:Provider = Sqlite (default) | Postgres
 
 // ----- Authentication (ASP.NET Core Identity, cookie-based) -----
 builder.Services.AddCascadingAuthenticationState();
@@ -57,7 +57,7 @@ builder.Services.ConfigureApplicationCookie(o =>
     o.ExpireTimeSpan = TimeSpan.FromDays(14);
     o.SlidingExpiration = true;
 });
-builder.AddGitBenchSso(); // SSO (OIDC providers, GitHub OAuth) and LDAP from Authentication:*
+builder.AddByteBenchSso(); // SSO (OIDC providers, GitHub OAuth) and LDAP from Authentication:*
 
 builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
@@ -67,7 +67,7 @@ builder.Services.AddScoped<GroupService>(); // groups: namespaces, inherited rol
 builder.Services.AddScoped<AccessTokenService>();
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
-builder.Services.Configure<GitBench.Services.Workbench.WorkbenchOptions>(builder.Configuration.GetSection("Workbench")); // optional link to Workbench timesheets
+builder.Services.Configure<ByteBench.Services.Workbench.WorkbenchOptions>(builder.Configuration.GetSection("Workbench")); // optional link to Workbench timesheets
 builder.Services.AddSingleton<AiClient>();
 builder.Services.AddScoped<IssueAiService>();
 builder.Services.AddAiCodeReview(builder.Configuration);
@@ -83,27 +83,27 @@ builder.Services.AddScoped<MergeGate>();
 builder.Services.AddScoped<ReviewerService>();
 builder.Services.AddScoped<CodeOwnersService>(); // PR features: CODEOWNERS
 builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
-GitBench.Services.MergeQueue.MergeQueueServiceCollectionExtensions.AddMergeQueue(builder.Services, builder.Configuration); // merge queues on protected branches
+ByteBench.Services.MergeQueue.MergeQueueServiceCollectionExtensions.AddMergeQueue(builder.Services, builder.Configuration); // merge queues on protected branches
 builder.Services.AddCiPipelines(builder.Configuration);
-GitBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanning(builder.Services, builder.Configuration); // Night Owl reports, Security page, merge check
+ByteBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanning(builder.Services, builder.Configuration); // Night Owl reports, Security page, merge check
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
-builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
+builder.Services.AddScoped<ByteBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
-GitBench.Services.ChatIntegrations.ChatServiceCollectionExtensions.AddChatIntegrations(builder.Services, builder.Configuration); // Slack & Teams (on the webhook pipeline), Slack app
+ByteBench.Services.ChatIntegrations.ChatServiceCollectionExtensions.AddChatIntegrations(builder.Services, builder.Configuration); // Slack & Teams (on the webhook pipeline), Slack app
 builder.Services.AddScoped<LinkedWorkService>(); // linked work: sub-tasks, epics, issue links
-builder.Services.AddGitBenchApi();
+builder.Services.AddByteBenchApi();
 // Attachments, saved filters & bulk edit
-builder.Services.AddSingleton<GitBench.Services.Attachments.AttachmentStorage>();
-builder.Services.AddScoped<GitBench.Services.Attachments.AttachmentService>();
+builder.Services.AddSingleton<ByteBench.Services.Attachments.AttachmentStorage>();
+builder.Services.AddScoped<ByteBench.Services.Attachments.AttachmentService>();
 builder.Services.AddScoped<SavedFilterService>();
 builder.Services.AddScoped<SprintService>(); // sprint planning, backlog, burndown & velocity
-builder.Services.AddScoped<GitBench.Services.Roadmap.RoadmapService>(); // roadmap timeline
-builder.Services.AddScoped<GitBench.Services.Dashboards.DashboardService>(); // dashboards & gadgets
-builder.Services.AddScoped<GitBench.Services.Dashboards.GadgetDataService>();
+builder.Services.AddScoped<ByteBench.Services.Roadmap.RoadmapService>(); // roadmap timeline
+builder.Services.AddScoped<ByteBench.Services.Dashboards.DashboardService>(); // dashboards & gadgets
+builder.Services.AddScoped<ByteBench.Services.Dashboards.GadgetDataService>();
 builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
 builder.Services.AddScoped<WorkflowService>();
-builder.Services.AddScoped<GitBench.Services.Boards.BoardService>(); // multiple configurable boards per project
-GitBench.Services.Email.EmailServiceCollectionExtensions.AddEmail(builder.Services, builder.Configuration, builder.Environment); // email, preferences, autocomplete
+builder.Services.AddScoped<ByteBench.Services.Boards.BoardService>(); // multiple configurable boards per project
+ByteBench.Services.Email.EmailServiceCollectionExtensions.AddEmail(builder.Services, builder.Configuration, builder.Environment); // email, preferences, autocomplete
 // ----- Admin, 2FA & CI secrets -----
 builder.Services.AddScoped<AdminUserService>(); // /admin/users
 builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Protection)
@@ -111,35 +111,35 @@ builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Pr
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 builder.Services.AddReleases(); // tags, releases, assets, source archives
 // ----- Explore & profiles -----
-builder.Services.AddScoped<GitBench.Services.Explore.StarService>();
-builder.Services.AddScoped<GitBench.Services.Explore.ExploreService>();
-builder.Services.AddScoped<GitBench.Services.Explore.UserActivityService>();
-builder.Services.AddScoped<GitBench.Services.Explore.SearchService>();
-builder.Services.AddScoped<GitBench.Services.Wiki.WikiService>(); // project wikis (git-backed) and snippets
-builder.Services.AddScoped<GitBench.Services.Snippets.SnippetService>();
-builder.Services.AddScoped<GitBench.Services.Git.IGitPushListener, GitBench.Services.Explore.PushActivityListener>();
+builder.Services.AddScoped<ByteBench.Services.Explore.StarService>();
+builder.Services.AddScoped<ByteBench.Services.Explore.ExploreService>();
+builder.Services.AddScoped<ByteBench.Services.Explore.UserActivityService>();
+builder.Services.AddScoped<ByteBench.Services.Explore.SearchService>();
+builder.Services.AddScoped<ByteBench.Services.Wiki.WikiService>(); // project wikis (git-backed) and snippets
+builder.Services.AddScoped<ByteBench.Services.Snippets.SnippetService>();
+builder.Services.AddScoped<ByteBench.Services.Git.IGitPushListener, ByteBench.Services.Explore.PushActivityListener>();
 builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git over SSH (Ssh:Enabled)
 // ----- Mirroring, protected tags & Git LFS -----
 builder.Services.AddScoped<ProtectedTagService>();
-GitBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
-GitBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
+ByteBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
+ByteBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
-builder.Services.AddGitBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import
+builder.Services.AddByteBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import
 // ----- Forks & cross-fork pull requests -----
-builder.Services.AddScoped<GitBench.Services.Forks.ForkService>();
-builder.Services.AddScoped<GitBench.Services.Forks.ForkPullRequestSync>();
-builder.Services.AddScoped<IGitPushListener, GitBench.Services.Forks.ForkPushListener>();
-GitBench.Services.Reports.ReportsServiceCollectionExtensions.AddDeliveryReports(builder.Services); // cycle/lead time, flow, DORA and pull request reports
+builder.Services.AddScoped<ByteBench.Services.Forks.ForkService>();
+builder.Services.AddScoped<ByteBench.Services.Forks.ForkPullRequestSync>();
+builder.Services.AddScoped<IGitPushListener, ByteBench.Services.Forks.ForkPushListener>();
+ByteBench.Services.Reports.ReportsServiceCollectionExtensions.AddDeliveryReports(builder.Services); // cycle/lead time, flow, DORA and pull request reports
 builder.Services.AddIssueFields(); // custom fields, components, versions, issue templates, estimates, Workbench link
-GitBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder.Services, builder.Configuration); // web editor + AI assistant
-GitBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistry(builder.Services); // NuGet, npm and container registry per project
-GitBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.AddServiceDesk(builder.Services, builder.Configuration); // service desk: inbound mail, public form, queue
-GitBench.Services.Pages.PagesServiceCollectionExtensions.AddPages(builder.Services, builder.Configuration); // static sites from CI output (Pages:*)
+ByteBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder.Services, builder.Configuration); // web editor + AI assistant
+ByteBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistry(builder.Services); // NuGet, npm and container registry per project
+ByteBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.AddServiceDesk(builder.Services, builder.Configuration); // service desk: inbound mail, public form, queue
+ByteBench.Services.Pages.PagesServiceCollectionExtensions.AddPages(builder.Services, builder.Configuration); // static sites from CI output (Pages:*)
 
-GitBench.Services.Flags.FlagsServiceCollectionExtensions.AddFeatureFlags(builder.Services); // feature flags per project, SDK keys, live updates
+ByteBench.Services.Flags.FlagsServiceCollectionExtensions.AddFeatureFlags(builder.Services); // feature flags per project, SDK keys, live updates
 
 var app = builder.Build();
-app.UseGitBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
+app.UseByteBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
 ProductionChecks.LogAtStartup(app.Configuration, app.Environment, app.Logger); // hosting review: warnings in the log
 
 using (var scope = app.Services.CreateScope())
@@ -162,8 +162,8 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
-app.UseGitBenchHttps(); // HSTS + HTTPS redirection outside Development
-app.UseGitBenchSecurityHeaders(); // CSP, X-Frame-Options, Referrer-Policy, …
+app.UseByteBenchHttps(); // HSTS + HTTPS redirection outside Development
+app.UseByteBenchSecurityHeaders(); // CSP, X-Frame-Options, Referrer-Policy, …
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
 // Explicit (rather than the implicit ones WebApplication adds first) so they also run when
@@ -172,7 +172,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAuthentication();
 // Pages serves /pages/... and Pages:BaseDomain hosts only. It sits before UseAuthorization, which would otherwise challenge the
 // app's own endpoints that a site's "/" matches (Home); it does its own access checks. Before rate limiting, antiforgery and static assets.
-GitBench.Services.Pages.PagesServiceCollectionExtensions.UsePages(app);
+ByteBench.Services.Pages.PagesServiceCollectionExtensions.UsePages(app);
 app.UseAuthorization();
 app.UseRateLimiter(); // after authentication, so API limits can key on the signed-in user
 
@@ -181,24 +181,24 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.UseWebhookPushCapture();
 app.MapGitHttp();
-GitBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info/lfs/...
-GitBench.Services.Packages.PackagesServiceCollectionExtensions.MapPackageRegistry(app); // /packages/{KEY}/nuget|npm/..., /v2/ (OCI)
+ByteBench.Services.Lfs.LfsEndpoints.MapGitLfs(app); // /git/{KEY}/{slug}.git/info/lfs/...
+ByteBench.Services.Packages.PackagesServiceCollectionExtensions.MapPackageRegistry(app); // /packages/{KEY}/nuget|npm/..., /v2/ (OCI)
 app.MapCiEndpoints();
-GitBench.Services.Security.SecurityServiceCollectionExtensions.MapSecurityDownloads(app); // triage.json export
-GitBench.Services.Flags.FlagSdkEndpoints.MapFlagSdk(app); // /api/v1/flags/*: SDK-key authenticated evaluation (before the user API's catch-all)
-app.MapGitBenchApi();
-GitBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // /integrations/slack/{commands,interactivity,events}
-GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
-GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
+ByteBench.Services.Security.SecurityServiceCollectionExtensions.MapSecurityDownloads(app); // triage.json export
+ByteBench.Services.Flags.FlagSdkEndpoints.MapFlagSdk(app); // /api/v1/flags/*: SDK-key authenticated evaluation (before the user API's catch-all)
+app.MapByteBenchApi();
+ByteBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // /integrations/slack/{commands,interactivity,events}
+ByteBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
+ByteBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();
 app.MapIssueCsvExport(); // /p/{key}/issues/export.csv, /issues/export.csv
-GitBench.Services.Reports.ReportsServiceCollectionExtensions.MapReportDownloads(app); // /p/{key}/reports/{report}.csv
-GitBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
-GitBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.MapServiceDesk(app); // POST /service-desk/inbound (signed raw MIME)
+ByteBench.Services.Reports.ReportsServiceCollectionExtensions.MapReportDownloads(app); // /p/{key}/reports/{report}.csv
+ByteBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
+ByteBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.MapServiceDesk(app); // POST /service-desk/inbound (signed raw MIME)
 app.MapReleases();
-app.MapGitBenchHealth(); // /health/live, /health/ready
-GitBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.MapBackupDownloads(app); // /admin/backups/download/{name}
-app.MapGitBenchSso(); // /account/sso/*: start, complete and link SSO sign-ins
+app.MapByteBenchHealth(); // /health/live, /health/ready
+ByteBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.MapBackupDownloads(app); // /admin/backups/download/{name}
+app.MapByteBenchSso(); // /account/sso/*: start, complete and link SSO sign-ins
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
@@ -213,5 +213,5 @@ app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit
 app.Run();
 return 0;
 
-// Lets the integration tests (tests/GitBench.Tests) use WebApplicationFactory<Program>.
+// Lets the integration tests (tests/ByteBench.Tests) use WebApplicationFactory<Program>.
 public partial class Program;

@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 /// <summary>
 /// Demo custom fields, components, versions, an issue template and estimates for WEB. Runs once: skipped when

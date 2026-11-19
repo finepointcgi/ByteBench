@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services.Automation;
+namespace ByteBench.Services.Automation;
 
 /// <summary>Everything a rule run knows: the rule, the event and the loaded issue / pull request / pipeline / comment.</summary>
 public sealed class AutomationContext

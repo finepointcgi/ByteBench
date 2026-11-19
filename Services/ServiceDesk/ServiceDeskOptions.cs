@@ -1,4 +1,4 @@
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 /// <summary>
 /// The <c>ServiceDesk</c> configuration section. Secrets (<see cref="WebhookSecret"/>, <c>Imap:Password</c>) never go in
@@ -10,12 +10,12 @@ public sealed class ServiceDeskOptions
     /// The inbound mailbox, e.g. <c>desk@support.example.com</c>. Projects get <c>desk+&lt;key&gt;@support.example.com</c>
     /// (plus-addressing) and replies go to <c>desk+r-&lt;token&gt;@support.example.com</c>. Projects can also have a custom address.
     /// </summary>
-    public string IncomingAddress { get; set; } = "desk@gitbench.localhost";
+    public string IncomingAddress { get; set; } = "desk@bytebench.localhost";
 
     /// <summary>Shared secret for <c>POST /service-desk/inbound</c> (raw MIME, HMAC-SHA256 signed). Empty: the endpoint is off.</summary>
     public string? WebhookSecret { get; set; }
 
-    /// <summary>How far a webhook's <c>X-GitBench-Timestamp</c> may be from now (replay protection).</summary>
+    /// <summary>How far a webhook's <c>X-ByteBench-Timestamp</c> may be from now (replay protection).</summary>
     public int WebhookToleranceSeconds { get; set; } = 300;
 
     /// <summary>Largest raw message accepted (webhook body or IMAP message).</summary>

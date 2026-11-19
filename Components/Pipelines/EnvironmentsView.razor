@@ -1,7 +1,7 @@
 @* Environments of a project (every repository) or of one repository: current deployment, version, history with the
    commits each deployment shipped, approvals waiting, rollback, stop, approval rules and deploy freezes. *@
-@using GitBench.Components.Repositories
-@using GitBench.Services.Git
+@using ByteBench.Components.Repositories
+@using ByteBench.Services.Git
 @inject CiEnvironmentService EnvironmentsService
 @inject PipelineService Pipelines
 @inject DeployFreezeService Freezes
@@ -174,7 +174,7 @@
                                             <div class="mud-text-secondary">
                                                 @(ch.Backwards ? "Rolled back" : "Shipped") @ch.Commits.Count@(ch.Truncated ? "+" : "") commit@(ch.Commits.Count == 1 ? "" : "s")
                                                 @(ch.Backwards ? "deployed" : "since") <a class="sha-pill" href="@RepoUrls.Commit(repo, ch.Previous.CommitSha)">@ch.Previous.CommitSha[..7]</a>
-                                                (<a href="@GitBench.Services.PrUrls.Compare(repo, ch.Backwards ? d.CommitSha : ch.Previous.CommitSha, ch.Backwards ? ch.Previous.CommitSha : d.CommitSha)">compare</a>)
+                                                (<a href="@ByteBench.Services.PrUrls.Compare(repo, ch.Backwards ? d.CommitSha : ch.Previous.CommitSha, ch.Backwards ? ch.Previous.CommitSha : d.CommitSha)">compare</a>)
                                             </div>
                                         }
                                         @foreach (var c in ch.Commits)

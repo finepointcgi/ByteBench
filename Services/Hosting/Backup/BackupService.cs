@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Hosting.Backup;
+namespace ByteBench.Services.Hosting.Backup;
 
 /// <summary>
 /// Backups from inside the running server: "back up now" on <c>/admin/backups</c> and the schedule (<c>Backup:Enabled</c>).

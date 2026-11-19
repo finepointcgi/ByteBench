@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Base type of everything published on <see cref="LiveEvents"/>.</summary>
 public abstract record LiveEvent;

@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 public enum ServiceDeskQueueFilter { WaitingOnUs, Unanswered, Open, Closed, All }
 

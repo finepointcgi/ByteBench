@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 /// <summary>What a deployment does to its environment: <c>environment: { action: stop }</c> stops it.</summary>
 public enum DeploymentAction { Start, Stop }

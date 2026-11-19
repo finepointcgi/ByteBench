@@ -4,7 +4,7 @@
 <p>Both features are <strong>off by default</strong> and need AI set up first; see <a href="ai.html#setup">AI overview and setup</a>. Pull request review runs on the same backend as the web editor (Claude Code on the server or the Anthropic API, see <a href="ai.html#settings"><code>Ai:Editor:Backend</code></a>). Issue triage uses the Anthropic API key only.</p>
 
 <h2 id="review">AI pull request review</h2>
-<p>An AI review reads the pull request title, description, commit messages and diff and posts inline comments from a bot account named <strong>GitBench AI</strong> (<code>gitbench-ai</code>). The bot has no password and cannot sign in. Its comments carry an <strong>AI</strong> badge. It <strong>never approves</strong> a pull request and never merges.</p>
+<p>An AI review reads the pull request title, description, commit messages and diff and posts inline comments from a bot account named <strong>ByteBench AI</strong> (<code>bytebench-ai</code>). The bot has no password and cannot sign in. Its comments carry an <strong>AI</strong> badge. It <strong>never approves</strong> a pull request and never merges.</p>
 
 <h3 id="review-settings">Turn it on for a repository</h3>
 <ol>
@@ -34,7 +34,7 @@
 </ul>
 
 <h3 id="findings">Findings and severities</h3>
-<p>The model returns structured findings, each with a file, line, severity, title and body, plus an overall verdict. GitBench validates every finding against the diff before posting.</p>
+<p>The model returns structured findings, each with a file, line, severity, title and body, plus an overall verdict. ByteBench validates every finding against the diff before posting.</p>
 <table>
 <thead><tr><th>Severity</th><th>Meaning</th><th>Blocks?</th></tr></thead>
 <tbody>
@@ -88,7 +88,7 @@
 <p>Both switches are off by default. Changes are audited as <code>project.settings_changed</code>. If AI is not configured, the card says so and nothing is suggested.</p>
 
 <h3 id="triage-panel">The suggestions panel</h3>
-<p>On an issue, the <strong>AI suggestions</strong> panel shows the latest run. When triage is on, GitBench queues a run automatically for each newly created issue (only if the issue is under about two minutes old and has no run yet). Anyone with the Developer role can press <strong>Suggest</strong> (or <strong>Suggest again</strong>) to request one. Runs happen on a background queue, and the panel updates live.</p>
+<p>On an issue, the <strong>AI suggestions</strong> panel shows the latest run. When triage is on, ByteBench queues a run automatically for each newly created issue (only if the issue is under about two minutes old and has no run yet). Anyone with the Developer role can press <strong>Suggest</strong> (or <strong>Suggest again</strong>) to request one. Runs happen on a background queue, and the panel updates live.</p>
 <p>Each suggestion has a kind (label, component, priority, type, assignee or duplicate), a value, a reason, and its state: pending, accepted, dismissed or applied automatically.</p>
 <ul>
 <li><strong>Accept</strong> applies it through the normal issue services as you, so permissions, activity entries, notifications, workflow rules, webhooks and <a href="automation.html">automation</a> all run just as if you made the change by hand. Accepting a duplicate adds a "duplicates" link to the other issue. An assignee is re-checked at accept time and must still be a Developer or higher.</li>
@@ -137,10 +137,10 @@
 <tr><td><code>POST /issues/{number}/triage/items/{id}/dismiss</code></td><td>Dismiss one suggestion.</td></tr>
 </tbody></table>
 <pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/42/triage
+  https://bytebench.example.com/api/v1/projects/WEB/issues/42/triage
 
 curl -H "Authorization: Bearer $TOKEN" \
-  https://gitbench.example.com/api/v1/projects/WEB/issues/42/triage</code></pre>
+  https://bytebench.example.com/api/v1/projects/WEB/issues/42/triage</code></pre>
 
 <div class="cards">
 <a class="card" href="ai.html"><b>AI overview and setup</b><span>API key, Claude Code, privacy</span></a>

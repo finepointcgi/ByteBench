@@ -1,14 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Lfs;
+namespace ByteBench.Services.Lfs;
 
 /// <summary>
 /// The Git LFS API at <c>/git/{KEY}/{slug}.git/info/lfs/…</c> (the URL git-lfs derives from the clone URL), with the
@@ -30,6 +30,7 @@ public static class LfsEndpoints
 {
     public const string MediaType = "application/vnd.git-lfs+json";
     private const string ActionTokenPrefix = "gblfs.";
+    // Stored identifier: keep "GitBench" (the product was renamed to ByteBench). Changing it would make existing encrypted data/tokens unreadable.
     private const string TokenPurpose = "GitBench.Lfs.Action.v1";
     private static readonly TimeSpan ActionLifetime = TimeSpan.FromHours(1);
     public const int MaxObjectsPerBatch = 1000;
@@ -44,7 +45,7 @@ public static class LfsEndpoints
 
     public static IEndpointRouteBuilder MapGitLfs(this IEndpointRouteBuilder app)
     {
-        var logger = app.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("GitBench.Lfs");
+        var logger = app.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.Lfs");
         var group = app.MapGroup("/git/{projectKey}/{repo}/info/lfs").DisableAntiforgery();
         group.MapPost("/objects/batch", (HttpContext ctx, string projectKey, string repo) => BatchAsync(ctx, logger, projectKey, repo));
         group.MapPost("/objects/verify", (HttpContext ctx, string projectKey, string repo) => VerifyAsync(ctx, logger, projectKey, repo));
@@ -262,8 +263,8 @@ public static class LfsEndpoints
         }
         if (user == null)
         {
-            ctx.Response.Headers["LFS-Authenticate"] = "Basic realm=\"GitBench\"";
-            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"GitBench\", charset=\"UTF-8\"";
+            ctx.Response.Headers["LFS-Authenticate"] = "Basic realm=\"ByteBench\"";
+            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"ByteBench\", charset=\"UTF-8\"";
             await ErrorAsync(ctx, 401, error ?? "Authentication required.");
             return null;
         }

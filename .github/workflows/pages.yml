@@ -1,7 +1,7 @@
 name: pages
 
 # Builds the documentation site (site/) and publishes it to GitHub Pages whenever the site changes on master.
-# https://finepointcgi.github.io/GitBench/
+# https://finepointcgi.github.io/ByteBench/
 
 on:
   push:

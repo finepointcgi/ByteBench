@@ -1,13 +1,13 @@
 @page "/p/{Key}/reports/delivery"
 @using System.Globalization
-@using GitBench.Components.Reports
-@using GitBench.Services.Reports
+@using ByteBench.Components.Reports
+@using ByteBench.Services.Reports
 @inject IssueService Issues
 @inject ProjectAccess Access
 @inject DeliveryReportService Delivery
 @inject DoraReportService Dora
 @inject PullRequestReportService PullRequests
-@inject GitBench.Services.Fields.ComponentVersionService ComponentsService
+@inject ByteBench.Services.Fields.ComponentVersionService ComponentsService
 @inject ISnackbar Snackbar
 
 <PageTitle>Delivery reports · @project?.Name</PageTitle>

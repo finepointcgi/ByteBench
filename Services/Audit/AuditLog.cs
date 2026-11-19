@@ -2,14 +2,14 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Audit;
+namespace ByteBench.Services.Audit;
 
 public class AuditOptions
 {
@@ -316,7 +316,7 @@ public static class AuditServiceCollectionExtensions
             try { page = await audit.SearchAsync(q, all: true); }
             catch (ForbiddenException) { return Results.StatusCode(StatusCodes.Status403Forbidden); }
             await audit.RecordAsync("audit.exported", projectId: projectId, details: new { project, actor, action, from, to, rows = page.Events.Count });
-            var name = $"gitbench-audit{(project != null ? "-" + project.ToLowerInvariant() : "")}-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv";
+            var name = $"bytebench-audit{(project != null ? "-" + project.ToLowerInvariant() : "")}-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv";
             return Results.File(Encoding.UTF8.GetBytes(AuditLog.ToCsv(page)), "text/csv; charset=utf-8", name);
         }).RequireAuthorization();
     }

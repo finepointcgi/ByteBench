@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Wiki;
+namespace ByteBench.Services.Wiki;
 
 /// <summary>A project's wiki as seen by the acting user.</summary>
 public sealed record WikiInfo(int ProjectId, string ProjectKey, string ProjectName, bool Enabled, ProjectPermissions Perms, string RepoPath)

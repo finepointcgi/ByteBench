@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>One CODEOWNERS line: a path pattern and its owners (as written, e.g. "@alice", "@team/backend", "dev@example.com").</summary>
 public sealed record CodeOwnerRule(int LineNumber, string Pattern, IReadOnlyList<string> Owners, Regex Matcher);
@@ -16,8 +16,8 @@ public sealed record CodeOwnerRule(int LineNumber, string Pattern, IReadOnlyList
 /// </summary>
 public sealed class CodeOwnersFile
 {
-    /// <summary>Where GitBench looks for the file on the target branch, in order.</summary>
-    public static readonly string[] Locations = [".gitbench/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"];
+    /// <summary>Where ByteBench looks for the file on the target branch, in order.</summary>
+    public static readonly string[] Locations = [".bytebench/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS", ".gitbench/CODEOWNERS" /* before the rename from GitBench */];
 
     public IReadOnlyList<CodeOwnerRule> Rules { get; }
     /// <summary>Lines that couldn't be parsed ("line 4: …").</summary>

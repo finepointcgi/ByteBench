@@ -1,11 +1,11 @@
 using Anthropic;
 using Anthropic.Models.Beta;
 using Anthropic.Models.Beta.Messages;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>Configuration section "Ai" in appsettings.json.</summary>
 public class AiOptions
@@ -24,7 +24,7 @@ public class AiOptions
 public record AiResult(string Text, string? StopReason, bool Refused);
 
 /// <summary>
-/// Shared entry point to Claude for every AI feature in GitBench. Owns the SDK client, the model choice,
+/// Shared entry point to Claude for every AI feature in ByteBench. Owns the SDK client, the model choice,
 /// refusal fallbacks and usage logging, so features only build prompts and parse answers.
 /// Register as a singleton.
 /// </summary>

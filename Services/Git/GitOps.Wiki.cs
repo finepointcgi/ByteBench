@@ -1,7 +1,7 @@
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>One change for <see cref="GitOps.CommitChanges"/>: new content for a path, or null bytes to delete it.</summary>
 public sealed record GitFileChange(string Path, byte[]? Content);

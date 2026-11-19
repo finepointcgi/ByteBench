@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Audit;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Workbench;
+namespace ByteBench.Services.Workbench;
 
 /// <summary>Site settings for the link to Workbench, the company's ERP, where time is recorded (config section <c>Workbench</c>).</summary>
 public class WorkbenchOptions
@@ -17,7 +17,7 @@ public class WorkbenchOptions
 public sealed record WorkbenchLink(string Wbs, string? ProjectCode, bool IsIssueOverride, string TimesheetUrl);
 
 /// <summary>
-/// The Workbench link. GitBench doesn't track time: hours are recorded in Workbench timesheets, which are the cost record.
+/// The Workbench link. ByteBench doesn't track time: hours are recorded in Workbench timesheets, which are the cost record.
 /// A project maps to a Workbench charge code (WBS element) and optionally a Workbench project code (Maintainer+); an issue
 /// can override the WBS code. Issue pages then offer "Log time in Workbench", which opens the user's timesheet
 /// (<c>{BaseUrl}/time</c>, the current week) in a new tab. Workbench's timesheet route takes no charge code, so the code

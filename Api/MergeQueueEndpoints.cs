@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.MergeQueue;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.MergeQueue;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>One merge queue entry. <c>state</c>: queued, testing, passed, merged, failed or removed.</summary>
 public record MergeQueueEntryDto(int Id, int PullRequestNumber, string PullRequestTitle, string TargetBranch, string State, int? Position,

@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 // Workflow statuses. Issue.Status is the status *category* and Issue.WorkflowStatusId the project's own status;
 // ReconcileStatusAsync is the one place that keeps them in step, and every status change goes through it

@@ -1,11 +1,11 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Sso;
+namespace ByteBench.Services.Sso;
 
 /// <summary>
-/// Applies an identity provider's (or LDAP's) view of a user to GitBench: site admin from the admin groups, and group
+/// Applies an identity provider's (or LDAP's) view of a user to ByteBench: site admin from the admin groups, and group
 /// memberships from the group mappings. The external source only manages what it created:
 /// <list type="bullet">
 /// <item>Admin: granted when the user is in an admin group; revoked only if this source granted it
@@ -17,7 +17,7 @@ namespace GitBench.Services.Sso;
 /// </summary>
 public class ExternalGroupSync(IDbContextFactory<AppDbContext> dbFactory, Audit.AuditLog audit, ILogger<ExternalGroupSync> log)
 {
-    /// <summary>The highest mapped role per GitBench group path for a user in <paramref name="externalGroups"/>.</summary>
+    /// <summary>The highest mapped role per ByteBench group path for a user in <paramref name="externalGroups"/>.</summary>
     public static Dictionary<string, ProjectRole> DesiredGroups(IEnumerable<ExternalGroupMapping> mappings, IEnumerable<string> externalGroups)
     {
         var mine = new HashSet<string>(externalGroups, StringComparer.OrdinalIgnoreCase);

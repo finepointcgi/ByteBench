@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Git;
 using Microsoft.AspNetCore.Identity;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>/api/v1/projects/{key}/repos… and pull requests. Reads use <see cref="RepositoryService"/>/<see cref="GitOps"/>; writes go through <see cref="PullRequestService"/>.</summary>
 public static class RepoEndpoints
@@ -140,7 +140,7 @@ public static class RepoEndpoints
         {
             // Cross-fork: sourceRepository is "KEY/slug" of a fork in this repository's network (see ForkEndpoints).
             var source = await ForkEndpoints.RequireRepoPathAsync(repos, body.SourceRepository);
-            pr = await http.RequestServices.GetRequiredService<GitBench.Services.Forks.ForkService>().CreatePullRequestAsync(
+            pr = await http.RequestServices.GetRequiredService<ByteBench.Services.Forks.ForkService>().CreatePullRequestAsync(
                 source, body.SourceBranch, repo, body.TargetBranch, body.Title ?? "", body.Description, caller.Id, body.Draft);
         }
         else

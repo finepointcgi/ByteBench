@@ -1,15 +1,15 @@
 @page "/account/notifications"
 @attribute [Authorize]
-@using GitBench.Services.Email
+@using ByteBench.Services.Email
 @using Microsoft.Extensions.Options
 @inject NotificationPreferences Preferences
 @inject CurrentUser Me
 @inject IOptions<EmailOptions> EmailOptions
-@inject IOptionsMonitor<GitBench.Services.ChatIntegrations.SlackOptions> SlackOptions
-@inject GitBench.Services.ChatIntegrations.SlackAccountLinks SlackLinks
+@inject IOptionsMonitor<ByteBench.Services.ChatIntegrations.SlackOptions> SlackOptions
+@inject ByteBench.Services.ChatIntegrations.SlackAccountLinks SlackLinks
 @inject ISnackbar Snackbar
 
-<PageTitle>Notification preferences · GitBench</PageTitle>
+<PageTitle>Notification preferences · ByteBench</PageTitle>
 
 <div class="notif-prefs-page">
 <div class="page-header">
@@ -75,8 +75,8 @@ else
             @if (slackLinks.Count == 0)
             {
                 <MudText Typo="Typo.body2" Class="mud-text-secondary np-help">
-                    Run <code>/gitbench link</code> in Slack to connect your Slack account. Linked accounts can use the
-                    <code>/gitbench</code> command and see previews of GitBench links.
+                    Run <code>/bytebench link</code> in Slack to connect your Slack account. Linked accounts can use the
+                    <code>/bytebench</code> command and see previews of ByteBench links.
                 </MudText>
             }
             else
@@ -95,7 +95,7 @@ else
                 {
                     <MudSwitch T="bool" Value="slackDm" ValueChanged="OnSlackDmToggled" Color="Color.Primary" Class="mt-3"
                                Label="Also send my notifications as Slack direct messages" />
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary np-help">Every group not turned Off above is sent by the GitBench app in Slack.</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary np-help">Every group not turned Off above is sent by the ByteBench app in Slack.</MudText>
                 }
             }
         </MudPaper>

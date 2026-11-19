@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 /// <summary>Who may open a repository's site. <see cref="Members"/> means everyone who can view the project (see ProjectAccess).</summary>
 public enum PagesVisibility { Members, Public }
@@ -8,9 +8,9 @@ public enum PagesVisibility { Members, Public }
 /// <summary>What the site answers for a path that has no file.</summary>
 public enum PagesNotFoundMode
 {
-    /// <summary>The site's own <c>404.html</c> when it has one, else GitBench's plain page (status 404).</summary>
+    /// <summary>The site's own <c>404.html</c> when it has one, else ByteBench's plain page (status 404).</summary>
     Site404,
-    /// <summary>Always GitBench's plain page, even if the site ships a <c>404.html</c>.</summary>
+    /// <summary>Always ByteBench's plain page, even if the site ships a <c>404.html</c>.</summary>
     Plain,
     /// <summary>Single-page apps: paths without a file extension get <c>index.html</c> with status 200; others 404.</summary>
     SpaFallback,

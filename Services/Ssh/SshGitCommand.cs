@@ -1,13 +1,13 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Git;
-using GitBench.Services.Hosting;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Git;
+using ByteBench.Services.Hosting;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 /// <summary>
 /// Runs one exec command on the SSH server: <c>git-upload-pack '&lt;path&gt;'</c> (clone, fetch) or
@@ -59,7 +59,7 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
         {
             log.LogInformation("SSH: refused command {Command} from {Name} at {Remote}", Truncate(command), id.Name, remote);
             return (1, Encoding.UTF8.GetBytes(
-                "GitBench only runs git over SSH (clone, fetch and push), e.g. git clone ssh://git@<host>:<port>/KEY/repository.git\n"), null);
+                "ByteBench only runs git over SSH (clone, fetch and push), e.g. git clone ssh://git@<host>:<port>/KEY/repository.git\n"), null);
         }
 
         if (rateLimits.TryAcquireSsh(id.IsDeployKey ? "d:" + id.KeyId : "u:" + id.UserId) is { } wait)
@@ -126,7 +126,7 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
         IReadOnlyDictionary<string, string>? env = null;
         if (policy.Rules.Any(r => r.BlockForcePushes))
         {
-            refsFile = Path.Combine(Path.GetTempPath(), "gitbench-ff-" + Guid.NewGuid().ToString("N"));
+            refsFile = Path.Combine(Path.GetTempPath(), "bytebench-ff-" + Guid.NewGuid().ToString("N"));
             env = ProtectedPushGuard.HookEnvironmentWithRefsFile(storage, refsFile);
         }
 
@@ -292,7 +292,7 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
     /// <summary>An <c>ERR</c> pkt-line: git stops and prints <c>fatal: remote error: &lt;message&gt;</c>.</summary>
     public static (int, byte[]?, (int, int)?) Error(string message)
     {
-        var line = "ERR GitBench: " + message + "\n";
+        var line = "ERR ByteBench: " + message + "\n";
         return (1, Encoding.UTF8.GetBytes((Encoding.UTF8.GetByteCount(line) + 4).ToString("x4") + line), null);
     }
 

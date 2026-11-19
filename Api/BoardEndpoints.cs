@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Boards;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Boards;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record BoardSummaryDto(int Id, string Name, BoardType Type, bool IsDefault, BoardSwimlane Swimlane, string WebUrl);
 

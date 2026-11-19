@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Markdig;
 using Microsoft.AspNetCore.Components;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Presentation helpers shared across components.</summary>
 public static class Display

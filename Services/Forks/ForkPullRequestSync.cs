@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Forks;
+namespace ByteBench.Services.Forks;
 
 /// <summary>
 /// Keeps fork PRs' <c>refs/pull/{n}/head</c> in their target repositories in step with the forks' branches (scoped).

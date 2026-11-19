@@ -1,4 +1,4 @@
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 /// <summary>
 /// The <c>Email</c> configuration section. Credentials never go in appsettings: set them with user-secrets or
@@ -12,8 +12,8 @@ public sealed class EmailOptions
     /// <summary><c>Pickup</c> (write .eml files to <see cref="PickupDirectory"/>) or <c>Smtp</c>. Default: Pickup in Development, Smtp otherwise.</summary>
     public string? Sender { get; set; }
 
-    /// <summary>Sender address, e.g. <c>GitBench &lt;gitbench@example.com&gt;</c>.</summary>
-    public string From { get; set; } = "GitBench <gitbench@localhost>";
+    /// <summary>Sender address, e.g. <c>ByteBench &lt;bytebench@example.com&gt;</c>.</summary>
+    public string From { get; set; } = "ByteBench <bytebench@localhost>";
 
     /// <summary>Where the pickup sender writes .eml files (relative to the content root).</summary>
     public string PickupDirectory { get; set; } = "mail-drop";

@@ -1,9 +1,9 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Security;
+namespace ByteBench.Services.Security;
 
-/// <summary>A finding with its effective triage: GitBench's decision if one is active, else what the report carried.</summary>
+/// <summary>A finding with its effective triage: ByteBench's decision if one is active, else what the report carried.</summary>
 public sealed record SecurityFindingView(SecurityFinding Finding, SecurityTriageState State, SecurityTriage? Triage)
 {
     /// <summary>New or confirmed: counts as open (Night Owl's quality gate considers exactly these).</summary>
@@ -84,7 +84,7 @@ public static class SecuritySnapshots
         return result;
     }
 
-    /// <summary>GitBench's decision wins while active; an expired one falls back to the report's own state (from its triage.json).</summary>
+    /// <summary>ByteBench's decision wins while active; an expired one falls back to the report's own state (from its triage.json).</summary>
     public static SecurityFindingView View(SecurityFinding f, SecurityTriage? t, DateTime now) =>
         t != null && t.IsActive(now) ? new(f, t.State, t) : new(f, f.ReportedTriage, t);
 

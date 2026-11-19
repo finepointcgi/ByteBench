@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 /// <summary>The kind of value a feature flag serves. <see cref="Json"/> covers objects and arrays (and any valid JSON).</summary>
 public enum FlagType { Boolean, String, Number, Json }

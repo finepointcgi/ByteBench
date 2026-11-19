@@ -49,7 +49,7 @@
     protected override void OnParametersSet()
     {
         end = Today ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var first = end.AddDays(-GitBench.Services.Explore.UserActivityService.CalendarDays);
+        var first = end.AddDays(-ByteBench.Services.Explore.UserActivityService.CalendarDays);
         start = first.AddDays(-(int)first.DayOfWeek); // back to Sunday
         max = Days.Where(kv => kv.Key >= start && kv.Key <= end).Select(kv => kv.Value).DefaultIfEmpty(0).Max();
     }

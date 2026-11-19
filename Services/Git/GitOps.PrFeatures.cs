@@ -2,7 +2,7 @@ using System.Text;
 using LibGit2Sharp;
 using LgRepository = LibGit2Sharp.Repository;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>A replacement of lines <see cref="StartLine"/>..<see cref="EndLine"/> (1-based, inclusive) of a file.</summary>
 /// <param name="ExpectedText">What those lines must currently read (joined with \n); the edit is refused otherwise.</param>
@@ -56,7 +56,7 @@ public static partial class GitOps
 
             var now = DateTimeOffset.Now;
             var commit = r.ObjectDatabase.CreateCommit(Sig(author, now), Sig(committer, now), message, result.Tree, [t], prettifyMessage: true);
-            r.Refs.UpdateTarget(r.Refs[tb.CanonicalName], commit.Id, $"merge {source}: Squashed by GitBench");
+            r.Refs.UpdateTarget(r.Refs[tb.CanonicalName], commit.Id, $"merge {source}: Squashed by ByteBench");
             return new MergeOutcome(true, null, commit.Sha, false, s.Sha, t.Sha, []);
         }
     }
@@ -97,7 +97,7 @@ public static partial class GitOps
                 onto = r.ObjectDatabase.CreateCommit(c.Author, Sig(committer, when), c.Message, picked.Tree, [onto], prettifyMessage: false);
             }
             if (onto.Sha == t.Sha) return Failed($"Every change from '{source}' is already on '{target}'.");
-            r.Refs.UpdateTarget(r.Refs[tb.CanonicalName], onto.Id, $"merge {source}: Rebased by GitBench");
+            r.Refs.UpdateTarget(r.Refs[tb.CanonicalName], onto.Id, $"merge {source}: Rebased by ByteBench");
             return new MergeOutcome(true, null, onto.Sha, false, s.Sha, t.Sha, []);
         }
     }

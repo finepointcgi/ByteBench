@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Branch name patterns: exact names, or globs where <c>*</c>/<c>?</c> stay within one path segment and <c>**</c> crosses <c>/</c>.</summary>
 public static class BranchPatterns

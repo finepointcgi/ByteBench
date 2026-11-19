@@ -1,11 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Webhooks;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>A row of the Packages page.</summary>
 public sealed record PackageSummary(int Id, PackageType Type, string Name, int VersionCount, string? LatestVersion, long Size, DateTime UpdatedAt);

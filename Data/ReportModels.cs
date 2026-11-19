@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
-/// <summary>Delivery-report settings (see <see cref="GitBench.Services.Reports.DoraReportService"/>). Reports themselves have no tables: they read issues, activity, deployments and pull requests.</summary>
+/// <summary>Delivery-report settings (see <see cref="ByteBench.Services.Reports.DoraReportService"/>). Reports themselves have no tables: they read issues, activity, deployments and pull requests.</summary>
 public partial class Project
 {
     /// <summary>

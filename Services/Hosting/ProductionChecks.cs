@@ -1,6 +1,6 @@
-using GitBench.Services.Hosting.Backup;
+using ByteBench.Services.Hosting.Backup;
 
-namespace GitBench.Services.Hosting;
+namespace ByteBench.Services.Hosting;
 
 public enum CheckSeverity { Info, Warning, Problem }
 
@@ -24,11 +24,11 @@ public static class ProductionChecks
         if (prod && string.IsNullOrWhiteSpace(publicUrl))
             Add(CheckSeverity.Warning, "PublicBaseUrl", "Not set: links in API responses, webhooks and e-mail are learned from the first request. Set it to the public https:// URL.");
         else if (prod && publicUrl!.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !IsLocal(publicUrl))
-            Add(CheckSeverity.Warning, "PublicBaseUrl", "Is plain http://. Production sign-in cookies are Secure-only, so serve GitBench over https.");
+            Add(CheckSeverity.Warning, "PublicBaseUrl", "Is plain http://. Production sign-in cookies are Secure-only, so serve ByteBench over https.");
 
         var proxy = c.GetValue("ReverseProxy:Enabled", false);
         if (prod && !proxy && publicUrl?.StartsWith("https://", StringComparison.OrdinalIgnoreCase) == true)
-            Add(CheckSeverity.Warning, "ReverseProxy:Enabled", "PublicBaseUrl is https but ReverseProxy:Enabled is false: behind a TLS proxy GitBench then sees http, sends no HSTS header and logs the proxy's address as the client. Enable it and list the proxy in ReverseProxy:KnownProxies / KnownNetworks.");
+            Add(CheckSeverity.Warning, "ReverseProxy:Enabled", "PublicBaseUrl is https but ReverseProxy:Enabled is false: behind a TLS proxy ByteBench then sees http, sends no HSTS header and logs the proxy's address as the client. Enable it and list the proxy in ReverseProxy:KnownProxies / KnownNetworks.");
         if (proxy && c.GetSection("ReverseProxy:KnownProxies").GetChildren().Count() + c.GetSection("ReverseProxy:KnownNetworks").GetChildren().Count() == 0)
             Add(CheckSeverity.Info, "ReverseProxy:KnownProxies", "Only loopback proxies are trusted. Add your proxy's address or network (KnownProxies / KnownNetworks) if it runs elsewhere, e.g. another container.");
 
@@ -59,7 +59,7 @@ public static class ProductionChecks
 
         var backup = c.GetSection("Backup").Get<BackupOptions>() ?? new BackupOptions();
         if (prod && !backup.Enabled)
-            Add(CheckSeverity.Warning, "Backup:Enabled", "Scheduled backups are off. Turn them on (Backup:Enabled=true), or run `dotnet GitBench.dll backup <dir>` from cron, and test a restore.");
+            Add(CheckSeverity.Warning, "Backup:Enabled", "Scheduled backups are off. Turn them on (Backup:Enabled=true), or run `dotnet ByteBench.dll backup <dir>` from cron, and test a restore.");
         if (backup.Enabled && backup.KeepLast == 0 && backup.KeepDays == 0)
             Add(CheckSeverity.Info, "Backup:KeepLast", "No retention: archives pile up until the disk is full. Set Backup:KeepLast and/or Backup:KeepDays.");
         if (backup.Enabled && !backup.IncludeKeys)

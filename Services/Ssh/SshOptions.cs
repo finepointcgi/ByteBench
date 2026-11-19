@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.DevTunnels.Ssh.Algorithms;
 
-namespace GitBench.Services.Ssh;
+namespace ByteBench.Services.Ssh;
 
 /// <summary>Configuration section <c>Ssh</c>: the embedded SSH server for git (<see cref="SshGitServer"/>).</summary>
 public sealed class SshOptions

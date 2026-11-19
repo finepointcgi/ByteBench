@@ -1,10 +1,10 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// Personal access tokens for Git over HTTP. A token is <c>gbp_</c> + 32 random bytes in base64url. Only its SHA-256

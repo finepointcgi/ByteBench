@@ -1,14 +1,14 @@
 @page "/developers/api"
 @inject NavigationManager Nav
 
-<PageTitle>REST API · GitBench</PageTitle>
+<PageTitle>REST API · ByteBench</PageTitle>
 
 <div class="api-page">
 <div class="page-header"><MudText Typo="Typo.h5" HtmlTag="h1">REST API</MudText></div>
 
 <MudPaper Outlined="true" Class="api-panel pa-5 mb-4">
     <MudText Typo="Typo.body2" GutterBottom="true">
-        GitBench has a JSON REST API at <code>@BaseUrl/api/v1</code>. The full description is an OpenAPI document:
+        ByteBench has a JSON REST API at <code>@BaseUrl/api/v1</code>. The full description is an OpenAPI document:
         <a href="/api/v1/openapi.json" target="_blank" rel="noopener"><code>/api/v1/openapi.json</code></a>
         (load it into Swagger UI, Postman or a client generator).
     </MudText>
@@ -46,7 +46,7 @@
     <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="api-section-title mt-0">Webhooks</MudText>
     <MudText Typo="Typo.body2">
         Maintainers can send events (pushes, issues, pull requests, pipelines) to other services from a project's
-        <b>Settings → Webhooks</b>. Each delivery is signed with <code>X-GitBench-Signature-256</code>; see the README for how to verify it.
+        <b>Settings → Webhooks</b>. Each delivery is signed with <code>X-ByteBench-Signature-256</code>; see the README for how to verify it.
     </MudText>
 </MudPaper>
 </div>

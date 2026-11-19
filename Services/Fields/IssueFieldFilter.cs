@@ -1,7 +1,7 @@
 using System.Globalization;
-using GitBench.Data;
+using ByteBench.Data;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Component, version and custom field filters for the issue list, plus its optional columns.</summary>
 public partial record IssueFilter

@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.ServiceDesk;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.ServiceDesk;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 /// <summary>A service desk request in the queue. <c>waitingOnUs</c>: nobody answered yet, or the requester wrote last.</summary>
 public record ServiceDeskRequestDto(int IssueId, string Key, string Title, string Status, bool IsClosed, string RequesterName, string RequesterEmail,

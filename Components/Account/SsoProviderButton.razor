@@ -16,7 +16,7 @@ else
 }
 
 @code {
-    [Parameter, EditorRequired] public GitBench.Services.Sso.SsoProviderOptions Provider { get; set; } = default!;
+    [Parameter, EditorRequired] public ByteBench.Services.Sso.SsoProviderOptions Provider { get; set; } = default!;
     [Parameter, EditorRequired] public string Href { get; set; } = "";
     [Parameter, EditorRequired] public string Text { get; set; } = "";
     [Parameter] public bool FullWidth { get; set; } = true;

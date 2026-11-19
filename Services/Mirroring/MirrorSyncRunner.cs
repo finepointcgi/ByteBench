@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Mirroring;
+namespace ByteBench.Services.Mirroring;
 
 /// <summary>What one sync did.</summary>
 public sealed record MirrorSyncResult(bool Success, string Message, int ChangedRefs);

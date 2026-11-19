@@ -1,13 +1,13 @@
-using GitBench.Api;
-using GitBench.Data;
-using GitBench.Services.Audit;
-using GitBench.Services.Ci;
-using GitBench.Services.Git;
-using GitBench.Services.Webhooks;
+using ByteBench.Api;
+using ByteBench.Data;
+using ByteBench.Services.Audit;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Git;
+using ByteBench.Services.Webhooks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Pages;
+namespace ByteBench.Services.Pages;
 
 /// <summary>One deployment to make (see <see cref="PagesDeployer.DeployZipAsync"/>).</summary>
 public sealed record PagesDeployRequest(int RepositoryId, string Slot, string Ref, string CommitSha, string ZipPath,
@@ -34,7 +34,7 @@ public class PagesDeployer(IDbContextFactory<AppDbContext> dbFactory, PagesStora
     public async Task<(bool Ok, List<string> Notes)> DeployFromWorkspaceAsync(Pipeline p, PipelineJob job, string workspace, CiPagesDefinition def)
     {
         var notes = new List<string>();
-        const string pre = "[gitbench] Pages: ";
+        const string pre = "[bytebench] Pages: ";
         if (!Options.Enabled) { notes.Add(pre + "Pages is turned off on this server; nothing was published."); return (true, notes); }
         if (p.IsForkPullRequest) { notes.Add(pre + "not published: pipelines of fork pull requests never publish sites."); return (true, notes); }
 

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace GitBench.Services.ServiceDesk;
+namespace ByteBench.Services.ServiceDesk;
 
 public static class ServiceDeskServiceCollectionExtensions
 {

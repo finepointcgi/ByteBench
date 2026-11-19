@@ -1,11 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Data;
+namespace ByteBench.Data;
 
 public partial class Project
 {
-    /// <summary>When true, GitBench AI suggests labels, component, priority, type, assignee and duplicates for new issues (and on demand). Off by default; Maintainer+ can change it.</summary>
+    /// <summary>When true, ByteBench AI suggests labels, component, priority, type, assignee and duplicates for new issues (and on demand). Off by default; Maintainer+ can change it.</summary>
     public bool AiTriageEnabled { get; set; }
 
     /// <summary>When true (and triage is on), suggested labels are applied to new issues straight away. Everything else always waits for a person.</summary>
@@ -18,7 +18,7 @@ public enum TriageItemKind { Label, Component, Priority, Type, Assignee, Duplica
 
 public enum TriageItemState { Pending, Accepted, Dismissed, AutoApplied }
 
-/// <summary>One AI triage pass over an issue: its suggestions are <see cref="Items"/>. Written by <see cref="GitBench.Services.Ai.Triage.TriageService"/>.</summary>
+/// <summary>One AI triage pass over an issue: its suggestions are <see cref="Items"/>. Written by <see cref="ByteBench.Services.Ai.Triage.TriageService"/>.</summary>
 public class IssueTriageRun
 {
     public int Id { get; set; }

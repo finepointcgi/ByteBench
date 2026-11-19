@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>
 /// Converts an <see cref="IssueFilter"/> to and from the issue list's URL query string, so a filter is addressable and a

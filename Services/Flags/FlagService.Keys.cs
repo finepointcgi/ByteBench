@@ -1,10 +1,10 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Flags;
+namespace ByteBench.Services.Flags;
 
 /// <summary>SDK keys: one read-only credential per environment and kind, hashed at rest, rotatable and revocable.</summary>
 public partial class FlagService

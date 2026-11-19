@@ -1,11 +1,11 @@
-using GitBench.Data;
-using GitBench.Services.Ci;
+using ByteBench.Data;
+using ByteBench.Services.Ci;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>
 /// URLs of a project's registry and the commands shown on the Packages page. <c>baseUrl</c> is the site's absolute URL
-/// without a trailing slash (e.g. <c>https://gitbench.example.com</c>).
+/// without a trailing slash (e.g. <c>https://bytebench.example.com</c>).
 /// </summary>
 public static class PackageUrls
 {
@@ -41,7 +41,7 @@ public static class PackageUrls
     /// <summary>One-time setup for the package's client (source, registry or login).</summary>
     public static string SetupCommand(string baseUrl, string projectKey, PackageType type) => type switch
     {
-        PackageType.NuGet => $"dotnet nuget add source {NuGetIndex(baseUrl, projectKey)} --name gitbench-{projectKey.ToLowerInvariant()} --username <user> --password <personal access token> --store-password-in-clear-text",
+        PackageType.NuGet => $"dotnet nuget add source {NuGetIndex(baseUrl, projectKey)} --name bytebench-{projectKey.ToLowerInvariant()} --username <user> --password <personal access token> --store-password-in-clear-text",
         PackageType.Npm => $"npm config set registry {NpmRegistry(baseUrl, projectKey)} && npm config set -- '//{RegistryHost(baseUrl)}/packages/{projectKey}/npm/:_authToken' <personal access token>",
         _ => $"docker login {RegistryHost(baseUrl)} -u <user> -p <personal access token>",
     };
@@ -56,14 +56,14 @@ public static class PackageUrls
 
     /// <summary>
     /// The non-secret registry variables a CI job gets (the job token itself goes in the secret env file as
-    /// <c>GITBENCH_JOB_TOKEN</c> and <c>GITBENCH_REGISTRY_PASSWORD</c>).
+    /// <c>BYTEBENCH_JOB_TOKEN</c> and <c>BYTEBENCH_REGISTRY_PASSWORD</c>).
     /// </summary>
     public static Dictionary<string, string> CiVariables(string baseUrl, string projectKey) => new()
     {
-        ["GITBENCH_REGISTRY"] = RegistryHost(baseUrl),
-        ["GITBENCH_REGISTRY_IMAGE"] = ImagePrefix(baseUrl, projectKey),
-        ["GITBENCH_REGISTRY_USER"] = CiJobTokens.UserName,
-        ["GITBENCH_NUGET_SOURCE_URL"] = NuGetIndex(baseUrl, projectKey),
-        ["GITBENCH_NPM_REGISTRY_URL"] = NpmRegistry(baseUrl, projectKey),
+        ["BYTEBENCH_REGISTRY"] = RegistryHost(baseUrl),
+        ["BYTEBENCH_REGISTRY_IMAGE"] = ImagePrefix(baseUrl, projectKey),
+        ["BYTEBENCH_REGISTRY_USER"] = CiJobTokens.UserName,
+        ["BYTEBENCH_NUGET_SOURCE_URL"] = NuGetIndex(baseUrl, projectKey),
+        ["BYTEBENCH_NPM_REGISTRY_URL"] = NpmRegistry(baseUrl, projectKey),
     };
 }

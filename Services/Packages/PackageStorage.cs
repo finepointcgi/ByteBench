@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Packages;
+namespace ByteBench.Services.Packages;
 
 /// <summary>An upload that doesn't match its digest, is over the size limit, or is malformed.</summary>
 public sealed class PackageUploadException(int status, string message, string code = "BLOB_UPLOAD_INVALID") : Exception(message)

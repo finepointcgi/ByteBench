@@ -1,7 +1,7 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>A change of an issue's parent, recorded by <see cref="HierarchyRules.RecordAsync"/> for notifications after saving.</summary>
 public sealed record HierarchyChange(Issue Issue, int? OldParentId, int? NewParentId);

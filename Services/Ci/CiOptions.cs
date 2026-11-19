@@ -1,4 +1,4 @@
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>Configuration section <c>Ci</c>.</summary>
 public class CiOptions
@@ -19,7 +19,7 @@ public class CiOptions
     public int PidsLimit { get; set; } = 1024;
     /// <summary>The docker CLI to run.</summary>
     public string DockerExecutable { get; set; } = "docker";
-    /// <summary>Where job workspaces are exported. Must be shareable with the Docker daemon. Default: {temp}/gitbench-ci/{instance}.</summary>
+    /// <summary>Where job workspaces are exported. Must be shareable with the Docker daemon. Default: {temp}/bytebench-ci/{instance}.</summary>
     public string? WorkDirectory { get; set; }
     /// <summary>Per-step log cap, in characters (about 1 MB by default).</summary>
     public int MaxLogChars { get; set; } = 1024 * 1024;

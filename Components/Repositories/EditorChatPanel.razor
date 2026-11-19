@@ -1,8 +1,8 @@
 @* The web editor's AI assistant, docked on the right (WebEditor.razor). Runs requests through EditorAiService (API or
    Claude Code backend), streams the reply, lists tool calls, and shows proposed edits with Diff / Accept / Reject.
    Accepted edits become working changes in the workspace; nothing is committed. *@
-@using GitBench.Services.Editor
-@using GitBench.Services.Editor.Ai
+@using ByteBench.Services.Editor
+@using ByteBench.Services.Editor.Ai
 @using System.Text
 @using System.Text.RegularExpressions
 @implements IDisposable

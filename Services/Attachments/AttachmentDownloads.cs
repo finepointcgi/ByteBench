@@ -1,8 +1,8 @@
-using GitBench.Data;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Net.Http.Headers;
 
-namespace GitBench.Services.Attachments;
+namespace ByteBench.Services.Attachments;
 
 /// <summary>
 /// <c>GET /attachments/{id}/{fileName}</c> for signed-in browser sessions (the REST API has its own, token-friendly route).

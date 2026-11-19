@@ -1,8 +1,8 @@
 using System.Text;
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 
-namespace GitBench.Services.Editor;
+namespace ByteBench.Services.Editor;
 
 /// <summary>What the web editor needs to know about an open workspace and what the user may do in it.</summary>
 /// <param name="CanEdit">Edit files and commit (PushCode, the repository isn't archived or a pull mirror).</param>

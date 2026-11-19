@@ -1,5 +1,5 @@
 @implements IDisposable
-@inject GitBench.Services.Ai.Triage.TriageService Triage
+@inject ByteBench.Services.Ai.Triage.TriageService Triage
 
 @* "Possible duplicates" while typing the title on the new-issue form. Debounced; keyword matching only: no AI call, nothing stored. *@
 @if (hints.Count > 0)
@@ -27,7 +27,7 @@
     [Parameter] public string? Description { get; set; }
 
     private string? lastTitle;
-    private List<GitBench.Services.Ai.DuplicateHint> hints = [];
+    private List<ByteBench.Services.Ai.DuplicateHint> hints = [];
     private CancellationTokenSource? cts;
 
     protected override void OnParametersSet()

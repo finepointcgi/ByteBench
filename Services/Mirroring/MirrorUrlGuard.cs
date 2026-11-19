@@ -1,8 +1,8 @@
 using System.Net;
-using GitBench.Services.Webhooks;
+using ByteBench.Services.Webhooks;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Mirroring;
+namespace ByteBench.Services.Mirroring;
 
 /// <summary>Configuration section <c>Mirroring</c>.</summary>
 public sealed class MirrorOptions
@@ -20,7 +20,7 @@ public sealed class MirrorOptions
     public int MinIntervalMinutes { get; set; } = 5;
     /// <summary>How often the background service looks for pull mirrors that are due.</summary>
     public int PollSeconds { get; set; } = 30;
-    /// <summary>ssh:// mirrors: the private key GitBench authenticates with (none: ssh mirrors can't authenticate).</summary>
+    /// <summary>ssh:// mirrors: the private key ByteBench authenticates with (none: ssh mirrors can't authenticate).</summary>
     public string? SshKeyFile { get; set; }
     /// <summary>ssh:// mirrors: known hosts file (default <c>{ContentRoot}/keys/mirror_known_hosts</c>); new hosts are trusted on first use.</summary>
     public string? KnownHostsFile { get; set; }

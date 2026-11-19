@@ -1,4 +1,4 @@
-namespace GitBench.Services.Flags;
+namespace ByteBench.Services.Flags;
 
 public static class FlagsServiceCollectionExtensions
 {

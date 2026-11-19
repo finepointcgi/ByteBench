@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services;
+namespace ByteBench.Services;
 
 /// <summary>Who owns each changed file of a pull request, per the CODEOWNERS file on its target branch.</summary>
 /// <param name="FilePath">Where the CODEOWNERS file was found (null: none, so nothing is owned).</param>
@@ -15,7 +15,7 @@ public sealed record CodeOwnersReport(string? FilePath, IReadOnlyDictionary<stri
 }
 
 /// <summary>
-/// Resolves CODEOWNERS (see <see cref="CodeOwnersFile"/>) against GitBench users. <c>@username</c> and e-mail
+/// Resolves CODEOWNERS (see <see cref="CodeOwnersFile"/>) against ByteBench users. <c>@username</c> and e-mail
 /// addresses name users; anything else (such as <c>@group/path</c>) is not supported yet and is reported as a
 /// warning, as are users who can't see the project. Used to show owners per file, auto-request their reviews on
 /// new pull requests, and by <see cref="MergeGate"/> for "require code owner approval".

@@ -16,7 +16,7 @@
                          Class="@ItemClass("deploy-keys")" aria-current="@(Active == "deploy-keys" ? "page" : null)">Deploy keys</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/tags")" Icon="@Icons.Material.Outlined.Sell"
                          Class="@ItemClass("tags")" aria-current="@(Active == "tags" ? "page" : null)">Protected tags</MudListItem>
-            <MudListItem T="string" Href="@GitBench.Services.Security.SecurityUrls.Settings(Repo)" Icon="@Icons.Material.Outlined.Shield"
+            <MudListItem T="string" Href="@ByteBench.Services.Security.SecurityUrls.Settings(Repo)" Icon="@Icons.Material.Outlined.Shield"
                          Class="@ItemClass("security")" aria-current="@(Active == "security" ? "page" : null)">Security</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/mirroring")" Icon="@Icons.Material.Outlined.Sync"
                          Class="@ItemClass("mirroring")" aria-current="@(Active == "mirroring" ? "page" : null)">Mirroring</MudListItem>

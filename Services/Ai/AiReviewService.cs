@@ -1,13 +1,13 @@
 using System.Runtime.CompilerServices;
 using Anthropic.Models.Beta;
 using Anthropic.Models.Beta.Messages;
-using GitBench.Data;
-using GitBench.Services.Editor.Ai;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Editor.Ai;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Ai;
+namespace ByteBench.Services.Ai;
 
 /// <summary>
 /// What happened to a request for a review: a queued <see cref="AiReview"/> (<see cref="ReviewId"/>), or why nothing was queued
@@ -21,7 +21,7 @@ public sealed record AiReviewIntake(int? ReviewId, string? Reason, int? Existing
 /// <summary>
 /// AI code review of pull requests: turns a PR's merge-base diff into one or more structured-output calls to the server's AI
 /// backend (the web editor's: <c>Ai:Editor:Backend</c>, API or Claude Code, no tools), validates the findings against the
-/// diff, and posts them as the GitBench AI bot (inline comments with a severity, one summary comment). It never approves and
+/// diff, and posts them as the ByteBench AI bot (inline comments with a severity, one summary comment). It never approves and
 /// never requests changes; an optional per-repository merge check (<see cref="AiReviewMergeCheck"/>) blocks on unresolved
 /// blocking findings. Per-repository settings (off by default), rate limit, size guardrails and idempotency per head commit
 /// are enforced here. Also writes PR descriptions. Runs from <see cref="AiReviewWorker"/>; the pure parts live in

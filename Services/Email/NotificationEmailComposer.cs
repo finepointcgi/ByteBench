@@ -1,12 +1,12 @@
 using System.Net;
 using System.Text;
-using GitBench.Api;
-using GitBench.Data;
+using ByteBench.Api;
+using ByteBench.Data;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.Email;
+namespace ByteBench.Services.Email;
 
 /// <summary>
 /// Builds notification emails from the same <see cref="Notification"/> rows the bell shows (actor, verb, title, link),
@@ -36,7 +36,7 @@ public sealed class NotificationEmailComposer(IOptions<EmailOptions> options, Pu
     {
         if (items.Count == 0) throw new ArgumentException("Nothing to send.", nameof(items));
         var single = items.Count == 1;
-        var subject = single ? $"[GitBench] {Sentence(items[0])}" : $"[GitBench] {items.Count} new notifications";
+        var subject = single ? $"[ByteBench] {Sentence(items[0])}" : $"[ByteBench] {items.Count} new notifications";
         if (subject.Length > 200) subject = subject[..199] + "…";
 
         var prefs = Absolute(PreferencesPath);
@@ -45,7 +45,7 @@ public sealed class NotificationEmailComposer(IOptions<EmailOptions> options, Pu
         var html = new StringBuilder();
         html.Append("<!DOCTYPE html><html><body style=\"margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2328;\">");
         html.Append("<div style=\"max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #d0d7de;border-radius:8px;padding:20px;\">");
-        html.Append("<div style=\"font-weight:700;color:#6366f1;margin-bottom:12px;\">◆ GitBench</div>");
+        html.Append("<div style=\"font-weight:700;color:#6366f1;margin-bottom:12px;\">◆ ByteBench</div>");
         if (!single) html.Append($"<p style=\"margin:0 0 12px;\">Hi {E(to.DisplayName)}, here's what happened since your last email:</p>");
 
         var text = new StringBuilder();
@@ -60,7 +60,7 @@ public sealed class NotificationEmailComposer(IOptions<EmailOptions> options, Pu
             if (!string.IsNullOrWhiteSpace(n.Excerpt))
                 html.Append($"<div style=\"margin-top:8px;padding:8px 12px;border-left:3px solid #d0d7de;color:#1f2328;\">{Display.Markdown(n.Excerpt).Value}</div>");
             if (single)
-                html.Append($"<p style=\"margin:16px 0 0;\"><a href=\"{E(url)}\" style=\"display:inline-block;background:#4f46e5;color:#ffffff;padding:8px 14px;border-radius:6px;text-decoration:none;\">View on GitBench</a></p>");
+                html.Append($"<p style=\"margin:16px 0 0;\"><a href=\"{E(url)}\" style=\"display:inline-block;background:#4f46e5;color:#ffffff;padding:8px 14px;border-radius:6px;text-decoration:none;\">View on ByteBench</a></p>");
             html.Append("</div>");
 
             text.Append($"{Sentence(n)}\n{url}\n");
@@ -90,7 +90,7 @@ public sealed class NotificationEmailComposer(IOptions<EmailOptions> options, Pu
         };
     }
 
-    private static string ActorName(Notification n) => n.Actor?.DisplayName ?? "GitBench";
+    private static string ActorName(Notification n) => n.Actor?.DisplayName ?? "ByteBench";
 
     /// <summary>"Alice Chen assigned you WEB-12 Login button" (plain text; HTML-encode before putting it in markup).</summary>
     public static string Sentence(Notification n) => $"{ActorName(n)} {NotificationService.Verb(n.Kind)} {n.Title}";

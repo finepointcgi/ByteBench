@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services;
-using GitBench.Services.Ai.Triage;
+using ByteBench.Data;
+using ByteBench.Services;
+using ByteBench.Services.Ai.Triage;
 
-namespace GitBench.Api;
+namespace ByteBench.Api;
 
 public record TriageItemDto(int Id, string Kind, string Value, int? TargetId, string? Reason, string State);
 

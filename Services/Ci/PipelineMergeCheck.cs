@@ -1,8 +1,8 @@
-using GitBench.Data;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Ci;
+namespace ByteBench.Services.Ci;
 
 /// <summary>
 /// Merge check "Pipeline": the latest pipeline on the PR's current source head. Passed → Passed; Queued/Running,
@@ -25,7 +25,7 @@ public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoS
             ? await Task.Run(() => GitOps.BranchExists(path, pr.SourceRef) ? GitOps.ResolveSha(path, pr.SourceRef) : null, ct)
             : pr.SourceCommitSha;
         if (head == null) return [];
-        if (await Task.Run(() => GitOps.GetBlob(path, head, CiFile.FileName), ct) == null) return [];
+        if (await Task.Run(() => CiFile.GetBlob(path, head), ct) == null) return [];
 
         var latest = await db.Pipelines.AsNoTracking()
             .Where(p => p.RepositoryId == pr.RepositoryId && p.CommitSha == head)

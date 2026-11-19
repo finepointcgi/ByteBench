@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>Jira-style detection of issue keys (e.g. WEB-12) in branch names, PR titles and commit messages.</summary>
 public static class IssueKeys

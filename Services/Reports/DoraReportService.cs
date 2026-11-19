@@ -1,9 +1,9 @@
-using GitBench.Data;
-using GitBench.Services.Ci;
-using GitBench.Services.Git;
+using ByteBench.Data;
+using ByteBench.Services.Ci;
+using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 
-namespace GitBench.Services.Reports;
+namespace ByteBench.Services.Reports;
 
 /// <summary>One production deployment. <see cref="LeadTimeHours"/> is the median over the commits it shipped (null for an environment's first deployment).</summary>
 public sealed record DoraDeployment(int Id, string Repository, string Environment, string CommitSha, DateTime FinishedAt, int Commits, double? LeadTimeHours,

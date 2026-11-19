@@ -1,4 +1,4 @@
-namespace GitBench.Services.Git;
+namespace ByteBench.Services.Git;
 
 /// <summary>Plain, LibGit2Sharp-free snapshots of Git data, safe to hold in components after the repo is closed.</summary>
 public record CommitInfo(

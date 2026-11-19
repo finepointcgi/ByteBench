@@ -89,7 +89,7 @@ else if (project != null)
                         </div>
                     </div>
                     <div class="mst-actions">
-                        <GitBench.Components.Ai.ReleaseNotesButton Project="project" Milestone="m" />
+                        <ByteBench.Components.Ai.ReleaseNotesButton Project="project" Milestone="m" />
                         <MudButton Href="@($"/p/{project.Key}/board")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.ViewKanban">Board</MudButton>
                         @if (canManage && m.GroupId == null)
                         {

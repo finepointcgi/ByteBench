@@ -1,7 +1,7 @@
-using GitBench.Data;
-using GitBench.Services.Fields;
+using ByteBench.Data;
+using ByteBench.Services.Fields;
 
-namespace GitBench.Components.Fields;
+namespace ByteBench.Components.Fields;
 
 /// <summary>
 /// What the issue list's optional columns show, loaded once per list by <see cref="IssueFieldFilters"/> and read by

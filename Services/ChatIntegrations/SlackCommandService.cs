@@ -1,22 +1,22 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using GitBench.Data;
-using GitBench.Services.Explore;
+using ByteBench.Data;
+using ByteBench.Services.Explore;
 using Microsoft.Extensions.Options;
 
-namespace GitBench.Services.ChatIntegrations;
+namespace ByteBench.Services.ChatIntegrations;
 
 /// <summary>
-/// The Slack app's behaviour (scoped, one per request): the <c>/gitbench</c> slash command, button clicks
+/// The Slack app's behaviour (scoped, one per request): the <c>/bytebench</c> slash command, button clicks
 /// (interactivity) and link unfurling. Requests reach it only after <see cref="SlackSignature"/> accepted them. The
-/// Slack user must have linked a GitBench account (<see cref="SlackAccountLinks"/>); everything then runs as that user,
+/// Slack user must have linked a ByteBench account (<see cref="SlackAccountLinks"/>); everything then runs as that user,
 /// so <see cref="ProjectAccess"/> decides what they may see and do, exactly as on the website. Replies are ephemeral
 /// (only the caller sees them), so nothing a user may see leaks into a shared channel.
 /// </summary>
 public sealed partial class SlackCommandService(ProjectAccess access, IssueService issues, PullRequestService pullRequests, SearchService search,
     SlackAccountLinks links, ChatHttp http, IOptionsMonitor<SlackOptions> options, ILogger<SlackCommandService> log)
 {
-    public const string AssignToMeAction = "gitbench_assign_me";
+    public const string AssignToMeAction = "bytebench_assign_me";
     public const int MaxTitle = 200;
 
     [GeneratedRegex(@"^([A-Za-z][A-Za-z0-9]{1,9})-(\d{1,9})$")]
@@ -29,34 +29,34 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
     private static partial Regex PullRequestPath();
 
     private const string Help =
-        "*GitBench commands*\n" +
-        "• `/gitbench issue KEY-12`: show an issue\n" +
-        "• `/gitbench create KEY Title of the issue`: create an issue\n" +
-        "• `/gitbench search words`: search issues and pull requests\n" +
-        "• `/gitbench link` / `/gitbench unlink`: connect or disconnect your GitBench account";
+        "*ByteBench commands*\n" +
+        "• `/bytebench issue KEY-12`: show an issue\n" +
+        "• `/bytebench create KEY Title of the issue`: create an issue\n" +
+        "• `/bytebench search words`: search issues and pull requests\n" +
+        "• `/bytebench link` / `/bytebench unlink`: connect or disconnect your ByteBench account";
 
     // ----- Slash command -----
 
-    /// <summary>Handles <c>/gitbench …</c>; returns the JSON reply.</summary>
+    /// <summary>Handles <c>/bytebench …</c>; returns the JSON reply.</summary>
     public async Task<JsonObject> HandleCommandAsync(IReadOnlyDictionary<string, string> form, string baseUrl)
     {
         var team = form.GetValueOrDefault("team_id") ?? "";
         var slackUser = form.GetValueOrDefault("user_id") ?? "";
-        if (!TeamAllowed(team)) return SlackFormat.Reply("This GitBench server isn't connected to your Slack workspace.");
+        if (!TeamAllowed(team)) return SlackFormat.Reply("This ByteBench server isn't connected to your Slack workspace.");
         var text = (form.GetValueOrDefault("text") ?? "").Trim();
         var space = text.IndexOf(' ');
         var verb = (space < 0 ? text : text[..space]).ToLowerInvariant();
         var rest = space < 0 ? "" : text[(space + 1)..].Trim();
 
-        if (verb is "" or "help") return SlackFormat.ReplyMrkdwn(Help, "GitBench commands");
+        if (verb is "" or "help") return SlackFormat.ReplyMrkdwn(Help, "ByteBench commands");
         if (verb == "unlink")
             return SlackFormat.Reply(await links.UnlinkAsync(team, slackUser)
-                ? "Your Slack account is no longer linked to GitBench." : "Your Slack account isn't linked to GitBench.");
+                ? "Your Slack account is no longer linked to ByteBench." : "Your Slack account isn't linked to ByteBench.");
 
         var userId = await links.FindUserAsync(team, slackUser);
         if (verb == "link" || userId == null)
             return userId != null && verb == "link"
-                ? SlackFormat.Reply("Your Slack account is already linked to GitBench. Use `/gitbench unlink` to disconnect it.")
+                ? SlackFormat.Reply("Your Slack account is already linked to ByteBench. Use `/bytebench unlink` to disconnect it.")
                 : LinkPrompt(baseUrl, team, slackUser, form.GetValueOrDefault("user_name"));
 
         access.ActAs(userId.Value);
@@ -80,13 +80,13 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
     {
         var url = links.LinkUrl(baseUrl, team, slackUser, slackName);
         return SlackFormat.Reply(
-            $"Link your GitBench account first: open the link below, sign in to GitBench and confirm. The link works once and expires in {SlackAccountLinks.TokenLifetime.TotalMinutes:0} minutes.",
-            extraBlocks: [SlackFormat.LinkButton("Link GitBench account", url, "gitbench_link")]);
+            $"Link your ByteBench account first: open the link below, sign in to ByteBench and confirm. The link works once and expires in {SlackAccountLinks.TokenLifetime.TotalMinutes:0} minutes.",
+            extraBlocks: [SlackFormat.LinkButton("Link ByteBench account", url, "bytebench_link")]);
     }
 
     private async Task<JsonObject> IssueAsync(string arg, string baseUrl)
     {
-        if (IssueKey().Match(arg) is not { Success: true } m) return SlackFormat.Reply("Usage: `/gitbench issue KEY-12`");
+        if (IssueKey().Match(arg) is not { Success: true } m) return SlackFormat.Reply("Usage: `/bytebench issue KEY-12`");
         var issue = await issues.GetIssueAsync(m.Groups[1].Value, int.Parse(m.Groups[2].Value));
         if (issue == null) return SlackFormat.Reply($"Issue {arg.ToUpperInvariant()} doesn't exist, or you don't have access to it.");
         var card = ChatEventClassifier.IssueCard(issue, baseUrl, issue.Key);
@@ -101,8 +101,8 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
         if (ChatText.SafeUrl(card.Url) is { } url)
             actions.Add(new JsonObject
             {
-                ["type"] = "button", ["action_id"] = "gitbench_open", ["url"] = url,
-                ["text"] = new JsonObject { ["type"] = "plain_text", ["text"] = "Open in GitBench" },
+                ["type"] = "button", ["action_id"] = "bytebench_open", ["url"] = url,
+                ["text"] = new JsonObject { ["type"] = "plain_text", ["text"] = "Open in ByteBench" },
             });
         return SlackFormat.Reply($"{issue.Key}: {issue.Title}", card,
             extraBlocks: actions.Count == 0 ? null : [new JsonObject { ["type"] = "actions", ["elements"] = actions }]);
@@ -111,10 +111,10 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
     private async Task<JsonObject> CreateAsync(string arg, int userId, string baseUrl)
     {
         var space = arg.IndexOf(' ');
-        if (space < 0) return SlackFormat.Reply("Usage: `/gitbench create KEY Title of the issue`");
+        if (space < 0) return SlackFormat.Reply("Usage: `/bytebench create KEY Title of the issue`");
         var key = arg[..space].Trim();
         var title = ChatText.OneLine(arg[(space + 1)..]);
-        if (title.Length == 0) return SlackFormat.Reply("Give the issue a title: `/gitbench create KEY Title of the issue`");
+        if (title.Length == 0) return SlackFormat.Reply("Give the issue a title: `/bytebench create KEY Title of the issue`");
         if (title.Length > MaxTitle) return SlackFormat.Reply($"The title is too long (max {MaxTitle} characters).");
         var project = await issues.GetProjectAsync(key);
         if (project == null) return SlackFormat.Reply($"Project {key.ToUpperInvariant()} doesn't exist, or you don't have access to it.");
@@ -128,7 +128,7 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
 
     private async Task<JsonObject> SearchAsync(string arg, string baseUrl)
     {
-        if (arg.Length == 0) return SlackFormat.Reply("Usage: `/gitbench search words`");
+        if (arg.Length == 0) return SlackFormat.Reply("Usage: `/bytebench search words`");
         var results = await search.SearchAsync(arg, [SearchType.Issues, SearchType.PullRequests], limit: 8);
         if (results.Issues.Count == 0 && results.PullRequests.Count == 0)
             return SlackFormat.Reply($"Nothing found for \"{ChatText.Truncate(arg, 100)}\".");
@@ -160,7 +160,7 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
         if (actionId != AssignToMeAction) return null; // link buttons need no answer
 
         JsonObject reply;
-        if (!TeamAllowed(team)) reply = SlackFormat.Reply("This GitBench server isn't connected to your Slack workspace.");
+        if (!TeamAllowed(team)) reply = SlackFormat.Reply("This ByteBench server isn't connected to your Slack workspace.");
         else if (await links.FindUserAsync(team, slackUser) is not { } userId)
             reply = LinkPrompt(baseUrl, team, slackUser, payload["user"]?["username"]?.GetValue<string>());
         else if (!int.TryParse(action?["value"]?.GetValue<string>(), out var issueId)) reply = SlackFormat.Reply("That button is out of date.");
@@ -201,7 +201,7 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
     // ----- Events API: link unfurling -----
 
     /// <summary>
-    /// <c>link_shared</c>: unfurls GitBench issue and pull request links the sharing user may see (needs the bot token).
+    /// <c>link_shared</c>: unfurls ByteBench issue and pull request links the sharing user may see (needs the bot token).
     /// An unlinked user is offered the account-link flow instead. Returns the <c>chat.unfurl</c> body sent, if any.
     /// </summary>
     public async Task<JsonObject?> HandleEventAsync(JsonObject envelope, string baseUrl)
@@ -233,7 +233,7 @@ public sealed partial class SlackCommandService(ProjectAccess access, IssueServi
 
         if (await links.FindUserAsync(team, slackUser) is not { } userId)
         {
-            body["user_auth_message"] = "Link your GitBench account to see previews of GitBench links.";
+            body["user_auth_message"] = "Link your ByteBench account to see previews of ByteBench links.";
             body["user_auth_url"] = links.LinkUrl(baseUrl, team, slackUser, null);
             body["unfurls"] = new JsonObject();
         }
