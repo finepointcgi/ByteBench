@@ -518,3 +518,6 @@ gitbench.db*
 !Services/Hosting/Backup/
 backups/
 *.tar.gz.partial
+
+# Built documentation site
+/public/
