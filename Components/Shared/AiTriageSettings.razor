@@ -1,0 +1,45 @@
+@* Project setting: AI triage of issues (Maintainer+; the Settings page already requires that). Off by default. *@
+@using GitBench.Services.Ai.Triage
+@inject TriageService Triage
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width:720px">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2" Style="font-weight:600">AI issue triage</MudText>
+    <MudSwitch T="bool" Value="enabled" ValueChanged="ToggleEnabled" Color="Color.Primary"
+               Label="Suggest labels, component, priority, type, assignee and duplicates for issues" />
+    <MudText Typo="Typo.caption" HtmlTag="p" Class="mud-text-secondary mt-1">
+        When on, GitBench AI prepares suggestions for each new issue and anyone with the Developer role can ask for them with
+        the Suggest button on an issue. Suggestions use only this project's labels, components and Developer+ members, and
+        nothing is applied until someone accepts it.
+    </MudText>
+    <MudSwitch T="bool" Value="autoLabels" ValueChanged="ToggleAuto" Color="Color.Primary" Disabled="@(!enabled)"
+               Label="Apply suggested labels to new issues automatically" />
+    @if (!Triage.IsAvailable)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">AI isn't set up (set ANTHROPIC_API_KEY), so nothing is suggested yet.</MudAlert>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+
+    private bool enabled, autoLabels;
+
+    protected override void OnParametersSet() { enabled = Project.AiTriageEnabled; autoLabels = Project.AiTriageAutoApplyLabels; }
+
+    private Task ToggleEnabled(bool on) => Save(on, on && autoLabels);
+
+    private Task ToggleAuto(bool on) => Save(enabled, on);
+
+    private async Task Save(bool on, bool auto)
+    {
+        try
+        {
+            await Triage.SetSettingsAsync(Project.Id, on, auto);
+            (enabled, autoLabels) = (on, auto);
+            (Project.AiTriageEnabled, Project.AiTriageAutoApplyLabels) = (on, auto);
+            Snackbar.Add(on ? "AI triage turned on." : "AI triage turned off.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

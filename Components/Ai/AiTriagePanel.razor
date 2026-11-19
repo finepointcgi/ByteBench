@@ -1,0 +1,152 @@
+@using GitBench.Services.Ai.Triage
+@implements IDisposable
+@inject TriageService Triage
+@inject LiveEvents Live
+@inject ISnackbar Snackbar
+
+@* "AI suggestions" on an issue: labels, component, priority, type, assignee and likely duplicates, each with Accept / Dismiss.
+   Everything shown was validated against the project's real labels, components, members and issues; text is rendered escaped. *@
+@if (view is { Enabled: true, Available: true } && (view.Run != null || view.CanEdit))
+{
+    <div class="tri-panel" role="region" aria-label="AI suggestions">
+        <div class="tri-head">
+            <MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" Size="Size.Small" />
+            <b>AI suggestions</b>
+            <span class="tri-tag">AI-generated</span>
+            @if (view.Run is { CompletedAt: { } done }) { <span class="tri-muted" title="@done.ToLocalTime().ToString("F")">@Display.Ago(done)</span> }
+            <span class="ml-auto">
+                @if (view.CanEdit)
+                {
+                    <MudButton Variant="@(view.Run == null ? Variant.Filled : Variant.Text)" Color="Color.Primary" Size="Size.Small" Class="tri-text-btn"
+                               StartIcon="@Icons.Material.Outlined.AutoAwesome" Disabled="@(view.InProgress || requesting)" OnClick="Suggest">
+                        @(view.Run == null ? "Suggest" : "Suggest again")
+                    </MudButton>
+                }
+            </span>
+        </div>
+
+        @if (view.InProgress || requesting)
+        {
+            <div class="tri-body tri-muted"><MudProgressCircular Size="Size.Small" Indeterminate="true" Style="width:14px;height:14px" Class="mr-2" />Preparing suggestions…</div>
+        }
+        else if (view.Run is null)
+        {
+            <div class="tri-body tri-muted">Ask GitBench AI to suggest labels, a component, priority, type, assignee and likely duplicates. Nothing changes until you accept it.</div>
+        }
+        else if (view.Run.Status is TriageRunStatus.Failed or TriageRunStatus.Skipped)
+        {
+            <div class="tri-body tri-muted">@(view.Run.Error ?? "No suggestions were made.")</div>
+        }
+        else
+        {
+            @if (!string.IsNullOrEmpty(view.Run.Summary)) { <div class="tri-summary">@view.Run.Summary</div> }
+            @if (view.Run.Items.Count == 0)
+            {
+                <div class="tri-body tri-muted">Nothing to suggest: the issue already looks well set up.</div>
+            }
+            else
+            {
+                <ul class="tri-list">
+                    @foreach (var item in view.Run.Items)
+                    {
+                        <li @key="item.Id" class="@(item.State == TriageItemState.Pending ? "" : "tri-done")">
+                            <span class="tri-kind">@KindName(item.Kind)</span>
+                            <span class="tri-value">@item.Value</span>
+                            @if (!string.IsNullOrEmpty(item.Reason)) { <span class="tri-muted tri-reason">@item.Reason</span> }
+                            <span class="ml-auto tri-actions">
+                                @if (item.State == TriageItemState.Pending)
+                                {
+                                    @if (view.CanEdit)
+                                    {
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="tri-text-btn" Disabled="@(busy == item.Id)"
+                                                   OnClick="() => Accept(item)" aria-label="@($"Accept {KindName(item.Kind).ToLowerInvariant()} {item.Value}")">Accept</MudButton>
+                                        <MudButton Variant="Variant.Text" Size="Size.Small" Class="tri-text-btn" Disabled="@(busy == item.Id)"
+                                                   OnClick="() => Dismiss(item)" aria-label="@($"Dismiss {KindName(item.Kind).ToLowerInvariant()} {item.Value}")">Dismiss</MudButton>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="tri-muted">@StateName(item.State)</span>
+                                }
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+        @if (error != null) { <div class="tri-error">@error</div> }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Issue Issue { get; set; } = null!;
+
+    private TriageView? view;
+    private int loadedFor;
+    private bool requesting;
+    private int busy;
+    private string? error;
+    private IDisposable? subscription;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == Issue.Id) return;
+        loadedFor = Issue.Id;
+        await Load();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) subscription = Live.Subscribe<TriageChanged>(e => e.IssueId != loadedFor ? Task.CompletedTask : InvokeAsync(async () => { await Load(); StateHasChanged(); }));
+    }
+
+    private async Task Load()
+    {
+        try { view = await Triage.GetViewAsync(Issue.Id); }
+        catch (InvalidOperationException) { view = null; }
+    }
+
+    private async Task Suggest()
+    {
+        error = null; requesting = true;
+        try { await Triage.RequestAsync(Issue.Id); await Load(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { requesting = false; }
+    }
+
+    private async Task Accept(IssueTriageItem item) => await Resolve(item, async () =>
+    {
+        await Triage.AcceptAsync(item.Id);
+        Snackbar.Add($"Applied: {KindName(item.Kind).ToLowerInvariant()} {item.Value}.", Severity.Success);
+    });
+
+    private async Task Dismiss(IssueTriageItem item) => await Resolve(item, () => Triage.DismissAsync(item.Id));
+
+    private async Task Resolve(IssueTriageItem item, Func<Task> action)
+    {
+        error = null; busy = item.Id;
+        try { await action(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = 0; }
+        await Load();
+    }
+
+    private static string KindName(TriageItemKind k) => k switch
+    {
+        TriageItemKind.Label => "Label",
+        TriageItemKind.Component => "Component",
+        TriageItemKind.Priority => "Priority",
+        TriageItemKind.Type => "Type",
+        TriageItemKind.Assignee => "Assignee",
+        _ => "Possible duplicate",
+    };
+
+    private static string StateName(TriageItemState s) => s switch
+    {
+        TriageItemState.Accepted => "Accepted",
+        TriageItemState.AutoApplied => "Applied automatically",
+        _ => "Dismissed",
+    };
+
+    public void Dispose() => subscription?.Dispose();
+}

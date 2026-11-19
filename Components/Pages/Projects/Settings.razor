@@ -122,6 +122,8 @@ else if (project != null)
 
     <AiReviewSettings Project="project" />
 
+    <AiTriageSettings Project="project" />
+
     @if (perms.Can(Permission.ManageProjectSettings))
     {
         <GitBench.Components.Wiki.WikiSettings Project="project" />

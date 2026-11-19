@@ -1,0 +1,59 @@
+@implements IDisposable
+@inject GitBench.Services.Ai.Triage.TriageService Triage
+
+@* "Possible duplicates" while typing the title on the new-issue form. Debounced; keyword matching only: no AI call, nothing stored. *@
+@if (hints.Count > 0)
+{
+    <div class="sim-panel" role="status" aria-live="polite">
+        <div class="sim-head"><MudIcon Icon="@Icons.Material.Outlined.ContentCopy" Size="Size.Small" Color="Color.Warning" /> <b>Similar issues</b></div>
+        <ul class="sim-list">
+            @foreach (var h in hints)
+            {
+                <li @key="h.Number">
+                    <a href="/p/@Project.Key/issues/@h.Number" target="_blank" rel="noopener"><span class="mono">@h.Key</span> @h.Title</a>
+                    @if (h.Closed) { <span class="sim-closed">Closed</span> }
+                </li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    /// <summary>How long the title must stay unchanged before the lookup runs.</summary>
+    public const int DebounceMs = 400;
+
+    [Parameter, EditorRequired] public Project Project { get; set; } = null!;
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Description { get; set; }
+
+    private string? lastTitle;
+    private List<GitBench.Services.Ai.DuplicateHint> hints = [];
+    private CancellationTokenSource? cts;
+
+    protected override void OnParametersSet()
+    {
+        var title = Title?.Trim();
+        if (title == lastTitle) return;
+        lastTitle = title;
+        cts?.Cancel();
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
+        _ = CheckAsync(title, Description, cts.Token);
+    }
+
+    private async Task CheckAsync(string? title, string? description, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(DebounceMs, ct);
+            var found = await Triage.LexicalDuplicatesAsync(Project.Id, title, description);
+            if (ct.IsCancellationRequested) return;
+            hints = found;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { if (!ct.IsCancellationRequested) { hints = []; await InvokeAsync(StateHasChanged); } }
+    }
+
+    public void Dispose() { cts?.Cancel(); cts?.Dispose(); }
+}
