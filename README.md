@@ -1,5 +1,7 @@
 # GitBench
 
+**Documentation: https://finepointcgi.github.io/GitBench/** (every feature, how to configure and use it; source in [`site/`](site), build with `python3 site/build.py`).
+
 A lightweight Jira/GitLab-style issue tracker built with **Blazor (Interactive Server)**, **.NET 10**, **MudBlazor**, **EF Core** with **SQLite** or **PostgreSQL**.
 
 ## Run
