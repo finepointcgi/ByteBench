@@ -1,2 +1,81 @@
 <h1>GitBench</h1>
-<p class="lead">Placeholder, replaced by the overview agent.</p>
+<p class="lead">One self-hosted place for planning work, hosting Git repositories, reviewing code, running CI and shipping releases: a Jira plus GitLab or Bitbucket style platform written in C# with Blazor on .NET 10.</p>
+
+<h2 id="what">What GitBench is</h2>
+<p>Most teams stitch together an issue tracker, a Git host, a CI server, a package registry and a chat bot. GitBench puts these in a single ASP.NET Core application with one database and a few folders on disk, so you can run the whole thing on one machine with <code>docker compose up</code>.</p>
+<ul>
+  <li><strong>Plan.</strong> Projects with issues, workflows, Kanban and Scrum boards, sprints, a roadmap, custom fields, a query language (GQL), dashboards, automation rules and a service desk.</li>
+  <li><strong>Code.</strong> Repositories served over Git HTTP and a built-in SSH server, pull requests with reviews and code owners, branch protection, a merge queue, forks, mirroring and Git LFS.</li>
+  <li><strong>Build and ship.</strong> CI pipelines that run in Docker, environments with deploy approvals, a NuGet, npm and container registry, static sites (Pages), feature flags and security scanning with Night Owl.</li>
+  <li><strong>Connect.</strong> A REST API, webhooks, Slack and Microsoft Teams, email notifications, single sign-on (OIDC and OAuth) and LDAP.</li>
+  <li><strong>Assist.</strong> Optional AI features that use Claude: pull request review, issue triage and an assistant in the web editor. They are off until you give the server an API key or install Claude Code.</li>
+</ul>
+<div class="note">GitBench is meant to run as <strong>one instance</strong>. Its background queues (CI, webhooks, email, AI review) live inside the process, so do not run several replicas against the same data.</div>
+
+<h2 id="features">Feature overview</h2>
+<p>Every card opens the page that covers that area.</p>
+<div class="cards">
+  <a class="card" href="issues.html"><b>Issues and workflows</b><span>Issue types, custom workflows, hierarchy, links and attachments.</span></a>
+  <a class="card" href="boards-sprints.html"><b>Boards and sprints</b><span>Kanban and Scrum boards, backlog planning and the roadmap.</span></a>
+  <a class="card" href="fields-filters.html"><b>Fields, filters and search</b><span>Custom fields, saved filters, GQL and CSV import and export.</span></a>
+  <a class="card" href="automation.html"><b>Automation rules</b><span>Triggers, conditions and actions run by a bot.</span></a>
+  <a class="card" href="reports.html"><b>Dashboards and reports</b><span>Gadgets, cycle time, flow and DORA metrics.</span></a>
+  <a class="card" href="service-desk.html"><b>Service desk</b><span>Let people without an account file issues by email or form.</span></a>
+  <a class="card" href="workbench.html"><b>Estimates and Workbench</b><span>Story points and the link to Workbench timesheets.</span></a>
+  <a class="card" href="repositories.html"><b>Repositories</b><span>Clone over HTTP and SSH, deploy keys, LFS and mirroring.</span></a>
+  <a class="card" href="pull-requests.html"><b>Pull requests</b><span>Reviews, threads, suggestions, code owners, forks and merge strategies.</span></a>
+  <a class="card" href="branch-protection.html"><b>Branch protection and merge queue</b><span>Protected branches and tags, required checks, batched merges.</span></a>
+  <a class="card" href="code-tools.html"><b>Code browsing and tools</b><span>Code view, search, blame, compare, tags and releases.</span></a>
+  <a class="card" href="web-editor.html"><b>Web editor and AI assistant</b><span>Edit and commit in the browser with an optional assistant.</span></a>
+  <a class="card" href="wiki-snippets.html"><b>Wiki and snippets</b><span>Project wikis and shareable snippets.</span></a>
+  <a class="card" href="ci.html"><b>CI pipelines</b><span>The CI file format, runners, artifacts, caches and schedules.</span></a>
+  <a class="card" href="environments.html"><b>Environments and deployments</b><span>Deploy approvals, rollback, freezes and traceability.</span></a>
+  <a class="card" href="packages.html"><b>Package and container registry</b><span>NuGet, npm and Docker images per project.</span></a>
+  <a class="card" href="pages.html"><b>Static sites (Pages)</b><span>Publish a site from a CI job.</span></a>
+  <a class="card" href="security-scanning.html"><b>Security scanning</b><span>Night Owl findings, triage and pull request checks.</span></a>
+  <a class="card" href="feature-flags.html"><b>Feature flags</b><span>Flags per environment, rules, rollouts and SDK keys.</span></a>
+  <a class="card" href="ai.html"><b>AI overview and setup</b><span>API key, Claude Code backend and what each feature does.</span></a>
+  <a class="card" href="ai-review-triage.html"><b>AI review and triage</b><span>AI pull request review and issue triage.</span></a>
+  <a class="card" href="api.html"><b>REST API and webhooks</b><span>Tokens, endpoints and webhook events.</span></a>
+  <a class="card" href="chat.html"><b>Slack and Teams</b><span>Notifications, slash commands and link previews.</span></a>
+  <a class="card" href="notifications.html"><b>Notifications and email</b><span>In-app, email, preferences and mentions.</span></a>
+  <a class="card" href="accounts.html"><b>Accounts and SSO</b><span>Passwords, two-factor, OIDC, OAuth and LDAP.</span></a>
+  <a class="card" href="permissions.html"><b>Roles and permissions</b><span>Who can do what, group inheritance and visibility.</span></a>
+  <a class="card" href="admin.html"><b>Administration</b><span>User admin, audit log, system page and rate limits.</span></a>
+</div>
+
+<h2 id="quick-links">Quick links</h2>
+<table>
+  <tr><th>I want to...</th><th>Go to</th></tr>
+  <tr><td>Try GitBench in ten minutes</td><td><a href="getting-started.html">Getting started</a></td></tr>
+  <tr><td>Understand projects, groups and roles</td><td><a href="concepts.html">Concepts</a></td></tr>
+  <tr><td>Change a setting or look up an environment variable</td><td><a href="configuration.html">Configuration reference</a></td></tr>
+  <tr><td>Put it on a server with HTTPS, backups and Postgres</td><td><a href="production.html">Production setup</a></td></tr>
+  <tr><td>Fix something that does not work</td><td><a href="troubleshooting.html">FAQ and troubleshooting</a></td></tr>
+  <tr><td>Look up a word</td><td><a href="glossary.html">Glossary</a></td></tr>
+  <tr><td>Write my first CI file</td><td><a href="ci.html">CI pipelines</a></td></tr>
+  <tr><td>Call GitBench from a script</td><td><a href="api.html">REST API and webhooks</a></td></tr>
+</table>
+
+<h2 id="map">What is where</h2>
+<p>This is a map of the main places in the GitBench web interface. <code>{KEY}</code> is a project key such as <code>WEB</code> and <code>{slug}</code> is a repository name.</p>
+<table>
+  <tr><th>Address</th><th>What you find there</th></tr>
+  <tr><td><code>/</code></td><td>Your dashboard: assigned work, projects and activity</td></tr>
+  <tr><td><code>/projects/new</code>, <code>/groups/new</code></td><td>Create a project or a group</td></tr>
+  <tr><td><code>/p/{KEY}/issues</code></td><td>The project's issues (and <code>/p/{KEY}/issues/new</code> to file one)</td></tr>
+  <tr><td><code>/p/{KEY}/repos</code></td><td>Repositories inside the project</td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/pipelines</code></td><td>CI pipelines of a repository</td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/pull-requests</code></td><td>Pull requests of a repository</td></tr>
+  <tr><td><code>/p/{KEY}/settings</code></td><td>Project settings (name, visibility, members)</td></tr>
+  <tr><td><code>/g/{path}</code></td><td>A group or subgroup</td></tr>
+  <tr><td><code>/git/{KEY}/{slug}.git</code></td><td>The Git HTTP clone address</td></tr>
+  <tr><td><code>/api/v1</code> and <code>/developers/api</code></td><td>The REST API and its documentation page</td></tr>
+  <tr><td><code>/account/profile</code>, <code>/account/ssh-keys</code></td><td>Your profile, access tokens and SSH keys</td></tr>
+  <tr><td><code>/admin/users</code>, <code>/admin/audit</code>, <code>/admin/system</code>, <code>/admin/backups</code></td><td>Site administration (site admins only)</td></tr>
+  <tr><td><code>/admin/authentication</code>, <code>/admin/ai</code>, <code>/admin/packages</code></td><td>More site admin pages: SSO and LDAP status, AI status, registry storage</td></tr>
+  <tr><td><code>/health/live</code>, <code>/health/ready</code></td><td>Health checks for load balancers and Docker</td></tr>
+</table>
+
+<h2 id="how-docs-work">How this documentation is organised</h2>
+<p>The left menu follows the life of a piece of work: <em>Start here</em>, <em>Plan and track work</em>, <em>Code and review</em>, <em>Build, test and ship</em>, <em>AI features</em>, <em>Integrations and API</em> and <em>Administer</em>. If you only run GitBench for others, read <a href="getting-started.html">Getting started</a>, <a href="configuration.html">Configuration</a>, <a href="production.html">Production setup</a> and <a href="troubleshooting.html">Troubleshooting</a>. If you only use it, start with <a href="concepts.html">Concepts</a>.</p>

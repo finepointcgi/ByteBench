@@ -1,0 +1,198 @@
+<h1>Production setup</h1>
+<p class="lead">Run GitBench on a real server: Docker image and compose file, a TLS reverse proxy, PostgreSQL or SQLite, data protection keys, backups, upgrades, health checks and a checklist.</p>
+
+<h2 id="overview">The shape of a deployment</h2>
+<p>GitBench is one ASP.NET Core process with a database (SQLite by default, or PostgreSQL) and a handful of folders: repositories, attachments, packages, LFS objects, published sites and the Data Protection key ring. Run it as <strong>a single instance</strong>; the in-process queues for CI, webhooks and AI review are not built for several replicas.</p>
+<p>A typical layout: a TLS reverse proxy (Caddy or nginx) in front of the container, the container's volumes on reliable disks, backups written to a different disk, and optionally a PostgreSQL container or server.</p>
+
+<h2 id="docker">Docker image and compose</h2>
+<pre><code>docker compose up -d --build        # build the image and start on 127.0.0.1:8080
+docker compose logs -f gitbench     # JSON logs</code></pre>
+<p>The <code>Dockerfile</code> is multi-stage: an SDK build, then an <code>aspnet:10.0</code> runtime that adds <code>git</code>, <code>openssh-client</code>, <code>postgresql-client</code>, <code>curl</code> and <code>sqlite3</code>. It runs as the non-root <code>app</code> user (uid 1654). Ports: <strong>8080</strong> for HTTP (behind your TLS proxy) and <strong>2222</strong> for Git over SSH.</p>
+<p>All state lives under <code>/data</code>, one volume per kind:</p>
+<table>
+  <tr><th>Volume</th><th>Path in the container</th><th>Holds</th></tr>
+  <tr><td><code>gitbench-db</code></td><td><code>/data/db</code></td><td>SQLite database (unused with PostgreSQL)</td></tr>
+  <tr><td><code>gitbench-repos</code></td><td><code>/data/repos</code></td><td>Bare Git repositories</td></tr>
+  <tr><td><code>gitbench-attachments</code></td><td><code>/data/attachments</code></td><td>Attachments and release assets</td></tr>
+  <tr><td><code>gitbench-packages</code></td><td><code>/data/packages</code></td><td>Package and image blobs</td></tr>
+  <tr><td><code>gitbench-lfs</code></td><td><code>/data/lfs</code></td><td>Git LFS objects</td></tr>
+  <tr><td><code>gitbench-pages</code></td><td><code>/data/pages</code></td><td>Published static sites</td></tr>
+  <tr><td><code>gitbench-keys</code></td><td><code>/data/keys</code></td><td>Data Protection key ring and SSH host key</td></tr>
+  <tr><td><code>gitbench-backups</code></td><td><code>/data/backups</code></td><td>Backup archives. Put this on another disk</td></tr>
+</table>
+<p><strong>Image defaults.</strong> The image sets <code>ASPNETCORE_ENVIRONMENT=Production</code>, <code>Seed__DemoData=false</code> (no demo users), <code>Ci__Enabled=false</code>, <code>Security__HttpsRedirection=false</code> (TLS ends at the proxy), <code>Ssh__Enabled=true</code> on port 2222 and the <code>/data/...</code> paths for every folder. Override anything with environment variables; see the <a href="configuration.html">Configuration reference</a>.</p>
+<p><strong>First admin.</strong> Register your account at <code>/account/register</code>, then restart once with <code>Bootstrap__AdminUsers=your-username</code> (several names separated by commas). It only ever promotes users, so you may leave it set.</p>
+<div class="note">The compose file publishes HTTP as <code>127.0.0.1:8080:8080</code>, reachable only from the host itself, so your proxy (or an SSH tunnel) is the way in. It publishes SSH as <code>2222:2222</code>.</div>
+
+<h3 id="ci-in-docker">CI in the container</h3>
+<p>CI jobs need a Docker daemon, so CI is off in the image. Three ways to turn it on:</p>
+<ol>
+  <li><strong>Mount the host Docker socket</strong>: build with <code>--build-arg WITH_DOCKER_CLI=true</code>, mount <code>/var/run/docker.sock</code>, set <code>Ci__Enabled=true</code>, and set <code>Ci__WorkDirectory</code> to a folder mounted at the <em>same path</em> on the host and in the container (the daemon mounts workspaces by host path). The socket's group must be usable by uid 1654 (<code>group_add</code>).</li>
+  <li><strong>Run GitBench on the host</strong> (<code>dotnet GitBench.dll</code> under systemd) with Docker installed.</li>
+  <li><strong>Use a separate Docker host</strong> via <code>DOCKER_HOST=tcp://ci-host:2376</code> with TLS (<code>DOCKER_TLS_VERIFY=1</code>, <code>DOCKER_CERT_PATH</code>). This is the safest: builds cannot touch the GitBench host.</li>
+</ol>
+<div class="warn">The Docker socket gives root on the host. Anyone who can push can run any image, so every Developer effectively becomes root on that machine. Do this only on a dedicated host where you trust everyone who can push, and keep <code>Ci__Network=none</code> unless jobs need the network.</div>
+
+<h2 id="reverse-proxy">Reverse proxy and forwarded headers</h2>
+<p>Terminate TLS at a proxy and forward to port 8080. Two things must be right or sign-in, links and logs will misbehave:</p>
+<ol>
+  <li><strong>Trust the proxy's forwarded headers.</strong> Set <code>ReverseProxy__Enabled=true</code> and list the proxy in <code>ReverseProxy__KnownProxies__0</code> (an IP) or <code>ReverseProxy__KnownNetworks__0</code> (a CIDR range, <code>172.16.0.0/12</code> for compose networks). GitBench then honours <code>X-Forwarded-For</code> and <code>X-Forwarded-Proto</code>, so cookies, HSTS and generated links see <code>https</code> and the audit log and rate limits see the real client IP. Requests from untrusted addresses keep their own IP, so clients cannot spoof it.</li>
+  <li><strong>Pass the original <code>Host</code> header</strong> and WebSockets (Blazor uses <code>/_blazor</code>).</li>
+</ol>
+<p>Also set <code>PublicBaseUrl</code> to the public <code>https://</code> URL and <code>AllowedHosts</code> to your host name.</p>
+
+<h3 id="caddy">Caddy</h3>
+<p>Caddy gets and renews Let's Encrypt certificates and forwards <code>Host</code>, <code>X-Forwarded-*</code> and WebSockets by default. The compose file has a commented-out service; uncomment it, set your domain and remove the <code>ports:</code> mapping from <code>gitbench</code>:</p>
+<pre><code>caddy:
+  image: caddy:2
+  restart: unless-stopped
+  ports: ["80:80", "443:443"]
+  command: caddy reverse-proxy --from gitbench.example.com --to gitbench:8080
+  volumes:
+    - caddy-data:/data
+  depends_on: [gitbench]</code></pre>
+<p>Or with a Caddyfile on a host:</p>
+<pre><code>gitbench.example.com {
+    reverse_proxy 127.0.0.1:8080
+}</code></pre>
+
+<h3 id="nginx">nginx</h3>
+<p>A sketch of the parts that matter (adjust certificates and paths; this is an example, not shipped with GitBench):</p>
+<pre><code>map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    listen 443 ssl;
+    server_name gitbench.example.com;
+    # ssl_certificate / ssl_certificate_key ...
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+    }
+
+    # large and slow Git pushes and uploads
+    location /git/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+}</code></pre>
+<p>Package and container registry uploads (<code>/packages/</code> and <code>/v2/</code>) also need a large body limit. The proxy does not carry Git over SSH: publish port 2222 directly, or use a TCP (layer 4) proxy.</p>
+
+<h3 id="ssh-public">SSH port and clone URLs</h3>
+<p>To offer <code>git@host:KEY/slug.git</code> URLs, map the host's port 22 to the container (<code>"22:2222"</code>, after moving the host's own sshd elsewhere) and set <code>Ssh__PublicPort=22</code>. Set <code>Ssh__PublicHost</code> if the SSH host name differs from the web one. Set <code>Ssh__Enabled=false</code> for HTTPS-only.</p>
+
+<h2 id="https">HTTPS, cookies and HSTS</h2>
+<ul>
+  <li>Outside Development, sign-in cookies are <code>Secure</code>-only. Over plain HTTP sign-in does not work; GitBench logs a warning when it sees that. For a short trial set <code>Security__SecureCookies=false</code>.</li>
+  <li>HSTS is sent on HTTPS responses outside Development: <code>Security:HstsMaxAgeDays</code> (365) and <code>Security:HstsIncludeSubDomains</code> (false). It only appears once GitBench knows the request was HTTPS, which needs the forwarded headers above.</li>
+  <li><code>Security:HttpsRedirection</code> redirects HTTP to HTTPS. The image turns it off because the proxy does that.</li>
+  <li>Every response also gets <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, a referrer policy, a permissions policy and <code>Cross-Origin-Opener-Policy: same-origin</code>. HTML pages get a Content-Security-Policy; see <a href="troubleshooting.html#csp">CSP blocking something</a>.</li>
+</ul>
+
+<h2 id="postgres">Postgres or SQLite</h2>
+<p><strong>SQLite</strong> is the default and is fine for one server. <strong>PostgreSQL 14 or newer</strong> is the better choice when you want a managed database, standard database tooling or more concurrent writers.</p>
+<pre><code>Database__Provider=Postgres
+ConnectionStrings__Default="Host=postgres;Database=gitbench;Username=gitbench;Password=..."</code></pre>
+<ul>
+  <li>With compose: <code>docker compose --profile postgres up -d</code> starts the optional <code>postgres:17-alpine</code> service. Uncomment the three <code>Database__Provider</code> lines and <code>depends_on</code> in <code>docker-compose.yml</code>, and set <code>GITBENCH_DB_PASSWORD</code> in your environment.</li>
+  <li>Migrations run at start and create the database if the role may <code>CREATE DATABASE</code>.</li>
+  <li><strong>There is no data migration from an existing SQLite database.</strong> Start a new installation on PostgreSQL, or stay on SQLite.</li>
+  <li>Backups on PostgreSQL use <code>pg_dump</code> and <code>pg_restore</code> (in the image) and restore only into the same provider.</li>
+  <li>Npgsql pools connections (default 100): size it against <code>max_connections</code>.</li>
+  <li>Failover, replicas and load were not tested; GitBench is still one instance.</li>
+</ul>
+
+<h2 id="data-protection">Data Protection keys</h2>
+<p>The key ring encrypts secrets stored in the database (webhook and CI secrets, chat webhook URLs), signs cookies and protects tokens. If it is lost, everyone is signed out and the stored secrets cannot be read.</p>
+<ul>
+  <li><code>DataProtection:KeysPath</code> must be a persistent, backed-up folder (a volume in Docker). In Production, if it is unset GitBench warns; if it is not writable it <strong>refuses to start</strong>.</li>
+  <li>Set <code>DataProtection:CertificatePath</code> (and <code>CertificatePassword</code>) to a <code>.pfx</code> to encrypt the keys at rest. On Linux they are otherwise plain XML in a mode-700 folder.</li>
+  <li>After rotating the certificate, list the old ones in <code>DataProtection:DecryptionCertificatePaths</code>.</li>
+  <li>The SSH host key lives next to the key ring. A new host key makes every SSH client warn about a changed host.</li>
+</ul>
+
+<h2 id="backup">Backup and restore</h2>
+<p>One archive, <code>gitbench-backup-&lt;UTC time&gt;.tar.gz</code> plus a <code>.sha256</code> file, holds everything needed to rebuild: the database (a consistent SQLite online backup, or a <code>pg_dump</code>), repositories, attachments, packages, LFS, pages, the keys (<code>Backup:IncludeKeys</code>, default on) and optionally CI artifacts. A <code>manifest.json</code> records format, version, provider, newest migration and the size and SHA-256 of every file. Archives store folder names, not absolute paths, so they restore onto any layout.</p>
+
+<h3 id="backup-cli">Command line</h3>
+<pre><code># safe while GitBench is running
+dotnet GitBench.dll backup /srv/backups --keep 14
+
+# stop GitBench first
+dotnet GitBench.dll restore /srv/backups/gitbench-backup-20261119-023000.tar.gz [--force]
+
+# Docker
+docker compose exec gitbench dotnet GitBench.dll backup
+docker compose stop gitbench
+docker compose run --rm gitbench restore /data/backups/gitbench-backup-....tar.gz
+docker compose start gitbench</code></pre>
+<p>Exit code 0 means success, 1 a backup or restore problem, 2 bad arguments. Run <code>dotnet GitBench.dll backup --help</code> for details.</p>
+<p><strong>Restore checks everything first.</strong> It unpacks into a staging folder and verifies: entries are plain files under known sections (no <code>..</code>, absolute paths or links); the manifest is present and from the same database provider; the backup is not from a newer GitBench than this build; every file matches its size and SHA-256; and the installation is empty (no users or projects, empty storage folders). A non-empty installation is refused unless you pass <code>--force</code>, which replaces the database and the contents of each folder in the archive.</p>
+
+<h3 id="scheduled-backups">Scheduled backups and the admin page</h3>
+<p>Set <code>Backup__Enabled=true</code> (the compose file does) and archives are written on a schedule inside the server: at <code>Backup:StartTimeUtc</code> (02:30) plus every <code>Backup:IntervalHours</code> (24), keeping the newest <code>Backup:KeepLast</code> (7) and, if set, dropping those older than <code>Backup:KeepDays</code>. The newest archive is never deleted, and only <code>gitbench-backup-*.tar.gz</code> files are touched. Site admins can use <code>/admin/backups</code> to back up now, download and delete archives; <code>/admin/system</code> shows the last result.</p>
+<div class="warn">A backup contains password hashes, webhook and CI secrets and the key ring. Store it encrypted with access control, on a different disk or machine. Test a restore into a scratch directory now and then; an untested backup is a hope, not a backup.</div>
+<p><code>scripts/backup.sh</code> is an older shell-only SQLite alternative.</p>
+
+<h2 id="upgrades">Upgrades and migrations</h2>
+<ol class="steps">
+  <li><strong>Back up first:</strong> <code>docker compose exec gitbench dotnet GitBench.dll backup</code>, or rely on the schedule.</li>
+  <li><strong>Deploy the new version:</strong> <code>git pull &amp;&amp; docker compose up -d --build</code>, or replace the published files and restart.</li>
+  <li><strong>Migrations run automatically at start-up.</strong> Watch the log for <code>Applying migration</code> and <code>/admin/system</code> for pending migrations. If start-up fails, stop, restore the backup with <code>restore --force</code> and run the previous version. A backup made by a newer version is refused by an older one.</li>
+</ol>
+<p>Two migration histories exist (SQLite and PostgreSQL); the correct one is chosen from <code>Database:Provider</code>.</p>
+
+<h2 id="health">Health checks</h2>
+<p>Both endpoints are anonymous, return JSON without error details and are not rate limited:</p>
+<ul>
+  <li><code>GET /health/live</code> returns 200 while the process runs.</li>
+  <li><code>GET /health/ready</code> checks that the database answers and the repository and attachment folders are writable (otherwise <code>Unhealthy</code>, HTTP 503), and, with CI on, that Docker is reachable (otherwise <code>Degraded</code>, still 200).</li>
+</ul>
+<p>The image's <code>HEALTHCHECK</code> and the compose file both call <code>/health/ready</code> every 30 seconds with <code>curl</code>.</p>
+
+<h2 id="system-page">The /admin/system page</h2>
+<p>Site admins get an operator's overview at <code>/admin/system</code>:</p>
+<ul>
+  <li><strong>Server:</strong> version, runtime, OS, uptime, memory.</li>
+  <li><strong>Database:</strong> provider, target (never the password), server version, size, applied and pending migrations.</li>
+  <li><strong>Health:</strong> the checks behind <code>/health/ready</code>.</li>
+  <li><strong>Storage:</strong> files and bytes per folder (measured on demand, cached for a minute).</li>
+  <li><strong>Queues:</strong> webhook deliveries waiting, CI pipelines queued and running, merge queue entries, pending email and chat notifications, and failures in the last 24 hours.</li>
+  <li><strong>Backups:</strong> schedule, folder, count and size, last success and last error.</li>
+  <li><strong>Hosting checks:</strong> the same review that runs at start-up and goes to the log.</li>
+</ul>
+
+<h2 id="logs">Logs</h2>
+<p>Production logs are JSON lines on stdout. GitBench does not rotate them: the compose file sets the Docker <code>json-file</code> driver with <code>max-size: 20m</code> and <code>max-file: 5</code>; journald and Kubernetes have their own limits. Keep <code>Logging:LogLevel:Default</code> at <code>Information</code>. Data that grows inside the database has retention settings: <code>Audit:RetentionDays</code> (365) and <code>Retention:WebhookDeliveryDays</code> (30).</p>
+
+<h2 id="checklist">Production checklist</h2>
+<p>The start-up review warns about most of these and lists them on <code>/admin/system</code>.</p>
+<ol>
+  <li>TLS at a reverse proxy; <code>PublicBaseUrl</code> is the public <code>https://</code> URL.</li>
+  <li><code>ReverseProxy__Enabled=true</code> and the proxy listed in <code>KnownProxies</code> or <code>KnownNetworks</code>.</li>
+  <li><code>AllowedHosts</code> set to your host name.</li>
+  <li><code>DataProtection:KeysPath</code> on a persistent volume that is backed up; consider a certificate to encrypt it.</li>
+  <li><code>Seed:DemoData</code> is false (the image default). The demo users share a published password.</li>
+  <li>First admin created with <code>Bootstrap__AdminUsers</code>.</li>
+  <li><code>Backup__Enabled=true</code>, archives on another disk, a restore tested.</li>
+  <li>Rate limits left on (<code>RateLimiting:Enabled</code>).</li>
+  <li>Logs rotated; log level <code>Information</code>.</li>
+  <li>Exactly one GitBench instance.</li>
+  <li>If CI is on: understand that pushers can run code on the Docker host; prefer a separate Docker host.</li>
+  <li>If you use email, set the <code>Email__*</code> keys and test with a real notification.</li>
+  <li>Open ports: 443 (and 80 for certificates) for the proxy; 2222 or 22 if you offer Git over SSH.</li>
+</ol>
+<p>Problems after deploying? See <a href="troubleshooting.html">FAQ and troubleshooting</a>.</p>

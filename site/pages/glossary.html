@@ -1,0 +1,168 @@
+<h1>Glossary</h1>
+<p class="lead">Plain-language definitions of the terms used throughout GitBench and its documentation.</p>
+<p><a href="#letter-a">A</a> <a href="#letter-b">B</a> <a href="#letter-c">C</a> <a href="#letter-d">D</a> <a href="#letter-e">E</a> <a href="#letter-f">F</a> <a href="#letter-g">G</a> <a href="#letter-h">H</a> <a href="#letter-i">I</a> <a href="#letter-j">J</a> <a href="#letter-k">K</a> <a href="#letter-l">L</a> <a href="#letter-m">M</a> <a href="#letter-n">N</a> <a href="#letter-o">O</a> <a href="#letter-p">P</a> <a href="#letter-r">R</a> <a href="#letter-s">S</a> <a href="#letter-t">T</a> <a href="#letter-u">U</a> <a href="#letter-v">V</a> <a href="#letter-w">W</a></p>
+<h2 id="letter-a">A</h2>
+<dl>
+<dt id="access-token">Access token</dt><dd>A personal token (prefix gbp_) you create on your profile with scopes such as read_repository, write_repository or API scopes. It replaces your password for Git over HTTP and the REST API. It is shown once; only its hash is stored. <a href="api.html">More</a>.</dd>
+<dt id="archived-repository">Archived repository</dt><dd>A repository that refuses pushes. It stays readable.</dd>
+<dt id="artifact-ci">Artifact (CI)</dt><dd>Files a CI job saves for later jobs or for download, declared with artifacts in the CI file. Stored zipped under Ci:ArtifactsRoot. <a href="ci.html">More</a>.</dd>
+<dt id="audit-log">Audit log</dt><dd>A record of security-relevant actions (sign-ins, permission changes, key additions, settings changes). Site admins read it at /admin/audit. Kept for Audit:RetentionDays. <a href="admin.html">More</a>.</dd>
+<dt id="automation-rule">Automation rule</dt><dd>A trigger, optional conditions and actions that GitBench runs for you, executed by an automation bot. <a href="automation.html">More</a>.</dd>
+</dl>
+<h2 id="letter-b">B</h2>
+<dl>
+<dt id="backlog">Backlog</dt><dd>The ordered list of issues not yet in a sprint. <a href="boards-sprints.html">More</a>.</dd>
+<dt id="backup-archive">Backup archive</dt><dd>A single gitbench-backup-(time).tar.gz file holding the database, repositories, files and keys, with a manifest and a .sha256 file. <a href="production.html#backup">More</a>.</dd>
+<dt id="bare-repository">Bare repository</dt><dd>A Git repository without a working copy. GitBench stores every repository as one under Git:RepositoryRoot.</dd>
+<dt id="board">Board</dt><dd>A Kanban or Scrum view of a project&#x27;s issues in columns. A project can have several. <a href="boards-sprints.html">More</a>.</dd>
+<dt id="bootstrap-admin">Bootstrap admin</dt><dd>A user listed in Bootstrap:AdminUsers who is made a site admin at start-up. <a href="production.html#docker">More</a>.</dd>
+<dt id="branch-protection">Branch protection</dt><dd>Rules for matching branches: required reviews, required checks, no force pushes, optional merge queue. <a href="branch-protection.html">More</a>.</dd>
+</dl>
+<h2 id="letter-c">C</h2>
+<dl>
+<dt id="cache-ci">Cache (CI)</dt><dd>Files kept between pipeline runs, such as package downloads, to speed up jobs. Limited per cache and per repository. <a href="ci.html">More</a>.</dd>
+<dt id="ci-continuous-integration">CI (continuous integration)</dt><dd>Running builds and tests automatically on every push or pull request. GitBench runs jobs in Docker containers from a .gitbench-ci.yml file. <a href="ci.html">More</a>.</dd>
+<dt id="circuit">Circuit</dt><dd>The live connection between a browser and the Blazor server. Pages are interactive while the circuit is open.</dd>
+<dt id="claude-code">Claude Code</dt><dd>Anthropic&#x27;s command-line coding agent. GitBench can run it on the server as a backend for the web editor assistant and AI review. <a href="ai.html">More</a>.</dd>
+<dt id="code-owners">Code owners</dt><dd>A file mapping paths to people or teams who are automatically asked to review changes to them. <a href="pull-requests.html">More</a>.</dd>
+<dt id="component">Component</dt><dd>A part of a project (for example Backend or UI) that issues can be assigned to. <a href="fields-filters.html">More</a>.</dd>
+<dt id="content-root">Content root</dt><dd>The folder containing the application files. Default data folders (repos, attachments and so on) are created beneath it when running from source. <a href="configuration.html#core">More</a>.</dd>
+<dt id="content-security-policy-csp">Content Security Policy (CSP)</dt><dd>A browser header that limits where scripts, styles and workers may load from. GitBench sends one on HTML pages. <a href="troubleshooting.html#csp">More</a>.</dd>
+<dt id="cycle-time">Cycle time</dt><dd>How long an issue takes from started to done. A delivery report metric. <a href="reports.html">More</a>.</dd>
+</dl>
+<h2 id="letter-d">D</h2>
+<dl>
+<dt id="dashboard">Dashboard</dt><dd>A page of gadgets showing issues, sprints and metrics. Every user has a home dashboard and can pin a personal one. <a href="reports.html">More</a>.</dd>
+<dt id="data-protection-key-ring">Data Protection key ring</dt><dd>The keys ASP.NET Core uses to sign cookies and encrypt stored secrets. Lives in DataProtection:KeysPath. Back it up. <a href="production.html#data-protection">More</a>.</dd>
+<dt id="deploy-approval">Deploy approval</dt><dd>A rule that a deployment to an environment must be approved by named people before it runs. <a href="environments.html">More</a>.</dd>
+<dt id="deploy-freeze">Deploy freeze</dt><dd>A time window in which deployments to an environment are blocked. <a href="environments.html">More</a>.</dd>
+<dt id="deploy-key">Deploy key</dt><dd>An SSH key attached to one repository for servers or CI. Read-only unless write access is ticked. <a href="repositories.html">More</a>.</dd>
+<dt id="deployment">Deployment</dt><dd>A recorded release of a commit to an environment, usually created by a CI job with an environment. <a href="environments.html">More</a>.</dd>
+<dt id="developer">Developer</dt><dd>Project role above Viewer: can edit issues, comment, push code, open and review pull requests, publish packages and toggle feature flags. <a href="permissions.html">More</a>.</dd>
+<dt id="dora-metrics">DORA metrics</dt><dd>Deployment frequency, lead time for changes, change failure rate and time to restore: four measures of delivery performance. <a href="reports.html">More</a>.</dd>
+<dt id="draft-pull-request">Draft pull request</dt><dd>A pull request marked not ready for review or merge. <a href="pull-requests.html">More</a>.</dd>
+</dl>
+<h2 id="letter-e">E</h2>
+<dl>
+<dt id="environment">Environment</dt><dd>A named deployment target such as staging or production, with its own history, approvals and variables. <a href="environments.html">More</a>.</dd>
+<dt id="epic">Epic</dt><dd>A large issue that groups other issues, shown on the roadmap. <a href="issues.html">More</a>.</dd>
+</dl>
+<h2 id="letter-f">F</h2>
+<dl>
+<dt id="feature-flag">Feature flag</dt><dd>A switch evaluated by your application at runtime, with values per environment, targeting rules and percentage rollouts. <a href="feature-flags.html">More</a>.</dd>
+<dt id="fingerprint-finding">Fingerprint (finding)</dt><dd>A stable identity of a security finding, so triage decisions survive rescans. <a href="security-scanning.html">More</a>.</dd>
+<dt id="fingerprint-ssh-key">Fingerprint (SSH key)</dt><dd>The SHA256: hash of a public key, shown in the key list and as ssh-keygen -lf prints it.</dd>
+<dt id="fork">Fork</dt><dd>A personal copy of a repository from which you can open pull requests to the original. <a href="pull-requests.html">More</a>.</dd>
+</dl>
+<h2 id="letter-g">G</h2>
+<dl>
+<dt id="gadget">Gadget</dt><dd>A single widget on a dashboard, such as an issue list or a burndown chart. <a href="reports.html">More</a>.</dd>
+<dt id="git-lfs">Git LFS</dt><dd>Git Large File Storage: keeps big files outside the repository history. GitBench stores objects under Lfs:Root. <a href="repositories.html">More</a>.</dd>
+<dt id="gql">GQL</dt><dd>GitBench Query Language, the search syntax for issues. <a href="fields-filters.html">More</a>.</dd>
+<dt id="group">Group</dt><dd>A namespace that owns projects and subgroups, with members whose roles are inherited by everything below it. Nests up to four levels. <a href="concepts.html#groups">More</a>.</dd>
+<dt id="group-label-milestone">Group label / milestone</dt><dd>A label or milestone defined on a group and inherited by every project below it. <a href="concepts.html#groups">More</a>.</dd>
+</dl>
+<h2 id="letter-h">H</h2>
+<dl>
+<dt id="health-check">Health check</dt><dd>The /health/live and /health/ready endpoints used by Docker and load balancers. <a href="production.html#health">More</a>.</dd>
+<dt id="hsts">HSTS</dt><dd>HTTP Strict Transport Security: a header telling browsers to use HTTPS only. Sent on HTTPS responses outside Development. <a href="production.html#https">More</a>.</dd>
+</dl>
+<h2 id="letter-i">I</h2>
+<dl>
+<dt id="internal-visibility">Internal (visibility)</dt><dd>Visible to every signed-in user, who count as Viewers. The other option is Private. <a href="concepts.html#visibility">More</a>.</dd>
+<dt id="issue">Issue</dt><dd>A unit of tracked work, numbered per project (WEB-12), with type, status, priority, assignee and so on. <a href="issues.html">More</a>.</dd>
+<dt id="issue-key">Issue key</dt><dd>The identifier of an issue: project key, a dash and a number, such as WEB-12. Writing it in a commit message links the commit to the issue. <a href="issues.html">More</a>.</dd>
+</dl>
+<h2 id="letter-j">J</h2>
+<dl>
+<dt id="job-ci">Job (CI)</dt><dd>A named group of steps in a pipeline that runs in one container image. Jobs can depend on each other with needs. <a href="ci.html">More</a>.</dd>
+</dl>
+<h2 id="letter-k">K</h2>
+<dl>
+<dt id="key-project">Key (project)</dt><dd>The short upper-case identifier of a project, 2 to 10 letters or digits starting with a letter. <a href="concepts.html#keys">More</a>.</dd>
+</dl>
+<h2 id="letter-l">L</h2>
+<dl>
+<dt id="ldap">LDAP</dt><dd>A directory protocol (Active Directory, OpenLDAP). GitBench can authenticate users against it and map directory groups to GitBench groups. <a href="accounts.html">More</a>.</dd>
+</dl>
+<h2 id="letter-m">M</h2>
+<dl>
+<dt id="maintainer">Maintainer</dt><dd>Project role that can also merge pull requests and manage repositories, labels, milestones, sprints, flags and packages. <a href="permissions.html">More</a>.</dd>
+<dt id="member">Member</dt><dd>A user with a role on a project or group. <a href="permissions.html">More</a>.</dd>
+<dt id="merge-queue">Merge queue</dt><dd>A per-branch queue that tests and merges approved pull requests in order, in batches, so the target branch stays green. <a href="branch-protection.html">More</a>.</dd>
+<dt id="merge-strategy">Merge strategy</dt><dd>How a pull request is merged: merge commit, squash or rebase, as allowed by the repository. <a href="pull-requests.html">More</a>.</dd>
+<dt id="migration">Migration</dt><dd>A versioned database schema change. GitBench applies pending migrations automatically at start-up. <a href="production.html#upgrades">More</a>.</dd>
+<dt id="milestone">Milestone</dt><dd>A target with an optional date that issues are attached to, with progress tracking. <a href="issues.html">More</a>.</dd>
+<dt id="mirror">Mirror</dt><dd>A repository kept in sync with another one: pull mirrors fetch from a remote, push mirrors push to one. <a href="repositories.html">More</a>.</dd>
+</dl>
+<h2 id="letter-n">N</h2>
+<dl>
+<dt id="night-owl">Night Owl</dt><dd>An open-source security scanner. GitBench ingests its JSON and SARIF reports from CI into findings. <a href="security-scanning.html">More</a>.</dd>
+<dt id="notification">Notification</dt><dd>An in-app (and optionally email or chat) message about something you are involved in. <a href="notifications.html">More</a>.</dd>
+</dl>
+<h2 id="letter-o">O</h2>
+<dl>
+<dt id="oauth-oidc">OAuth / OIDC</dt><dd>Protocols for single sign-on. GitBench supports OpenID Connect providers and GitHub&#x27;s OAuth. <a href="accounts.html">More</a>.</dd>
+<dt id="oci-registry">OCI registry</dt><dd>The container image registry built into each project, served under /v2. <a href="packages.html">More</a>.</dd>
+<dt id="owner">Owner</dt><dd>The highest project role: also manages members, settings and visibility, and can delete the project. <a href="permissions.html">More</a>.</dd>
+</dl>
+<h2 id="letter-p">P</h2>
+<dl>
+<dt id="pages">Pages</dt><dd>Static websites published from a CI job and served by GitBench. <a href="pages.html">More</a>.</dd>
+<dt id="pipeline">Pipeline</dt><dd>One run of a repository&#x27;s CI file for a commit. Statuses: Queued, Running, Passed, Failed, Canceled, Error, Manual. <a href="ci.html">More</a>.</dd>
+<dt id="postgres">Postgres</dt><dd>PostgreSQL 14 or newer, the optional alternative to SQLite. <a href="production.html#postgres">More</a>.</dd>
+<dt id="private-visibility">Private (visibility)</dt><dd>Visible only to members. <a href="concepts.html#visibility">More</a>.</dd>
+<dt id="project">Project</dt><dd>The unit of work and access: has a key, members, issues and repositories. <a href="concepts.html#projects">More</a>.</dd>
+<dt id="protected-tag">Protected tag</dt><dd>A tag rule that restricts who may create, move or delete matching tags. <a href="branch-protection.html">More</a>.</dd>
+<dt id="pull-request">Pull request</dt><dd>A proposal to merge one branch into another, with review, discussion and checks. <a href="pull-requests.html">More</a>.</dd>
+</dl>
+<h2 id="letter-r">R</h2>
+<dl>
+<dt id="rate-limit">Rate limit</dt><dd>A cap on requests per time window. Over it you get HTTP 429 with Retry-After. <a href="troubleshooting.html#rate-limits">More</a>.</dd>
+<dt id="release">Release</dt><dd>A tagged version of a repository with notes and downloadable assets. <a href="code-tools.html">More</a>.</dd>
+<dt id="repository">Repository</dt><dd>A Git repository inside a project. A project can have several, each with a slug. <a href="concepts.html#repositories">More</a>.</dd>
+<dt id="reverse-proxy">Reverse proxy</dt><dd>A web server (Caddy, nginx) in front of GitBench that terminates TLS and forwards requests. <a href="production.html#reverse-proxy">More</a>.</dd>
+<dt id="review-site">Review site</dt><dd>A temporary Pages site published for a non-default branch. <a href="pages.html">More</a>.</dd>
+<dt id="roadmap">Roadmap</dt><dd>A timeline of epics per project or group. <a href="boards-sprints.html">More</a>.</dd>
+<dt id="role">Role</dt><dd>Viewer, Developer, Maintainer or Owner: what a member may do. <a href="permissions.html">More</a>.</dd>
+</dl>
+<h2 id="letter-s">S</h2>
+<dl>
+<dt id="sarif">SARIF</dt><dd>A standard JSON format for static analysis results, accepted from any scanner. <a href="security-scanning.html">More</a>.</dd>
+<dt id="scope-token">Scope (token)</dt><dd>A permission attached to an access token, for example read_repository or write_repository. <a href="api.html">More</a>.</dd>
+<dt id="sdk-key">SDK key</dt><dd>A key per feature-flag environment that your application uses to fetch flag values. <a href="feature-flags.html">More</a>.</dd>
+<dt id="seed-data">Seed data</dt><dd>The demo users, projects and issues created in an empty Development database. Their shared password is the constant SeedData.DemoPassword. <a href="getting-started.html#sign-in">More</a>.</dd>
+<dt id="service-desk">Service desk</dt><dd>A mailbox and public form that turn messages from people without accounts into issues. <a href="service-desk.html">More</a>.</dd>
+<dt id="site-admin">Site admin</dt><dd>A user with the admin flag: treated as Owner of every project and able to use /admin pages. <a href="admin.html">More</a>.</dd>
+<dt id="slug">Slug</dt><dd>The URL name of a repository inside a project, or a path segment of a group. <a href="concepts.html#keys">More</a>.</dd>
+<dt id="smart-commit">Smart commit</dt><dd>A commit message that mentions an issue key, which links the commit to the issue after a push. <a href="getting-started.html#push-repo">More</a>.</dd>
+<dt id="snippet">Snippet</dt><dd>A small shareable piece of code or text with its own visibility. <a href="wiki-snippets.html">More</a>.</dd>
+<dt id="sprint">Sprint</dt><dd>A time-boxed set of issues in Scrum, with start, complete, burndown and velocity. <a href="boards-sprints.html">More</a>.</dd>
+<dt id="sso">SSO</dt><dd>Single sign-on: signing in with an external identity provider. <a href="accounts.html">More</a>.</dd>
+<dt id="status-check">Status check</dt><dd>A result from CI, AI review or a security scan that can be required before a pull request merges. <a href="branch-protection.html">More</a>.</dd>
+<dt id="step-ci">Step (CI)</dt><dd>One command in a job, run in its own container with sh -e -c. <a href="ci.html">More</a>.</dd>
+<dt id="story-points">Story points</dt><dd>A relative estimate of effort on an issue. <a href="workbench.html">More</a>.</dd>
+<dt id="subgroup">Subgroup</dt><dd>A group inside another group. <a href="concepts.html#groups">More</a>.</dd>
+</dl>
+<h2 id="letter-t">T</h2>
+<dl>
+<dt id="triage-ai">Triage (AI)</dt><dd>AI suggestions for labels, component, priority and possible duplicates of a new issue. <a href="ai-review-triage.html">More</a>.</dd>
+<dt id="triage-security">Triage (security)</dt><dd>Deciding what to do with a finding: confirm, dismiss as false positive or accepted risk, or reopen. <a href="security-scanning.html">More</a>.</dd>
+</dl>
+<h2 id="letter-u">U</h2>
+<dl>
+<dt id="user-secrets">User-secrets</dt><dd>A .NET development store for configuration secrets outside the source tree. <a href="configuration.html#user-secrets">More</a>.</dd>
+</dl>
+<h2 id="letter-v">V</h2>
+<dl>
+<dt id="viewer">Viewer</dt><dd>The lowest project role: read-only. <a href="permissions.html">More</a>.</dd>
+</dl>
+<h2 id="letter-w">W</h2>
+<dl>
+<dt id="webhook">Webhook</dt><dd>An HTTP callback GitBench sends when something happens (push, issue, pull request, pipeline and more), signed and retried. <a href="api.html">More</a>.</dd>
+<dt id="wiki">Wiki</dt><dd>A Markdown knowledge base per project. <a href="wiki-snippets.html">More</a>.</dd>
+<dt id="workbench">Workbench</dt><dd>The company ERP where time and cost are recorded. GitBench links to its timesheets but does not track time itself. <a href="workbench.html">More</a>.</dd>
+<dt id="workflow">Workflow</dt><dd>The set of statuses and allowed transitions for a project&#x27;s issues. <a href="issues.html">More</a>.</dd>
+<dt id="workspace-ci">Workspace (CI)</dt><dd>The folder with a commit&#x27;s files mounted at /workspace in every job container. <a href="ci.html">More</a>.</dd>
+<dt id="workspace-web-editor">Workspace (web editor)</dt><dd>Your private, uncommitted set of edits to a repository branch in the web editor. <a href="web-editor.html">More</a>.</dd>
+</dl>
