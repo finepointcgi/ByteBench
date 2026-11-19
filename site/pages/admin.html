@@ -1,0 +1,161 @@
+<h1>Administration</h1>
+<p class="lead">What site admins can see and do: manage users, read the audit log, watch the system page, tune rate limits, check package storage and backups, and understand how long data is kept.</p>
+
+<p>All pages in this chapter are for <strong>site admins</strong> only (see <a href="permissions.html#site-admin">site admins</a>). They appear in the admin part of the sidebar. Everyone else sees "Only site administrators can ..." messages.</p>
+<table>
+<thead><tr><th>Page</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>/admin/users</code></td><td>Accounts: lock, deactivate, reset two-factor, grant admin</td></tr>
+<tr><td><code>/admin/audit</code></td><td>Audit log with filters and CSV export</td></tr>
+<tr><td><code>/admin/system</code></td><td>Server, database, health, storage, queues, backups, hosting checks</td></tr>
+<tr><td><code>/admin/authentication</code></td><td>SSO providers and LDAP status (see <a href="accounts.html#admin-authentication">Accounts</a>)</td></tr>
+<tr><td><code>/admin/ai</code></td><td>AI backends (see <a href="ai.html#admin-page">AI overview</a>)</td></tr>
+<tr><td><code>/admin/packages</code></td><td>Site-wide package registry storage</td></tr>
+<tr><td><code>/admin/backups</code></td><td>Create, download and delete backup archives</td></tr>
+</tbody></table>
+
+<h2 id="users">User administration</h2>
+<p>At <code>/admin/users</code> you can search by username, display name or email (25 per page). Each row shows the username and display name, email, admin flag, status (active, locked until a date, or deactivated), whether two-factor is on, the last sign-in and the number of project memberships. The last sign-in comes from the newest <code>auth.sign_in</code> audit event, so it is limited by <a href="#retention">audit retention</a>.</p>
+<p>There is no "create user" form: people register themselves at <code>/account/register</code>, or sign in through SSO or LDAP, which can create accounts automatically (see <a href="accounts.html">Accounts</a>). To have a first admin, set <code>Bootstrap:AdminUsers</code> to a list of usernames; they are made site admins at start-up.</p>
+<table>
+<thead><tr><th>Action</th><th>Effect</th><th>Audit event</th></tr></thead>
+<tbody>
+<tr><td>Make admin / Revoke admin</td><td>Sets the admin flag. GitBench refuses to revoke the last admin</td><td><code>admin.user_admin_granted</code> / <code>admin.user_admin_revoked</code></td></tr>
+<tr><td>Lock</td><td>Locks the account for 1 hour, 1 day, 7 days or until unlocked, and signs the user out everywhere</td><td><code>admin.user_locked</code></td></tr>
+<tr><td>Unlock / Reactivate</td><td>Clears the lockout, the failed sign-in counter and any deactivation</td><td><code>admin.user_unlocked</code></td></tr>
+<tr><td>Sign out</td><td>Ends every browser session within a minute. Access tokens keep working</td><td><code>admin.user_signed_out</code></td></tr>
+<tr><td>Reset 2FA</td><td>For a user who lost their device: turns two-factor off, replaces the key and deletes the recovery codes</td><td><code>admin.user_2fa_reset</code></td></tr>
+<tr><td>Deactivate</td><td>Locks the account indefinitely, signs it out and revokes every personal access token. Reactivating does not bring the tokens back</td><td><code>admin.user_deactivated</code></td></tr>
+</tbody></table>
+<ul>
+<li>Each action asks for confirmation and is audited.</li>
+<li>You cannot lock or deactivate yourself. The system accounts (AI review bot, automation bot, service desk) are listed but cannot be changed.</li>
+<li>Locked and deactivated accounts cannot use tokens either: Bearer tokens for the API and Git Basic authentication are both refused.</li>
+<li>Sessions are re-checked every minute, so changes take effect within about a minute.</li>
+<li>Passwords: admins cannot set a user's password. See <a href="accounts.html#passwords">Passwords</a>.</li>
+</ul>
+
+<h2 id="audit">Audit log</h2>
+<p>GitBench records security-relevant events as append-only audit events: time, actor (user, or none for system and anonymous), IP address, user agent, a dotted action, target type and id, project, and JSON details. Rows cannot be updated or deleted through the app, and they outlive the users and projects they mention. Only retention removes them.</p>
+
+<h3 id="audit-pages">Where to read it</h3>
+<ul>
+<li><code>/admin/audit</code> (site admins) filters by actor username (or <code>system</code>), action prefix (for example <code>member.</code>), project key and a UTC date range. It shows 50 events per page, and <strong>Details</strong> expands the JSON and user agent.</li>
+<li><code>/p/{KEY}/settings/audit</code> (project Owners) shows the same view limited to that project.</li>
+<li><strong>Export CSV</strong> downloads every matching event (up to 100,000) from <code>GET /admin/audit/export.csv?project=&amp;actor=&amp;action=&amp;from=&amp;to=</code>, with the same access checks. Cells that start like a spreadsheet formula are prefixed with an apostrophe. Exporting is itself audited as <code>audit.exported</code>.</li>
+</ul>
+
+<h3 id="audit-secrets">What is never recorded</h3>
+<p>Passwords, tokens (not even a prefix) and webhook secrets are never stored. Webhook and mirror URLs are logged as scheme and host only. Detail keys that look like secrets (<code>password</code>, <code>secret</code>, <code>token</code>, <code>hash</code> and the like) are dropped as a backstop. Behind a reverse proxy, set <code>ReverseProxy:Enabled</code> so the recorded IP is the client's.</p>
+
+<h3 id="audit-events">Event catalogue</h3>
+<p>Events are grouped by their prefix, which is also what the action filter matches. This list comes from the code and is the set GitBench raises today; use the filter to see what your server has recorded.</p>
+<table>
+<thead><tr><th>Area</th><th>Events</th></tr></thead>
+<tbody>
+<tr><td>Sign-in and accounts</td><td><code>auth.sign_in</code>, <code>auth.sign_in_failed</code>, <code>auth.lockout</code>, <code>auth.sign_out</code>, <code>auth.registered</code>, <code>auth.2fa_failed</code>, <code>user.password_changed</code>, <code>user.2fa_enabled</code>, <code>user.2fa_disabled</code>, <code>user.2fa_recovery_codes_regenerated</code>, <code>token.created</code>, <code>token.revoked</code>, <code>ssh_key.added</code>, <code>ssh_key.removed</code></td></tr>
+<tr><td>SSO and LDAP</td><td><code>auth.sso_sign_in</code>, <code>auth.sso_link</code>, <code>auth.sso_unlink</code>, <code>auth.sso_failed</code>, <code>auth.external_sync</code>, <code>auth.ldap_sync</code>, <code>auth.directory_user_deactivated</code></td></tr>
+<tr><td>Site administration</td><td><code>admin.user_admin_granted</code>, <code>admin.user_admin_revoked</code>, <code>admin.user_locked</code>, <code>admin.user_unlocked</code>, <code>admin.user_signed_out</code>, <code>admin.user_2fa_reset</code>, <code>admin.user_deactivated</code>, <code>admin.backup_created</code>, <code>admin.backup_deleted</code>, <code>audit.exported</code></td></tr>
+<tr><td>Projects and members</td><td><code>project.created</code>, <code>project.settings_changed</code>, <code>project.visibility_changed</code>, <code>project.transferred</code>, <code>project.deleted</code>, <code>project.workbench_changed</code>, <code>project.dora_settings_changed</code>, <code>member.added</code>, <code>member.role_changed</code>, <code>member.removed</code></td></tr>
+<tr><td>Groups</td><td><code>group.created</code>, <code>group.settings_changed</code>, <code>group.path_changed</code>, <code>group.moved</code>, <code>group.deleted</code>, <code>group.member_added</code>, <code>group.member_role_changed</code>, <code>group.member_removed</code>, <code>group.label_*</code>, <code>group.milestone_*</code></td></tr>
+<tr><td>Repositories and code</td><td><code>repository.created</code>, <code>repository.renamed</code>, <code>repository.archived</code>, <code>repository.unarchived</code>, <code>repository.deleted</code>, <code>repository.forked</code>, <code>repository.settings_changed</code>, <code>repository.default_branch_changed</code>, <code>repository.merge_strategies_changed</code>, <code>repository.security_settings_changed</code>, <code>repository.ai_review_settings_changed</code>, <code>branch_protection.created</code>, <code>branch_protection.updated</code>, <code>branch_protection.deleted</code>, <code>protected_tag.deleted</code>, <code>pull_request.merged_bypassing_protection</code>, <code>deploy_key.added</code>, <code>deploy_key.removed</code>, <code>mirror.deleted</code>, <code>mirror.sync_requested</code>, <code>editor.commit</code></td></tr>
+<tr><td>Merge queue</td><td><code>merge_queue.enqueued</code>, <code>merge_queue.enqueued_bypassing_protection</code>, <code>merge_queue.failed</code>, <code>merge_queue.merged</code>, <code>merge_queue.moved_to_front</code>, <code>merge_queue.removed</code></td></tr>
+<tr><td>Issues and planning</td><td><code>issue.deleted</code>, <code>issue.bulk_deleted</code>, <code>issue.imported</code>, <code>issue.workbench_changed</code>, <code>workflow.status_added</code>, <code>workflow.status_updated</code>, <code>workflow.status_reordered</code>, <code>workflow.status_deleted</code>, <code>workflow.transitions_changed</code>, <code>board.*</code>, <code>component.deleted</code>, <code>version.deleted</code>, <code>custom_field.deleted</code>, <code>snippet.created</code>, <code>snippet.updated</code>, <code>snippet.deleted</code></td></tr>
+<tr><td>Automation</td><td><code>automation.rule_created</code>, <code>automation.rule_updated</code>, <code>automation.rule_enabled</code>, <code>automation.rule_disabled</code>, <code>automation.rule_deleted</code></td></tr>
+<tr><td>CI, environments and deployments</td><td><code>ci_variable.created</code>, <code>ci_variable.updated</code>, <code>ci_variable.deleted</code>, <code>pipeline_schedule.deleted</code>, <code>environment.created</code>, <code>environment.deleted</code>, <code>environment.protected</code>, <code>environment.unprotected</code>, <code>environment.approval_rules_changed</code>, <code>environment.stop_requested</code>, <code>environment.stopped</code>, <code>deployment.approved</code>, <code>deployment.rejected</code>, <code>deployment.redeployed</code>, <code>deploy_freeze.created</code>, <code>deploy_freeze.deleted</code></td></tr>
+<tr><td>Releases, packages and Pages</td><td><code>release.created</code>, <code>release.published</code>, <code>release.deleted</code>, <code>tag.deleted</code>, <code>package.published</code>, <code>package.deleted</code>, <code>package.version_deleted</code>, <code>package.settings_changed</code>, <code>pages.deployed</code>, <code>pages.rolled_back</code>, <code>pages.deleted</code>, <code>pages.settings_updated</code></td></tr>
+<tr><td>Feature flags</td><td><code>flag.created</code>, <code>flag.updated</code>, <code>flag.toggled</code>, <code>flag.rules_changed</code>, <code>flag.default_changed</code>, <code>flag.off_value_changed</code>, <code>flag.archived</code>, <code>flag.unarchived</code>, <code>flag.deleted</code>, <code>flag.environment_created</code>, <code>flag.environment_deleted</code>, <code>flag.segment_created</code>, <code>flag.segment_updated</code>, <code>flag.segment_deleted</code>, <code>flag.sdk_key_created</code>, <code>flag.sdk_key_rotated</code>, <code>flag.sdk_key_revoked</code></td></tr>
+<tr><td>Security scanning</td><td><code>security.finding_triaged</code>, <code>security.triage_imported</code></td></tr>
+<tr><td>Integrations</td><td><code>webhook.created</code>, <code>webhook.updated</code>, <code>webhook.secret_rotated</code>, <code>webhook.deleted</code>, <code>chat_integration.created</code>, <code>chat_integration.updated</code>, <code>chat_integration.deleted</code>, <code>chat_integration.opted_out</code>, <code>chat_integration.opted_in</code>, <code>chat.slack_linked</code>, <code>chat.slack_unlinked</code></td></tr>
+<tr><td>Service desk</td><td><code>service_desk.request_created</code>, <code>service_desk.reply_received</code>, <code>service_desk.reply_sent</code>, <code>service_desk.status_notified</code>, <code>service_desk.form_rejected</code></td></tr>
+<tr><td>AI</td><td><code>ai_review.queued</code>, <code>ai_review.rate_limited</code>, <code>ai_review.finding_dismissed</code>, <code>ai.triage.requested</code>, <code>ai.triage.accepted</code>, <code>ai.triage.dismissed</code>, <code>ai.triage.auto_applied</code>, <code>ai.triage.completed</code>, <code>ai.triage.rate_limited</code></td></tr>
+</tbody></table>
+
+<h2 id="system">The system page</h2>
+<p><code>/admin/system</code> gives an operator what they need at a glance:</p>
+<ul>
+<li><strong>Server:</strong> version, runtime, operating system, uptime, memory.</li>
+<li><strong>Database:</strong> provider, target (never the password), server version, size, applied and pending migrations.</li>
+<li><strong>Health:</strong> the checks behind <code>/health/ready</code>.</li>
+<li><strong>Storage:</strong> files and bytes in each data folder, measured on demand and cached for a minute.</li>
+<li><strong>Queues:</strong> webhook deliveries waiting, CI pipelines queued and running, merge queue entries, pending email and chat notifications, and failures in the last 24 hours.</li>
+<li><strong>Backups:</strong> schedule, folder, number and size of archives, last success and last error.</li>
+<li><strong>Hosting checks:</strong> the production review (TLS and proxy, Data Protection keys, demo data off, backups, rate limits, allowed hosts). The same review runs at start-up and writes warnings to the log. See <a href="production.html">Production setup</a>.</li>
+</ul>
+
+<h2 id="rate-limits">Rate limiting</h2>
+<p>Rate limits protect sign-in, the API, Git and the registries. They are on by default (off in the Development configuration). Each section takes <code>PermitLimit</code> and <code>WindowSeconds</code> (fixed window); a <code>PermitLimit</code> of <code>0</code> switches that limit off. Over the limit a request gets <code>429</code> with a <code>Retry-After</code> header (problem+json for the API, plain text elsewhere).</p>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Limits</th></tr></thead>
+<tbody>
+<tr><td><code>RateLimiting:Enabled</code></td><td><code>true</code></td><td>Master switch for all of them</td></tr>
+<tr><td><code>RateLimiting:Auth</code></td><td>10 per 60 s</td><td>POSTs to <code>/account/*</code> (sign-in, registration, two-factor), per client IP</td></tr>
+<tr><td><code>RateLimiting:Api</code></td><td>300 per 60 s</td><td><code>/api/*</code>, per access token, else per signed-in user, else per IP</td></tr>
+<tr><td><code>RateLimiting:Git</code></td><td>120 per 60 s</td><td><code>/git/*</code> (Git over HTTP), per user named in the credentials, else per IP</td></tr>
+<tr><td><code>RateLimiting:Registry</code></td><td>3000 per 60 s</td><td><code>/packages/*</code> and <code>/v2/*</code> (NuGet, npm, containers), per credential. Counts requests, not bytes: one <code>docker push</code> makes many requests</td></tr>
+<tr><td><code>RateLimiting:RegistryIp</code></td><td>6000 per 60 s</td><td>The same paths, per client IP across all credentials, so a CI farm behind one NAT needs headroom</td></tr>
+<tr><td><code>RateLimiting:WebhookPing</code></td><td>5 per 60 s</td><td>Webhook and chat test messages, per user</td></tr>
+<tr><td><code>RateLimiting:Ssh</code></td><td>120 per 60 s</td><td>Git commands over SSH, per user or deploy key</td></tr>
+</tbody></table>
+<pre><code>RateLimiting__Api__PermitLimit=600
+RateLimiting__Api__WindowSeconds=60
+RateLimiting__Auth__PermitLimit=20</code></pre>
+<p>Behind a reverse proxy, set <code>ReverseProxy:Enabled</code> and the proxy's address, otherwise every client appears to come from the proxy and shares one IP-based limit. AI features have their own limits, described on <a href="ai.html">AI overview</a> and <a href="ai-review-triage.html">AI review and triage</a>.</p>
+
+<h2 id="packages-admin">Package storage (/admin/packages)</h2>
+<p>A read-only table of every project's package registry usage: number of packages, versions or image tags, and size (each distinct blob counted once per project), plus total bytes on disk, the storage folder (<code>Packages:Root</code>) and the largest blob allowed (<code>Packages:MaxBlobBytes</code>). Blobs are stored once by digest, and unreferenced blobs are swept daily. Project Maintainers manage individual packages from the project's packages page; see <a href="packages.html">Package and container registry</a>.</p>
+
+<h2 id="backups">Backups (/admin/backups)</h2>
+<p>One archive (<code>gitbench-backup-&lt;UTC time&gt;.tar.gz</code> with a <code>.sha256</code> file) holds the database, repositories, attachments, packages, LFS objects, Pages and, by default, the Data Protection key ring, with a manifest and checksums for every file. The page shows the folder, schedule, retention and database mode, a <strong>Back up now</strong> button, and for each archive a download, a SHA-256 file and a delete link. Backups and deletions are audited. Restoring is a command run with the server stopped.</p>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>Backup:Enabled</code></td><td><code>false</code></td><td>Run scheduled backups inside the server</td></tr>
+<tr><td><code>Backup:Directory</code></td><td><code>{ContentRoot}/backups</code> (<code>/data/backups</code> in Docker)</td><td>Where archives go. Put it on another disk or share</td></tr>
+<tr><td><code>Backup:StartTimeUtc</code> / <code>IntervalHours</code></td><td><code>02:30</code> / <code>24</code></td><td>Schedule: the start time plus whole intervals</td></tr>
+<tr><td><code>Backup:KeepLast</code> / <code>KeepDays</code></td><td><code>7</code> / <code>0</code></td><td>Keep the newest N archives; delete ones older than N days (0 = off). The newest archive is never deleted</td></tr>
+<tr><td><code>Backup:IncludeKeys</code> / <code>IncludeCiArtifacts</code></td><td><code>true</code> / <code>false</code></td><td>Optional sections</td></tr>
+<tr><td><code>Backup:PgDumpPath</code> / <code>PgRestorePath</code></td><td><code>pg_dump</code> / <code>pg_restore</code></td><td>PostgreSQL client tools</td></tr>
+<tr><td><code>Backup:StagingDirectory</code></td><td>temp folder</td><td>Unpacking area for a restore</td></tr>
+</tbody></table>
+<div class="warn">The archive holds password hashes, webhook and CI secrets and the key ring. Store it encrypted and access-controlled. Details of backup, restore and upgrades are in <a href="production.html">Production setup</a>.</div>
+
+<h2 id="explore">Explore, search and profiles</h2>
+<p>These are open to every signed-in user, and everything is filtered to projects the user can view, so nothing from a project you cannot see shows up anywhere.</p>
+<ul>
+<li><strong>Explore</strong> (<code>/explore</code>): every project you can view, with visibility, open issues, repositories, stars and last activity. Tabs All, Starred and Mine; filter by key, name or description; sort by name, recent activity or stars. Anyone who can view a project can star it; starred projects come first in the sidebar.</li>
+<li><strong>Profiles</strong> (<code>/u/{username}</code>): avatar, display name, member since, the visible projects they belong to, an activity feed (issues opened and closed, comments, pull requests opened and merged, pushes) and a 52-week contribution calendar.</li>
+<li><strong>Global search</strong>: the app-bar box (press <code>/</code>) suggests issues, pull requests, projects and users, and <code>/search?q=</code> groups full results. A query that is a visible issue key (for example <code>WEB-12</code>) jumps straight to it. <strong>Code</strong> is a separate tab that runs <code>git grep</code> on the default branch of each visible, non-archived repository with caps (25 repositories, 20 matches each, 100 in all). Matching is a case-insensitive text match, not a full-text index. For regular expressions and other branches use a repository's own code search.</li>
+<li>API: <code>GET /api/v1/search</code>, <code>/users/{username}</code>, <code>/user/starred</code> and <code>PUT/DELETE /projects/{key}/star</code> (see the <a href="api.html">API catalogue</a>).</li>
+</ul>
+
+<h3 id="shortcuts">Keyboard shortcuts</h3>
+<p>Press <code>?</code> for the list. Shortcuts are ignored while you type in a field or while a dialog is open. The switch in the <code>?</code> dialog turns them off for this browser.</p>
+<table>
+<thead><tr><th>Keys</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><code>?</code></td><td>Show the shortcuts</td></tr>
+<tr><td><code>/</code></td><td>Focus the search box</td></tr>
+<tr><td><code>g d</code> / <code>g e</code></td><td>Go to Dashboard / Explore</td></tr>
+<tr><td><code>g i</code> / <code>g b</code> / <code>g p</code> / <code>g r</code></td><td>The current project's issues / board / pull requests / repositories</td></tr>
+<tr><td><code>c</code></td><td>New issue in the current project</td></tr>
+<tr><td><code>j</code> / <code>k</code>, then <code>o</code> or Enter</td><td>Move the selection on an issue list, then open it</td></tr>
+<tr><td><code>e</code> / <code>a</code></td><td>On an issue: edit the description / assign to me</td></tr>
+</tbody></table>
+
+<h2 id="retention">Data retention</h2>
+<table>
+<thead><tr><th>Data</th><th>Setting</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td>Audit events</td><td><code>Audit:RetentionDays</code></td><td>365 days. <code>0</code> keeps them forever. Deleted at start-up and then daily. The hosting checks warn when it is 0</td></tr>
+<tr><td>Webhook and chat delivery log</td><td><code>Retention:WebhookDeliveryDays</code></td><td>30 days. <code>0</code> keeps them forever. Cleaned at start-up and every 6 hours</td></tr>
+<tr><td>Backups</td><td><code>Backup:KeepLast</code>, <code>Backup:KeepDays</code></td><td>Keep 7 archives</td></tr>
+<tr><td>AI usage records</td><td>none</td><td>Kept (token counts only; see <a href="ai.html#privacy">AI privacy</a>)</td></tr>
+<tr><td>Issues, repositories, packages, attachments</td><td>none</td><td>Kept until a person deletes them. CI artifacts, caches and Pages have their own expiry; see <a href="ci.html">CI pipelines</a></td></tr>
+</tbody></table>
+
+<div class="cards">
+<a class="card" href="production.html"><b>Production setup</b><span>Docker, Postgres, proxy, backups, upgrades</span></a>
+<a class="card" href="accounts.html"><b>Accounts and SSO</b><span>Sign-in, two-factor, LDAP</span></a>
+<a class="card" href="permissions.html"><b>Roles and permissions</b><span>Site admin and project roles</span></a>
+</div>

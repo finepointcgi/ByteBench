@@ -1,0 +1,96 @@
+<h1>AI overview and setup</h1>
+<p class="lead">GitBench can use Claude to draft issues, review pull requests, triage new issues and assist in the web editor, and every AI feature stays hidden until you give the server an API key or a Claude Code login.</p>
+
+<p>AI never changes your data by itself. Each feature returns text, filters, comments or proposals that a person reviews, accepts or ignores. The AI review bot is the one exception that writes on its own: it posts comments on pull requests, and it never approves or merges.</p>
+
+<h2 id="setup">Set up the Anthropic API key</h2>
+<p>The key is read from the <code>ANTHROPIC_API_KEY</code> environment variable, or from the <code>Ai:ApiKey</code> setting. Provide it through the environment or <strong>user-secrets</strong> and never write it into <code>appsettings.json</code> or any other file that ends up in Git.</p>
+<pre><code># environment variable (Docker, systemd, shell)
+export ANTHROPIC_API_KEY=&lt;your key&gt;
+
+# or .NET user-secrets in development (run "dotnet user-secrets init" once if needed)
+dotnet user-secrets set "Ai:ApiKey" "&lt;your key&gt;"</code></pre>
+<p>In Docker Compose, pass it as an environment variable (<code>ANTHROPIC_API_KEY</code>) from a <code>.env</code> file that is not committed. Restart GitBench afterwards. The key is read when the first AI call is made, and the configuration is read at start-up.</p>
+<div class="warn">Treat the key like a password. The <code>/admin/ai</code> page never shows it, and GitBench never sends it to the browser.</div>
+
+<h2 id="settings">The Ai:* settings</h2>
+<p>These keys live under the <code>Ai</code> section. Change them in the environment (<code>Ai__Review__MaxFindings=20</code> style) or in your own configuration file and restart. Defaults below come from the code.</p>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>Ai:Enabled</code></td><td><code>true</code></td><td>Master switch. <code>false</code> hides the issue helpers, triage, and the API backend everywhere even if a key is present.</td></tr>
+<tr><td><code>Ai:Model</code></td><td><code>claude-opus-5-5</code></td><td>Model used by every API call (issue helpers, triage, AI review and the web editor on the API backend).</td></tr>
+<tr><td><code>Ai:ApiKey</code></td><td>none</td><td>API key. Prefer <code>ANTHROPIC_API_KEY</code> or user-secrets. If both are set, <code>Ai:ApiKey</code> wins.</td></tr>
+<tr><td><code>Ai:Editor:Backend</code></td><td><code>Auto</code></td><td><code>Api</code>, <code>ClaudeCode</code> or <code>Auto</code>. Auto picks Claude Code if it is installed on the server, otherwise the API if a key exists, otherwise none. Used by the web editor and by AI pull request review.</td></tr>
+<tr><td><code>Ai:Editor:MaxToolCalls</code></td><td>15</td><td>Tool calls per assistant request (API backend).</td></tr>
+<tr><td><code>Ai:Editor:MaxTokensPerTurn</code></td><td>16000</td><td><code>max_tokens</code> of each model turn (API backend).</td></tr>
+<tr><td><code>Ai:Editor:MaxOutputTokensPerRequest</code></td><td>48000</td><td>Output tokens per request across all turns (API backend).</td></tr>
+<tr><td><code>Ai:Editor:RequestsPerMinute</code></td><td>6</td><td>Assistant requests (chat and inline actions) per user per minute.</td></tr>
+<tr><td><code>Ai:Editor:CompletionsPerMinute</code></td><td>20</td><td>Ghost-text completions per user per minute.</td></tr>
+<tr><td><code>Ai:Editor:CompletionMaxTokens</code></td><td>256</td><td>Maximum tokens for one ghost-text completion.</td></tr>
+<tr><td><code>Ai:ClaudeCode:Path</code></td><td><code>claude</code></td><td>The Claude Code executable: a name found on <code>PATH</code> or a full path.</td></tr>
+<tr><td><code>Ai:ClaudeCode:Model</code></td><td>none</td><td>Optional model passed as <code>--model</code>. Empty means Claude Code's own default.</td></tr>
+<tr><td><code>Ai:ClaudeCode:TimeoutSeconds</code></td><td>300</td><td>Wall-clock limit for one run; the whole process tree is killed after it.</td></tr>
+<tr><td><code>Ai:ClaudeCode:MaxTurns</code></td><td>15</td><td>Agent turns per run.</td></tr>
+<tr><td><code>Ai:ClaudeCode:MaxConcurrent</code></td><td>2</td><td>Claude Code runs at the same time across the server; others wait up to 30 seconds.</td></tr>
+<tr><td><code>Ai:ClaudeCode:MaxFiles</code> / <code>MaxBytes</code></td><td>5000 / 50 MB</td><td>Caps on what is copied into the temporary workspace.</td></tr>
+<tr><td><code>Ai:Review:*</code></td><td>see <a href="ai-review-triage.html#review-limits">AI review limits</a></td><td>Server-wide guardrails for pull request review.</td></tr>
+<tr><td><code>Ai:Triage:*</code></td><td>see <a href="ai-review-triage.html#triage-limits">triage limits</a></td><td>Prompt-size and rate limits for issue triage.</td></tr>
+</tbody></table>
+<p>The full list of GitBench settings is in the <a href="configuration.html">configuration reference</a>.</p>
+
+<h2 id="claude-code">The Claude Code backend</h2>
+<p>Instead of an API key you can install the <code>claude</code> command-line tool on the server and sign it in once as the account GitBench runs as (run <code>claude</code> interactively, or create a token with <code>claude setup-token</code> and set <code>CLAUDE_CODE_OAUTH_TOKEN</code>). The web editor and AI pull request review then use <strong>that account's Claude Code login or subscription</strong> for every user. Usage and billing belong to the server account, not to individual users.</p>
+
+<h3 id="claude-code-sandbox">How it is sandboxed</h3>
+<ul>
+<li>The user's workspace (or the pull request files for a review) is written to a fresh temporary directory with mode 700 and deleted afterwards. The repository's own <code>.claude/</code> folder and <code>.mcp.json</code> are <strong>not</strong> copied, so a repository cannot add hooks, permissions or MCP servers.</li>
+<li><code>claude -p</code> runs headless there with the prompt on standard input (never on a command line), file tools only (<code>Read</code>, <code>Grep</code>, <code>Glob</code>, <code>Edit</code>, <code>Write</code>), and shell, web fetch, web search and sub-agent tools explicitly denied. Permission mode is <code>dontAsk</code>: nothing ever prompts, and anything not allowed is refused.</li>
+<li>The environment is clean. None of the server's variables (database strings, API keys, cloud credentials) are passed. Only what Claude Code needs to find itself and its login: <code>HOME</code>, <code>USER</code>, <code>PATH</code>, locale and temp variables, plus <code>CLAUDE_CONFIG_DIR</code> and <code>CLAUDE_CODE_OAUTH_TOKEN</code> when set.</li>
+<li>When the run ends, the directory is compared with what was written. Every changed file becomes a <em>proposal</em> in the editor. Nothing is applied automatically.</li>
+<li>GitBench reads <code>claude --help</code> at start-up and only passes the optional flags that version lists.</li>
+</ul>
+<div class="note">Ghost-text completions need the API backend, because the CLI is too slow for them. With the Claude Code backend the toggle is hidden.</div>
+
+<h2 id="features">Every AI feature at a glance</h2>
+<table>
+<thead><tr><th>Feature</th><th>Where</th><th>Default</th><th>Backend</th><th>Cost and size guardrails</th></tr></thead>
+<tbody>
+<tr><td>Draft issue with AI</td><td>New issue page, "Draft with AI"</td><td>On when a key exists</td><td>API only</td><td>One call per click, low effort. Nothing is created until you press Create.</td></tr>
+<tr><td>Possible duplicates (issue assist)</td><td>New issue page, after the title loses focus with 4 or more words</td><td>On when a key exists</td><td>API only</td><td>Prefilter by keyword overlap (top 25, no AI call). No candidates means no AI call.</td></tr>
+<tr><td>Catch me up (summary)</td><td>Issue detail</td><td>On when a key exists</td><td>API only</td><td>Medium effort. Cached in memory per issue until the issue changes.</td></tr>
+<tr><td>Ask (plain-English search)</td><td>Issue list</td><td>On when a key exists</td><td>API only</td><td>Low effort, structured filters, no data is changed.</td></tr>
+<tr><td>Release notes</td><td>Milestone page</td><td>On when a key exists</td><td>API only</td><td>One call per click from the milestone's closed issues and merged pull requests.</td></tr>
+<tr><td>Write description with AI</td><td>New pull request page</td><td>On when a key exists</td><td>API only</td><td>Streamed from the commits and diff into the editor; you can edit it before creating the pull request.</td></tr>
+<tr><td><a href="ai-review-triage.html#review">AI pull request review</a></td><td>Pull request sidebar, repository settings</td><td><strong>Off</strong> per repository</td><td>Editor backend (API or Claude Code)</td><td>Per-repository hourly limit (12), max diff size, up to 30 findings, large diffs batched (up to 6).</td></tr>
+<tr><td><a href="ai-review-triage.html#triage">AI issue triage</a></td><td>Issue detail "AI suggestions", project settings</td><td><strong>Off</strong> per project</td><td>API only</td><td>Prompt capped at 40,000 characters; 60 runs per project per hour; 20 manual runs per user per hour; 30 s cooldown per issue.</td></tr>
+<tr><td>Similar-issue hints (no AI)</td><td>New issue page</td><td>Always on</td><td>None (keyword overlap)</td><td>No model call, nothing stored.</td></tr>
+<tr><td><a href="web-editor.html">Web editor assistant</a></td><td>Web editor chat panel, inline actions, ghost text</td><td>On per project when a backend exists; ghost text off per session</td><td>API or Claude Code (ghost text: API only)</td><td>15 tool calls, 48,000 output tokens per request; 6 requests and 20 completions per user per minute.</td></tr>
+</tbody></table>
+<p>"On when a key exists" means there is no per-project switch: the controls simply appear once the API key is configured and <code>Ai:Enabled</code> is not <code>false</code>. The web editor assistant can be turned off per project (Maintainers and Owners, Project settings, Web editor).</p>
+
+<h2 id="admin-page">The /admin/ai page</h2>
+<p>Site administrators find a read-only status page at <code>/admin/ai</code>. It shows three blocks:</p>
+<ul>
+<li><strong>Anthropic API</strong>: whether a key is configured, the model in use, and which features use it.</li>
+<li><strong>Claude Code on the server</strong>: installed or not, version, executable path, last check time, limits (concurrent runs, timeout, turns) and the model. The <strong>Check again</strong> button re-detects the CLI without restarting GitBench. GitBench only runs <code>claude --version</code> and <code>claude --help</code> from this page.</li>
+<li><strong>Web editor</strong>: the configured backend setting, the backend actually in use, whether inline completions are available, and the per-request and per-user limits.</li>
+</ul>
+<p>To change anything, edit the <code>Ai:*</code> settings and restart. Other users who open the page see "Only site administrators can see the AI configuration."</p>
+
+<h2 id="privacy">What is sent to the provider</h2>
+<p>When you use a feature, the text it needs is sent to Anthropic (API backend) or to the Claude Code account's provider (Claude Code backend). Nothing is sent until someone uses a feature or an automatic trigger fires.</p>
+<ul>
+<li><strong>Issue helpers</strong>: the issue's title, description, recent comments and activity, plus names of existing labels, milestones and people where needed. For duplicates, titles and descriptions of up to 25 candidate issues.</li>
+<li><strong>Pull request review and description</strong>: the title, description, commit messages, file paths and the diff (minus ignored paths, lockfiles, binaries and generated files).</li>
+<li><strong>Triage</strong>: the issue text, up to five recent comments, the project's labels and components, Developer+ member names with short evidence (open assigned issues, related past issues, recent commits on files the issue mentions) and up to ten candidate duplicates.</li>
+<li><strong>Web editor</strong>: the open file and selection, files you attach, and files the assistant reads or searches in your workspace. It cannot read other repositories.</li>
+</ul>
+<p>Content from users is always put in delimited data blocks and the system prompts tell the model to treat it as data and never follow instructions inside it. Output is rendered as plain text or Markdown with raw HTML disabled. If your repositories must not leave your network, leave AI unconfigured, or turn <code>Ai:Enabled</code> off.</p>
+<div class="note">Every API call records token counts (input, output, cache read and write), the feature name, model, user and project in the <code>AiUsages</code> table, never the prompt text. Use it for cost reporting.</div>
+
+<div class="cards">
+<a class="card" href="ai-review-triage.html"><b>AI review and triage</b><span>Modes, settings, findings and rate limits</span></a>
+<a class="card" href="web-editor.html"><b>Web editor assistant</b><span>Chat, proposals and ghost text</span></a>
+<a class="card" href="configuration.html"><b>Configuration reference</b><span>Every setting and environment variable</span></a>
+</div>

@@ -1,0 +1,121 @@
+<h1>Notifications and email</h1>
+<p class="lead">GitBench tells you about the things that involve you through a live bell in the top bar, optional emails and, if you use Slack, direct messages, and every kind can be tuned from one preferences page.</p>
+
+<h2 id="in-app">In-app notifications</h2>
+<p>The bell in the top bar shows a live unread count and a dropdown with the latest 10 notifications. Click one to mark it read and open the item, or use <strong>Mark all read</strong>. The full list is at <code>/notifications</code>, with <strong>All</strong> and <strong>Unread</strong> tabs and paging.</p>
+<table>
+<thead><tr><th>Event</th><th>Who is notified</th></tr></thead>
+<tbody>
+<tr><td>Issue assigned (on create or change)</td><td>The new assignee</td></tr>
+<tr><td><code>@username</code> in an issue description, issue comment, pull request description or pull request comment</td><td>That user</td></tr>
+<tr><td>Comment, status change, close or reopen on an issue</td><td>The issue's watchers</td></tr>
+<tr><td>Comment, review, merge, decline or reopen on a pull request</td><td>The pull request's watchers. Reviews also always go to the author</td></tr>
+<tr><td>Review requested on a pull request</td><td>The requested reviewer</td></tr>
+<tr><td>Issue linked, or parent and sub-task changes</td><td>Watchers of the issue</td></tr>
+<tr><td>A pipeline you triggered fails</td><td>The person who triggered it</td></tr>
+<tr><td>A deployment waits for approval, is approved or is rejected; new high-severity security findings on a default branch; a Pages site deployed by your pipeline; a merge queue removal</td><td>The people involved, as each feature describes</td></tr>
+<tr><td>Automation rule that notifies</td><td>The people the rule names</td></tr>
+</tbody></table>
+<ul>
+<li>The person who acted is never notified, and each user gets at most one notification per event. Assignment and mention take priority over the watcher notification.</li>
+<li>Recipients are always restricted to people who can see the project, so a notification never leaks a private item.</li>
+<li>Edited descriptions notify only users who are <em>newly</em> mentioned. Edited comments notify nobody.</li>
+</ul>
+
+<h2 id="live-updates">Live updates</h2>
+<p>Boards, issue lists, issue and pull request pages, the dashboard activity feed, the notifications page and the bell update on their own through GitBench's in-process event hub. Two browsers on the same board see a card move without reloading. A refresh replaces only the loaded data, so text you are typing in a description, title or comment is not touched.</p>
+<div class="note">The event hub lives inside one server process. A deployment with several GitBench servers behind a load balancer would need a shared backplane for live updates; see <a href="production.html">production setup</a>.</div>
+
+<h2 id="watching">Watching and muting</h2>
+<ul>
+<li>You <strong>watch</strong> an issue automatically when you report it, are assigned to it or comment on it. You watch a pull request when you author it, review it, are a reviewer or comment on it. The <strong>Watch / Watching</strong> button on the issue and pull request pages toggles it.</li>
+<li><strong>Mute</strong> (next to Watching) keeps the watch but stops watcher notifications. Direct notifications still arrive: assigned to you, mentioned, review requested, reviews of your own pull request.</li>
+<li>Unwatching is not the same as muting. GitBench auto-watches you again when you comment, are assigned or review, so an unwatch may not stick, while a mute does. Unwatching also clears the mute.</li>
+</ul>
+
+<h2 id="mentions">Mentions and autocomplete</h2>
+<p>Type <code>@</code> and a letter in any Markdown editor (issue description, new issue, comments, pull request description and comments, inline diff comments) to get up to 8 people who can view the project. Each row shows the display name, <code>@username</code> and avatar colour. Typing <code>#</code> and a number or text suggests issues, and a project key like <code>WEB-</code> suggests that project's issues. Pick with the arrow keys and Enter or Tab, or the mouse; Esc closes the list.</p>
+<ul>
+<li>Mentions match existing usernames case-insensitively and are ignored inside code spans and code blocks. Known users render highlighted.</li>
+<li>Suggestions come only from people who can view the project (site admins, members, and everyone if the project is Internal). The AI review bot is never suggested.</li>
+<li>Lookups run as you and return nothing for a project you cannot view.</li>
+</ul>
+
+<h2 id="preferences">Notification preferences</h2>
+<p>Open <code>/account/notifications</code> (linked from your profile and the bell dropdown). For each group, choose <strong>In-app + email</strong>, <strong>In-app only</strong> or <strong>Off</strong>. A master switch turns all notification emails off. "Don't notify me about my own actions" is shown and is always on.</p>
+<table>
+<thead><tr><th>Group</th><th>Covers</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td>Assigned to me</td><td>An issue is assigned to you</td><td>In-app + email</td></tr>
+<tr><td>Mentions</td><td>Someone @mentions you</td><td>In-app + email</td></tr>
+<tr><td>Review requests</td><td>You are added as a reviewer</td><td>In-app + email</td></tr>
+<tr><td>Pull request reviews</td><td>Approvals and change requests on pull requests you author or watch</td><td>In-app</td></tr>
+<tr><td>Comments on watched items</td><td>New comments on issues and pull requests you watch</td><td>In-app</td></tr>
+<tr><td>Changes to watched items</td><td>Status, close and reopen on issues; merge, decline and reopen on pull requests</td><td>In-app</td></tr>
+<tr><td>Issue links and hierarchy</td><td>Links, parents and sub-tasks change on an issue you watch</td><td>In-app</td></tr>
+<tr><td>Pipelines and deployments</td><td>A pipeline you triggered fails; deployment approvals; security findings; Pages deployments</td><td>In-app</td></tr>
+</tbody></table>
+<p>If one event qualifies for several kinds (say, you are mentioned in a comment on an issue you watch) and you turned the first off, you get the next one. There are no sprint notifications.</p>
+<p>When your Slack account is linked and the server has a Slack bot token, a switch <strong>Also send my notifications as Slack direct messages</strong> appears here. See <a href="chat.html#dms">Slack direct messages</a>.</p>
+
+<h2 id="email-setup">Email setup (administrators)</h2>
+<p>Email is <strong>off by default</strong>. While <code>Email:Enabled</code> is false nothing is queued and pending notification emails are dropped, so switching it on does not send a backlog.</p>
+<p>Never put SMTP credentials in <code>appsettings.json</code>. Use user-secrets in development and environment variables in production:</p>
+<pre><code># production (Docker, systemd)
+Email__Enabled=true
+Email__Sender=Smtp
+Email__Smtp__Host=smtp.example.com
+Email__Smtp__Port=587
+Email__Smtp__User=gitbench@example.com
+Email__Smtp__Password=&lt;from your secret store&gt;
+Email__From=GitBench &lt;gitbench@example.com&gt;
+Email__BaseUrl=https://gitbench.example.com
+
+# development
+dotnet user-secrets set "Email:Enabled" "true"
+dotnet user-secrets set "Email:Sender" "Smtp"</code></pre>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>Email:Enabled</code></td><td><code>false</code></td><td>Master switch</td></tr>
+<tr><td><code>Email:Sender</code></td><td><code>Pickup</code> in Development, otherwise <code>Smtp</code></td><td><code>Pickup</code> writes <code>.eml</code> files to a folder and sends nothing; <code>Smtp</code> sends through an SMTP server</td></tr>
+<tr><td><code>Email:From</code></td><td><code>GitBench &lt;gitbench@localhost&gt;</code></td><td>Sender address</td></tr>
+<tr><td><code>Email:PickupDirectory</code></td><td><code>mail-drop</code></td><td>Folder for <code>.eml</code> files (relative to the content root)</td></tr>
+<tr><td><code>Email:DigestMinutes</code></td><td><code>0</code></td><td><code>0</code> sends each notification at once. <code>N</code> sends at most one email per user every N minutes: the first at once, later ones batched into a digest</td></tr>
+<tr><td><code>Email:BaseUrl</code></td><td>none</td><td>Absolute site URL for links in emails. Falls back to <code>PublicBaseUrl</code>, then the first request's URL</td></tr>
+<tr><td><code>Email:Smtp:Host</code></td><td>none</td><td>SMTP server host</td></tr>
+<tr><td><code>Email:Smtp:Port</code></td><td><code>587</code></td><td>SMTP port</td></tr>
+<tr><td><code>Email:Smtp:User</code> / <code>Password</code></td><td>none</td><td>Credentials, from secrets only</td></tr>
+<tr><td><code>Email:Smtp:UseStartTls</code></td><td><code>true</code></td><td>STARTTLS. With <code>false</code>, port 465 uses implicit TLS and other ports are plain text (local relays only)</td></tr>
+</tbody></table>
+<p>To try email on a laptop without a server, run with <code>--Email:Enabled=true</code> in Development: the pickup sender writes <code>.eml</code> files you can open with any mail client.</p>
+
+<h3 id="email-delivery">How email is sent</h3>
+<ul>
+<li>Emails go on an in-memory queue and a background worker sends them, so a page never waits on SMTP. A failed send is retried 3 times (after 2, 10 and 30 seconds), then logged and dropped. Log lines mask addresses (<code>b***@example.com</code>).</li>
+<li>A second worker turns pending notifications into emails whenever notifications change and every 30 seconds. It skips anything you already read in the app.</li>
+<li>With a digest interval above 0, the first email goes out immediately and later ones are grouped.</li>
+</ul>
+
+<h2 id="email-templates">What the email contains</h2>
+<p>Each email is built from the same notification the bell shows: who did it, what happened, the title and a link to the item. It also includes an excerpt of the comment or description (at most 1,000 characters). The HTML part renders the excerpt with the same safe Markdown as the site (raw HTML disabled), and the plain-text part quotes the Markdown source. Every other piece of user content is HTML-encoded.</p>
+<p>Every email links to your preferences and carries a signed one-click unsubscribe link (valid 90 days, also sent as <code>List-Unsubscribe</code> and <code>List-Unsubscribe-Post</code> headers) that switches off all notification emails for that user.</p>
+
+<h3 id="replies">Replying to emails</h3>
+<p>Replying to a notification email does <strong>not</strong> add a comment to the issue or pull request; use the link in the email. Reply handling exists for the <a href="service-desk.html">service desk</a>, where requesters answer by email and replies above the marker line are added to the ticket.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<thead><tr><th>Problem</th><th>Check</th></tr></thead>
+<tbody>
+<tr><td>No emails at all</td><td><code>Email:Enabled</code> is false, <code>Email:Sender</code> is still <code>Pickup</code>, or the SMTP host, port or credentials are wrong (the server log shows failures with masked addresses).</td></tr>
+<tr><td>Someone gets no email for an event</td><td>Their group is set to In-app only or Off, the master email switch is off, they unsubscribed, or they already read it in the app.</td></tr>
+<tr><td>Links in emails point to localhost</td><td>Set <code>Email:BaseUrl</code> or <code>PublicBaseUrl</code>.</td></tr>
+<tr><td>Emails arrive late</td><td><code>Email:DigestMinutes</code> is above 0.</td></tr>
+</tbody></table>
+
+<div class="cards">
+<a class="card" href="chat.html"><b>Slack and Teams</b><span>Channel updates and Slack DMs</span></a>
+<a class="card" href="service-desk.html"><b>Service desk</b><span>Email in and out for requesters</span></a>
+<a class="card" href="configuration.html"><b>Configuration reference</b><span>Every setting</span></a>
+</div>
