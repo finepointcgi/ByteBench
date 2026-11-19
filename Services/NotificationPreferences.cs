@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GitBench.Services;
 
 /// <summary>One user's resolved preferences: every group has a channel (stored or default).</summary>
-public sealed record UserNotificationPreferences(bool EmailEnabled, IReadOnlyDictionary<NotificationGroup, NotificationChannel> Channels)
+public sealed record UserNotificationPreferences(bool EmailEnabled, IReadOnlyDictionary<NotificationGroup, NotificationChannel> Channels,
+    bool SlackDmEnabled = false)
 {
     public NotificationChannel ChannelFor(NotificationKind kind) => Channels[NotificationPreferences.GroupOf(kind)];
 
@@ -72,6 +73,22 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Also deliver notifications (every group not turned Off) as Slack DMs. Takes effect only when the server has a Slack
+    /// bot token and the user linked their Slack account (<c>/gitbench link</c>).
+    /// </summary>
+    public async Task SetSlackDmEnabledAsync(int userId, bool enabled)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var s = await db.UserNotificationSettings.FindAsync(userId);
+        if (s == null) db.UserNotificationSettings.Add(new UserNotificationSettings { UserId = userId, SlackDmEnabled = enabled });
+        else s.SlackDmEnabled = enabled;
+        if (!enabled)
+            await db.Notifications.Where(n => n.UserId == userId && n.ChatPending)
+                .ExecuteUpdateAsync(x => x.SetProperty(n => n.ChatPending, false));
+        await db.SaveChangesAsync();
+    }
+
     /// <summary>Turns notification emails on or off for <paramref name="userId"/> (the one-click unsubscribe link uses this).</summary>
     public async Task SetEmailEnabledAsync(int userId, bool enabled)
     {
@@ -99,13 +116,16 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
         var emailOff = (await db.UserNotificationSettings.AsNoTracking()
             .Where(s => userIds.Contains(s.UserId) && !s.EmailEnabled).Select(s => s.UserId).ToListAsync()).ToHashSet();
 
+        var slackOn = (await db.UserNotificationSettings.AsNoTracking()
+            .Where(s => userIds.Contains(s.UserId) && s.SlackDmEnabled).Select(s => s.UserId).ToListAsync()).ToHashSet();
+
         var result = new Dictionary<int, UserNotificationPreferences>();
         foreach (var id in userIds.Distinct())
         {
             var mine = rows[id].ToDictionary(p => p.Group, p => p.Channel);
-            if (mine.Count == 0 && !emailOff.Contains(id)) { result[id] = UserNotificationPreferences.Defaults; continue; }
+            if (mine.Count == 0 && !emailOff.Contains(id) && !slackOn.Contains(id)) { result[id] = UserNotificationPreferences.Defaults; continue; }
             result[id] = new(!emailOff.Contains(id),
-                Groups.ToDictionary(g => g.Group, g => mine.TryGetValue(g.Group, out var c) ? c : g.Default));
+                Groups.ToDictionary(g => g.Group, g => mine.TryGetValue(g.Group, out var c) ? c : g.Default), slackOn.Contains(id));
         }
         return result;
     }

@@ -14,7 +14,7 @@ public sealed record ReviewerEntry(User User, ReviewerStatus Status, bool Assign
 /// are notified (<see cref="NotificationKind.ReviewRequested"/>) and start watching the PR.
 /// </summary>
 public class ReviewerService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, NotificationService notifications,
-    BranchProtectionService protection)
+    BranchProtectionService protection, Webhooks.WebhookNotifier webhooks)
 {
     /// <summary>Project members who may review pull requests, by display name.</summary>
     public async Task<List<User>> CandidatesAsync(int projectId)
@@ -129,5 +129,6 @@ public class ReviewerService(IDbContextFactory<AppDbContext> dbFactory, ProjectA
         await db.SaveChangesAsync();
         // Drafts don't ask anyone for a review yet: PullRequestService.SetDraftAsync notifies them when it's marked ready.
         await notifications.OnReviewersAddedAsync(pr.Id, actorId, pr.IsDraft ? [] : added);
+        if (!pr.IsDraft) await webhooks.PullRequestReviewRequestedAsync(pr.Id, actorId, added);
     }
 }

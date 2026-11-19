@@ -1,0 +1,26 @@
+.chat-page ::deep .chat-narrow { max-width: 760px; }
+.chat-page ::deep .chat-title { font-weight: 600; margin-bottom: 12px; }
+.chat-page ::deep .chat-label { font-weight: 500; margin-bottom: 4px; }
+.chat-page ::deep .chat-mono input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.chat-head { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.chat-info { flex: 1 1 260px; min-width: 0; }
+.chat-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.chat-name ::deep .mud-chip { margin: 0; }
+.chat-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; margin-top: 4px; }
+.chat-status ::deep .mud-chip { margin: 0; }
+.chat-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; justify-content: flex-end; }
+.chat-small { font-size: 12px; margin-top: 4px; }
+.chat-muted { color: var(--mud-palette-text-secondary); }
+.chat-error { color: var(--mud-palette-error); }
+.chat-ok { color: var(--mud-palette-success); }
+
+.deliveries { overflow-x: auto; font-size: 12px; margin-top: 8px; }
+.nowrap { white-space: nowrap; }
+.right { text-align: right; }
+.detail-row td { background: var(--mud-palette-background); }
+.detail-label { font-weight: 600; margin-top: 6px; }
+.code-box {
+    font-size: 12px; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 4px 0 8px; padding: 8px;
+    background: var(--mud-palette-surface); border: 1px solid var(--mud-palette-lines-default); border-radius: 6px;
+}

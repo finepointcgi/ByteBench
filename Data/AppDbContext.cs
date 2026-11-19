@@ -342,6 +342,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigurePackages(b);
         ConfigureMergeQueue(b);
         ConfigureSecurity(b);
+        ConfigureChatIntegrations(b);
     }
 
     // ----- Forks -----
@@ -603,5 +604,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         b.Entity<SecurityTriage>().HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.SetNull);
         b.Entity<RepositorySecuritySettings>().HasKey(s => s.RepositoryId);
         b.Entity<RepositorySecuritySettings>().HasOne<Repository>().WithMany().HasForeignKey(s => s.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+    }
+
+
+    // ----- Chat integrations -----
+    public DbSet<ChatUserLink> ChatUserLinks => Set<ChatUserLink>();
+
+    private static void ConfigureChatIntegrations(ModelBuilder b)
+    {
+        b.Entity<ChatUserLink>().HasIndex(l => new { l.Provider, l.TeamId, l.ExternalUserId }).IsUnique().HasFilter("\"RevokedAt\" IS NULL");
+        b.Entity<ChatUserLink>().HasIndex(l => l.Nonce).IsUnique();
+        b.Entity<ChatUserLink>().HasIndex(l => l.UserId);
+        b.Entity<ChatUserLink>().HasOne(l => l.User).WithMany().HasForeignKey(l => l.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

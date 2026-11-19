@@ -27,7 +27,7 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
     {
         if (fields is { Fields: not Automation.IssueField.None })
             automation.Enqueue(new(Automation.AutomationEventKind.IssueUpdated, actorId) { IssueId = issueId, Changes = fields });
-        return IssueEventAsync(WebhookEventNames.IssueUpdated, issueId, actorId, change: change);
+        return IssueEventAsync(WebhookEventNames.IssueUpdated, issueId, actorId, change: change, fields: fields?.Fields);
     }
 
     public Task IssueCommentedAsync(int issueId, int commentId, int actorId)
@@ -36,7 +36,8 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
         return IssueEventAsync(WebhookEventNames.IssueCommented, issueId, actorId, commentId: commentId);
     }
 
-    private Task IssueEventAsync(string eventName, int issueId, int actorId, string? change = null, int? commentId = null) => SafeAsync(eventName, async db =>
+    private Task IssueEventAsync(string eventName, int issueId, int actorId, string? change = null, int? commentId = null,
+        Automation.IssueField? fields = null) => SafeAsync(eventName, async db =>
     {
         var projectId = await db.Issues.Where(i => i.Id == issueId).Select(i => (int?)i.ProjectId).FirstOrDefaultAsync();
         if (projectId is not { } pid || !await AnyListenerAsync(db, pid, eventName)) return;
@@ -45,7 +46,7 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
         var dto = await FieldEndpoints.EnrichAsync(db, Dto.Issue(issue, baseUrl.Value)); // + custom fields, components, versions, time
         object payload = commentId is { } cid
             ? new { issue = dto, comment = Dto.Comment(await db.Comments.AsNoTracking().Include(c => c.Author).FirstAsync(c => c.Id == cid)) }
-            : change != null ? new { issue = dto, change } : new { issue = dto };
+            : change != null ? new { issue = dto, change, changedFields = ChangedFieldNames(fields) } : new { issue = dto };
         dispatcher.Enqueue(pid, eventName, payload, actorId);
     });
 
@@ -73,10 +74,16 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
         return PullRequestEventAsync(WebhookEventNames.PullRequestDeclined, prId, actorId);
     }
 
+    /// <summary><c>pull_request.updated</c> with action <c>review_requested</c> and the newly requested reviewers.</summary>
+    public Task PullRequestReviewRequestedAsync(int prId, int actorId, IReadOnlyCollection<int> reviewerIds) =>
+        reviewerIds.Count == 0 ? Task.CompletedTask
+            : PullRequestEventAsync(WebhookEventNames.PullRequestUpdated, prId, actorId, action: "review_requested", reviewerIds: reviewerIds);
+
     public Task PullRequestCommentedAsync(int prId, int commentId, int actorId) =>
         PullRequestEventAsync(WebhookEventNames.PullRequestCommented, prId, actorId, commentId: commentId);
 
-    private Task PullRequestEventAsync(string eventName, int prId, int actorId, string? action = null, int? commentId = null) => SafeAsync(eventName, async db =>
+    private Task PullRequestEventAsync(string eventName, int prId, int actorId, string? action = null, int? commentId = null,
+        IReadOnlyCollection<int>? reviewerIds = null) => SafeAsync(eventName, async db =>
     {
         var projectId = await db.PullRequests.Where(p => p.Id == prId).Select(p => (int?)p.Repository.ProjectId).FirstOrDefaultAsync();
         if (projectId is not { } pid || !await AnyListenerAsync(db, pid, eventName)) return;
@@ -92,11 +99,23 @@ public class WebhookNotifier(IDbContextFactory<AppDbContext> dbFactory, WebhookD
                 pullRequest = dto, repository = repo,
                 comment = Dto.PullRequestComment(await db.PullRequestComments.AsNoTracking().Include(c => c.Author).FirstAsync(c => c.Id == cid)),
             }
+            : reviewerIds != null
+                ? new
+                {
+                    action, pullRequest = dto, repository = repo,
+                    requestedReviewers = (await db.Users.AsNoTracking().Where(u => reviewerIds.Contains(u.Id)).OrderBy(u => u.UserName).ToListAsync()).Select(Dto.User).ToList(),
+                }
             : action != null ? new { action, pullRequest = dto, repository = repo } : new { pullRequest = dto, repository = repo };
         dispatcher.Enqueue(pid, eventName, payload, actorId);
     });
 
     // ----- Helpers -----
+
+    /// <summary>"status", "assignee", "priority", "labels", "sprint" for the flags set; null when unknown.</summary>
+    private static List<string>? ChangedFieldNames(Automation.IssueField? fields) =>
+        fields is not { } f ? null
+            : Enum.GetValues<Automation.IssueField>().Where(x => x != Automation.IssueField.None && f.HasFlag(x))
+                .Select(x => x.ToString().ToLowerInvariant()).ToList();
 
     /// <summary>True if an active hook of the project subscribes to <paramref name="eventName"/> (so payloads aren't built for nobody).</summary>
     public static async Task<bool> AnyListenerAsync(AppDbContext db, int projectId, string eventName)

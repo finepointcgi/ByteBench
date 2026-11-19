@@ -495,7 +495,7 @@ public class RepositoryRedirect
 /// An outgoing webhook of a project: GitBench POSTs a signed JSON payload to <see cref="Url"/> for each subscribed event.
 /// Managed by <see cref="GitBench.Services.Webhooks.WebhookService"/>, delivered by <see cref="GitBench.Services.Webhooks.WebhookWorker"/>.
 /// </summary>
-public class Webhook
+public partial class Webhook
 {
     public int Id { get; set; }
     public int ProjectId { get; set; }
@@ -505,7 +505,7 @@ public class Webhook
     /// <see cref="GitBench.Services.Webhooks.WebhookSecrets"/>: stored as <c>dp:</c> + ciphertext. A value without that
     /// prefix is a legacy plaintext secret, encrypted at startup. Shown to users only once (at creation and rotation).
     /// </summary>
-    [Required, MaxLength(1000)] public string Secret { get; set; } = "";
+    [Required, MaxLength(8000)] public string Secret { get; set; } = "";
     /// <summary>Comma-separated event names (see <see cref="GitBench.Services.Webhooks.WebhookEventNames"/>).</summary>
     [Required, MaxLength(1000)] public string Events { get; set; } = "";
     public bool IsActive { get; set; } = true;
@@ -761,7 +761,7 @@ public class NotificationPreference
 }
 
 /// <summary>Per-user email settings: one row per user, created on first save or first email.</summary>
-public class UserNotificationSettings
+public partial class UserNotificationSettings
 {
     [Key, System.ComponentModel.DataAnnotations.Schema.DatabaseGenerated(System.ComponentModel.DataAnnotations.Schema.DatabaseGeneratedOption.None)]
     public int UserId { get; set; }
@@ -2166,4 +2166,54 @@ public class RepositorySecuritySettings
     /// <summary>Notify Maintainers (and send the webhook) when the default branch gets new findings at or above this severity.</summary>
     public SecuritySeverity NotifySeverity { get; set; } = SecuritySeverity.High;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+// ----- Chat integrations (Slack, Microsoft Teams) -----
+
+/// <summary>What a <see cref="Webhook"/> row delivers to: a generic JSON webhook, or a chat integration.</summary>
+public enum WebhookKind { Generic, Slack, Teams }
+
+/// <summary>
+/// Chat integrations are webhooks of another <see cref="Kind"/>: they share the event queue, retries, auto-disable and
+/// delivery log (<see cref="WebhookDelivery"/>) with generic webhooks. For them <see cref="Secret"/> holds the encrypted
+/// destination (incoming webhook / Workflows URL or bot token, see <c>ChatSecrets</c>), <see cref="Url"/> only a
+/// display string with no secret in it, and <see cref="Events"/> the webhook events the chosen chat events derive from.
+/// </summary>
+public partial class Webhook
+{
+    public WebhookKind Kind { get; set; } = WebhookKind.Generic;
+    [MaxLength(100)] public string? Name { get; set; }
+    /// <summary>JSON of <c>GitBench.Services.ChatIntegrations.ChatSettings</c>: chat events, filters, channels. No secrets.</summary>
+    [MaxLength(8000)] public string? ChatSettings { get; set; }
+}
+
+/// <summary>
+/// A chat account (e.g. a Slack user in a workspace) linked to a GitBench user through the one-time link flow. Slash
+/// commands, interactivity and unfurls act as <see cref="UserId"/>. Unlinking sets <see cref="RevokedAt"/> (the row is
+/// kept so its one-time <see cref="Nonce"/> can't be replayed).
+/// </summary>
+public class ChatUserLink
+{
+    public int Id { get; set; }
+    [Required, MaxLength(20)] public string Provider { get; set; } = "slack";
+    [Required, MaxLength(40)] public string TeamId { get; set; } = "";
+    [Required, MaxLength(40)] public string ExternalUserId { get; set; } = "";
+    [MaxLength(100)] public string? ExternalUserName { get; set; }
+    public int UserId { get; set; }
+    public User User { get; set; } = null!;
+    [Required, MaxLength(40)] public string Nonce { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? RevokedAt { get; set; }
+}
+
+public partial class UserNotificationSettings
+{
+    /// <summary>Also send notifications (those not turned Off) as Slack direct messages, when a bot token is configured and the user linked Slack.</summary>
+    public bool SlackDmEnabled { get; set; }
+}
+
+public partial class Notification
+{
+    /// <summary>True while this notification still has to be sent as a Slack DM.</summary>
+    public bool ChatPending { get; set; }
 }

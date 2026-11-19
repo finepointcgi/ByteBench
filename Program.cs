@@ -84,6 +84,7 @@ GitBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanni
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<GitBench.Services.Code.CodeSearchService>();
 builder.Services.AddWebhooks(builder.Configuration);
+GitBench.Services.ChatIntegrations.ChatServiceCollectionExtensions.AddChatIntegrations(builder.Services, builder.Configuration); // Slack & Teams (on the webhook pipeline), Slack app
 builder.Services.AddScoped<LinkedWorkService>(); // linked work: sub-tasks, epics, issue links
 builder.Services.AddGitBenchApi();
 // Attachments, saved filters & bulk edit
@@ -171,6 +172,7 @@ GitBench.Services.Packages.PackagesServiceCollectionExtensions.MapPackageRegistr
 app.MapCiEndpoints();
 GitBench.Services.Security.SecurityServiceCollectionExtensions.MapSecurityDownloads(app); // triage.json export
 app.MapGitBenchApi();
+GitBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // /integrations/slack/{commands,interactivity,events}
 GitBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 GitBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();

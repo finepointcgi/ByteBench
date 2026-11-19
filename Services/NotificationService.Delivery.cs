@@ -25,6 +25,7 @@ public partial class NotificationService
             var channel = p.ChannelFor(n.Kind);
             if (channel == NotificationChannel.Off) continue;
             n.EmailPending = channel == NotificationChannel.InAppAndEmail && p.EmailEnabled;
+            n.ChatPending = p.SlackDmEnabled; // ChatIntegrations.SlackDmWorker sends it (if a bot token is configured)
             if (n.Title.Length > 200) n.Title = n.Title[..199] + "…";
             if (n.Excerpt is { Length: > ExcerptLength } e) n.Excerpt = e[..ExcerptLength].TrimEnd() + "…";
             db.Notifications.Add(n);

@@ -140,6 +140,13 @@ else if (project != null)
             <MudButton Href="@($"/p/{project.Key}/settings/webhooks")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
                        StartIcon="@Icons.Material.Outlined.Webhook">Manage webhooks</MudButton>
         </MudPaper>
+
+        <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Slack &amp; Microsoft Teams</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">Post issue, pull request, pipeline, release and deployment updates to chat channels.</MudText>
+            <MudButton Href="@($"/p/{project.Key}/settings/integrations")" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                       StartIcon="@Icons.Material.Outlined.Forum">Manage chat integrations</MudButton>
+        </MudPaper>
     }
 
     @if (perms.Role >= ProjectRole.Maintainer)

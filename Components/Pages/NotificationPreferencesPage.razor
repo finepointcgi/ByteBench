@@ -5,6 +5,8 @@
 @inject NotificationPreferences Preferences
 @inject CurrentUser Me
 @inject IOptions<EmailOptions> EmailOptions
+@inject IOptionsMonitor<GitBench.Services.ChatIntegrations.SlackOptions> SlackOptions
+@inject GitBench.Services.ChatIntegrations.SlackAccountLinks SlackLinks
 @inject ISnackbar Snackbar
 
 <PageTitle>Notification preferences · GitBench</PageTitle>
@@ -65,6 +67,39 @@ else
             To silence one issue or pull request, use <b>Mute</b> next to its Watch button.
         </MudText>
     </MudPaper>
+
+    @if (SlackOptions.CurrentValue.IsConfigured || slackLinks.Count > 0)
+    {
+        <MudPaper Outlined="true" Class="pa-4 np-panel mt-4">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="np-title">Slack</MudText>
+            @if (slackLinks.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary np-help">
+                    Run <code>/gitbench link</code> in Slack to connect your Slack account. Linked accounts can use the
+                    <code>/gitbench</code> command and see previews of GitBench links.
+                </MudText>
+            }
+            else
+            {
+                @foreach (var l in slackLinks)
+                {
+                    <div class="np-group" @key="l.Id">
+                        <div class="np-group-text">
+                            <div class="np-group-title">@(l.ExternalUserName is { } n ? "@" + n : l.ExternalUserId)</div>
+                            <div class="np-group-desc">Workspace @l.TeamId · linked @l.CreatedAt.ToLocalTime().ToString("d")</div>
+                        </div>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Error" OnClick="() => UnlinkSlack(l.Id)">Unlink</MudButton>
+                    </div>
+                }
+                @if (SlackOptions.CurrentValue.HasBotToken)
+                {
+                    <MudSwitch T="bool" Value="slackDm" ValueChanged="OnSlackDmToggled" Color="Color.Primary" Class="mt-3"
+                               Label="Also send my notifications as Slack direct messages" />
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary np-help">Every group not turned Off above is sent by the GitBench app in Slack.</MudText>
+                }
+            }
+        </MudPaper>
+    }
 }
 </div>
 
@@ -73,7 +108,8 @@ else
 
     private UserNotificationPreferences? prefs;
     private Dictionary<NotificationGroup, NotificationChannel> channels = [];
-    private bool emailEnabled;
+    private bool emailEnabled, slackDm;
+    private List<ChatUserLink> slackLinks = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -82,6 +118,22 @@ else
         prefs = await Preferences.GetAsync(Me.Id);
         channels = new(prefs.Channels);
         emailEnabled = prefs.EmailEnabled;
+        slackDm = prefs.SlackDmEnabled;
+        slackLinks = await SlackLinks.ListForUserAsync(Me.Id);
+    }
+
+    private async Task OnSlackDmToggled(bool value)
+    {
+        slackDm = value;
+        await Preferences.SetSlackDmEnabledAsync(Me.Id, value);
+        Snackbar.Add(value ? "Slack DMs on." : "Slack DMs off.", Severity.Success);
+    }
+
+    private async Task UnlinkSlack(int linkId)
+    {
+        await SlackLinks.UnlinkForUserAsync(Me.Id, linkId);
+        slackLinks = await SlackLinks.ListForUserAsync(Me.Id);
+        Snackbar.Add("Slack account unlinked.", Severity.Success);
     }
 
     private static string Label(NotificationChannel c) => c switch
