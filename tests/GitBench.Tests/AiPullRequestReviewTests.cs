@@ -71,6 +71,14 @@ public class AiPullRequestReviewTests(AiReviewApp app) : IClassFixture<AiReviewA
             s.Get<ProjectAccess>().ActAsSystem(botId);
             await s.Get<AiReviewService>().RunAsync(reviewId, CancellationToken.None);
         }
+        // The app's own background worker may be running the same review at the same moment: wait until it is no longer queued or running.
+        for (var i = 0; i < 200; i++)
+        {
+            await using var poll = app.Db();
+            var r = await poll.AiReviews.AsNoTracking().FirstAsync(x => x.Id == reviewId);
+            if (r.Status != AiReviewStatus.Queued && r.Status != AiReviewStatus.Running) return r;
+            await Task.Delay(50);
+        }
         await using var db2 = app.Db();
         return await db2.AiReviews.AsNoTracking().FirstAsync(r => r.Id == reviewId);
     }
