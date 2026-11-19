@@ -1,0 +1,149 @@
+<h1>AI review and triage</h1>
+<p class="lead">Let Claude review pull requests and suggest labels, priority, assignee and duplicates for new issues, with every limit configurable and every change reviewable.</p>
+
+<p>Both features are <strong>off by default</strong> and need AI set up first; see <a href="ai.html#setup">AI overview and setup</a>. Pull request review runs on the same backend as the web editor (Claude Code on the server or the Anthropic API, see <a href="ai.html#settings"><code>Ai:Editor:Backend</code></a>). Issue triage uses the Anthropic API key only.</p>
+
+<h2 id="review">AI pull request review</h2>
+<p>An AI review reads the pull request title, description, commit messages and diff and posts inline comments from a bot account named <strong>GitBench AI</strong> (<code>gitbench-ai</code>). The bot has no password and cannot sign in. Its comments carry an <strong>AI</strong> badge. It <strong>never approves</strong> a pull request and never merges.</p>
+
+<h3 id="review-settings">Turn it on for a repository</h3>
+<ol>
+<li>Open the repository, then <strong>Settings, AI review</strong> (<code>/p/{KEY}/repos/{slug}/settings/ai-review</code>). You need the <strong>Maintainer</strong> role.</li>
+<li>Switch on <strong>Enable AI review for this repository</strong>. If the server has no backend, the page shows why (for example "no Claude API key is configured").</li>
+<li>Pick <strong>When to review</strong> and press save. Changes are written to the <a href="admin.html#audit">audit log</a> as <code>repository.ai_review_settings_changed</code>.</li>
+</ol>
+<table>
+<thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Enable AI review</td><td>Off</td><td>Master switch for the repository. Off means no automatic and no manual reviews.</td></tr>
+<tr><td>When to review (mode)</td><td>On demand</td><td><b>On demand</b>: only when someone presses <em>Review with AI</em>. <b>When a pull request is opened</b>: once at creation. <b>When opened and after each new push</b>: at creation and after pushes to the source branch.</td></tr>
+<tr><td>Max diff size</td><td>240,000 characters</td><td>Most diff text sent per review. Larger pull requests are reviewed partly and the summary says so. Allowed range 5,000 up to <code>Ai:Review:MaxDiffCharsLimit</code>.</td></tr>
+<tr><td>Paths to ignore</td><td>none</td><td>Gitignore-style patterns (same syntax as CODEOWNERS), one per line, at most 50 lines of 200 characters, no spaces. Matching files are never sent to the model. Lines starting with <code>#</code> are comments.</td></tr>
+<tr><td>Focus prompt</td><td>none</td><td>Up to 2,000 characters of guidance, for example "pay attention to SQL injection". It is the only text the model treats as instructions.</td></tr>
+<tr><td>Merge check: block merging while AI blocker findings are unresolved</td><td>Off</td><td>See <a href="#review-merge-check">the merge check</a>.</td></tr>
+</tbody></table>
+
+<h3 id="review-button">Review with AI</h3>
+<p>On a pull request, the sidebar block <strong>AI review</strong> shows the status (queued, running, completed with a finding count, or failed with the error) and updates live. A user with the Developer role or higher (the review-pull-request permission) sees the <strong>Review with AI</strong> button while the pull request is open. Reviews run one at a time in a background worker.</p>
+<p>A given head commit is reviewed once. Pressing the button again on an unchanged branch says that commit was already reviewed. Push a new commit, or wait for a failed run, to review again.</p>
+
+<h3 id="review-modes">Automatic triggers</h3>
+<ul>
+<li><strong>Created</strong> (modes "opened" and "opened and after each push"): queued when the pull request is created.</li>
+<li><strong>Push</strong> (mode "opened and after each push"): queued after a push to the source branch of an open pull request. The wait is debounced (30 seconds by default, <code>Ai:Review:PushDebounceSeconds</code>), so a burst of pushes produces one review.</li>
+</ul>
+
+<h3 id="findings">Findings and severities</h3>
+<p>The model returns structured findings, each with a file, line, severity, title and body, plus an overall verdict. GitBench validates every finding against the diff before posting.</p>
+<table>
+<thead><tr><th>Severity</th><th>Meaning</th><th>Blocks?</th></tr></thead>
+<tbody>
+<tr><td><code>bug</code></td><td>Likely incorrect behaviour</td><td>Yes, can set "changes requested" and counts for the merge check</td></tr>
+<tr><td><code>security</code></td><td>Injection, missing authorization, secrets in code, and the like</td><td>Yes, as above</td></tr>
+<tr><td><code>suggestion</code></td><td>Maintainability or performance improvement</td><td>No</td></tr>
+<tr><td><code>nit</code></td><td>Style and small points, lowest priority</td><td>No</td></tr>
+</tbody></table>
+<ul>
+<li>Valid findings become inline comment threads. A finding a few lines off is moved to the nearest changed line and marked as moved. Findings that cannot be placed are listed in the summary comment.</li>
+<li>If there is at least one blocking finding, the bot records <strong>Changes requested</strong>. Otherwise it only comments, and a clean re-review withdraws its earlier request for changes.</li>
+<li>A later review does not repeat a finding it already posted (each has a stable fingerprint based on file and title).</li>
+<li>Binary files, lockfiles (<code>package-lock.json</code>, <code>yarn.lock</code>, <code>go.sum</code> and others), minified or generated files and build output are skipped. Diffs larger than about 120,000 characters are reviewed in per-file batches, up to 6. Everything skipped or not reviewed is listed in the summary, so nothing is cut silently.</li>
+</ul>
+
+<h3 id="review-dismiss">Dismiss a finding</h3>
+<p>If a finding does not apply, <strong>dismiss</strong> it. That resolves its thread as "not applicable", records an activity entry, and stops it blocking a merge. The pull request's author, a Maintainer or the comment's author can do this (the same people who can resolve a thread). Un-resolving the thread brings the finding back. Dismissals are audited as <code>ai_review.finding_dismissed</code>.</p>
+
+<h3 id="review-merge-check">Merge check</h3>
+<p>With "block merging while AI blocker findings are unresolved" switched on, the merge box shows an <strong>AI review</strong> line. A blocker is an unresolved AI finding of severity <code>bug</code> or <code>security</code>. The line passes with "No unresolved AI blocker findings" and fails with "N unresolved AI blocker findings: resolve or dismiss them". It applies whether or not the target branch is protected. It is separate from <a href="branch-protection.html">branch protection</a> rules, and the sidebar also counts unresolved blockers.</p>
+
+<h3 id="review-limits">Rate limits and guardrails</h3>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>Ai:Review:MaxReviewsPerRepoPerHour</code></td><td>12</td><td>Reviews a repository may start per hour, all triggers together. Beyond it the request is refused ("This repository reached its limit of N AI reviews per hour") and <code>ai_review.rate_limited</code> is audited.</td></tr>
+<tr><td><code>Ai:Review:MaxDiffCharsLimit</code></td><td>1,000,000</td><td>The highest value a Maintainer can set for a repository's max diff size.</td></tr>
+<tr><td><code>Ai:Review:MaxFindings</code></td><td>30</td><td>Findings kept from one review, most severe first. The rest are counted in the summary.</td></tr>
+<tr><td><code>Ai:Review:PushDebounceSeconds</code></td><td>30</td><td>Wait after a push before reviewing.</td></tr>
+</tbody></table>
+<p>Other audit events: <code>ai_review.queued</code>, <code>ai_review.failed</code> and a completed event per run. Token usage is stored per call in the <code>AiUsages</code> table with the feature name <code>pr-review</code>. The fixed system prompt is served from the prompt cache, and most pull requests need one call.</p>
+
+<h3 id="review-security">Prompt-injection protections</h3>
+<ul>
+<li>The pull request title, description, commit messages, file paths and the diff are written by whoever opened the pull request. They are put inside blocks marked UNTRUSTED with a random boundary per request, so content cannot close its own block. The prompt tells the model never to follow instructions found there.</li>
+<li>Only the repository's focus prompt, placed outside the untrusted blocks, is treated as guidance.</li>
+<li>Findings are checked against the real diff, so the model cannot comment on files or lines that are not part of the change.</li>
+<li>With the Claude Code backend, the review runs with no tools that can run commands, in a throwaway directory without the repository's own Claude configuration. See <a href="ai.html#claude-code-sandbox">how it is sandboxed</a>.</li>
+<li>The bot account cannot sign in, and it has no project role. Its permissions apply only to posting the review.</li>
+</ul>
+
+<h2 id="triage">AI issue triage</h2>
+<p>Triage reads a new issue and proposes labels, a component, priority, type, an assignee and likely duplicates, along with a one-line summary. Suggestions use <strong>only what exists in the project</strong>: its labels (including labels inherited from groups), its components, and Developer-or-higher members. Nothing is applied until a person accepts it, except labels when auto-apply is on.</p>
+
+<h3 id="triage-setting">Turn it on</h3>
+<ol>
+<li>Open the project, then <strong>Settings</strong> and find the <strong>AI issue triage</strong> card. You need the <strong>Maintainer</strong> role (the manage-labels-and-milestones permission).</li>
+<li>Switch on <strong>Suggest labels, component, priority, type, assignee and duplicates for issues</strong>.</li>
+<li>Optionally switch on <strong>Apply suggested labels to new issues automatically</strong>.</li>
+</ol>
+<p>Both switches are off by default. Changes are audited as <code>project.settings_changed</code>. If AI is not configured, the card says so and nothing is suggested.</p>
+
+<h3 id="triage-panel">The suggestions panel</h3>
+<p>On an issue, the <strong>AI suggestions</strong> panel shows the latest run. When triage is on, GitBench queues a run automatically for each newly created issue (only if the issue is under about two minutes old and has no run yet). Anyone with the Developer role can press <strong>Suggest</strong> (or <strong>Suggest again</strong>) to request one. Runs happen on a background queue, and the panel updates live.</p>
+<p>Each suggestion has a kind (label, component, priority, type, assignee or duplicate), a value, a reason, and its state: pending, accepted, dismissed or applied automatically.</p>
+<ul>
+<li><strong>Accept</strong> applies it through the normal issue services as you, so permissions, activity entries, notifications, workflow rules, webhooks and <a href="automation.html">automation</a> all run just as if you made the change by hand. Accepting a duplicate adds a "duplicates" link to the other issue. An assignee is re-checked at accept time and must still be a Developer or higher.</li>
+<li><strong>Dismiss</strong> marks the suggestion as dismissed. Both need the Developer role.</li>
+</ul>
+<p>Audit events: <code>ai.triage.requested</code>, <code>ai.triage.accepted</code>, <code>ai.triage.dismissed</code>, <code>ai.triage.auto_applied</code>, <code>ai.triage.rate_limited</code>.</p>
+
+<h3 id="triage-auto">Auto-apply labels</h3>
+<p>When enabled, suggested labels from the automatic run on a new issue are added at once, shown as "applied automatically", and recorded in the issue's activity as an AI suggestion. A label that no longer exists is skipped. All other kinds still wait for a person.</p>
+
+<h3 id="triage-duplicates">Duplicate hints</h3>
+<p>Two mechanisms look for duplicates:</p>
+<ul>
+<li><strong>Triage duplicates</strong>: the model picks likely duplicates from up to 10 candidates chosen by keyword overlap from the project's 1,500 most recently updated issues. It gives a reason for each.</li>
+<li><strong>Similar-issue hints</strong> on the new-issue form while typing: pure keyword overlap with no model call and nothing stored. A title needs at least two meaningful words and a score of at least 0.35 (<code>Ai:Triage:MinHintScore</code>). They are labelled "Similar wording".</li>
+</ul>
+
+<h3 id="triage-limits">Limits</h3>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>Ai:Triage:MaxTitleChars</code></td><td>200</td><td>Title characters sent.</td></tr>
+<tr><td><code>Ai:Triage:MaxDescriptionChars</code></td><td>6000</td><td>Description characters sent (trimmed more when the context is large).</td></tr>
+<tr><td><code>Ai:Triage:MaxComments</code> / <code>MaxCommentChars</code></td><td>5 / 500</td><td>Latest comments sent and their length each. Service-desk contact comments are excluded.</td></tr>
+<tr><td><code>Ai:Triage:MaxPromptChars</code></td><td>40000</td><td>Hard cap on the whole prompt.</td></tr>
+<tr><td><code>Ai:Triage:MaxResponseChars</code></td><td>20000</td><td>Largest model answer that is parsed.</td></tr>
+<tr><td><code>Ai:Triage:MaxCandidates</code></td><td>10</td><td>Duplicate candidates offered to the model.</td></tr>
+<tr><td><code>Ai:Triage:MaxLabelsInPrompt</code> / <code>MaxComponentsInPrompt</code> / <code>MaxPeopleInPrompt</code></td><td>100 / 50 / 30</td><td>How many labels, components and people the model can choose from.</td></tr>
+<tr><td><code>Ai:Triage:MaxRunsPerProjectPerHour</code></td><td>60</td><td>Runs (automatic and manual) one project may start per hour. A new issue over the limit gets a "Skipped" run saying why.</td></tr>
+<tr><td><code>Ai:Triage:MaxManualRunsPerUserPerHour</code></td><td>20</td><td>Manual Suggest requests per person per hour.</td></tr>
+<tr><td><code>Ai:Triage:IssueCooldownSeconds</code></td><td>30</td><td>Minimum time between two runs on one issue.</td></tr>
+<tr><td><code>Ai:Triage:MinHintScore</code></td><td>0.35</td><td>Similarity needed for keyword duplicate hints on the new-issue form.</td></tr>
+</tbody></table>
+<p>The issue text is untrusted and goes into delimited data blocks. The answer must match a JSON schema, and every label, component, assignee and duplicate in it is validated against the project's real data before it is stored.</p>
+
+<h3 id="triage-api">Triage API</h3>
+<p>All paths are under <code>/api/v1/projects/{key}</code> (see the <a href="api.html">REST API</a> for authentication).</p>
+<table>
+<thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>GET /triage-settings</code></td><td>Returns <code>enabled</code>, <code>autoApplyLabels</code>, <code>available</code>.</td></tr>
+<tr><td><code>PUT /triage-settings</code></td><td>Body <code>{"enabled": true, "autoApplyLabels": false}</code>. Maintainer or higher.</td></tr>
+<tr><td><code>GET /issues/{number}/triage</code></td><td>The latest run and its suggestions.</td></tr>
+<tr><td><code>POST /issues/{number}/triage</code></td><td>Queue a run (Developer or higher). Answers 202 with the run, normally still queued: poll the GET until status is <code>completed</code>, <code>failed</code> or <code>skipped</code>. 429 when a rate limit is hit, 422 when triage is off or AI is not configured.</td></tr>
+<tr><td><code>POST /issues/{number}/triage/items/{id}/accept</code></td><td>Apply one suggestion as the caller.</td></tr>
+<tr><td><code>POST /issues/{number}/triage/items/{id}/dismiss</code></td><td>Dismiss one suggestion.</td></tr>
+</tbody></table>
+<pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/42/triage
+
+curl -H "Authorization: Bearer $TOKEN" \
+  https://gitbench.example.com/api/v1/projects/WEB/issues/42/triage</code></pre>
+
+<div class="cards">
+<a class="card" href="ai.html"><b>AI overview and setup</b><span>API key, Claude Code, privacy</span></a>
+<a class="card" href="pull-requests.html"><b>Pull requests</b><span>Threads, reviews, merge strategies</span></a>
+<a class="card" href="issues.html"><b>Issues and workflows</b><span>Labels, components, links</span></a>
+</div>

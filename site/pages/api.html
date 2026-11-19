@@ -1,0 +1,295 @@
+<h1>REST API and webhooks</h1>
+<p class="lead">Everything you can do in the GitBench web interface goes through the same services as the JSON API at <code>/api/v1</code>, and projects can push events to your own systems with signed webhooks.</p>
+
+<h2 id="basics">Base URL, documentation and conventions</h2>
+<ul>
+<li><strong>Base URL:</strong> <code>https://gitbench.example.com/api/v1</code>. Anything else under <code>/api/</code> answers a JSON 404 ("No such API endpoint").</li>
+<li><strong>Interactive reference:</strong> <code>/developers/api</code> (the <em>API</em> link in the top bar) and the full OpenAPI 3.1 document at <code>/api/v1/openapi.json</code>. The OpenAPI document is always the most complete listing of fields and bodies.</li>
+<li><strong>JSON</strong> is camelCase. Enums are camelCase strings (<code>inProgress</code>, <code>merged</code>). Timestamps are ISO 8601 UTC, due dates are <code>yyyy-MM-dd</code>.</li>
+<li>Responses are DTO records, never database entities. Links in responses use the request's host, or the <code>PublicBaseUrl</code> setting if set.</li>
+<li>Responses are sent with <code>Cache-Control: no-store</code>.</li>
+<li>Writes go through the same services as the UI, so activity entries, notifications, live updates, automation, AI review and webhooks all fire as usual.</li>
+</ul>
+
+<h2 id="auth">Authentication and scopes</h2>
+<p>Create a <strong>personal access token</strong> under <strong>Profile, Access tokens</strong> (see <a href="accounts.html#tokens">Accounts</a>). Tokens start with <code>gbp_</code> and are shown once. Send one as a bearer token:</p>
+<pre><code>curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  https://gitbench.example.com/api/v1/user</code></pre>
+<p>A signed-in browser session (cookie) also works, which is how the UI itself can call the API.</p>
+<table>
+<thead><tr><th>Scope</th><th>Allows</th></tr></thead>
+<tbody>
+<tr><td><code>read_api</code></td><td>GET and HEAD requests</td></tr>
+<tr><td><code>write_api</code></td><td>Every request, reads included</td></tr>
+<tr><td><code>read_repository</code> / <code>write_repository</code></td><td>Git over HTTP only. They do <strong>not</strong> grant API access</td></tr>
+</tbody></table>
+<ul>
+<li>A token without an API scope gets <code>403 Insufficient scope</code>, and an API-only token gets <code>403</code> from Git.</li>
+<li>A missing, invalid, expired or revoked token (or a locked-out user) gets <code>401</code> with a <code>WWW-Authenticate: Bearer</code> header. Failures are logged with the client address.</li>
+<li><strong>CSRF protection:</strong> a cookie-authenticated write must send <code>Content-Type: application/json</code> or an <code>X-Requested-With</code> header, otherwise <code>403</code>. Token requests are not affected.</li>
+</ul>
+<p>The caller's <a href="permissions.html">project role</a> decides everything else. A project you cannot see answers <code>404</code>, exactly like one that does not exist. A visible project where you lack the permission answers <code>403</code> (for example a Viewer creating an issue, or a Developer merging).</p>
+
+<h2 id="pagination">Pagination</h2>
+<p>List endpoints take <code>?page=</code> (default 1) and <code>?perPage=</code> (default 30, maximum 100). They return an <code>X-Total-Count</code> header and an RFC 8288 <code>Link</code> header with <code>first</code>, <code>prev</code>, <code>next</code> and <code>last</code> relations.</p>
+<pre><code>curl -sD - -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  "https://gitbench.example.com/api/v1/projects?perPage=2" -o /dev/null</code></pre>
+
+<h2 id="errors">Errors</h2>
+<p>Errors are RFC 9457 problem details (<code>application/problem+json</code>) with <code>status</code>, <code>title</code> and <code>detail</code>.</p>
+<table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Bad input or malformed JSON</td></tr>
+<tr><td>401</td><td>Missing, invalid, expired or revoked token</td></tr>
+<tr><td>403</td><td>Missing scope, missing permission, or the CSRF rule above</td></tr>
+<tr><td>404</td><td>Not found, or you cannot see it</td></tr>
+<tr><td>409</td><td>Merge conflict or already merged (a merge conflict response carries <code>conflictPaths</code>)</td></tr>
+<tr><td>415</td><td>Body is not JSON</td></tr>
+<tr><td>422</td><td>Validation failed or the operation is refused (for example a rule not satisfied)</td></tr>
+<tr><td>429</td><td>Rate limit reached (see below), or an AI triage limit</td></tr>
+<tr><td>500</td><td>Unexpected error (logged on the server; the detail is generic)</td></tr>
+</tbody></table>
+
+<h2 id="rate-limits">Rate limiting</h2>
+<p>By default <code>/api/*</code> allows <strong>300 requests per 60 seconds</strong>, counted per access token (else per signed-in user, else per client IP). Over the limit you get <code>429</code> with a <code>Retry-After</code> header and a problem+json body. Change it with <code>RateLimiting:Api:PermitLimit</code> and <code>WindowSeconds</code>, or switch it off with a limit of <code>0</code>. Full details are on the <a href="admin.html#rate-limits">Administration page</a>. Rate limiting is off in the Development configuration.</p>
+
+<h2 id="catalogue">Endpoint catalogue</h2>
+<p>All paths are under <code>/api/v1</code>. <code>{key}</code> is the project key (for example <code>WEB</code>), <code>{slug}</code> a repository slug and <code>{number}</code> an issue or pull request number. The role column lists the minimum role when it is not just "can view". Check <code>/api/v1/openapi.json</code> for the request and response shape of each operation.</p>
+
+<h3 id="api-projects">Users and projects</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/user</code></td><td>You, with the token's scopes</td></tr>
+<tr><td>GET</td><td><code>/users/{username}</code></td><td>A user's public profile</td></tr>
+<tr><td>GET</td><td><code>/projects</code>, <code>/projects/{key}</code></td><td>Projects you can see, with your role</td></tr>
+<tr><td>GET / PUT / DELETE</td><td><code>/user/starred</code>, <code>/projects/{key}/star</code></td><td>List, add and remove your stars</td></tr>
+<tr><td>GET</td><td><code>/search</code></td><td>Search issues, pull requests, projects, users and code</td></tr>
+<tr><td>GET</td><td><code>/groups</code>, <code>/groups/{group}</code>, <code>/groups/{group}/subgroups</code>, <code>/groups/{group}/projects</code>, <code>/groups/{group}/issues</code></td><td><code>{group}</code> is an id or the URL-encoded full path</td></tr>
+<tr><td>GET</td><td><code>/projects/{key}/fields</code>, <code>/components</code>, <code>/versions</code>, <code>/issue-templates</code></td><td>Custom fields, components, versions and issue templates</td></tr>
+</tbody></table>
+
+<h3 id="api-issues">Issues, comments and planning</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/projects/{key}/issues</code></td><td>Filters: <code>status</code> (<code>open</code> default, <code>closed</code>, <code>all</code> or a status category), <code>workflowStatus</code>, <code>assignee</code> (username or <code>none</code>), <code>label</code>, <code>milestone</code> (id or <code>none</code>), <code>sprint</code> (id, <code>none</code>, <code>active</code>), <code>q</code>, <code>sort</code> (<code>updated</code>, <code>created</code>, <code>priority</code>, <code>due</code>, <code>number</code>)</td></tr>
+<tr><td>POST</td><td><code>/projects/{key}/issues</code></td><td>Developer. Body <code>{title, description?, type?, priority?, status?, assignee?, labels?, milestoneId?, storyPoints?, dueDate?}</code>. Returns 201</td></tr>
+<tr><td>GET / PATCH</td><td><code>/projects/{key}/issues/{number}</code></td><td>PATCH changes only the fields you send. <code>null</code> clears a field and <code>labels</code> replaces the set</td></tr>
+<tr><td>GET / POST</td><td><code>/projects/{key}/issues/{number}/comments</code></td><td>Developer to comment. Body <code>{body}</code></td></tr>
+<tr><td>GET / POST / DELETE</td><td><code>.../issues/{number}/links</code>, <code>.../links/{linkId}</code></td><td>Issue links</td></tr>
+<tr><td>GET</td><td><code>.../issues/{number}/children</code></td><td>Sub-tasks or an epic's issues</td></tr>
+<tr><td>GET / POST / DELETE</td><td><code>.../issues/{number}/attachments</code>, <code>.../attachments/{id}</code></td><td>List, upload, download and delete attachments</td></tr>
+<tr><td>GET</td><td><code>/projects/{key}/workflow</code>, <code>/labels</code>, <code>/milestones</code></td><td>The workflow, labels and milestones</td></tr>
+<tr><td>GET</td><td><code>/projects/{key}/boards</code>, <code>/boards/{id}</code></td><td>Boards, with the issues in each column</td></tr>
+<tr><td>GET</td><td><code>/projects/{key}/sprints</code>, <code>/sprints/{id}</code></td><td><code>?state=planned|active|completed</code></td></tr>
+<tr><td>GET</td><td><code>/search/issues?gql=...</code></td><td>GQL search across all visible projects. See <a href="fields-filters.html">fields, filters and search</a></td></tr>
+<tr><td>GET</td><td><code>/projects/{key}/roadmap</code>, <code>/groups/{group}/roadmap</code></td><td>Roadmap data</td></tr>
+<tr><td>PUT</td><td><code>/projects/{key}/issues/{number}/dates</code></td><td>Set start and due dates</td></tr>
+<tr><td>GET</td><td><code>/dashboards</code>, <code>/dashboards/{id}</code></td><td>Dashboards and their gadgets</td></tr>
+</tbody></table>
+
+<h3 id="api-repos">Repositories, forks and releases</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/projects/{key}/repos</code>, <code>/repos/{slug}</code>, <code>.../branches</code></td><td></td></tr>
+<tr><td>GET</td><td><code>.../repos/{slug}/commits</code></td><td><code>?ref=</code> (branch, tag or SHA), <code>?path=</code></td></tr>
+<tr><td>GET</td><td><code>.../repos/{slug}/raw/{path}</code></td><td><code>?ref=</code>. Served as <code>text/plain</code> or <code>application/octet-stream</code>, never HTML, with an <code>ETag</code>. 20 MB limit</td></tr>
+<tr><td>GET</td><td><code>.../repos/{slug}/compare</code></td><td>Compare two refs</td></tr>
+<tr><td>GET / POST</td><td><code>.../repos/{slug}/forks</code>; POST <code>.../sync-fork</code></td><td>List forks, fork into another project, fast-forward a fork to its upstream</td></tr>
+<tr><td>GET</td><td><code>.../repos/{slug}/tags</code></td><td>Newest first, with archive URLs</td></tr>
+<tr><td>GET</td><td><code>.../releases</code>, <code>.../releases/{id}</code>, <code>.../releases/latest</code>, <code>.../releases/tags/{tag}</code></td><td>Drafts are visible to Developers and up. <code>latest</code> is the newest published non-prerelease</td></tr>
+<tr><td>POST</td><td><code>.../releases</code></td><td>Developer. Body <code>{tagName, title?, notes?, target?, tagMessage?, prerelease?, draft?, generateNotes?}</code>. Creates the tag from <code>target</code> if missing. Returns 201</td></tr>
+</tbody></table>
+
+<h3 id="api-prs">Pull requests and the merge queue</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/projects/{key}/pull-requests</code></td><td>Across repositories. <code>?state=open|merged|declined|all</code>, <code>?repo=</code></td></tr>
+<tr><td>GET / POST</td><td><code>.../repos/{slug}/pull-requests</code></td><td>POST body <code>{title, sourceBranch, targetBranch, description?}</code></td></tr>
+<tr><td>GET / PATCH</td><td><code>.../pull-requests/{number}</code></td><td>PATCH edits title, description, draft state and similar fields</td></tr>
+<tr><td>POST</td><td><code>.../pull-requests/{number}/merge</code></td><td>Maintainer. Optional <code>{deleteSourceBranch, fastForward}</code>. Conflicts return 409 with <code>conflictPaths</code></td></tr>
+<tr><td>GET / POST</td><td><code>.../pull-requests/{number}/comments</code></td><td>Body <code>{body, path?, line?, oldLine?}</code>. With <code>path</code> it is an inline comment</td></tr>
+<tr><td>POST</td><td><code>.../comments/{commentId}/resolve</code>, <code>/unresolve</code>, <code>/apply-suggestion</code>; <code>.../apply-suggestions</code></td><td>Thread resolution and suggested changes</td></tr>
+<tr><td>GET</td><td><code>.../pull-requests/{number}/security</code></td><td>New and fixed security findings</td></tr>
+<tr><td>GET / POST / DELETE</td><td><code>.../repos/{slug}/merge-queue</code>, <code>.../pull-requests/{number}/merge-queue</code></td><td>View a branch's queue (<code>?branch=</code>), enqueue (Maintainer, 422 with the reason if a check fails), dequeue (author or Maintainer); POST <code>.../merge-queue/move-to-front</code> (Maintainer)</td></tr>
+</tbody></table>
+
+<h3 id="api-delivery">Environments, deployments and releases</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/projects/{key}/environments</code>, <code>.../repos/{slug}/environments</code>, <code>.../environments/{id}</code></td><td>Environments</td></tr>
+<tr><td>PUT / POST</td><td><code>.../environments/{id}/approval-rules</code>, <code>.../stop</code></td><td>Maintainer. Set approvals needed; stop an environment</td></tr>
+<tr><td>GET</td><td><code>.../environments/{id}/deployments</code>, <code>.../deployments/{id}</code>, <code>/projects/{key}/deployments/waiting</code></td><td>History, one deployment with approvals and shipped commits, those waiting for approval</td></tr>
+<tr><td>POST</td><td><code>.../deployments/{id}/approve</code>, <code>/reject</code>, <code>/rollback</code></td><td>Approve, reject or redeploy a previous success</td></tr>
+<tr><td>GET</td><td><code>.../deployed?rev=</code>, <code>.../pull-requests/{number}/deployments</code>, <code>.../releases/{id}/deployments</code>, <code>/projects/{key}/issues/{number}/deployments</code></td><td>Traceability: where is this commit, tag, pull request, release or issue deployed</td></tr>
+<tr><td>GET / POST / DELETE</td><td><code>/projects/{key}/deploy-freezes</code>, <code>.../{id}</code></td><td>Freeze windows (Maintainer to change)</td></tr>
+</tbody></table>
+<p>Pipelines and package registries have no REST endpoints today. Pipelines are driven by the CI file and the web UI, and packages use the NuGet, npm and Docker protocols (<a href="ci.html">CI</a>, <a href="packages.html">packages</a>). To react to either, subscribe to the <code>pipeline.completed</code>, <code>package.published</code> and <code>package.deleted</code> <a href="#events">webhook events</a>.</p>
+
+<h3 id="api-flags">Feature flags</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET / POST</td><td><code>/projects/{key}/flags</code></td><td>List flags with per-environment state; create (Maintainer)</td></tr>
+<tr><td>GET</td><td><code>/projects/{key}/flags/_stale</code></td><td>Unchanged for <code>?days=</code> (default 30)</td></tr>
+<tr><td>GET / PATCH / DELETE</td><td><code>.../flags/{flagKey}</code></td><td>PATCH: Developer; DELETE: Maintainer</td></tr>
+<tr><td>POST</td><td><code>.../flags/{flagKey}/archive</code>, <code>/unarchive</code></td><td></td></tr>
+<tr><td>PUT</td><td><code>.../flags/{flagKey}/environments/{environmentId}</code></td><td>Set a flag's value and rules in an environment (Developer)</td></tr>
+<tr><td>GET</td><td><code>.../flags/{flagKey}/history</code></td><td>Who changed what</td></tr>
+<tr><td>GET / POST / DELETE</td><td><code>.../flag-environments</code>, <code>.../{environmentId}</code></td><td>Maintainer to change</td></tr>
+<tr><td>GET / PUT / DELETE</td><td><code>.../flag-segments</code>, <code>.../{segmentKey}</code></td><td>Segments (PUT: Developer; DELETE: Maintainer)</td></tr>
+<tr><td>GET / POST / DELETE</td><td><code>.../flag-sdk-keys</code>, <code>.../{id}/rotate</code>, <code>.../{id}</code></td><td>SDK keys, never the secrets on read (Maintainer)</td></tr>
+</tbody></table>
+<p>See <a href="feature-flags.html">feature flags</a> for the concepts.</p>
+
+<h3 id="api-security">Security</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>.../repos/{slug}/security/findings</code>, <code>/findings/{fingerprint}</code></td><td>Findings and one finding</td></tr>
+<tr><td>POST</td><td><code>.../security/findings/{fingerprint}/triage</code></td><td>Body <code>{state, reason?, expires?}</code></td></tr>
+<tr><td>GET</td><td><code>.../security/scans</code>, <code>.../security/trend</code></td><td>Scans, and open findings by severity per pipeline</td></tr>
+<tr><td>GET / POST</td><td><code>.../security/triage</code></td><td>Export or import Night Owl's <code>.nightowl/triage.json</code></td></tr>
+</tbody></table>
+
+<h3 id="api-reports">Reports</h3>
+<p><code>GET /projects/{key}/reports/{report}</code> where <code>{report}</code> is <code>cycle-time</code>, <code>time-in-status</code>, <code>cumulative-flow</code>, <code>throughput</code>, <code>wip</code>, <code>dora</code> or <code>pull-requests</code>. Query filters include <code>type</code>, <code>label</code>, <code>component</code>, <code>assignee</code>, <code>from</code>, <code>to</code> (<code>yyyy-MM-dd</code>, UTC, default last 90 days), <code>interval</code> (<code>week</code> or <code>month</code>) and <code>format=csv</code>. <code>GET/PUT /projects/{key}/reports/dora/settings</code> reads and sets the production environment and failure window. See <a href="reports.html">dashboards and delivery reports</a>.</p>
+
+<h3 id="api-other">Service desk, triage, wiki, snippets and Workbench</h3>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/projects/{key}/service-desk/requests</code></td><td>The service desk queue</td></tr>
+<tr><td>POST</td><td><code>/projects/{key}/issues/{number}/requester-replies</code></td><td>Reply to a requester by email</td></tr>
+<tr><td>GET / PUT, GET / POST</td><td><code>/projects/{key}/triage-settings</code>, <code>.../issues/{number}/triage</code>, <code>.../triage/items/{id}/accept</code>, <code>/dismiss</code></td><td>AI triage; see <a href="ai-review-triage.html#triage-api">the triage API</a></td></tr>
+<tr><td>GET / POST / PUT / DELETE</td><td><code>/projects/{key}/wiki/pages</code>, <code>.../pages/{path}</code>; GET <code>.../wiki/history</code></td><td>Wiki pages and history</td></tr>
+<tr><td>GET / POST / PUT / DELETE</td><td><code>/snippets</code>, <code>/snippets/{id}</code>, <code>.../files/{fileName}/raw</code>, <code>.../comments</code>; GET <code>/projects/{key}/snippets</code></td><td>Snippets (only the author updates)</td></tr>
+<tr><td>GET / PUT</td><td><code>/projects/{key}/workbench</code></td><td>The project's Workbench charge code (PUT: Maintainer)</td></tr>
+</tbody></table>
+
+<h2 id="examples">curl examples</h2>
+<pre><code># create an issue
+curl -X POST https://gitbench.example.com/api/v1/projects/WEB/issues \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Login button misaligned","type":"bug","priority":"high","labels":["ui"]}'
+
+# move it to another status and clear the due date
+curl -X PATCH https://gitbench.example.com/api/v1/projects/WEB/issues/42 \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"status":"inProgress","dueDate":null}'
+
+# open a pull request, then merge it and delete the branch
+curl -X POST https://gitbench.example.com/api/v1/projects/WEB/repos/site/pull-requests \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Fix alignment","sourceBranch":"fix/login","targetBranch":"main"}'
+curl -X POST https://gitbench.example.com/api/v1/projects/WEB/repos/site/pull-requests/7/merge \
+  -H "Authorization: Bearer $GITBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"deleteSourceBranch":true}'
+
+# where is this tag deployed?
+curl -H "Authorization: Bearer $GITBENCH_TOKEN" \
+  "https://gitbench.example.com/api/v1/projects/WEB/repos/site/deployed?rev=v1.4.0"</code></pre>
+
+<h2 id="webhooks">Webhooks</h2>
+<p>A project can POST JSON events to your own services. Webhooks are managed by <strong>Maintainers and Owners</strong> (the manage-repositories permission) at <strong>Settings, Webhooks</strong> (<code>/p/{KEY}/settings/webhooks</code>). A project may have at most 20 generic webhooks. Slack and Teams integrations are separate (see <a href="chat.html">Slack and Microsoft Teams</a>).</p>
+
+<h3 id="webhook-create">Create a webhook</h3>
+<ol>
+<li>Open the project, then <strong>Settings, Webhooks</strong>.</li>
+<li>Enter the URL (<code>http</code> or <code>https</code>, no credentials in the URL, at most 2,000 characters).</li>
+<li>Choose at least one event and leave <strong>Active</strong> ticked.</li>
+<li>Leave the secret blank to have GitBench generate one, or enter your own. A generated secret is shown once and masked afterwards. <strong>New secret</strong> rotates it.</li>
+<li>Press <strong>Send test ping</strong> to check your receiver. Pings are limited to 5 per minute per user (<code>RateLimiting:WebhookPing</code>), and the <code>ping</code> event is sent even to an inactive hook.</li>
+</ol>
+<p>Secrets are encrypted at rest with ASP.NET Core Data Protection. If the Data Protection keys are lost, stored secrets cannot be decrypted. Deliveries then fail with a message saying so, and <strong>New secret</strong> repairs the hook.</p>
+
+<h3 id="webhook-verify">Headers and signature verification</h3>
+<p>Every request is a <code>POST</code> with a JSON body that starts with <code>event</code>, <code>deliveryId</code>, <code>timestamp</code>, <code>project</code> and <code>sender</code>, followed by the event's own fields. These headers are sent:</p>
+<table>
+<thead><tr><th>Header</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>X-GitBench-Event</code></td><td>The event name, for example <code>issue.created</code></td></tr>
+<tr><td><code>X-GitBench-Delivery</code></td><td>A GUID identifying the delivery (the same on redelivery)</td></tr>
+<tr><td><code>X-GitBench-Hook-ID</code></td><td>The webhook's numeric id</td></tr>
+<tr><td><code>X-GitBench-Signature-256</code></td><td><code>sha256=</code> followed by the lowercase hex HMAC-SHA256 of the <strong>raw body bytes</strong>, keyed with the webhook secret</td></tr>
+<tr><td><code>X-GitBench-Redelivery</code></td><td><code>true</code>, only on a manual redelivery</td></tr>
+</tbody></table>
+<p>Verify the signature on the raw bytes, before parsing, and compare in constant time:</p>
+<pre><code>import hashlib, hmac
+
+def verify(secret: str, body: bytes, header: str) -&gt; bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header or "")</code></pre>
+<pre><code>var expected = "sha256=" + Convert.ToHexStringLower(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), body));
+var ok = CryptographicOperations.FixedTimeEquals(
+    Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(header ?? ""));</code></pre>
+<div class="note">Use the <code>X-GitBench-Delivery</code> value to de-duplicate: a retried or redelivered event reuses its delivery id.</div>
+
+<h3 id="webhook-delivery">Delivery, retries and auto-disable</h3>
+<ul>
+<li>Events are put on an in-memory queue and sent by a background worker, so a user action never waits for your receiver. Up to 8 deliveries run in parallel.</li>
+<li>Each attempt times out after <strong>10 seconds</strong>. Network errors, timeouts and <code>5xx</code> answers are retried up to 3 times, after 1, 5 and 15 seconds.</li>
+<li><code>4xx</code> answers, redirects (never followed) and blocked addresses fail at once without retries.</li>
+<li>Every delivery is stored with its status code, duration, attempts, error and the first 4 KB of your response. The settings page shows the last 25 deliveries per hook.</li>
+<li><strong>Redeliver</strong> on a delivery resends the same body under the same delivery id with <code>X-GitBench-Redelivery: true</code>.</li>
+<li>After <strong>20 failed deliveries in a row</strong> the hook is switched off and the page shows "Disabled after 20 failures". Ticking <strong>Active</strong> again resets the counter. A success also resets it.</li>
+<li>Deliveries left pending by a restart are resent on startup. Hook changes are audited as <code>webhook.created</code>, <code>webhook.updated</code>, <code>webhook.secret_rotated</code> and <code>webhook.deleted</code>.</li>
+</ul>
+
+<h3 id="webhook-ssrf">SSRF guard</h3>
+<ul>
+<li>Only <code>http</code> and <code>https</code> URLs without credentials are accepted.</li>
+<li>DNS is resolved at send time and the socket connects only to an address that passed the check, so DNS rebinding cannot swap it.</li>
+<li>Blocked: loopback, private ranges (RFC 1918, unique-local), link-local (including the <code>169.254.169.254</code> cloud metadata address), carrier-grade NAT, multicast and reserved ranges, IPv4-mapped, NAT64 and 6to4 forms of those, and <code>localhost</code>. No proxy is used.</li>
+<li>To deliver to private hosts (an internal chat or CI server), set <code>Webhooks:AllowPrivateNetworks</code> to <code>true</code>. It defaults to <code>false</code>; the Development configuration turns it on. Leave it off in production unless you need it.</li>
+</ul>
+<pre><code># environment form for Docker
+Webhooks__AllowPrivateNetworks=true</code></pre>
+
+<h3 id="events">Every event</h3>
+<p>These are the events you can subscribe to, taken from <code>WebhookEventNames</code>. <code>ping</code> is extra and is only sent by <strong>Send test ping</strong>. The payload fields listed come after the common envelope.</p>
+<table>
+<thead><tr><th>Event</th><th>When</th><th>Payload highlights</th></tr></thead>
+<tbody>
+<tr><td><code>push</code></td><td>A Git push moved a ref, or a pull request was merged in GitBench (a merge sends one for the target branch and a <code>deleted: true</code> one for a deleted source branch)</td><td>One event per ref: <code>ref</code>, <code>before</code>, <code>after</code>, <code>created</code>, <code>deleted</code>, <code>repository</code>, <code>commits</code> (newest first, up to 20), <code>totalCommits</code>, <code>headCommit</code>, <code>compareUrl</code></td></tr>
+<tr><td><code>issue.created</code></td><td>An issue is created</td><td><code>issue</code> (with custom fields, components, versions and time)</td></tr>
+<tr><td><code>issue.updated</code></td><td>An issue's fields or status change</td><td><code>issue</code>, <code>change</code> (the activity text), <code>changedFields</code> (<code>status</code>, <code>assignee</code>, <code>priority</code>, <code>labels</code>, <code>sprint</code>)</td></tr>
+<tr><td><code>issue.commented</code></td><td>Someone comments on an issue</td><td><code>issue</code>, <code>comment</code></td></tr>
+<tr><td><code>pull_request.opened</code></td><td>A pull request is opened</td><td><code>pullRequest</code>, <code>repository</code></td></tr>
+<tr><td><code>pull_request.updated</code></td><td>A pull request is edited, reviewed, reopened or has reviewers requested</td><td><code>action</code> (<code>edited</code>, <code>reopened</code>, <code>approved</code>, <code>changes_requested</code>, <code>review_dismissed</code>, <code>review_requested</code>), <code>pullRequest</code>, <code>repository</code>; with <code>review_requested</code> also <code>requestedReviewers</code></td></tr>
+<tr><td><code>pull_request.merged</code></td><td>A pull request is merged</td><td><code>pullRequest</code>, <code>repository</code></td></tr>
+<tr><td><code>pull_request.declined</code></td><td>A pull request is declined</td><td><code>pullRequest</code>, <code>repository</code></td></tr>
+<tr><td><code>pull_request.commented</code></td><td>Someone comments on a pull request</td><td><code>pullRequest</code>, <code>repository</code>, <code>comment</code></td></tr>
+<tr><td><code>pipeline.completed</code></td><td>A CI pipeline finishes</td><td><code>pipeline</code> (<code>id</code>, <code>status</code>, <code>ref</code>, <code>commitSha</code>, <code>pullRequestId</code>, <code>trigger</code>, <code>error</code>, timestamps, <code>url</code>), <code>repository</code></td></tr>
+<tr><td><code>security.new_findings</code></td><td>A scan finds new findings at or above the repository's notify severity on the default branch</td><td><code>repository</code>, <code>pipeline</code>, <code>threshold</code>, <code>findings</code> (up to 100: <code>fingerprint</code>, <code>severity</code>, <code>category</code>, <code>ruleId</code>, <code>title</code>, <code>package</code>, <code>file</code>, <code>line</code>, <code>url</code>), <code>total</code>, <code>url</code></td></tr>
+<tr><td><code>deployment.status</code></td><td>A deployment changes status</td><td><code>deployment</code> (<code>status</code> one of <code>waiting_for_approval</code>, <code>running</code>, <code>success</code>, <code>failed</code>, <code>canceled</code>; <code>action</code> start or stop; <code>ref</code>, <code>commitSha</code>, <code>isRollback</code>, <code>pipelineId</code>, <code>user</code>, <code>url</code>), <code>environment</code>, <code>repository</code></td></tr>
+<tr><td><code>pages.deployed</code></td><td>A Pages site is deployed or rolled back</td><td><code>site</code> (<code>url</code>, <code>visibility</code>, <code>slot</code>), <code>deployment</code> (<code>version</code>, <code>commitSha</code>, <code>fileCount</code>, <code>sizeBytes</code>, <code>isRollback</code>, <code>expiresAt</code>), <code>repository</code></td></tr>
+<tr><td><code>release.published</code></td><td>A release is published (created as non-draft, or a draft published)</td><td><code>release</code> (with assets, <code>zipUrl</code>, <code>tarGzUrl</code>), <code>repository</code></td></tr>
+<tr><td><code>tag.created</code></td><td>A tag is created in GitBench or by a push</td><td><code>tag</code>, <code>repository</code></td></tr>
+<tr><td><code>tag.deleted</code></td><td>A tag is deleted in GitBench or by a push</td><td><code>tag</code>, <code>repository</code></td></tr>
+<tr><td><code>package.published</code></td><td>A package version or container image tag is published</td><td><code>package</code> (<code>id</code>, <code>name</code>, <code>type</code>, <code>version</code>, <code>size</code>, <code>url</code>, <code>pipeline_id</code> when pushed by a CI job)</td></tr>
+<tr><td><code>package.deleted</code></td><td>A package, version or image tag is deleted</td><td>Same <code>package</code> object</td></tr>
+<tr><td><code>flag.changed</code></td><td>A feature flag is created, toggled, edited, archived or deleted</td><td><code>flag</code> (<code>id</code>, <code>key</code>, <code>name</code>, <code>type</code>, <code>archived</code>), <code>environment</code> (null for flag-wide changes), <code>change</code> (<code>kind</code>, <code>oldValue</code>, <code>newValue</code>, clipped to 2,000 characters), <code>url</code></td></tr>
+<tr><td><code>ping</code></td><td>Only from <strong>Send test ping</strong></td><td>The envelope only</td></tr>
+</tbody></table>
+<pre><code>{
+  "event": "issue.created",
+  "deliveryId": "7b0c2b5e-0d6e-4c0f-9a43-5f0f7a8e2d11",
+  "timestamp": "2026-11-19T10:15:30.123Z",
+  "project": { "id": 1, "key": "WEB", "name": "Website", "...": "more fields" },
+  "sender": { "id": 3, "username": "alice", "displayName": "Alice", "...": "more fields" },
+  "issue": { "id": 120, "key": "WEB-42", "number": 42, "title": "Login button misaligned", "...": "more fields" }
+}</code></pre>
+<div class="note">The example is trimmed and abbreviated for illustration. The real <code>project</code>, <code>sender</code> and <code>issue</code> objects carry more fields; fetch an event with <strong>Send test ping</strong> or from the delivery log to see the exact shapes on your server.</div>
+<p>The same events also drive <a href="chat.html">Slack and Teams integrations</a> and <a href="automation.html">automation rules</a>.</p>
+
+<div class="cards">
+<a class="card" href="accounts.html"><b>Personal access tokens</b><span>Create and scope tokens</span></a>
+<a class="card" href="chat.html"><b>Slack and Teams</b><span>Chat notifications without writing a receiver</span></a>
+<a class="card" href="permissions.html"><b>Roles and permissions</b><span>What each role may call</span></a>
+</div>

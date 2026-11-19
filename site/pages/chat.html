@@ -1,0 +1,154 @@
+<h1>Slack and Microsoft Teams</h1>
+<p class="lead">Post issue, pull request, pipeline and release updates to Slack or Teams channels, and (with a Slack app) use the <code>/gitbench</code> command, link previews and direct messages.</p>
+
+<p>There are two layers, and you can use either one alone:</p>
+<ul>
+<li><strong>Channel integrations</strong> are created per project or per group. They need only an incoming webhook URL (Slack or Teams) or a Slack bot token. No server configuration is required.</li>
+<li><strong>The Slack app</strong> (server-wide, optional) adds the <code>/gitbench</code> slash command, link previews (unfurls) and Slack direct messages. It needs <code>Slack:SigningSecret</code> and, for previews and DMs, <code>Slack:BotToken</code>.</li>
+</ul>
+
+<h2 id="create">Create a channel integration</h2>
+<p>Needs the <strong>Maintainer</strong> role in the project, or <strong>Owner</strong> of the group for a group integration.</p>
+<ol>
+<li>Open <strong>Project, Settings, Slack &amp; Microsoft Teams</strong> (<code>/p/{KEY}/settings/integrations</code>). For a group, open the group's <strong>Integrations</strong> tab.</li>
+<li>Choose <strong>Slack</strong> or <strong>Teams</strong>, give it a name, and pick a mode (below).</li>
+<li>Tick the events to announce and set optional filters.</li>
+<li>Save, then press <strong>Send test message</strong>. Test messages share the webhook ping limit (5 per minute per user).</li>
+</ol>
+<p>A project or group can have at most <strong>20</strong> chat integrations. URLs and tokens are encrypted at rest (ASP.NET Core Data Protection, like webhook secrets) and never shown again; the page only shows a hint such as "••••••••3f9a". On edit, leaving a secret field blank keeps the stored one. An integration cannot change between Slack and Teams, so add a new one instead.</p>
+
+<h3 id="modes">Modes: webhook or bot token</h3>
+<table>
+<thead><tr><th>Mode</th><th>You provide</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Slack incoming webhook</td><td>A <code>https://hooks.slack.com/services/...</code> URL</td><td>Posts to the channel the webhook was created for. You can give a separate webhook URL per event group to send groups elsewhere.</td></tr>
+<tr><td>Slack bot token</td><td>A bot token (<code>xoxb-...</code>) and a default channel such as <code>#dev</code> or a channel id</td><td>Uses Slack's <code>chat.postMessage</code>. Each event group can post to its own channel. The bot must be invited to those channels.</td></tr>
+<tr><td>Teams webhook</td><td>A Teams incoming webhook (<code>...webhook.office.com</code>) or a Workflows / Power Automate URL</td><td>Accepted hosts: <code>*.webhook.office.com</code>, <code>*.logic.azure.com</code>, <code>*.api.powerplatform.com</code>, <code>*.powerautomate.com</code>. Separate URLs per event group are possible.</td></tr>
+</tbody></table>
+<p>Webhook URLs must be <code>https</code>, without credentials, on an allowed host. For a proxy or another host, add it to <code>ChatIntegrations:AllowedHosts</code> (see <a href="#config">configuration</a>). Only the scheme and host of an incoming webhook URL are stored in plain text, because the path is the secret.</p>
+
+<h2 id="events">Events and filters</h2>
+<p>Choose any of these. The defaults are marked.</p>
+<table>
+<thead><tr><th>Event</th><th>Group</th><th>Default</th><th>Announced when</th></tr></thead>
+<tbody>
+<tr><td><code>issue.created</code></td><td>Issues</td><td>Yes</td><td>An issue is created</td></tr>
+<tr><td><code>issue.transitioned</code></td><td>Issues</td><td>Yes</td><td>An issue's status changes</td></tr>
+<tr><td><code>issue.assigned</code></td><td>Issues</td><td></td><td>An issue's assignee changes</td></tr>
+<tr><td><code>issue.commented</code></td><td>Issues</td><td></td><td>A comment is added</td></tr>
+<tr><td><code>pull_request.opened</code></td><td>Pull requests</td><td>Yes</td><td>A pull request is opened</td></tr>
+<tr><td><code>pull_request.merged</code></td><td>Pull requests</td><td>Yes</td><td>A pull request is merged</td></tr>
+<tr><td><code>pull_request.review_requested</code></td><td>Pull requests</td><td></td><td>Reviewers are requested</td></tr>
+<tr><td><code>pull_request.approved</code></td><td>Pull requests</td><td></td><td>A pull request is approved</td></tr>
+<tr><td><code>pipeline.failed</code></td><td>Pipelines and deployments</td><td>Yes</td><td>A pipeline fails or errors</td></tr>
+<tr><td><code>pipeline.fixed</code></td><td>Pipelines and deployments</td><td>Yes</td><td>A pipeline passes after a failure on the same ref</td></tr>
+<tr><td><code>deployment</code></td><td>Pipelines and deployments</td><td></td><td>A deployment finishes (success, failed or canceled; waiting and running are not announced)</td></tr>
+<tr><td><code>flag.changed</code></td><td>Pipelines and deployments</td><td></td><td>A feature flag changes</td></tr>
+<tr><td><code>release.published</code></td><td>Releases</td><td>Yes</td><td>A release is published</td></tr>
+<tr><td><code>mention</code></td><td>Mentions</td><td></td><td>An @mention appears in an issue description or comment, or a pull request description or comment</td></tr>
+</tbody></table>
+<p>These chat events are derived from the generic <a href="api.html#events">webhook events</a> and ride on the same queue, so they use the same retries, delivery log and auto-disable.</p>
+
+<h3 id="filters">Filters</h3>
+<table>
+<thead><tr><th>Filter</th><th>Applies to</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Branches</td><td>Pipelines, deployments, pull requests (target branch)</td><td>Branch names or globs (<code>main</code>, <code>release/*</code>). <code>*</code> matches any characters including <code>/</code>. Empty means any.</td></tr>
+<tr><td>Labels</td><td>Issue events and mentions in issues</td><td>Only issues with at least one of these labels (case-insensitive). Empty means any.</td></tr>
+<tr><td>Minimum priority</td><td>Issue events and mentions in issues</td><td>Only issues at or above this priority.</td></tr>
+</tbody></table>
+<p>At most 50 values per list, 100 characters each.</p>
+
+<h2 id="group">Group integrations and opt-out</h2>
+<p>An integration created on a <strong>group</strong> announces the events of every project in that group and its subgroups, managed by the group's Owners. A project sees them under <strong>From the group</strong> on its integrations page, and a Maintainer can switch one to <strong>Opted out</strong> for that project without touching the group. Opt-outs are audited as <code>chat_integration.opted_out</code> and <code>chat_integration.opted_in</code>.</p>
+
+<h2 id="messages">Message formats</h2>
+<ul>
+<li><strong>Slack:</strong> Block Kit blocks inside a colour-coded attachment (green good, red failure, yellow warning, blue info, grey neutral), with a plain-text fallback. All user text is escaped, so <code>&lt;!channel&gt;</code> or <code>&lt;@U123&gt;</code> in an issue title cannot ping anybody.</li>
+<li><strong>Teams:</strong> an Adaptive Card (v1.4). User content is placed in text runs that Teams shows literally, with no Markdown or HTML. Cards are trimmed to stay under Teams' size limit.</li>
+<li>Each message has a title linking to GitBench, an actor, a context line, up to 10 short fields and an excerpt of up to 1,500 characters.</li>
+<li>Delivery uses a 10 second timeout, up to 3 retries, no redirects and the webhook SSRF checks. The integration is switched off after 20 failures in a row, and the delivery log shows the last 25 deliveries with <strong>Redeliver</strong>. See <a href="api.html#webhook-delivery">webhook delivery</a>.</li>
+</ul>
+
+<h2 id="slack-app">Set up the Slack app</h2>
+<p>Do this once per server if you want slash commands, link previews or DMs. Channel integrations do not need it.</p>
+<ol>
+<li>In <a href="https://api.slack.com/apps">api.slack.com/apps</a>, create an app for your workspace.</li>
+<li>Copy the <strong>Signing Secret</strong> (Basic Information) and, for previews and DMs, the <strong>Bot User OAuth Token</strong> (<code>xoxb-...</code>) after installing the app.</li>
+<li>Give them to GitBench through the environment or user-secrets, never a committed file:
+<pre><code># production
+Slack__SigningSecret=&lt;signing secret&gt;
+Slack__BotToken=&lt;xoxb token&gt;
+Slack__TeamId=T0123ABCD      # optional: accept only this workspace
+
+# development
+dotnet user-secrets set "Slack:SigningSecret" "&lt;signing secret&gt;"</code></pre></li>
+<li>Set the request URLs in the Slack app (use your public GitBench address, which should match <code>PublicBaseUrl</code>):</li>
+</ol>
+<table>
+<thead><tr><th>Slack app screen</th><th>URL</th></tr></thead>
+<tbody>
+<tr><td>Slash Commands, command <code>/gitbench</code>, Request URL</td><td><code>https://gitbench.example.com/integrations/slack/commands</code></td></tr>
+<tr><td>Interactivity &amp; Shortcuts, Request URL (the "Assign to me" button)</td><td><code>https://gitbench.example.com/integrations/slack/interactivity</code></td></tr>
+<tr><td>Event Subscriptions, Request URL; subscribe to the bot event <code>link_shared</code>, and add your GitBench domain under App unfurl domains</td><td><code>https://gitbench.example.com/integrations/slack/events</code></td></tr>
+</tbody></table>
+<p>Slack must be able to reach these URLs from the internet. The app also needs the matching Slack permissions for what you use (commands, posting messages, reading and writing link unfurls); Slack's own documentation lists the exact scope names.</p>
+
+<h3 id="slack-config">Slack:* and ChatIntegrations:* settings</h3>
+<table id="config">
+<thead><tr><th>Key</th><th>Default</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>Slack:SigningSecret</code></td><td>none</td><td>Required for the Slack app. Without it the three <code>/integrations/slack/*</code> endpoints answer 404. Every request must carry a valid signature.</td></tr>
+<tr><td><code>Slack:BotToken</code></td><td>none</td><td>Needed for link previews and Slack DMs. Optional otherwise.</td></tr>
+<tr><td><code>Slack:TeamId</code></td><td>none</td><td>If set, only requests from this workspace id are accepted.</td></tr>
+<tr><td><code>Slack:TimestampToleranceSeconds</code></td><td>300</td><td>Replay window for <code>X-Slack-Request-Timestamp</code> (never less than 30). Accepted signatures are also remembered for the window, so a captured request cannot be replayed.</td></tr>
+<tr><td><code>Slack:ApiBaseUrl</code></td><td><code>https://slack.com/api/</code></td><td>Slack Web API base URL (change only for tests or a proxy).</td></tr>
+<tr><td><code>ChatIntegrations:AllowedHosts</code></td><td>empty</td><td>Extra hosts integrations may post to besides Slack's and Teams' own. A leading dot (<code>.example.com</code>) matches subdomains.</td></tr>
+</tbody></table>
+<p>Signatures use Slack's v0 scheme: <code>v0=</code> plus the hex HMAC-SHA256 of <code>v0:{timestamp}:{body}</code>. Request bodies over 64 KB are refused. Invalid requests get 401 and a warning in the server log.</p>
+
+<h2 id="slash-commands">Slash commands and account linking</h2>
+<p>Slash commands run <strong>as the GitBench user</strong> linked to the Slack user, so normal <a href="permissions.html">roles</a> apply. Replies are visible only to the person who ran the command.</p>
+<table>
+<thead><tr><th>Command</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><code>/gitbench issue KEY-12</code> (or <code>show</code>)</td><td>Shows an issue card, with <strong>Assign to me</strong> (Developer or higher) and <strong>Open in GitBench</strong> buttons</td></tr>
+<tr><td><code>/gitbench create KEY Title of the issue</code> (or <code>new</code>)</td><td>Creates a task (title up to 200 characters; needs permission to create issues)</td></tr>
+<tr><td><code>/gitbench search words</code> (or <code>find</code>)</td><td>Searches issues and pull requests (up to 8 results of each)</td></tr>
+<tr><td><code>/gitbench link</code> / <code>unlink</code></td><td>Connect or disconnect your GitBench account</td></tr>
+<tr><td><code>/gitbench</code> or <code>help</code></td><td>Lists the commands</td></tr>
+</tbody></table>
+<h3 id="link-flow">The account-link flow</h3>
+<ol>
+<li>Run any command, or <code>/gitbench link</code>. If you are not linked, Slack replies with a <strong>Link GitBench account</strong> button.</li>
+<li>The button opens <code>/integrations/slack/link?t=...</code> in GitBench. Sign in and confirm.</li>
+<li>The link token is single use and expires after <strong>10 minutes</strong>. A Slack account links to one GitBench account at a time.</li>
+<li>Unlink from Slack with <code>/gitbench unlink</code>, or from GitBench under your <a href="notifications.html">notification preferences</a>. Linking and unlinking are audited as <code>chat.slack_linked</code> and <code>chat.slack_unlinked</code>.</li>
+</ol>
+<p>Until a Slack user links, commands, buttons and previews do nothing for them except offer the link.</p>
+
+<h2 id="unfurls">Link previews</h2>
+<p>With <code>Slack:BotToken</code> and the <code>link_shared</code> event, pasting an issue or pull request link from your GitBench address into Slack shows a card. The card is built as the linked user, so someone who cannot see the issue gets no preview. Unlinked users are offered the link flow. Only links on the GitBench host are handled (up to 10 per message).</p>
+
+<h2 id="dms">Slack direct messages</h2>
+<p>With a bot token, each linked user can switch on <strong>Also send my notifications as Slack direct messages</strong> in their <a href="notifications.html">notification preferences</a>. GitBench sends the notification as a DM from the app, checking every 30 seconds, one attempt per notification. DMs are a convenience next to the in-app notification, not the record. Without a bot token, or for users who have not linked Slack, pending DMs are dropped so no backlog builds up.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<thead><tr><th>Symptom</th><th>Check</th></tr></thead>
+<tbody>
+<tr><td>Slack says the slash command failed or the request URL is invalid</td><td>The signing secret is wrong or missing (the endpoints answer 404 without one, 401 with a bad signature). Check the server log for "Rejected a Slack request". Your server's clock must be accurate, within the tolerance.</td></tr>
+<tr><td>"This GitBench server isn't connected to your Slack workspace"</td><td><code>Slack:TeamId</code> is set and does not match your workspace.</td></tr>
+<tr><td>Test message works but real events do not appear</td><td>The event is not ticked, a branch, label or priority filter excludes it, or a mention has no matching user. Check the delivery log.</td></tr>
+<tr><td>Integration shows "Disabled after 20 failures"</td><td>Fix the cause (revoked webhook, bot not in the channel), then tick Active again to reset the counter.</td></tr>
+<tr><td>"Use a Slack incoming webhook URL" or "Use a Teams incoming webhook"</td><td>The host is not allowed. Use the provider's URL, or add a proxy host to <code>ChatIntegrations:AllowedHosts</code>.</td></tr>
+<tr><td>"URL or token can't be decrypted"</td><td>The Data Protection keys changed (for example after a rebuild without persisted keys). Enter the URL or token again.</td></tr>
+<tr><td>No link previews</td><td>No <code>Slack:BotToken</code>, the <code>link_shared</code> event or unfurl domain is not configured, or the person has not linked their account.</td></tr>
+<tr><td>Delivery to a private address is refused</td><td>The same SSRF guard as webhooks applies. See <a href="api.html#webhook-ssrf">SSRF guard</a>.</td></tr>
+</tbody></table>
+
+<div class="cards">
+<a class="card" href="api.html"><b>REST API and webhooks</b><span>Generic webhooks and events</span></a>
+<a class="card" href="notifications.html"><b>Notifications and email</b><span>Preferences, mentions and DMs</span></a>
+<a class="card" href="permissions.html"><b>Roles and permissions</b><span>Who can manage integrations</span></a>
+</div>

@@ -1,0 +1,126 @@
+<h1>Roles, groups and permissions</h1>
+<p class="lead">Every project has members with one of four roles, groups pass roles down to the projects inside them, and a single piece of code decides every access question, so the website, the API and Git always agree.</p>
+
+<h2 id="roles">The four roles</h2>
+<p>Roles are ordered, and each one has everything the roles before it have:</p>
+<p><strong>Viewer</strong> &lt; <strong>Developer</strong> &lt; <strong>Maintainer</strong> &lt; <strong>Owner</strong>.</p>
+<ul>
+<li><strong>Viewer</strong> reads everything in the project but changes nothing.</li>
+<li><strong>Developer</strong> does day-to-day work: issues, comments, pushing code, pull requests and reviews, publishing packages, toggling feature flags.</li>
+<li><strong>Maintainer</strong> manages the work and the code: labels, milestones, sprints, merging, repositories, deleting packages, creating flags.</li>
+<li><strong>Owner</strong> manages people and the project itself: members, settings, deleting the project.</li>
+</ul>
+<p>The creator of a project becomes its Owner. A project's last Owner cannot be removed or demoted.</p>
+
+<h2 id="matrix">Permission matrix</h2>
+<p>These are the permissions defined in <code>ProjectAccess</code>. A tick means the role has it.</p>
+<table>
+<thead><tr><th>Permission</th><th>Viewer</th><th>Developer</th><th>Maintainer</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td><code>ViewProject</code>: see the project, issues, code and pull requests</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>EditIssues</code>: create and edit issues, board moves</td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>Comment</code></td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>PushCode</code>: git push, create branches, run pipelines, create releases and tags</td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>CreatePullRequest</code></td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>ReviewPullRequest</code>: review, approve, request AI review</td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>PublishPackages</code>: NuGet and npm publish, docker push</td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>ToggleFlags</code>: turn feature flags on or off, edit values, rules and segments</td><td></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>ManageLabelsAndMilestones</code> (also sprints, and AI triage settings)</td><td></td><td></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>MergePullRequest</code> (also approve a fork pull request's pipeline)</td><td></td><td></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>DeleteBranch</code></td><td></td><td></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>ManageRepositories</code>: repositories and their settings, webhooks, chat integrations, CI variables, security settings</td><td></td><td></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>DeletePackages</code>: packages, versions and image tags</td><td></td><td></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>ManageFlags</code>: create, archive and delete flags; environments, SDK keys</td><td></td><td></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>ManageMembers</code></td><td></td><td></td><td></td><td>yes</td></tr>
+<tr><td><code>ManageProjectSettings</code>: name, description, visibility, workflow</td><td></td><td></td><td></td><td>yes</td></tr>
+<tr><td><code>DeleteProject</code></td><td></td><td></td><td></td><td>yes</td></tr>
+</tbody></table>
+
+<h3 id="extra-rules">Extra rules that need a particular role</h3>
+<table>
+<thead><tr><th>Action</th><th>Minimum role</th></tr></thead>
+<tbody>
+<tr><td>Delete an issue, edit or delete someone else's comment, delete someone else's attachment, import issues</td><td>Maintainer</td></tr>
+<tr><td>Share a saved filter or a dashboard with the project; create snippets</td><td>Developer</td></tr>
+<tr><td>Manage other people's shared filters; manage boards; manage automation rules</td><td>Maintainer</td></tr>
+<tr><td>Configure the service desk; change the Workbench charge code</td><td>Maintainer</td></tr>
+<tr><td>AI: change AI review settings or the web editor's AI switch (Maintainer); request an AI review or AI triage suggestions (Developer)</td><td>Maintainer / Developer</td></tr>
+<tr><td>Merge queue: enqueue and move to front</td><td>Maintainer (dequeue: the author or a Maintainer)</td></tr>
+<tr><td>Deploy freezes, deployment approval rules</td><td>Maintainer</td></tr>
+<tr><td>A pull request's author may edit, decline and reopen it; anyone else needs <code>MergePullRequest</code></td><td>Author or Maintainer</td></tr>
+<tr><td>Dismiss an AI finding</td><td>Pull request author, the comment's author, or a Maintainer</td></tr>
+</tbody></table>
+<p>Branch protection, required reviews, code owners and environment approval rules can add further restrictions on top of roles. See <a href="branch-protection.html">branch protection</a> and <a href="environments.html">environments</a>.</p>
+
+<h2 id="site-admin">Site admins</h2>
+<p>A <strong>site admin</strong> is treated as <strong>Owner of every project and group</strong>, sees everything, and can open the <a href="admin.html">administration pages</a>. The first admin is usually created with the <code>Bootstrap:AdminUsers</code> setting (see <a href="production.html">production setup</a>). Admins can be granted or revoked on <code>/admin/users</code>, and GitBench refuses to revoke the last admin. SSO and LDAP can grant admin from a group claim (see <a href="accounts.html#sso-flow">SSO sign-in</a>).</p>
+
+<h2 id="visibility">Visibility</h2>
+<p>GitBench has two visibility levels for projects and groups. There is <strong>no public (anonymous) visibility</strong>: every page and API call needs a signed-in user.</p>
+<table>
+<thead><tr><th>Visibility</th><th>Who can see it</th></tr></thead>
+<tbody>
+<tr><td><strong>Private</strong></td><td>Only members (directly, or through a group), and site admins</td></tr>
+<tr><td><strong>Internal</strong></td><td>Every signed-in user. People who are not members get the Viewer role</td></tr>
+</tbody></table>
+<p>The Owner changes a project's visibility under <strong>Settings</strong> (audited as <code>project.visibility_changed</code>). If you cannot view a project, its pages and its API paths answer "not found", so its existence is not revealed.</p>
+
+<h2 id="members">Managing members</h2>
+<p>Owners manage members at <code>/p/{KEY}/members</code>: add a person by username or email, change roles, and remove members. Members inherited from a group are listed read-only with their source ("via acme"). Changes are audited as <code>member.added</code>, <code>member.role_changed</code> and <code>member.removed</code>.</p>
+
+<h2 id="groups">Groups and subgroups</h2>
+<p>A <strong>group</strong> is a namespace that owns projects and other groups, like a GitLab group. Groups nest up to <strong>4 levels</strong> deep. A group's URL is <code>/g/{full path}</code> (for example <code>/g/acme/platform</code>) and its sections are tabs: Overview, Issues, Roadmap, Pull requests, Labels and milestones, Members, and, for Owners, Automation, Integrations and Settings.</p>
+<ul>
+<li>Project keys stay globally unique, so <code>/p/{KEY}</code>, Git URLs, webhooks, CI and the API still find a project by key whatever group it is in.</li>
+<li>A project optionally belongs to one group. Create one from the group page or the group picker on <strong>New project</strong>. Move it under <strong>Settings, Group</strong> (needs Owner of the project and Maintainer in the target group).</li>
+<li>A subgroup cannot be more visible than its parent. A group's visibility never opens a Private project: an Internal group with a Private project still hides the project from non-members.</li>
+<li>Group <strong>labels and milestones</strong> are defined once on the group and appear (read-only, marked "Group") in every project below it.</li>
+<li>Group-level <a href="chat.html#group">Slack and Teams integrations</a> and automation rules apply to all projects below.</li>
+<li>Old group paths keep working as redirects after a rename or move.</li>
+</ul>
+
+<h3 id="inheritance">Role inheritance</h3>
+<p>A member of a group has <strong>at least that role in every subgroup and project below it</strong>. A user's <strong>effective project role</strong> is the highest of:</p>
+<ol>
+<li>their direct project role,</li>
+<li>their roles in the project's group and all its ancestor groups,</li>
+<li>Viewer, if the project is Internal,</li>
+<li>Owner, if they are a site admin.</li>
+</ol>
+<p>If none of these apply, the project is invisible to them. Inheritance only raises: a direct Viewer role never lowers a group Developer role.</p>
+
+<h3 id="group-roles">Group permissions</h3>
+<table>
+<thead><tr><th>Permission</th><th>Minimum role</th></tr></thead>
+<tbody>
+<tr><td>View the group (any role in it, or Internal, or it contains something you can see)</td><td>Viewer</td></tr>
+<tr><td>Create projects and subgroups, transfer projects into the group, manage group labels and milestones</td><td>Maintainer</td></tr>
+<tr><td>Manage group members, change settings (name, visibility, path, move), manage group integrations, delete the group</td><td>Owner</td></tr>
+</tbody></table>
+<p>The creator of a group becomes its Owner. A top-level group must keep a direct Owner, and subgroups inherit their parents' Owners. Deleting a group with subgroups or projects requires typing its full path and deletes everything in it. Group changes are audited as <code>group.created</code>, <code>group.settings_changed</code>, <code>group.path_changed</code>, <code>group.moved</code>, <code>group.deleted</code>, <code>group.member_*</code> and <code>project.transferred</code>.</p>
+
+<h2 id="special">Forks, service desk, bots and CI tokens</h2>
+<table>
+<thead><tr><th>Who or what</th><th>How it is treated</th></tr></thead>
+<tbody>
+<tr><td><strong>Forks</strong></td><td>Anyone who can view a repository can fork it into a project where they have <code>ManageRepositories</code> (Maintainer or higher). A cross-fork pull request needs <code>CreatePullRequest</code> in the fork's project but only <code>ViewProject</code> in the target. The author can comment on, edit, decline and reopen it with view access alone. Reviewing and merging need the normal roles in the target. A fork pull request's pipeline gets <strong>no CI variables</strong> and waits for a Maintainer or higher to press <strong>Approve and run</strong></td></tr>
+<tr><td><strong>Service desk requesters</strong></td><td>People who file requests by email or form have no account and no role. A system account named "Service Desk" creates the issues and posts their replies, and requesters see only a tracking page with the public conversation (never internal comments or activity). Configuring the service desk needs Maintainer</td></tr>
+<tr><td><strong>CI job tokens</strong></td><td>Every job receives a short-lived token (<code>gbj_...</code> prefix) valid only while the job runs. It carries <strong>Developer rights in the job's own project</strong>, so scripts can publish to and read from that project's package and container registry. It cannot reach other projects</td></tr>
+<tr><td><strong>AI review bot</strong>, <strong>automation bot</strong></td><td>System accounts without passwords that cannot sign in. They have no project role; the system vouches for them only for the single action they perform, such as posting review comments</td></tr>
+<tr><td><strong>Personal access tokens</strong></td><td>Act as their owner, limited by scope. They can never exceed the owner's roles. Locked or deactivated users' tokens are refused</td></tr>
+<tr><td><strong>Feature flag SDK keys</strong></td><td>Evaluate flags for one environment; they do not carry a user role</td></tr>
+</tbody></table>
+
+<h2 id="enforcement">How it is enforced</h2>
+<ul>
+<li>Every service checks access at the start of each write, and reads return only projects you can view. The UI hides what you cannot do, but the server enforces it either way.</li>
+<li>In the <a href="api.html">REST API</a>, a project you cannot see answers 404 and a visible project where you lack the permission answers 403.</li>
+<li>Notification and mention lookups are restricted to people who can view the project.</li>
+<li>Locked and deactivated users lose access within about a minute.</li>
+</ul>
+
+<div class="cards">
+<a class="card" href="accounts.html"><b>Accounts and SSO</b><span>Map identity provider groups to GitBench roles</span></a>
+<a class="card" href="admin.html"><b>Administration</b><span>Site admins, audit log, user admin</span></a>
+<a class="card" href="branch-protection.html"><b>Branch protection</b><span>Extra rules on top of roles</span></a>
+</div>
