@@ -61,6 +61,10 @@ namespace GitBench.Data.MigrationsPostgres
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Backend")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
                     b.Property<int>("BatchCount")
                         .HasColumnType("integer");
 
@@ -69,6 +73,9 @@ namespace GitBench.Data.MigrationsPostgres
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DiffChars")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Error")
                         .HasColumnType("text");
@@ -556,6 +563,9 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Property<bool>("DismissStaleApprovals")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("MergeQueueApprovalTimeoutMinutes")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("MergeQueueEnabled")
                         .HasColumnType("boolean");
 
@@ -600,6 +610,36 @@ namespace GitBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("BranchProtectionRules");
+                });
+
+            modelBuilder.Entity("GitBench.Data.ChatIntegrationOptOut", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WebhookId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WebhookId");
+
+                    b.HasIndex("ProjectId", "WebhookId")
+                        .IsUnique();
+
+                    b.ToTable("ChatIntegrationOptOuts");
                 });
 
             modelBuilder.Entity("GitBench.Data.ChatUserLink", b =>
@@ -1397,6 +1437,291 @@ namespace GitBench.Data.MigrationsPostgres
                     b.ToTable("ExternalGroupMemberships");
                 });
 
+            modelBuilder.Entity("GitBench.Data.FeatureFlag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("IssueNumbers")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("OffValue")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("ProjectId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("FeatureFlags");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ActorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("EnvironmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EnvironmentName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("FlagId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("NewValue")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<string>("OldValue")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FlagId", "At");
+
+                    b.ToTable("FlagChanges");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagEnvironment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("FlagEnvironments");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagEnvironmentState", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("DefaultValue")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("EnvironmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FlagId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastEvaluatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RulesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedById")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("UpdatedById");
+
+                    b.HasIndex("FlagId", "EnvironmentId")
+                        .IsUnique();
+
+                    b.ToTable("FlagEnvironmentStates");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagSdkKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EnvironmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("KeyHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RotatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique();
+
+                    b.ToTable("FlagSdkKeys");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagSegment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("MembersJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("FlagSegments");
+                });
+
             modelBuilder.Entity("GitBench.Data.Group", b =>
                 {
                     b.Property<int>("Id")
@@ -1681,6 +2006,91 @@ namespace GitBench.Data.MigrationsPostgres
                     b.ToTable("IssueTemplates");
                 });
 
+            modelBuilder.Entity("GitBench.Data.IssueTriageItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ResolvedById")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RunId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("TargetId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("IssueTriageItems");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueTriageRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("IssueId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Summary")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId", "CreatedAt");
+
+                    b.ToTable("IssueTriageRuns");
+                });
+
             modelBuilder.Entity("GitBench.Data.IssueVersion", b =>
                 {
                     b.Property<int>("IssueId")
@@ -1779,6 +2189,12 @@ namespace GitBench.Data.MigrationsPostgres
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("AwaitingApproval")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("AwaitingApprovalSince")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("BaseSha")
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
@@ -1788,6 +2204,9 @@ namespace GitBench.Data.MigrationsPostgres
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("DeleteSourceBranch")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("EnqueuedById")
                         .HasColumnType("integer");
@@ -2142,6 +2561,124 @@ namespace GitBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("PackageVersions");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesDeployment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CommitSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DeployedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Directory")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FileCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsRollback")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("JobId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("PipelineId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.Property<int>("SiteId")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Slot")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeployedById");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("SiteId", "Slot", "IsCurrent");
+
+                    b.HasIndex("SiteId", "Slot", "Version")
+                        .IsUnique();
+
+                    b.ToTable("PagesDeployments");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesSite", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("NotFound")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReviewExpireDays")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ReviewSites")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Visibility")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.ToTable("PagesSites");
                 });
 
             modelBuilder.Entity("GitBench.Data.PersonalAccessToken", b =>
@@ -2543,11 +3080,20 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Property<bool>("AiReviewEnabled")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AiTriageAutoApplyLabels")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AiTriageEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<int>("DoraFailureWindowHours")
+                        .HasColumnType("integer");
 
                     b.Property<int?>("GroupId")
                         .HasColumnType("integer");
@@ -2569,6 +3115,10 @@ namespace GitBench.Data.MigrationsPostgres
 
                     b.Property<int>("NextIssueNumber")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ProductionEnvironment")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("Visibility")
                         .HasColumnType("integer");
@@ -2934,6 +3484,20 @@ namespace GitBench.Data.MigrationsPostgres
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("AiDismissed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AiFingerprint")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int?>("AiReviewId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AiSeverity")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("AppliedCommitSha")
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
@@ -2992,9 +3556,9 @@ namespace GitBench.Data.MigrationsPostgres
 
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("PullRequestId");
-
                     b.HasIndex("ResolvedById");
+
+                    b.HasIndex("PullRequestId", "AiFingerprint");
 
                     b.ToTable("PullRequestComments");
                 });
@@ -3276,6 +3840,51 @@ namespace GitBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("Repositories");
+                });
+
+            modelBuilder.Entity("GitBench.Data.RepositoryAiReviewSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("BlockOnUnresolvedFindings")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("FocusPrompt")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("IgnorePaths")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int>("MaxDiffChars")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Mode")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedById")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.ToTable("RepositoryAiReviewSettings");
                 });
 
             modelBuilder.Entity("GitBench.Data.RepositoryMirror", b =>
@@ -4318,6 +4927,9 @@ namespace GitBench.Data.MigrationsPostgres
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -4331,7 +4943,7 @@ namespace GitBench.Data.MigrationsPostgres
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<int>("ProjectId")
+                    b.Property<int?>("ProjectId")
                         .HasColumnType("integer");
 
                     b.Property<string>("Secret")
@@ -4347,6 +4959,8 @@ namespace GitBench.Data.MigrationsPostgres
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedById");
+
+                    b.HasIndex("GroupId");
 
                     b.HasIndex("ProjectId");
 
@@ -4797,6 +5411,21 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Navigation("Repository");
                 });
 
+            modelBuilder.Entity("GitBench.Data.ChatIntegrationOptOut", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.Webhook", null)
+                        .WithMany()
+                        .HasForeignKey("WebhookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.ChatUserLink", b =>
                 {
                     b.HasOne("GitBench.Data.User", "User")
@@ -5099,6 +5728,93 @@ namespace GitBench.Data.MigrationsPostgres
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GitBench.Data.FeatureFlag", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagChange", b =>
+                {
+                    b.HasOne("GitBench.Data.FeatureFlag", "Flag")
+                        .WithMany()
+                        .HasForeignKey("FlagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Flag");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagEnvironment", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagEnvironmentState", b =>
+                {
+                    b.HasOne("GitBench.Data.FlagEnvironment", "Environment")
+                        .WithMany()
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.FeatureFlag", "Flag")
+                        .WithMany("States")
+                        .HasForeignKey("FlagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("GitBench.Data.User", "UpdatedBy")
+                        .WithMany()
+                        .HasForeignKey("UpdatedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Environment");
+
+                    b.Navigation("Flag");
+
+                    b.Navigation("UpdatedBy");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagSdkKey", b =>
+                {
+                    b.HasOne("GitBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.FlagEnvironment", "Environment")
+                        .WithMany()
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("GitBench.Data.FlagSegment", b =>
+                {
+                    b.HasOne("GitBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.Group", b =>
                 {
                     b.HasOne("GitBench.Data.Group", "Parent")
@@ -5224,6 +5940,28 @@ namespace GitBench.Data.MigrationsPostgres
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueTriageItem", b =>
+                {
+                    b.HasOne("GitBench.Data.IssueTriageRun", "Run")
+                        .WithMany("Items")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("GitBench.Data.IssueTriageRun", b =>
+                {
+                    b.HasOne("GitBench.Data.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Issue");
                 });
 
             modelBuilder.Entity("GitBench.Data.IssueVersion", b =>
@@ -5404,6 +6142,35 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Navigation("Package");
 
                     b.Navigation("PublishedBy");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesDeployment", b =>
+                {
+                    b.HasOne("GitBench.Data.User", "DeployedBy")
+                        .WithMany()
+                        .HasForeignKey("DeployedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("GitBench.Data.PagesSite", "Site")
+                        .WithMany("Deployments")
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeployedBy");
+
+                    b.Navigation("Site");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesSite", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
                 });
 
             modelBuilder.Entity("GitBench.Data.PersonalAccessToken", b =>
@@ -5831,6 +6598,15 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("GitBench.Data.RepositoryAiReviewSettings", b =>
+                {
+                    b.HasOne("GitBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GitBench.Data.RepositoryMirror", b =>
                 {
                     b.HasOne("GitBench.Data.User", "CreatedBy")
@@ -6123,11 +6899,15 @@ namespace GitBench.Data.MigrationsPostgres
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("GitBench.Data.Group", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("GitBench.Data.Project", null)
                         .WithMany()
                         .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("GitBench.Data.WebhookDelivery", b =>
@@ -6275,6 +7055,11 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Navigation("Changes");
                 });
 
+            modelBuilder.Entity("GitBench.Data.FeatureFlag", b =>
+                {
+                    b.Navigation("States");
+                });
+
             modelBuilder.Entity("GitBench.Data.Group", b =>
                 {
                     b.Navigation("Children");
@@ -6297,6 +7082,11 @@ namespace GitBench.Data.MigrationsPostgres
                     b.Navigation("VersionLinks");
                 });
 
+            modelBuilder.Entity("GitBench.Data.IssueTriageRun", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("GitBench.Data.Milestone", b =>
                 {
                     b.Navigation("Issues");
@@ -6310,6 +7100,11 @@ namespace GitBench.Data.MigrationsPostgres
             modelBuilder.Entity("GitBench.Data.PackageVersion", b =>
                 {
                     b.Navigation("Files");
+                });
+
+            modelBuilder.Entity("GitBench.Data.PagesSite", b =>
+                {
+                    b.Navigation("Deployments");
                 });
 
             modelBuilder.Entity("GitBench.Data.Pipeline", b =>

@@ -459,7 +459,11 @@ namespace GitBench.Data.MigrationsPostgres
                     WikiEnabled = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
                     HoursPerDay = table.Column<int>(type: "integer", nullable: false, defaultValue: 8),
                     WorkbenchWbs = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    WorkbenchProjectCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true)
+                    WorkbenchProjectCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    ProductionEnvironment = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    DoraFailureWindowHours = table.Column<int>(type: "integer", nullable: false),
+                    AiTriageEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    AiTriageAutoApplyLabels = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -642,6 +646,88 @@ namespace GitBench.Data.MigrationsPostgres
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_DeployFreezeWindows_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FeatureFlags",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    Key = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    Name = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
+                    Description = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
+                    Type = table.Column<int>(type: "integer", nullable: false),
+                    OffValue = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
+                    IssueNumbers = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    IsArchived = table.Column<bool>(type: "boolean", nullable: false),
+                    ArchivedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedById = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FeatureFlags", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FeatureFlags_AspNetUsers_CreatedById",
+                        column: x => x.CreatedById,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_FeatureFlags_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FlagEnvironments",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    Name = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Version = table.Column<long>(type: "bigint", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlagEnvironments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FlagEnvironments_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FlagSegments",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    Key = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    Name = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
+                    Description = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
+                    MembersJson = table.Column<string>(type: "text", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlagSegments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FlagSegments_Projects_ProjectId",
                         column: x => x.ProjectId,
                         principalTable: "Projects",
                         principalColumn: "Id",
@@ -1123,7 +1209,7 @@ namespace GitBench.Data.MigrationsPostgres
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    ProjectId = table.Column<int>(type: "integer", nullable: true),
                     Url = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
                     Secret = table.Column<string>(type: "character varying(8000)", maxLength: 8000, nullable: false),
                     Events = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
@@ -1135,7 +1221,8 @@ namespace GitBench.Data.MigrationsPostgres
                     LastDeliveryAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     Kind = table.Column<int>(type: "integer", nullable: false),
                     Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    ChatSettings = table.Column<string>(type: "character varying(8000)", maxLength: 8000, nullable: true)
+                    ChatSettings = table.Column<string>(type: "character varying(8000)", maxLength: 8000, nullable: true),
+                    GroupId = table.Column<int>(type: "integer", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -1146,6 +1233,12 @@ namespace GitBench.Data.MigrationsPostgres
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Webhooks_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_Webhooks_Projects_ProjectId",
                         column: x => x.ProjectId,
@@ -1325,6 +1418,106 @@ namespace GitBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "FlagChanges",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    FlagId = table.Column<int>(type: "integer", nullable: false),
+                    EnvironmentId = table.Column<int>(type: "integer", nullable: true),
+                    EnvironmentName = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    ActorId = table.Column<int>(type: "integer", nullable: true),
+                    ActorName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    At = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Kind = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    OldValue = table.Column<string>(type: "character varying(8000)", maxLength: 8000, nullable: true),
+                    NewValue = table.Column<string>(type: "character varying(8000)", maxLength: 8000, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlagChanges", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FlagChanges_FeatureFlags_FlagId",
+                        column: x => x.FlagId,
+                        principalTable: "FeatureFlags",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FlagEnvironmentStates",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    FlagId = table.Column<int>(type: "integer", nullable: false),
+                    EnvironmentId = table.Column<int>(type: "integer", nullable: false),
+                    Enabled = table.Column<bool>(type: "boolean", nullable: false),
+                    DefaultValue = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
+                    RulesJson = table.Column<string>(type: "text", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedById = table.Column<int>(type: "integer", nullable: true),
+                    LastEvaluatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlagEnvironmentStates", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FlagEnvironmentStates_AspNetUsers_UpdatedById",
+                        column: x => x.UpdatedById,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_FlagEnvironmentStates_FeatureFlags_FlagId",
+                        column: x => x.FlagId,
+                        principalTable: "FeatureFlags",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_FlagEnvironmentStates_FlagEnvironments_EnvironmentId",
+                        column: x => x.EnvironmentId,
+                        principalTable: "FlagEnvironments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FlagSdkKeys",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    EnvironmentId = table.Column<int>(type: "integer", nullable: false),
+                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Kind = table.Column<int>(type: "integer", nullable: false),
+                    KeyHash = table.Column<byte[]>(type: "bytea", nullable: false),
+                    Prefix = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedById = table.Column<int>(type: "integer", nullable: true),
+                    RotatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    RevokedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastUsedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FlagSdkKeys", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FlagSdkKeys_AspNetUsers_CreatedById",
+                        column: x => x.CreatedById,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_FlagSdkKeys_FlagEnvironments_EnvironmentId",
+                        column: x => x.EnvironmentId,
+                        principalTable: "FlagEnvironments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "ContainerBlobs",
                 columns: table => new
                 {
@@ -1427,7 +1620,8 @@ namespace GitBench.Data.MigrationsPostgres
                     MergeQueueMaxBatch = table.Column<int>(type: "integer", nullable: false),
                     MergeQueueRequireCi = table.Column<bool>(type: "boolean", nullable: false),
                     MergeQueueStrategy = table.Column<int>(type: "integer", nullable: true),
-                    MergeQueueTimeoutMinutes = table.Column<int>(type: "integer", nullable: false)
+                    MergeQueueTimeoutMinutes = table.Column<int>(type: "integer", nullable: false),
+                    MergeQueueApprovalTimeoutMinutes = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -1581,6 +1775,32 @@ namespace GitBench.Data.MigrationsPostgres
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_LfsObjects_Repositories_RepositoryId",
+                        column: x => x.RepositoryId,
+                        principalTable: "Repositories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "PagesSites",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    RepositoryId = table.Column<int>(type: "integer", nullable: false),
+                    Enabled = table.Column<bool>(type: "boolean", nullable: false),
+                    Visibility = table.Column<int>(type: "integer", nullable: false),
+                    NotFound = table.Column<int>(type: "integer", nullable: false),
+                    ReviewSites = table.Column<bool>(type: "boolean", nullable: false),
+                    ReviewExpireDays = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PagesSites", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_PagesSites_Repositories_RepositoryId",
                         column: x => x.RepositoryId,
                         principalTable: "Repositories",
                         principalColumn: "Id",
@@ -1769,6 +1989,33 @@ namespace GitBench.Data.MigrationsPostgres
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_Releases_Repositories_RepositoryId",
+                        column: x => x.RepositoryId,
+                        principalTable: "Repositories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RepositoryAiReviewSettings",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    RepositoryId = table.Column<int>(type: "integer", nullable: false),
+                    Enabled = table.Column<bool>(type: "boolean", nullable: false),
+                    Mode = table.Column<int>(type: "integer", nullable: false),
+                    MaxDiffChars = table.Column<int>(type: "integer", nullable: false),
+                    IgnorePaths = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
+                    FocusPrompt = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
+                    BlockOnUnresolvedFindings = table.Column<bool>(type: "boolean", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedById = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RepositoryAiReviewSettings", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RepositoryAiReviewSettings_Repositories_RepositoryId",
                         column: x => x.RepositoryId,
                         principalTable: "Repositories",
                         principalColumn: "Id",
@@ -2016,6 +2263,34 @@ namespace GitBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "ChatIntegrationOptOuts",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    WebhookId = table.Column<int>(type: "integer", nullable: false),
+                    CreatedById = table.Column<int>(type: "integer", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ChatIntegrationOptOuts", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ChatIntegrationOptOuts_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ChatIntegrationOptOuts_Webhooks_WebhookId",
+                        column: x => x.WebhookId,
+                        principalTable: "Webhooks",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "WebhookDeliveries",
                 columns: table => new
                 {
@@ -2233,11 +2508,53 @@ namespace GitBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "PagesDeployments",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    SiteId = table.Column<int>(type: "integer", nullable: false),
+                    Slot = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    Version = table.Column<int>(type: "integer", nullable: false),
+                    Ref = table.Column<string>(type: "character varying(250)", maxLength: 250, nullable: false),
+                    CommitSha = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    PipelineId = table.Column<int>(type: "integer", nullable: true),
+                    JobId = table.Column<int>(type: "integer", nullable: true),
+                    DeployedById = table.Column<int>(type: "integer", nullable: true),
+                    Directory = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    FileCount = table.Column<int>(type: "integer", nullable: false),
+                    SizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsCurrent = table.Column<bool>(type: "boolean", nullable: false),
+                    IsRollback = table.Column<bool>(type: "boolean", nullable: false),
+                    ActivatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PagesDeployments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_PagesDeployments_AspNetUsers_DeployedById",
+                        column: x => x.DeployedById,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_PagesDeployments_PagesSites_SiteId",
+                        column: x => x.SiteId,
+                        principalTable: "PagesSites",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "AiReviews",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Backend = table.Column<string>(type: "character varying(60)", maxLength: 60, nullable: true),
+                    DiffChars = table.Column<int>(type: "integer", nullable: false),
                     PullRequestId = table.Column<int>(type: "integer", nullable: false),
                     HeadSha = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
@@ -2358,6 +2675,10 @@ namespace GitBench.Data.MigrationsPostgres
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    AiReviewId = table.Column<int>(type: "integer", nullable: true),
+                    AiSeverity = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    AiFingerprint = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: true),
+                    AiDismissed = table.Column<bool>(type: "boolean", nullable: false),
                     PullRequestId = table.Column<int>(type: "integer", nullable: false),
                     AuthorId = table.Column<int>(type: "integer", nullable: false),
                     Body = table.Column<string>(type: "text", nullable: false),
@@ -2741,6 +3062,32 @@ namespace GitBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "IssueTriageRuns",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    IssueId = table.Column<int>(type: "integer", nullable: false),
+                    Trigger = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    RequestedById = table.Column<int>(type: "integer", nullable: true),
+                    Status = table.Column<int>(type: "integer", nullable: false),
+                    Summary = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
+                    Error = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_IssueTriageRuns", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_IssueTriageRuns_Issues_IssueId",
+                        column: x => x.IssueId,
+                        principalTable: "Issues",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "IssueVersions",
                 columns: table => new
                 {
@@ -2865,6 +3212,9 @@ namespace GitBench.Data.MigrationsPostgres
                     RemovedById = table.Column<int>(type: "integer", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     TestingSince = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    AwaitingApproval = table.Column<bool>(type: "boolean", nullable: false),
+                    AwaitingApprovalSince = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeleteSourceBranch = table.Column<bool>(type: "boolean", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     FinishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
@@ -2979,6 +3329,32 @@ namespace GitBench.Data.MigrationsPostgres
                         name: "FK_SecurityScans_Repositories_RepositoryId",
                         column: x => x.RepositoryId,
                         principalTable: "Repositories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "IssueTriageItems",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    RunId = table.Column<int>(type: "integer", nullable: false),
+                    Kind = table.Column<int>(type: "integer", nullable: false),
+                    TargetId = table.Column<int>(type: "integer", nullable: true),
+                    Value = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
+                    Reason = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    State = table.Column<int>(type: "integer", nullable: false),
+                    ResolvedById = table.Column<int>(type: "integer", nullable: true),
+                    ResolvedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_IssueTriageItems", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_IssueTriageItems_IssueTriageRuns_RunId",
+                        column: x => x.RunId,
+                        principalTable: "IssueTriageRuns",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -3345,6 +3721,17 @@ namespace GitBench.Data.MigrationsPostgres
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_ChatIntegrationOptOuts_ProjectId_WebhookId",
+                table: "ChatIntegrationOptOuts",
+                columns: new[] { "ProjectId", "WebhookId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ChatIntegrationOptOuts_WebhookId",
+                table: "ChatIntegrationOptOuts",
+                column: "WebhookId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ChatUserLinks_Nonce",
                 table: "ChatUserLinks",
                 column: "Nonce",
@@ -3571,6 +3958,66 @@ namespace GitBench.Data.MigrationsPostgres
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_FeatureFlags_CreatedById",
+                table: "FeatureFlags",
+                column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FeatureFlags_ProjectId_Key",
+                table: "FeatureFlags",
+                columns: new[] { "ProjectId", "Key" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagChanges_FlagId_At",
+                table: "FlagChanges",
+                columns: new[] { "FlagId", "At" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagEnvironments_ProjectId_Name",
+                table: "FlagEnvironments",
+                columns: new[] { "ProjectId", "Name" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagEnvironmentStates_EnvironmentId",
+                table: "FlagEnvironmentStates",
+                column: "EnvironmentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagEnvironmentStates_FlagId_EnvironmentId",
+                table: "FlagEnvironmentStates",
+                columns: new[] { "FlagId", "EnvironmentId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagEnvironmentStates_UpdatedById",
+                table: "FlagEnvironmentStates",
+                column: "UpdatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagSdkKeys_CreatedById",
+                table: "FlagSdkKeys",
+                column: "CreatedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagSdkKeys_EnvironmentId",
+                table: "FlagSdkKeys",
+                column: "EnvironmentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagSdkKeys_KeyHash",
+                table: "FlagSdkKeys",
+                column: "KeyHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FlagSegments_ProjectId_Key",
+                table: "FlagSegments",
+                columns: new[] { "ProjectId", "Key" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_GroupMembers_GroupId_UserId",
                 table: "GroupMembers",
                 columns: new[] { "GroupId", "UserId" },
@@ -3669,6 +4116,16 @@ namespace GitBench.Data.MigrationsPostgres
                 name: "IX_IssueTemplates_ProjectId",
                 table: "IssueTemplates",
                 column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_IssueTriageItems_RunId",
+                table: "IssueTriageItems",
+                column: "RunId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_IssueTriageRuns_IssueId_CreatedAt",
+                table: "IssueTriageRuns",
+                columns: new[] { "IssueId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_IssueVersions_VersionId_Kind",
@@ -3797,6 +4254,33 @@ namespace GitBench.Data.MigrationsPostgres
                 name: "IX_PackageVersions_PublishedById",
                 table: "PackageVersions",
                 column: "PublishedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PagesDeployments_DeployedById",
+                table: "PagesDeployments",
+                column: "DeployedById");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PagesDeployments_ExpiresAt",
+                table: "PagesDeployments",
+                column: "ExpiresAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PagesDeployments_SiteId_Slot_IsCurrent",
+                table: "PagesDeployments",
+                columns: new[] { "SiteId", "Slot", "IsCurrent" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PagesDeployments_SiteId_Slot_Version",
+                table: "PagesDeployments",
+                columns: new[] { "SiteId", "Slot", "Version" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PagesSites_RepositoryId",
+                table: "PagesSites",
+                column: "RepositoryId",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_PersonalAccessTokens_TokenHash",
@@ -3982,9 +4466,9 @@ namespace GitBench.Data.MigrationsPostgres
                 column: "ParentId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_PullRequestComments_PullRequestId",
+                name: "IX_PullRequestComments_PullRequestId_AiFingerprint",
                 table: "PullRequestComments",
-                column: "PullRequestId");
+                columns: new[] { "PullRequestId", "AiFingerprint" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_PullRequestComments_ResolvedById",
@@ -4095,6 +4579,12 @@ namespace GitBench.Data.MigrationsPostgres
                 name: "IX_Repositories_ProjectId_Slug",
                 table: "Repositories",
                 columns: new[] { "ProjectId", "Slug" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RepositoryAiReviewSettings_RepositoryId",
+                table: "RepositoryAiReviewSettings",
+                column: "RepositoryId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -4345,6 +4835,11 @@ namespace GitBench.Data.MigrationsPostgres
                 column: "CreatedById");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Webhooks_GroupId",
+                table: "Webhooks",
+                column: "GroupId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Webhooks_ProjectId",
                 table: "Webhooks",
                 column: "ProjectId");
@@ -4423,6 +4918,9 @@ namespace GitBench.Data.MigrationsPostgres
                 name: "BranchProtectionRules");
 
             migrationBuilder.DropTable(
+                name: "ChatIntegrationOptOuts");
+
+            migrationBuilder.DropTable(
                 name: "ChatUserLinks");
 
             migrationBuilder.DropTable(
@@ -4465,6 +4963,18 @@ namespace GitBench.Data.MigrationsPostgres
                 name: "ExternalGroupMemberships");
 
             migrationBuilder.DropTable(
+                name: "FlagChanges");
+
+            migrationBuilder.DropTable(
+                name: "FlagEnvironmentStates");
+
+            migrationBuilder.DropTable(
+                name: "FlagSdkKeys");
+
+            migrationBuilder.DropTable(
+                name: "FlagSegments");
+
+            migrationBuilder.DropTable(
                 name: "GroupMembers");
 
             migrationBuilder.DropTable(
@@ -4481,6 +4991,9 @@ namespace GitBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "IssueTemplates");
+
+            migrationBuilder.DropTable(
+                name: "IssueTriageItems");
 
             migrationBuilder.DropTable(
                 name: "IssueVersions");
@@ -4502,6 +5015,9 @@ namespace GitBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "PackageFiles");
+
+            migrationBuilder.DropTable(
+                name: "PagesDeployments");
 
             migrationBuilder.DropTable(
                 name: "PersonalAccessTokens");
@@ -4544,6 +5060,9 @@ namespace GitBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "ReleaseAssets");
+
+            migrationBuilder.DropTable(
+                name: "RepositoryAiReviewSettings");
 
             migrationBuilder.DropTable(
                 name: "RepositoryMirrors");
@@ -4615,16 +5134,28 @@ namespace GitBench.Data.MigrationsPostgres
                 name: "EditorWorkspaces");
 
             migrationBuilder.DropTable(
+                name: "FeatureFlags");
+
+            migrationBuilder.DropTable(
+                name: "FlagEnvironments");
+
+            migrationBuilder.DropTable(
                 name: "ProjectComponents");
 
             migrationBuilder.DropTable(
                 name: "Labels");
 
             migrationBuilder.DropTable(
+                name: "IssueTriageRuns");
+
+            migrationBuilder.DropTable(
                 name: "ProjectVersions");
 
             migrationBuilder.DropTable(
                 name: "PackageVersions");
+
+            migrationBuilder.DropTable(
+                name: "PagesSites");
 
             migrationBuilder.DropTable(
                 name: "PipelineSteps");
