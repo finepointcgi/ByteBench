@@ -153,7 +153,7 @@ public class SecurityCiFileTests
         Assert.Contains("nightowl.md", job.Artifacts.Paths);
         Assert.Equal(CiArtifactsWhen.Always, job.Artifacts.When); // a failed gate still publishes its report
         var run = job.Steps.Single().Run;
-        Assert.Contains("nightowl\" scan", run);
+        Assert.Contains("nightowl scan \"${NIGHTOWL_PATH:-.}\"", run);
         Assert.Contains("--format json --output nightowl.json", run);
         Assert.Contains("--sarif-output nightowl.sarif", run);
         Assert.Contains("--fail-on $NIGHTOWL_FAIL_ON", run);
@@ -161,6 +161,57 @@ public class SecurityCiFileTests
         // Round-trips through the job's stored extras (what the runner reads).
         var extras = CiJobExtras.Parse(CiJobExtras.Serialize(job));
         Assert.Equal("nightowl.json", extras.Artifacts!.Reports!["nightowl"]);
+    }
+
+    /// <summary>Runs the template's script with <c>sh</c> and a PATH holding only stubs (no install, no docker).</summary>
+    private static (int Exit, string Output, string Args) RunTemplate(params string[] stubs)
+    {
+        var dir = Directory.CreateTempSubdirectory("nightowl-tpl").FullName;
+        try
+        {
+            var bin = Directory.CreateDirectory(Path.Combine(dir, "bin")).FullName;
+            foreach (var stub in stubs)
+            {
+                var body = stub == "nightowl" ? "#!/bin/sh\necho \"$@\" > \"$PWD/args.txt\"\n" : "#!/bin/sh\n";
+                var path = Path.Combine(bin, stub);
+                File.WriteAllText(path, body);
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+            var run = CiFile.Parse("include: nightowl\n").Definition!.Jobs.Single(j => j.Name == "nightowl").Steps.Single().Run;
+            File.WriteAllText(Path.Combine(dir, "step.sh"), run);
+            var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+            psi.ArgumentList.Add("-e");
+            psi.ArgumentList.Add("step.sh");
+            psi.Environment["PATH"] = bin; // only the stubs; /bin/sh builtins do the rest
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            var output = p.StandardError.ReadToEnd() + p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+            var argsFile = Path.Combine(dir, "args.txt");
+            return (p.ExitCode, output, File.Exists(argsFile) ? File.ReadAllText(argsFile) : "");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void Template_fails_fast_with_instructions_when_the_image_has_no_engines()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (exit, output, args) = RunTemplate("nightowl"); // nightowl present (no install), but no docker and no engines
+        Assert.Equal(2, exit);
+        Assert.Contains("no scan engines", output);
+        Assert.Contains("runner image", output);
+        Assert.Equal("", args); // the scan never started
+    }
+
+    [Fact]
+    public void Template_skips_the_install_and_scans_when_the_image_has_nightowl_and_an_engine()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (exit, _, args) = RunTemplate("nightowl", "opengrep");
+        Assert.Equal(0, exit);
+        Assert.StartsWith("scan .", args);
+        Assert.Contains("--no-update", args);
+        Assert.Contains("--output nightowl.json", args);
     }
 
     [Fact]
