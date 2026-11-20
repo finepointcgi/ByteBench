@@ -32,4 +32,18 @@
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
+  <!--
+    One-time cleanup for a checkout that was built before the product was renamed from GitBench. The old bin/obj output makes the
+    incremental build keep the previous component style ids, so every page loses its styling. The old project name leaves
+    obj/GitBench.csproj.nuget.g.props; the target removes the compile output and those files, so it only ever runs once.
+  -->
+  <Target Name="CleanOutputFromBeforeTheRename" BeforeTargets="BeforeBuild;BeforeRebuild" Condition="Exists('$(MSBuildProjectDirectory)/obj/GitBench.csproj.nuget.g.props')">
+    <Message Importance="high" Text="Removing build output from before the rename to ByteBench (one time)." />
+    <ItemGroup>
+      <_PreRenameFiles Include="$(MSBuildProjectDirectory)/obj/GitBench.*" />
+    </ItemGroup>
+    <RemoveDir Directories="$(MSBuildProjectDirectory)/obj/Debug;$(MSBuildProjectDirectory)/obj/Release;$(MSBuildProjectDirectory)/bin" />
+    <Delete Files="@(_PreRenameFiles)" />
+  </Target>
+
 </Project>
