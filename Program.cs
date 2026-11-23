@@ -88,6 +88,7 @@ builder.Services.AddCiPipelines(builder.Configuration);
 ByteBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanning(builder.Services, builder.Configuration); // Night Owl reports, Security page, merge check
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<ByteBench.Services.Code.CodeSearchService>();
+ByteBench.Services.Code.BlameServiceCollectionExtensions.AddBlame(builder.Services, builder.Configuration); // blame view + API
 builder.Services.AddWebhooks(builder.Configuration);
 ByteBench.Services.ChatIntegrations.ChatServiceCollectionExtensions.AddChatIntegrations(builder.Services, builder.Configuration); // Slack & Teams (on the webhook pipeline), Slack app
 builder.Services.AddScoped<LinkedWorkService>(); // linked work: sub-tasks, epics, issue links

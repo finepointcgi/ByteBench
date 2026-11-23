@@ -1,0 +1,12 @@
+.repo-path { font-size: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.repo-path .sep { color: var(--muted); }
+.toolbar-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.source-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.file-view-head {
+    display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--mud-palette-action-default-hover);
+    border-bottom: 1px solid var(--border); min-height: 44px; flex-wrap: wrap;
+}
+::deep .tree-icon { color: var(--muted); }
+.blame-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.file-view .code-table { display: block; overflow-x: auto; }
+@media (max-width: 600px) { .toolbar-actions { margin-left: 0; } }

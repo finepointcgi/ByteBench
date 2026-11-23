@@ -1,0 +1,169 @@
+@page "/p/{Key}/repos/{Slug}/blame/{Rev}/{*FilePath}"
+@inherits RepoPageBase
+@using ByteBench.Services.Code
+@inject BlameService Blame
+
+<PageTitle>Blame · @FileName · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="source" Ref="@Rev" />
+
+    <div class="repo-toolbar">
+        <div class="repo-path mono">
+            <a href="@RepoUrls.Source(Repo, Rev)">@Repo.Slug</a>
+            @foreach (var (name, full) in Crumbs)
+            {
+                <span class="sep">/</span>
+                @if (full == CleanPath) { <b>@name</b> }
+                else { <a href="@RepoUrls.Source(Repo, Rev, full)">@name</a> }
+            }
+            <span class="muted small gb-nowrap">at <span class="mono">@(IsSha ? Rev[..Math.Min(7, Rev.Length)] : Rev)</span></span>
+        </div>
+        <div class="toolbar-actions">
+            <MudButton Href="@RepoUrls.Source(Repo, Rev, CleanPath)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Code">Code</MudButton>
+            <MudButton Href="@RepoUrls.Commits(Repo, Rev, CleanPath)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.History">History</MudButton>
+        </div>
+    </div>
+
+    @if (data == null)
+    {
+        <div class="empty">Loading…</div>
+    }
+    else if (data.Status == BlameStatus.NotFound)
+    {
+        <div class="empty">
+            <b>@CleanPath</b> doesn't exist at <span class="mono">@Rev</span>.
+            <div class="mt-2"><a href="@RepoUrls.Source(Repo)">Back to @Repo.DefaultBranch</a></div>
+        </div>
+    }
+    else
+    {
+        <div class="source-box">
+            <div class="file-view">
+                <div class="file-view-head">
+                    <MudIcon Icon="@Icons.Material.Outlined.InsertDriveFile" Size="Size.Small" Class="tree-icon" />
+                    <span class="mono gb-truncate"><b>@FileName</b></span>
+                    <span class="muted small gb-nowrap">
+                        @if (data.Status == BlameStatus.Ok) { <span>@data.Lines.Length lines · @data.Commits.Count commit@(data.Commits.Count == 1 ? "" : "s") · </span> }
+                        @FormatSize(data.Size)
+                    </span>
+                    <span class="blame-legend muted small" title="Colour shows the age of the last change to each line">
+                        newest <span class="blame-legend-bar"></span> oldest
+                    </span>
+                </div>
+                @if (data.Status == BlameStatus.Binary)
+                {
+                    <div class="diff-note">Binary file: there is no line-by-line blame. <a href="@RepoUrls.Commits(Repo, Rev, CleanPath)">View its history</a>.</div>
+                }
+                else if (data.Status == BlameStatus.TooLarge)
+                {
+                    <div class="diff-note">
+                        This file is too large to blame (@FormatSize(data.Size)).
+                        <a href="@RepoUrls.Commits(Repo, Rev, CleanPath)">View its history</a> or <a href="@RepoUrls.Source(Repo, Rev, CleanPath)">the file itself</a>.
+                    </div>
+                }
+                else
+                {
+                    <table class="code-table blame-table mono" data-linkable data-hl-lang="@CodeLanguages.ForFile(data.Path, data.Size)" @key="data.Sha">
+                        @foreach (var range in data.Ranges)
+                        {
+                            var c = data.Commits[range.CommitIndex];
+                            var age = AgeBucket(c);
+                            for (var i = 0; i < range.LineCount; i++)
+                            {
+                                var n = range.StartLine + i;
+                                <tr id="L@(n)" class="blame-row @(i == 0 ? "blame-first" : "")">
+                                    <td class="blame-age age-@age"></td>
+                                    @if (i == 0)
+                                    {
+                                        <td class="blame-meta" rowspan="@range.LineCount" title="@Tooltip(c)">
+                                            <GitAvatar Name="@c.AuthorName" Email="@c.AuthorEmail" Users="UsersByEmail" Size="18" />
+                                            <span class="blame-author gb-truncate">@c.AuthorName</span>
+                                            <a class="sha-pill blame-sha" href="@RepoUrls.Commit(Repo, c.Sha)">@c.ShortSha</a>
+                                            <span class="blame-when muted">@Display.Ago(c.When.UtcDateTime)</span>
+                                            @if (c.ParentSha != null)
+                                            {
+                                                <a class="blame-back" href="@CodeUrls.Blame(Repo, c.ParentSha, c.ParentPath!)"
+                                                   title="View blame before this commit (@c.ShortSha)" aria-label="View blame before commit @c.ShortSha">&#x21B6;</a>
+                                            }
+                                        </td>
+                                    }
+                                    <td class="ln"><a class="ln-link" href="@(LineLinkBase)#L@(n)" data-line="@n">@n</a></td>
+                                    <td class="code">@CodeLanguages.Line(data.Lines[n - 1])</td>
+                                </tr>
+                            }
+                        }
+                    </table>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Rev { get; set; } = "";
+    [Parameter] public string? FilePath { get; set; }
+
+    private BlameData? data;
+    private DateTimeOffset minDate, maxDate;
+
+    private string? CleanPath => string.IsNullOrEmpty(FilePath?.Trim('/')) ? null : FilePath.Trim('/');
+    private string FileName => CleanPath?.Split('/').Last() ?? "";
+    private bool IsSha => Rev.Length >= 7 && Rev.All(Uri.IsHexDigit);
+
+    /// <summary>This page's URL without a fragment: line links must be absolute because of &lt;base href="/"&gt;.</summary>
+    private string LineLinkBase
+    {
+        get
+        {
+            var rel = Nav.ToBaseRelativePath(Nav.Uri);
+            var i = rel.IndexOf('#');
+            return "/" + (i >= 0 ? rel[..i] : rel);
+        }
+    }
+
+    private IEnumerable<(string Name, string Full)> Crumbs
+    {
+        get
+        {
+            if (CleanPath == null) yield break;
+            var parts = CleanPath.Split('/');
+            for (var i = 0; i < parts.Length; i++) yield return (parts[i], string.Join('/', parts[..(i + 1)]));
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        data = null;
+        data = await Blame.BlameAsync(Repo!, Rev, CleanPath ?? "");
+        if (data.Commits.Count > 0)
+        {
+            minDate = data.Commits.Min(c => c.When);
+            maxDate = data.Commits.Max(c => c.When);
+        }
+    }
+
+    /// <summary>0 (newest change in this file) .. 9 (oldest), scaled between the file's own oldest and newest commits.</summary>
+    private int AgeBucket(BlameCommitInfo c)
+    {
+        var span = (maxDate - minDate).TotalSeconds;
+        if (span <= 0) return 0;
+        return (int)Math.Clamp(Math.Round((maxDate - c.When).TotalSeconds / span * 9), 0, 9);
+    }
+
+    private static string Tooltip(BlameCommitInfo c) =>
+        $"{c.Subject}\n{c.AuthorName} · {c.When.UtcDateTime:yyyy-MM-dd HH:mm} UTC · {c.ShortSha}" + (c.ParentSha == null ? "\n(first version of this file)" : "");
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024):0.#} MB",
+    };
+}

@@ -37,6 +37,11 @@ else if (Repo != null)
                 </MudTooltip>
             }
             <MudButton Href="@RepoUrls.Commits(Repo, Ref, CleanPath)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.History">History</MudButton>
+            @if (blob is { IsBinary: false, TooLarge: false } && lfsPointer == null)
+            {
+                <MudButton Href="@ByteBench.Services.Code.CodeUrls.Blame(Repo, CurrentRef, blob.Path)" Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.Person">Blame</MudButton>
+            }
             @if (!IsTag && branches.Any(b => b.Name == CurrentRef))
             {
                 <MudButton Href="@RepoUrls.Editor(Repo, CurrentRef, blob != null ? CleanPath : null)" Variant="Variant.Outlined" Size="Size.Small"

@@ -160,3 +160,32 @@ a.issue-key-chip:hover { text-decoration: none; background: rgba(var(--mud-palet
 /* PrStateBadge (MudChip) */
 .mud-chip.pr-state { font-weight: 600; text-transform: uppercase; letter-spacing: .02em; font-size: 11.5px; }
 .mud-chip.pr-state-compact { height: 18px; font-size: 10px; padding: 0 6px; flex-shrink: 0; }
+
+/* ----- Blame view: author / commit column grouped per commit, with an age gutter ----- */
+:root { --blame-age-hue: light-dark(#d97706, #f0883e); }
+.blame-table td.blame-age { width: 4px; min-width: 4px; padding: 0; }
+.blame-table .age-0 { background: color-mix(in srgb, var(--blame-age-hue) 95%, transparent); }
+.blame-table .age-1 { background: color-mix(in srgb, var(--blame-age-hue) 82%, transparent); }
+.blame-table .age-2 { background: color-mix(in srgb, var(--blame-age-hue) 70%, transparent); }
+.blame-table .age-3 { background: color-mix(in srgb, var(--blame-age-hue) 58%, transparent); }
+.blame-table .age-4 { background: color-mix(in srgb, var(--blame-age-hue) 47%, transparent); }
+.blame-table .age-5 { background: color-mix(in srgb, var(--blame-age-hue) 38%, transparent); }
+.blame-table .age-6 { background: color-mix(in srgb, var(--blame-age-hue) 30%, transparent); }
+.blame-table .age-7 { background: color-mix(in srgb, var(--blame-age-hue) 22%, transparent); }
+.blame-table .age-8 { background: color-mix(in srgb, var(--blame-age-hue) 15%, transparent); }
+.blame-table .age-9 { background: color-mix(in srgb, var(--blame-age-hue) 8%, transparent); }
+.blame-table td.blame-meta {
+    width: 1%; min-width: 300px; max-width: 360px; padding: 2px 10px; vertical-align: top; white-space: nowrap; font-size: 12px;
+    border-right: 1px solid var(--border); font-family: var(--mud-typography-default-family, inherit);
+}
+.blame-table td.blame-meta > * { vertical-align: middle; }
+.blame-author { display: inline-block; max-width: 110px; overflow: hidden; text-overflow: ellipsis; margin: 0 6px; }
+.blame-sha { margin-right: 6px; font-family: ui-monospace, monospace; }
+.blame-back { margin-left: 6px; text-decoration: none; color: var(--muted); font-size: 14px; }
+.blame-back:hover { color: var(--text); }
+.blame-table tr.blame-first td { border-top: 1px solid var(--border); }
+.blame-table tr:first-child td { border-top: none; }
+.blame-table tr:hover td.blame-meta { background: transparent; }
+.blame-legend-bar { display: inline-block; width: 64px; height: 8px; border-radius: 4px;
+    background: linear-gradient(to right, color-mix(in srgb, var(--blame-age-hue) 95%, transparent), color-mix(in srgb, var(--blame-age-hue) 8%, transparent)); }
+@media (max-width: 700px) { .blame-table td.blame-meta { min-width: 0; max-width: 150px; overflow: hidden; } .blame-when, .blame-author { display: none; } }
