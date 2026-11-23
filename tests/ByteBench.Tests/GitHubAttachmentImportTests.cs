@@ -102,7 +102,7 @@ public class GitHubAttachmentImportTests : IClassFixture<GitHubAttachmentApp>, I
         Assert.Contains($"[trace](/attachments/{trace.Id}/trace.log)", issue.Description);
         Assert.Contains($"old /attachments/{old.Id}/old.png and", issue.Description);
         Assert.Contains("https://example.com/not-an-upload.png", issue.Description);   // other addresses are left alone
-        Assert.DoesNotContain("user-attachments", issue.Description.Replace("Imported from", ""));
+        Assert.DoesNotContain("user-attachments", issue.Description!.Replace("Imported from", ""));
         var first = issue.Comments.Single(c => c.Body.StartsWith("Again"));
         Assert.Contains($"![shot](/attachments/{shot.Id}/aaaa-bbbb.png)", first.Body);
         Assert.Contains("[big](https://github.com/user-attachments/files/9/big.zip)", first.Body);         // too big: link stays
