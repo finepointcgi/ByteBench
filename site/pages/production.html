@@ -109,10 +109,51 @@ ConnectionStrings__Default="Host=postgres;Database=bytebench;Username=bytebench;
 <ul>
   <li>With compose: <code>docker compose --profile postgres up -d</code> starts the optional <code>postgres:17-alpine</code> service. Uncomment the three <code>Database__Provider</code> lines and <code>depends_on</code> in <code>docker-compose.yml</code>, and set <code>BYTEBENCH_DB_PASSWORD</code> in your environment.</li>
   <li>Migrations run at start and create the database if the role may <code>CREATE DATABASE</code>.</li>
-  <li><strong>There is no data migration from an existing SQLite database.</strong> Start a new installation on PostgreSQL, or stay on SQLite.</li>
+  <li>An existing SQLite database can be moved into PostgreSQL with <code>migrate-db</code>: see <a href="#sqlite-to-postgres">Moving from SQLite to PostgreSQL</a>.</li>
   <li>Backups on PostgreSQL use <code>pg_dump</code> and <code>pg_restore</code> (in the image) and restore only into the same provider.</li>
   <li>Npgsql pools connections (default 100): size it against <code>max_connections</code>.</li>
   <li>Failover, replicas and load were not tested; ByteBench is still one instance.</li>
+</ul>
+
+<h3 id="sqlite-to-postgres">Moving from SQLite to PostgreSQL</h3>
+<p><code>migrate-db</code> copies a ByteBench SQLite database into PostgreSQL, keeping every id, and checks the result. Like <code>backup</code> and <code>restore</code> it runs before the web server starts and needs no configuration of its own: the two databases are given on the command line.</p>
+<pre><code>dotnet ByteBench.dll migrate-db \
+  --from "/data/db/bytebench.db" \
+  --to "Host=db;Database=bytebench;Username=bytebench;Password=..." \
+  [--dry-run] [--verify] [--batch-size 1000] [--force]</code></pre>
+<ul>
+  <li><code>--from</code> is the SQLite file or a connection string (<code>Data Source=...</code>). It is opened read-only and never changed.</li>
+  <li><code>--to</code> is an Npgsql connection string. The schema is created or upgraded with the PostgreSQL migrations; if the database does not exist yet, the role needs <code>CREATE DATABASE</code>.</li>
+  <li><code>--dry-run</code> reads the whole source and checks that every value converts (dates, booleans, enums, long text, collections), then stops. It writes nothing and does not contact the target.</li>
+  <li><code>--verify</code> afterwards compares, for every table, the row count and a checksum over every column of every row, and checks that each id sequence will hand out ids above the copied ones. Any difference prints the table and exits with 1.</li>
+  <li><code>--batch-size</code> is the number of rows per bulk insert (default 1000).</li>
+  <li><code>--force</code> allows a target that already holds ByteBench data: ByteBench's own tables are emptied first. Other tables in that database are not touched. Without it a non-empty target is refused.</li>
+  <li>Exit code 0 means success, 1 a refusal, a failure or a verification mismatch, 2 bad arguments. Progress and the row count of every table are printed; the connection string's password never is.</li>
+</ul>
+<p><strong>How it works.</strong> The tables and columns come from ByteBench's own data model, not from a hand-written list, so tables added by later versions are included automatically. Tables are copied in foreign-key order, in one PostgreSQL transaction: if anything fails, nothing is committed and the target is as empty as before the run. Self-references (a sub-task's parent) and circular references are loaded in two passes: the reference is written as empty first and filled in when every row exists. Dates become <code>timestamptz</code> (stored as UTC), booleans, enums and numbers keep their values, and lists such as label ids become PostgreSQL arrays. Afterwards every identity sequence is moved to the highest id plus one.</p>
+<p><strong>Before it copies anything</strong> it refuses a source whose migration history is not at this version's latest migration (the message says to start the new version once against the SQLite file, which applies the migrations, then stop it) and a source with rows that reference missing rows, which PostgreSQL would reject. The target's <code>__EFMigrationsHistory</code> is the one written by the PostgreSQL migrations (they have their own ids, so the SQLite history cannot be copied); it always matches the schema that was created.</p>
+
+<h4 id="sqlite-to-postgres-cutover">Cut-over steps</h4>
+<ol>
+  <li><strong>Upgrade first.</strong> Start the ByteBench version you are moving with, still on SQLite, so the database is at its latest migration, then stop it.</li>
+  <li><strong>Stop ByteBench</strong> (<code>docker compose stop bytebench</code>). Nothing may write to the SQLite file while it is copied.</li>
+  <li><strong>Back up</strong> everything: <code>dotnet ByteBench.dll backup</code> (or <code>docker compose run --rm bytebench backup</code>). That archive is your way back.</li>
+  <li><strong>Create an empty PostgreSQL database and role</strong> (or let ByteBench create the database). With compose: <code>docker compose --profile postgres up -d postgres</code>.</li>
+  <li><strong>Rehearse:</strong> run <code>migrate-db --dry-run</code>. Fix whatever it reports.</li>
+  <li><strong>Copy:</strong> run <code>migrate-db --verify</code> (in Docker: <code>docker compose run --rm bytebench migrate-db --from /data/db/bytebench.db --to "Host=postgres;Database=bytebench;Username=bytebench;Password=..." --verify</code>, with the SQLite volume still mounted). Wait for "Verification passed".</li>
+  <li><strong>Switch the configuration:</strong> <code>Database__Provider=Postgres</code> and <code>ConnectionStrings__Default="Host=...;Database=bytebench;..."</code> (the three commented lines in <code>docker-compose.yml</code>).</li>
+  <li><strong>Start ByteBench</strong> and check <code>/health/ready</code>, sign in, open a project and an old issue, and look at <code>/admin/system</code>. Keep the SQLite file and the backup for a while.</li>
+</ol>
+<p>To go back, stop ByteBench, set <code>Database__Provider=Sqlite</code> and the old connection string again: the SQLite file is exactly as it was, but changes made on PostgreSQL are not in it.</p>
+
+<h4 id="sqlite-to-postgres-not-copied">What is not copied</h4>
+<ul>
+  <li><strong>Only the database moves.</strong> Bare Git repositories, attachments and release assets, packages, LFS objects, Pages sites and the CI artifacts live on disk and are untouched. Keep the same <code>Git:RepositoryRoot</code>, <code>Attachments:Root</code>, <code>Packages:Root</code>, <code>Lfs:Root</code> and <code>Pages:Root</code>.</li>
+  <li><strong>Keep the Data Protection keys</strong> (<code>DataProtection:KeysPath</code>, and the certificate if you use one). Webhook secrets, CI variables, chat webhook URLs and similar values are stored encrypted in the database and are copied as they are: they stay readable only while the same key ring is used. New keys would sign everyone out and leave those secrets unreadable.</li>
+  <li><strong>Personal access tokens, passwords and sign-in sessions</strong> are copied (as hashes) and keep working.</li>
+  <li>Backups made on SQLite restore only into SQLite. Take a new backup after the move.</li>
+  <li>Sub-microsecond parts of timestamps are rounded away (PostgreSQL stores microseconds); the checksum accounts for that.</li>
+  <li>Text sorting follows PostgreSQL's collation, and NUL characters (which PostgreSQL cannot store) are refused rather than dropped: the message names the table, column and row.</li>
 </ul>
 
 <h2 id="data-protection">Data Protection keys</h2>

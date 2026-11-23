@@ -1840,11 +1840,25 @@ ConnectionStrings__Default="Host=db;Database=bytebench;Username=bytebench;Passwo
 
   The whole suite passes on PostgreSQL 17 except that the backup round-trip tests return early there (they need the PostgreSQL client tools; the Postgres backup and restore was checked by hand, see below). Interactive pages that build their form model after an `await` need a `null` guard, because SQLite answers synchronously and Npgsql doesn't (the profile page had the bug).
 - **Not covered.**
-  - There is **no data migration from an existing SQLite database**. Start a new installation on PostgreSQL, or keep SQLite.
+  - An existing SQLite database moves over with `migrate-db`, see below. Backups made on SQLite still restore only into SQLite.
   - Backups need `pg_dump`/`pg_restore` (the Docker image has them) and only restore into the same provider.
   - Text sort order follows the database's collation (SQLite sorts by bytes). List pages that sort by a nullable column outside GQL may place empty values differently.
   - Connection pooling is Npgsql's (`Maximum Pool Size`, default 100); size it for your PostgreSQL `max_connections`.
   - Failover, replicas and load were not tested. ByteBench is still a single instance: its queues are in-process.
+
+#### Moving from SQLite to PostgreSQL
+
+```bash
+dotnet ByteBench.dll migrate-db --from "/data/db/bytebench.db" \
+  --to "Host=db;Database=bytebench;Username=bytebench;Password=…" [--dry-run] [--verify] [--batch-size N] [--force]
+```
+
+Handled before the web host starts, like `backup` and `restore`; exit code 0 ok, 1 refused/failed/verification mismatch, 2 bad arguments; the password is never printed.
+
+- **What it does.** Reads the SQLite file read-only through the `AppDbContext` model (so new tables are covered automatically), creates or upgrades the target with the PostgreSQL migrations, then copies every table in foreign-key order with bulk inserts in one transaction (all or nothing), keeping ids. Self-references and circular foreign keys are loaded in two passes (written empty, filled in afterwards). Dates become UTC `timestamptz`, `List<int>`-style columns become arrays, and every identity sequence is moved to max(id)+1.
+- **Refuses** a source that is not at this version's latest migration (start the new version once against the SQLite file first), a source with orphaned rows, and a non-empty target unless `--force` (which empties only ByteBench's tables). `--dry-run` converts everything without writing or contacting the target. `--verify` compares row counts and a per-table checksum of every column (order-independent, microsecond precision) and checks the sequences.
+- **Not copied:** bare repositories, attachments, packages, LFS, pages and CI artifacts stay on disk and are used as they are. Keep the Data Protection keys (`DataProtection:KeysPath`), otherwise encrypted webhook and CI secrets become unreadable. The target's `__EFMigrationsHistory` comes from the PostgreSQL migrations, not from the SQLite history.
+- **Cut-over:** start the new version once on SQLite, stop ByteBench, `backup`, `migrate-db --dry-run`, `migrate-db --verify`, set `Database__Provider=Postgres` and `ConnectionStrings__Default`, start, check `/health/ready` and a few pages. Keep the SQLite file and backup for a while. Details: the documentation site, Production → Moving from SQLite to PostgreSQL.
 
 ### Backup & restore
 

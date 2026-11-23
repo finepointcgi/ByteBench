@@ -24,6 +24,9 @@ using Microsoft.EntityFrameworkCore;
 // `dotnet ByteBench.dll backup|restore ...` run before (instead of) the web host.
 if (ByteBench.Services.Hosting.Backup.BackupCli.IsCommand(args)) return await ByteBench.Services.Hosting.Backup.BackupCli.RunAsync(args);
 
+// `dotnet ByteBench.dll migrate-db --from <sqlite> --to <npgsql>` moves a SQLite database into PostgreSQL, also before the host.
+if (ByteBench.Services.Hosting.DbMigration.MigrateDbCli.IsCommand(args)) return await ByteBench.Services.Hosting.DbMigration.MigrateDbCli.RunAsync(args);
+
 var builder = WebApplication.CreateBuilder(args);
 builder.AddByteBenchHosting();
 ByteBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.AddBackups(builder.Services, builder.Configuration); // backup/restore, scheduled backups, /admin/system, retention jobs // data protection keys, forwarded headers, cookies, rate limits, health checks
