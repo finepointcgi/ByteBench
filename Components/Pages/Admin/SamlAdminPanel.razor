@@ -41,7 +41,7 @@
 
         <MudSwitch T="bool" @bind-Value="o.Enabled" Color="Color.Primary" Label="Enable SAML sign-in" />
         <div class="saml-grid">
-            <MudTextField T="string" @bind-Value="o.DisplayName" Label="Button name" HelperText="&quot;Sign in with …&quot; on the sign-in page" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.DisplayName" Label="Button name" HelperText="Shown as Sign in with … on the sign-in page" Variant="Variant.Outlined" Margin="Margin.Dense" />
             <div></div>
             <MudTextField T="string" @bind-Value="o.IdpMetadataUrl" Label="IdP metadata URL (optional)" Variant="Variant.Outlined" Margin="Margin.Dense"
                           HelperText="Fetch fills in the entity ID, URLs and certificates. Fetched through the outbound URL guard." />
