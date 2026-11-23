@@ -47,6 +47,7 @@ public sealed class TrackerImportWriter
     private readonly List<(string From, string To, IssueLinkType Type)> links = [];
     private readonly List<string> warnings = [];
     private readonly List<int> touched = [];
+    private readonly HashSet<string> unmatched = new(StringComparer.OrdinalIgnoreCase);
     private double sort;
 
     public int WarningCount { get; private set; }
@@ -229,6 +230,9 @@ public sealed class TrackerImportWriter
     public async Task FinishAsync(CancellationToken ct)
     {
         await FlushAsync(ct);
+        if (unmatched.Count > 0)
+            Warn($"{unmatched.Count} {(unmatched.Count == 1 ? "person has" : "people have")} no account that can see this project, so their issues and comments are attributed to the person who ran the import (with their name in the text): " +
+                 string.Join(", ", unmatched.Take(15)) + (unmatched.Count > 15 ? ", ..." : "") + ". Add them as members (matched by email or user name) and run the import again to see how it looks - existing issues are not changed.");
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         foreach (var (child, parent) in parents.Distinct())
         {
@@ -307,6 +311,7 @@ public sealed class TrackerImportWriter
             found = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.NormalizedUserName == upper, ct);
         }
         if (found != null && !await access.CanAsync(job.ProjectId, Permission.ViewProject, found.Id)) found = null;
+        if (found == null) unmatched.Add(Name(who) ?? key);
         return users[key] = found;
     }
 
