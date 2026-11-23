@@ -60,7 +60,19 @@ PublicBaseUrl=https://bytebench.example.com</code></pre>
 <p>With <code>Database__Provider=Postgres</code> the connection string must be set explicitly and must not be the SQLite default. Use <code>ConnectionStrings__Default="Host=...;Database=...;Username=...;Password=..."</code>.</p>
 
 <h3 id="sqlite-to-pg">Can I move my SQLite data to PostgreSQL?</h3>
-<p>Not with a built-in tool. There is no data migration from SQLite to PostgreSQL, and backups restore only into the same provider. Decide before you start.</p>
+<p>Yes: <code>dotnet ByteBench.dll migrate-db --from &lt;sqlite file&gt; --to &lt;Npgsql connection string&gt; --verify</code>. The steps (stop, back up, copy, switch <code>Database__Provider</code>, start) are in <a href="production.html#sqlite-to-postgres">Moving from SQLite to PostgreSQL</a>. Backups still restore only into the same provider.</p>
+
+<h3 id="migrate-db-failures">migrate-db refuses or fails</h3>
+<ul>
+  <li><strong>"Start this ByteBench version once against the SQLite file first"</strong>: the source is behind this version's latest migration. Start the new ByteBench on the SQLite database (it applies its migrations on start), stop it, then run <code>migrate-db</code> again. "A newer ByteBench" means the file was last used by a newer version: run <code>migrate-db</code> from that version.</li>
+  <li><strong>"The target database already contains ByteBench data"</strong>: use an empty database, or add <code>--force</code> to empty ByteBench's tables in it first (other tables are left alone).</li>
+  <li><strong>"row(s) reference a missing row"</strong>: the SQLite file has orphaned rows (usually from an old crash or manual edit). PostgreSQL enforces the foreign key, so fix or delete them in a copy of the file and run again.</li>
+  <li><strong>"contains a NUL character"</strong>: PostgreSQL text cannot hold <code>\u0000</code>. The message names the table, column and row; clean that value in the SQLite file.</li>
+  <li><strong>"Cannot prepare the target database"</strong>: the connection string, the network or the role is wrong (host, port, password, <code>CREATE DATABASE</code> for a database that does not exist yet). The password is never printed.</li>
+  <li><strong>Verification MISMATCH</strong>: the table and counts are printed and the exit code is 1. The copy was committed, but do not switch to it: run again with <code>--force --verify</code> and, if it repeats, keep the SQLite file and report the table.</li>
+  <li><strong>Encrypted secrets say "unreadable: rotate it" after the move</strong>: the new start is not using the old Data Protection key ring. Point <code>DataProtection:KeysPath</code> at the original folder.</li>
+  <li>A run that fails part-way leaves no rows behind (the copy is one transaction); the empty schema stays and can be reused.</li>
+</ul>
 
 <h2 id="ssh">Git over SSH</h2>
 
