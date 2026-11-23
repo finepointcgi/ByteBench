@@ -534,6 +534,21 @@ public class McpTests(TestApp app) : IClassFixture<TestApp>
         Assert.DoesNotContain(await db.AuditEvents.Select(e => e.Details).ToListAsync(), d => d != null && d.Contains(secret));
     }
 
+    // ---------- Account page ----------
+
+    [Fact]
+    public async Task The_profile_page_shows_connection_snippets_but_never_a_token()
+    {
+        var token = await app.CreateTokenAsync("alice", TokenScopes.ReadApi); // an existing token must not leak into the page
+        var browser = await app.CookieClientAsync("alice");
+        var html = await browser.GetStringAsync("/account/profile");
+        Assert.Contains("Use with AI tools / CLI", html);
+        Assert.Contains("claude mcp add --transport http bytebench http://localhost/mcp", html);
+        Assert.Contains("your-token", html);
+        Assert.Contains("bytebench login --server http://localhost", html);
+        Assert.DoesNotContain(token, html);
+    }
+
     // ---------- Documentation ----------
 
     [Fact]

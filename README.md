@@ -1212,6 +1212,31 @@ dispatcher.Enqueue(projectId, "pipeline.completed", new { pipeline = new { id, s
 
 The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Both it and `PullRequestService.MergeAsync` hand ref updates to `WebhookPushEvents.SendAsync`, which builds the payload after checking that each ref really is at `after`. Other push listeners can inject `PushCapture` to get them too.
 
+## MCP server & command-line client
+
+AI assistants and terminals use ByteBench with a personal access token (`read_api` to read, `write_api` to also create and change issues). Everything runs as the token's user through the same services and `ProjectAccess` checks as the REST API. Documentation: `site/pages/mcp-cli.html`.
+
+**MCP server** (`Services/Mcp/`, `POST /mcp`, Streamable HTTP, MCP 2025-06-18, stateless, hand-written JSON-RPC 2.0 because the official ASP.NET Core package isn't vendored). `Authorization: Bearer <token>` only: cookies are ignored, an `Origin` for another host is refused, no token is 401 with `WWW-Authenticate: Bearer`, a token without an API scope is 403. `GET`/`DELETE` are 405 and batches are refused. Tools (`McpTools.All`): `list_projects`, `search_issues` (GQL), `get_issue`, `create_issue`, `update_issue`, `comment_on_issue`, `transition_issue`, `my_work`, `list_repositories`, `list_pull_requests`, `get_pull_request`, `read_file`, `list_directory`, `search_code`, `list_pipelines`, `get_pipeline_logs`. Arguments are validated against each tool's JSON schema and errors come back as results with `isError`; write tools are hidden from (and refused for) read-only tokens and carry `readOnlyHint: false`. Output is capped (24,000 characters of text, 96,000 of structured content, files 20,000, diffs 16,000, logs 16,000 from the end, lists 100) and marked `[truncated]`. Every call records `mcp.tool_called` in the audit log (tool, project key and token id, never arguments). `/mcp` shares the `RateLimiting:Api` per-token limit. `Mcp:Enabled=false` removes the endpoint.
+
+```bash
+claude mcp add --transport http bytebench https://bytebench.example.com/mcp --header "Authorization: Bearer <token>"
+```
+
+The profile page (`/account/profile`, "Use with AI tools / CLI") shows these snippets with your server's address; the token is never prefilled.
+
+**CLI** (`cli/ByteBench.Cli`, .NET tool command `bytebench`, no dependencies, excluded from the app project by `DefaultItemExcludes`; tests in `tests/ByteBench.Tests/CliTests.cs` run it in-process against the test app). It uses the REST API only.
+
+```bash
+dotnet pack cli/ByteBench.Cli -c Release -o ./nupkg && dotnet tool install -g ByteBench.Cli --add-source ./nupkg
+echo "$TOKEN" | bytebench login --server https://bytebench.example.com   # or BYTEBENCH_TOKEN; saved to ~/.config/bytebench/config.json (0600)
+bytebench issues list --project WEB --query 'assignee = currentUser()'
+bytebench issues create --project WEB --title "Fix the login" --label bug
+bytebench issues move WEB-12 --to "In Review"
+bytebench pipelines logs WEB/api 41
+```
+
+Other commands: `logout`, `whoami`, `projects`, `issues show|comment|assign`, `prs list|show`, `repos list`, `pipelines list`, `open KEY-N`. `--json` for machine output; no colour unless stdout is a terminal and `NO_COLOR` is unset; exit codes 0 ok, 1 error, 2 usage, 3 authentication. HTTPS is required except for localhost (`--insecure` to override at login); redirects are never followed; the config file is refused if it is a symlink or readable by others.
+
 ## Tags & releases
 
 **Tags** (`/p/{KEY}/repos/{slug}/tags`, the **Tags** tab) lists every tag, newest first. Each row shows the commit, the release that uses the tag, **zip** and **tar.gz** source downloads, and, for annotated tags, the tagger, date and message.

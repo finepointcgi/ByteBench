@@ -1,0 +1,103 @@
+<h1>AI tools (MCP) and the command line</h1>
+<p class="lead">ByteBench speaks the Model Context Protocol, so AI assistants such as Claude Code can read your projects, issues, pull requests, code and CI runs, and (if you allow it) create and update issues. The <code>bytebench</code> command-line tool does the same from a terminal. Both act as you, with a personal access token, and see only what you can see.</p>
+
+<p>Both use the same <a href="api.html#auth">personal access tokens</a> as the REST API. Create one under <b>Profile, Access tokens</b>. The profile page also has a <b>Use with AI tools / CLI</b> panel with these commands filled in with your server's address (never with a token).</p>
+
+<h2 id="tokens">Which token</h2>
+<table>
+  <tr><th>Token scope</th><th>MCP and CLI</th></tr>
+  <tr><td><code>read_api</code></td><td>All read tools and commands. Tools that change data are not even listed, and calling one is refused.</td></tr>
+  <tr><td><code>write_api</code></td><td>Everything, including creating, updating, commenting on and moving issues.</td></tr>
+  <tr><td>Git scopes only</td><td>Refused (403): the token has no API scope.</td></tr>
+</table>
+<p>Give an AI assistant the smallest scope that does the job, and set an expiry. Every action still goes through the project permissions: a viewer's token can read but never write, whatever its scope, and a project you cannot see answers "not found" as if it did not exist.</p>
+
+<h2 id="mcp">The MCP server</h2>
+<p>The server is part of ByteBench, at <code>POST /mcp</code> (Streamable HTTP transport, protocol version 2025-06-18, older 2025-03-26 and 2024-11-05 clients are answered too). It is stateless: each request is one JSON-RPC message answered with one JSON response, so there are no sessions and <code>GET</code> and <code>DELETE</code> answer 405. JSON-RPC batches are not accepted. Request bodies are limited to 256 KB.</p>
+<ul>
+<li><b>Authentication:</b> <code>Authorization: Bearer gbp_…</code> only. Cookies are ignored, so a web page can never drive the endpoint with your browser session. Without a valid token the answer is 401 with a <code>WWW-Authenticate: Bearer</code> header. A request carrying an <code>Origin</code> header for a different host is refused (DNS-rebinding guard).</li>
+<li><b>Rate limit:</b> the REST API's per-token limit (<code>RateLimiting:Api</code>, 300 requests a minute by default) covers <code>/mcp</code> too; over the limit the answer is 429 with <code>Retry-After</code>.</li>
+<li><b>Audit:</b> each tool call records <code>mcp.tool_called</code> in the <a href="admin.html">audit log</a> with the tool name, the project key and the token id. It never records arguments or any text you or the model wrote.</li>
+<li><b>Switch off:</b> set <code>Mcp:Enabled</code> to <code>false</code> and <code>/mcp</code> does not exist.</li>
+</ul>
+
+<h3 id="mcp-claude">Claude Code</h3>
+<pre><code>claude mcp add --transport http bytebench https://bytebench.example.com/mcp \
+  --header "Authorization: Bearer &lt;your-token&gt;"</code></pre>
+
+<h3 id="mcp-other">Other MCP clients</h3>
+<p>Clients that read a JSON configuration take the same address and header:</p>
+<pre><code>{
+  "mcpServers": {
+    "bytebench": {
+      "type": "http",
+      "url": "https://bytebench.example.com/mcp",
+      "headers": { "Authorization": "Bearer &lt;your-token&gt;" }
+    }
+  }
+}</code></pre>
+<p>Keep the token out of files you commit: most clients can read the header value from an environment variable.</p>
+
+<h2 id="tools">Tool reference</h2>
+<p>Tools are named in snake_case and each takes a JSON object. Unknown arguments, wrong types, over-long values and unknown enum values are returned to the model as an error result (<code>isError: true</code>) saying what to fix, never as a crash. Results are concise text plus structured content. Output is capped: text at 24,000 characters, files at 20,000, diffs at 16,000, logs at 16,000 characters from the end, lists at 100 items. When something is cut, the text says <code>[truncated]</code> and the structured content has <code>truncated: true</code>. Tokens, password hashes and secrets are never returned. Repositories are named <code>PROJECT/slug</code>, as <code>list_repositories</code> prints them.</p>
+<table>
+  <tr><th>Tool</th><th>Needs</th><th>What it does</th></tr>
+  <tr><td><code>list_projects</code></td><td>read</td><td>Projects you can see, with your role and issue counts.</td></tr>
+  <tr><td><code>search_issues</code></td><td>read</td><td>Search issues with a <a href="fields-filters.html">GQL</a> <code>query</code>, or list a <code>project</code> with <code>text</code> and <code>status</code>. Paged with <code>limit</code> and <code>offset</code>.</td></tr>
+  <tr><td><code>get_issue</code></td><td>read</td><td>One issue with description, labels, assignee, the last 20 comments, links, parent and children.</td></tr>
+  <tr><td><code>create_issue</code></td><td>write</td><td>Create an issue (title, description, type, priority, assignee, labels, story points). Needs Developer or higher in the project.</td></tr>
+  <tr><td><code>update_issue</code></td><td>write</td><td>Change title, description, status, priority, assignee (<code>none</code> unassigns), labels or story points. Only what you pass changes.</td></tr>
+  <tr><td><code>comment_on_issue</code></td><td>write</td><td>Add a Markdown comment.</td></tr>
+  <tr><td><code>transition_issue</code></td><td>write</td><td>Move an issue to a workflow status by name or category; moves the workflow forbids are refused.</td></tr>
+  <tr><td><code>my_work</code></td><td>read</td><td>Open issues assigned to you and your open pull requests.</td></tr>
+  <tr><td><code>list_repositories</code></td><td>read</td><td>Repositories you can read, with default branch and open pull request count.</td></tr>
+  <tr><td><code>list_pull_requests</code></td><td>read</td><td>Pull requests of a repository or project, filtered by state.</td></tr>
+  <tr><td><code>get_pull_request</code></td><td>read</td><td>Description, state, review state, merge check, recent comments and a diff summary; <code>include_diff</code> adds the size-capped unified diff.</td></tr>
+  <tr><td><code>read_file</code></td><td>read</td><td>A text file at a branch, tag or commit. Binary files are refused and large files are cut (continue with <code>start_line</code>).</td></tr>
+  <tr><td><code>list_directory</code></td><td>read</td><td>Files and folders of a directory at a ref.</td></tr>
+  <tr><td><code>search_code</code></td><td>read</td><td>Search file contents (<code>git grep</code>, optionally a regular expression) and file names in a repository or all of a project's repositories.</td></tr>
+  <tr><td><code>list_pipelines</code></td><td>read</td><td>CI pipelines of a repository, filtered by branch and status.</td></tr>
+  <tr><td><code>get_pipeline_logs</code></td><td>read</td><td>The end of a step's log: the first failed step unless you name one, with the list of all steps.</td></tr>
+</table>
+<p>Read tools are marked <code>readOnlyHint</code> and the write tools are not, so clients can ask you before running them. Text that comes back from tools (issue and comment text, file contents, logs) was written by people; the server tells the model to treat it as data and not as instructions, but you should still be careful which projects an assistant with <code>write_api</code> reads.</p>
+
+<h2 id="cli">The command-line tool</h2>
+<p><code>bytebench</code> is a .NET tool with no dependencies, built from <code>cli/ByteBench.Cli</code>. It needs the .NET 10 runtime and uses the REST API. Pack and install it from a checkout:</p>
+<pre><code>dotnet pack cli/ByteBench.Cli -c Release -o ./nupkg
+dotnet tool install --global ByteBench.Cli --add-source ./nupkg</code></pre>
+
+<h3 id="cli-login">Logging in</h3>
+<p>Pipe the token on standard input (or set <code>BYTEBENCH_TOKEN</code>), so it never appears in your shell history or the process list:</p>
+<pre><code>echo "$TOKEN" | bytebench login --server https://bytebench.example.com
+bytebench whoami
+bytebench logout</code></pre>
+<p><code>login</code> checks the token against the server first and exits 3 if it is rejected. The token is saved in <code>~/.config/bytebench/config.json</code>: the folder is created with mode 0700 and the file with mode 0600, it is replaced atomically, and the tool refuses to use the file (or the folder) if it is a symbolic link, and refuses to read a config file other users can read. The token is never printed. <code>BYTEBENCH_TOKEN</code> and <code>BYTEBENCH_SERVER</code> override the saved values and need no file at all, which suits CI.</p>
+<p>HTTPS is required, except for <code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code>. For a trial server on plain HTTP you must pass <code>--insecure</code> to <code>login</code>, which warns and remembers the choice. The tool never follows redirects, so a misconfigured address cannot send your token to another host.</p>
+
+<h3 id="cli-commands">Commands</h3>
+<table>
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td><code>bytebench projects</code></td><td>Your projects.</td></tr>
+  <tr><td><code>bytebench issues list [--project KEY] [--query GQL] [--status open|closed|all] [--limit N]</code></td><td>Issues of a project, or search with GQL (with <code>--project</code> the search is limited to it). With neither, the issues assigned to you.</td></tr>
+  <tr><td><code>bytebench issues show KEY-N</code></td><td>An issue and its comments.</td></tr>
+  <tr><td><code>bytebench issues create --project KEY --title T [--description D | --description-file FILE|-] [--type T] [--priority P] [--assignee USER] [--label NAME]</code></td><td>Create an issue (repeat <code>--label</code>). Prints its address.</td></tr>
+  <tr><td><code>bytebench issues comment KEY-N --body TEXT | --body-file FILE|-</code></td><td>Comment on an issue.</td></tr>
+  <tr><td><code>bytebench issues move KEY-N --to STATUS</code></td><td>Move to a workflow status (by name) or category.</td></tr>
+  <tr><td><code>bytebench issues assign KEY-N USER</code>, <code>… --none</code></td><td>Assign or unassign.</td></tr>
+  <tr><td><code>bytebench prs list [--project KEY] [--state open|merged|declined|all]</code></td><td>Pull requests across your projects or one project.</td></tr>
+  <tr><td><code>bytebench prs show KEY/slug N</code></td><td>A pull request with its reviews and comments (<code>KEY/slug#N</code> works too).</td></tr>
+  <tr><td><code>bytebench repos list [--project KEY]</code></td><td>Repositories with their clone addresses.</td></tr>
+  <tr><td><code>bytebench pipelines list KEY/slug [--branch B] [--status S]</code></td><td>CI pipelines of a repository.</td></tr>
+  <tr><td><code>bytebench pipelines logs KEY/slug ID [--step ID] [--tail CHARS]</code></td><td>The end of a step's log (the first failed step unless you pick one).</td></tr>
+  <tr><td><code>bytebench open KEY-N</code></td><td>Prints the issue's web address.</td></tr>
+</table>
+<p>Every command takes <code>--json</code> for machine-readable output (the API's JSON, unchanged) and <code>--help</code>. Text output is plain. Colour is used only when standard output is a terminal and <code>NO_COLOR</code> is not set. Text that came from the server (titles, comments, logs) has terminal control characters replaced with <code>?</code>, so an issue cannot rewrite your screen.</p>
+
+<h3 id="cli-exit">Exit codes</h3>
+<table>
+  <tr><th>Code</th><th>Meaning</th></tr>
+  <tr><td>0</td><td>Success</td></tr>
+  <tr><td>1</td><td>Error: not found, not allowed, server or network problem, invalid query</td></tr>
+  <tr><td>2</td><td>Usage: unknown command or option, a missing or malformed argument, a refused plain-HTTP address</td></tr>
+  <tr><td>3</td><td>Authentication: not logged in, the token was rejected, or it lacks the needed scope</td></tr>
+</table>
