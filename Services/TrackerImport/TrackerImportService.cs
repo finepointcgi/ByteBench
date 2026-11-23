@@ -81,7 +81,7 @@ public sealed class TrackerImportService(IDbContextFactory<AppDbContext> dbFacto
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var job = await db.TrackerImportJobs.AsNoTracking().FirstOrDefaultAsync(i => i.Id == importId);
-        return job != null && await access.CanAsync(job.ProjectId, Permission.ManageProjectSettings, actorId) ? job : null;
+        return job != null && await access.GetRoleAsync(job.ProjectId, actorId) is { } role && role >= ProjectRole.Maintainer ? job : null;
     }
 
     public static IReadOnlyList<string> WarningsOf(TrackerImportJob job)

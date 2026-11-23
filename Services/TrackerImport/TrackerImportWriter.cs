@@ -61,7 +61,7 @@ public sealed class TrackerImportWriter
     public void Warn(string message)
     {
         WarningCount++;
-        if (warnings.Count < MaxWarnings) warnings.Add(message.Length > 300 ? message[..300] : message);
+        if (warnings.Count < MaxWarnings) warnings.Add(message.Length > 700 ? message[..700] : message);
     }
 
     /// <summary>Loads the project's workflow and what an earlier run already created; creates the source's labels and milestones.</summary>
@@ -125,6 +125,7 @@ public sealed class TrackerImportWriter
         foreach (var l in issue.Links) links.Add((issue.ExternalId, l.TargetExternalId, l.Type));
         batch.Add(issue);
         if (batch.Count >= BatchSize) await FlushAsync(ct);
+        else if (job.IssuesRead % 5 == 0) await SaveProgressAsync(ct);
     }
 
     public async Task FlushAsync(CancellationToken ct)
