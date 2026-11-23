@@ -81,6 +81,9 @@ else if (Repo != null)
                     <MudCheckBox T="bool" @bind-Value="draft.RequireCodeOwnerApproval" Color="Color.Primary" Dense="true">
                         <b>Require code owner approval</b> <span class="muted small">(each changed file listed in CODEOWNERS needs an approval from one of its owners)</span>
                     </MudCheckBox>
+                    <MudCheckBox T="bool" @bind-Value="draft.RequireSignedCommits" Color="Color.Primary" Dense="true">
+                        <b>Require signed commits</b> <span class="muted small">(every pushed commit and every commit of a merged pull request must be Verified: signed with a key registered on its author's account)</span>
+                    </MudCheckBox>
                     <MudCheckBox T="bool" @bind-Value="draft.AllowAdminBypass" Color="Color.Primary" Dense="true">
                         <b>Allow admins to bypass</b> <span class="muted small">(site admins and project Owners)</span>
                     </MudCheckBox>
@@ -207,6 +210,7 @@ else if (Repo != null)
         if (r.DismissStaleApprovals) yield return "stale approvals dismissed";
         if (r.RequireThreadResolution) yield return "threads must be resolved";
         if (r.RequireCodeOwnerApproval) yield return "code owners must approve";
+        if (r.RequireSignedCommits) yield return "signed commits required";
         if (r.MergeQueueEnabled)
             yield return $"merge queue (batch {r.MergeQueueMaxBatch}{(r.MergeQueueRequireCi ? ", CI required" : "")}{(r.MergeQueueStrategy is { } qs ? ", " + MergeStrategySettings.Label(qs).ToLowerInvariant() : "")})";
         if (r.AllowAdminBypass) yield return "admins can bypass";
@@ -229,6 +233,7 @@ else if (Repo != null)
             BlockForcePushes = r.BlockForcePushes, BlockDeletion = r.BlockDeletion, RequireChecksToPass = r.RequireChecksToPass,
             DismissStaleApprovals = r.DismissStaleApprovals, AllowAdminBypass = r.AllowAdminBypass, DefaultReviewerIds = [.. r.DefaultReviewerIds],
             RequireThreadResolution = r.RequireThreadResolution, RequireCodeOwnerApproval = r.RequireCodeOwnerApproval,
+            RequireSignedCommits = r.RequireSignedCommits,
             MergeQueueEnabled = r.MergeQueueEnabled, MergeQueueMaxBatch = r.MergeQueueMaxBatch, MergeQueueRequireCi = r.MergeQueueRequireCi,
             MergeQueueStrategy = r.MergeQueueStrategy, MergeQueueTimeoutMinutes = r.MergeQueueTimeoutMinutes,
             MergeQueueApprovalTimeoutMinutes = r.MergeQueueApprovalTimeoutMinutes,

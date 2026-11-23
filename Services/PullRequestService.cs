@@ -175,7 +175,10 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         // A merge queue on the target branch: merging goes through the queue (unless the actor bypasses the rule).
         await EnsureNoMergeQueueAsync(pr, actor.Id);
         // Branch protection: approvals, change requests and required checks (throws with the reasons when blocked).
-        var bypassed = await gate.EnsureCanMergeAsync(prId, actor.Id);
+        var bypassed = await gate.EnsureCanMergeAsync(prId, actor.Id, noBypass: request.NoBypass);
+        if (request.ExpectedHeadSha != null
+            && await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceRef)) != request.ExpectedHeadSha)
+            throw new InvalidOperationException("The pull request's source branch changed while it was being merged. Nothing was merged.");
         if (deleteSourceBranch && pr.SourceBranch != pr.Repository.DefaultBranch)
             await protection.EnsureAllowedAsync(pr.Repository, pr.SourceBranch, RefChangeKind.Delete, actor.Id);
 

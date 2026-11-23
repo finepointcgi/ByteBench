@@ -8,8 +8,10 @@ namespace ByteBench.Services;
 /// <param name="AllowFastForward">Merge strategy only: move the target to the source tip instead of writing a merge commit, when possible.</param>
 /// <param name="CommitMessage">Squash only: the squash commit's message (null: <see cref="PullRequestService.DefaultSquashMessage"/>).
 /// Co-authored-by trailers for the other commit authors are appended unless already present.</param>
+/// <param name="NoBypass">Never use an admin's bypass of branch protection: the merge only proceeds if every rule is satisfied (auto-merge).</param>
+/// <param name="ExpectedHeadSha">Refuse (nothing is written) unless the source branch tip is still this commit (auto-merge: what was evaluated is what is merged).</param>
 public sealed record MergeRequest(MergeStrategy Strategy = MergeStrategy.Merge, bool DeleteSourceBranch = false, bool AllowFastForward = false,
-    string? CommitMessage = null);
+    string? CommitMessage = null, bool NoBypass = false, string? ExpectedHeadSha = null);
 
 /// <summary>The thread view of a PR's inline comments.</summary>
 /// <param name="Outdated">Ids of thread roots whose line(s) changed after the comment (by a later push).</param>

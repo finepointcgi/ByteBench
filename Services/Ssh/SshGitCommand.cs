@@ -122,12 +122,13 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
     {
         // Deploy keys push like a Developer: never an admin bypass.
         var policy = await ProtectedPushGuard.LoadPolicyAsync(services, found.Id, found.ProjectId, id.IsDeployKey ? null : id.UserId);
-        string? refsFile = null;
+        string? refsFile = null, signedFile = null;
         IReadOnlyDictionary<string, string>? env = null;
-        if (policy.Rules.Any(r => r.BlockForcePushes))
+        if (policy.Rules.Any(r => r.BlockForcePushes) || policy.Signing != null)
         {
             refsFile = Path.Combine(Path.GetTempPath(), "bytebench-ff-" + Guid.NewGuid().ToString("N"));
-            env = ProtectedPushGuard.HookEnvironmentWithRefsFile(storage, refsFile);
+            if (policy.Signing != null) signedFile = refsFile + "-signed";
+            env = ProtectedPushGuard.HookEnvironmentWithRefsFile(storage, refsFile, policy.Signing, signedFile);
         }
 
         ProtectedPushGuard.ParsedCommands? commands = null;
@@ -147,6 +148,7 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
                 return;
             }
             if (refsFile != null) await File.WriteAllTextAsync(refsFile, string.Join(' ', decision.FastForwardOnly), token);
+            if (signedFile != null) await File.WriteAllTextAsync(signedFile, string.Join(' ', decision.SignedRefs), token);
             await stdin.WriteAsync(commands.Prefix, token);
             await CopyAllAsync(input, stdin, token);
         }
@@ -180,6 +182,7 @@ internal sealed class SshGitCommand(IServiceScopeFactory scopes, AppRateLimits r
         finally
         {
             if (refsFile != null) try { File.Delete(refsFile); } catch (IOException) { }
+            if (signedFile != null) try { File.Delete(signedFile); } catch (IOException) { }
         }
     }
 

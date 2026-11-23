@@ -89,6 +89,8 @@ builder.Services.AddScoped<ReviewerService>();
 builder.Services.AddScoped<CodeOwnersService>(); // PR features: CODEOWNERS
 builder.Services.AddScoped<IGitPushListener, StaleApprovalPushListener>();
 ByteBench.Services.MergeQueue.MergeQueueServiceCollectionExtensions.AddMergeQueue(builder.Services, builder.Configuration); // merge queues on protected branches
+ByteBench.Services.AutoMerge.AutoMergeServiceCollectionExtensions.AddAutoMerge(builder.Services, builder.Configuration); // "merge when ready" on pull requests
+ByteBench.Services.Signing.SigningServiceCollectionExtensions.AddSigning(builder.Services, builder.Configuration); // signed commits: GPG keys, verification, push-time check
 builder.Services.AddCiPipelines(builder.Configuration);
 ByteBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanning(builder.Services, builder.Configuration); // Night Owl reports, Security page, merge check
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete

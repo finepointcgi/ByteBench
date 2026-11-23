@@ -12,6 +12,8 @@ namespace ByteBench.Services;
 public sealed record MergeGateResult(
     IReadOnlyList<MergeCheckResult> Checks, IReadOnlyList<string> Blockers, EffectiveProtection Protection, bool CanBypass)
 {
+    /// <summary>The external <see cref="IMergeCheck"/> results (pipelines, ...) among <see cref="Checks"/>.</summary>
+    public IReadOnlyList<MergeCheckResult> External { get; init; } = [];
     public bool Blocked => Blockers.Count > 0;
     public string BlockedMessage => "This pull request can't be merged yet: " + string.Join("; ", Blockers) + ".";
 }
@@ -25,6 +27,7 @@ public sealed record MergeGateResult(
 /// <item>Any "changes requested" verdict blocks.</item>
 /// <item>With "require checks to pass", any external check that is Pending or Failed blocks. Neutral never blocks.</item>
 /// <item>With "require all threads resolved", any unresolved inline comment thread blocks.</item>
+/// <item>With "require signed commits", every commit the PR would merge must be Verified (<see cref="Signing.CommitSignatureService"/>).</item>
 /// <item>With "require code owner approval", each changed file with CODEOWNERS owners needs an approval from one of them
 /// (files owned only by the PR's author need none).</item>
 /// </list>
@@ -32,7 +35,7 @@ public sealed record MergeGateResult(
 /// External checks are resolved lazily per call, so a check may itself depend on PR services without a DI cycle.
 /// </summary>
 public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, BranchProtectionService protection,
-    IServiceProvider services, ILogger<MergeGate> log, CodeOwnersService codeOwners)
+    IServiceProvider services, ILogger<MergeGate> log, CodeOwnersService codeOwners, Signing.CommitSignatureService signatures)
 {
     /// <summary>Evaluates the PR for <paramref name="actorId"/> (used only to work out admin bypass).</summary>
     public async Task<MergeGateResult> EvaluateAsync(int pullRequestId, int? actorId = null, CancellationToken ct = default)
@@ -54,7 +57,7 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
         if (pr.IsDraft) checks.Add(new MergeCheckResult("Draft", MergeCheckState.Failed, "Draft pull requests can't be merged. Mark it ready for review first."));
         if (aiBlocker != null) draftBlockers.Add(aiBlocker);
         if (!all.IsProtected)
-            return new MergeGateResult([.. checks, .. external, .. (aiCheck == null ? [] : new[] { aiCheck })], draftBlockers, all, false);
+            return new MergeGateResult([.. checks, .. external, .. (aiCheck == null ? [] : new[] { aiCheck })], draftBlockers, all, false) { External = external };
 
         var head = await repos.Git(pr.Repository, path => GitOps.ResolveSha(path, pr.SourceRef));
         var approvers = pr.Reviews.Where(r => r.State == ReviewState.Approved && r.UserId != pr.AuthorId).ToList();
@@ -102,6 +105,21 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
                 : unownedApproval.Count == 0 ? "Every owned file is approved by an owner"
                 : $"Needs owner approval for {unownedApproval.Count} file{(unownedApproval.Count == 1 ? "" : "s")}: " + string.Join(", ", unownedApproval.Take(5)) + (unownedApproval.Count > 5 ? ", …" : "")));
         }
+        // Signed commits: every commit the PR brings must be Verified (ByteBench's own merge commits count as verified).
+        var unverified = new List<string>();
+        var uncheckedCommits = 0;
+        if (all.RequireSignedCommits)
+        {
+            var cmp = await repos.Git(pr.Repository, path => GitOps.Compare(path, pr.TargetBranch, pr.SourceRef));
+            var commits = cmp?.Commits ?? [];
+            var sigs = await signatures.GetManyAsync(pr.Repository, commits.Select(c => c.Sha), ct);
+            unverified = commits.Where(c => !sigs[c.Sha].IsVerified).Select(c => $"{c.Sha[..7]}: {(sigs[c.Sha].IsSigned ? sigs[c.Sha].Label.ToLowerInvariant() + " (" + sigs[c.Sha].Reason + ")" : "not signed")}").ToList();
+            uncheckedCommits = cmp != null && cmp.Ahead > commits.Count ? cmp.Ahead - commits.Count : 0;
+            checks.Add(new MergeCheckResult("Signed commits", unverified.Count == 0 && uncheckedCommits == 0 ? MergeCheckState.Passed : MergeCheckState.Failed,
+                unverified.Count == 0 && uncheckedCommits == 0 ? $"All {commits.Count} commit{(commits.Count == 1 ? " is" : "s are")} verified"
+                : unverified.Count > 0 ? $"{unverified.Count} commit{(unverified.Count == 1 ? " isn't" : "s aren't")} verified: " + string.Join("; ", unverified.Take(3)) + (unverified.Count > 3 ? "; …" : "")
+                : $"{uncheckedCommits} commits are too many to check"));
+        }
         checks.AddRange(external);
         if (aiCheck != null) checks.Add(aiCheck);
 
@@ -119,6 +137,8 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
             }
             if (p.RequireThreadResolution && unresolved > 0)
                 b.Add($"{unresolved} comment thread{(unresolved == 1 ? " is" : "s are")} unresolved");
+            if (p.RequireSignedCommits && (unverified.Count > 0 || uncheckedCommits > 0))
+                b.Add(unverified.Count > 0 ? $"{unverified.Count} commit{(unverified.Count == 1 ? " isn't" : "s aren't")} verified (signed commits are required)" : $"{uncheckedCommits} commits are too many to check for signatures");
             if (p.RequireCodeOwnerApproval && unownedApproval.Count > 0)
                 b.Add($"code owners haven't approved {unownedApproval.Count} file{(unownedApproval.Count == 1 ? "" : "s")}");
             return b;
@@ -132,18 +152,18 @@ public class MergeGate(IDbContextFactory<AppDbContext> dbFactory, RepositoryServ
             canBypass = BlockersFor(BranchProtectionService.ApplicableTo(rules, pr.TargetBranch, isAdmin: true)).Count == 0;
         }
         if (draftBlockers.Count > 0) { blockers.InsertRange(0, draftBlockers); canBypass = false; }
-        return new MergeGateResult(checks, blockers, all, canBypass);
+        return new MergeGateResult(checks, blockers, all, canBypass) { External = external };
     }
 
     /// <summary>
     /// Throws <see cref="BranchProtectedException"/> with a clear message when the actor may not merge the PR.
     /// Returns true when the merge only proceeds because the actor bypasses protection.
     /// </summary>
-    public async Task<bool> EnsureCanMergeAsync(int pullRequestId, int actorId, CancellationToken ct = default)
+    public async Task<bool> EnsureCanMergeAsync(int pullRequestId, int actorId, CancellationToken ct = default, bool noBypass = false)
     {
         var result = await EvaluateAsync(pullRequestId, actorId, ct);
         if (!result.Blocked) return false;
-        if (result.CanBypass) return true;
+        if (result.CanBypass && !noBypass) return true;
         throw new BranchProtectedException(result.BlockedMessage);
     }
 

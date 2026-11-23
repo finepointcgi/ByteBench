@@ -11,6 +11,7 @@
 @inject CurrentUser Me
 @inject RepositorySettingsService RepoSettings
 @inject ByteBench.Services.MergeQueue.MergeQueueService MergeQueues
+@inject ByteBench.Services.AutoMerge.AutoMergeService AutoMerges
 
 <PageTitle>Pull requests · @project?.Name</PageTitle>
 
@@ -104,6 +105,7 @@ else if (project != null)
                     @if (approvals > 0) { <span class="pr-stat approved" title="Approvals"><MudIcon Icon="@Icons.Material.Filled.Check" Style="font-size: 14px" /> @approvals</span> }
                     @if (changes > 0) { <span class="pr-stat changes" title="Changes requested"><MudIcon Icon="@Icons.Material.Outlined.Edit" Style="font-size: 14px" /> @changes</span> }
                     @if (commentCounts.GetValueOrDefault(pr.Id) is var n and > 0) { <span class="pr-stat" title="Comments"><MudIcon Icon="@Icons.Material.Outlined.ChatBubbleOutline" Style="font-size: 14px" /> @n</span> }
+                    @if (autoMergeArmed.Contains(pr.Id)) { <span class="pr-stat auto-merge-chip" title="Auto-merge: merges as soon as every requirement is met"><MudIcon Icon="@Icons.Material.Outlined.Schedule" Style="font-size: 14px" /> Auto-merge</span> }
                     <PrStateBadge State="pr.State" Draft="pr.IsDraft" />
                 </div>
             </a>
@@ -128,6 +130,7 @@ else if (project != null)
     private List<RepoSummary> repos = [];
     private List<PullRequest> prs = [];
     private Dictionary<int, int> commentCounts = [];
+    private HashSet<int> autoMergeArmed = [];
     private PullRequestCounts counts = new(0, 0, 0);
     private bool notFound, canCreate;
 
@@ -157,6 +160,7 @@ else if (project != null)
         if (CurrentState == PullRequestState.Open && DraftFilter is "only" or "ready") prs = prs.Where(p => p.IsDraft == (DraftFilter == "only")).ToList();
         counts = await PRs.CountAsync(project.Id, repoId);
         commentCounts = await PRs.CommentCountsAsync(prs.Select(p => p.Id));
+        autoMergeArmed = CurrentState == PullRequestState.Open ? await AutoMerges.ArmedAmongAsync(prs.Select(p => p.Id)) : [];
     }
 
     // ----- Live updates: any PR in this project changed -----

@@ -252,6 +252,9 @@ public enum NotificationKind
 
     /// <summary>A CI job deployed a Pages site (to the pipeline's author, Services/Pages).</summary>
     PagesDeployed,
+
+    /// <summary>An armed "merge when ready" was cancelled (to the person who armed it).</summary>
+    AutoMergeCancelled,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="ByteBench.Services.NotificationService"/>.</summary>

@@ -52,6 +52,10 @@ internal static class ProtectedPushGuard
         public ProjectRole Role { get; init; } = ProjectRole.Developer;
         /// <summary>Set when the repository refuses every push (a pull mirror): the reason.</summary>
         public string? ReadOnlyReason { get; init; }
+        /// <summary>The registered signing keys for the push-time "require signed commits" check (null: no rule needs it).</summary>
+        public Signing.SigningMaterialInfo? Signing { get; init; }
+        /// <summary>Set when a rule requires signed commits but this server can't verify any signature (neither gpg nor ssh-keygen found).</summary>
+        public string? SigningProblem { get; init; }
 
         public bool IsEmpty => Rules.Count == 0 && ReleaseTags.Count == 0 && TagRules.Count == 0 && ReadOnlyReason == null;
 
@@ -60,6 +64,7 @@ internal static class ProtectedPushGuard
         {
             var refusals = new Dictionary<string, string>();
             var fastForwardOnly = new List<string>();
+            var signedRefs = new List<string>();
             foreach (var c in parsed.Commands)
             {
                 if (ReadOnlyReason != null) { refusals[c.Ref] = ReadOnlyReason; continue; }
@@ -78,15 +83,26 @@ internal static class ProtectedPushGuard
                 if (!p.IsProtected) continue;
                 var kind = IsZero(c.NewSha) ? RefChangeKind.Delete : IsZero(c.OldSha) ? RefChangeKind.Create : RefChangeKind.Update;
                 if (BranchProtectionService.Refusal(p, branch, kind, isFastForward: null) is { } why) refusals[c.Ref] = why;
-                else if (kind == RefChangeKind.Update && p.BlockForcePushes) fastForwardOnly.Add(c.Ref);
+                else
+                {
+                    if (kind == RefChangeKind.Update && p.BlockForcePushes) fastForwardOnly.Add(c.Ref);
+                    // New commits can only be inspected once the pack has arrived: the pre-receive hook does that for these refs.
+                    if (kind != RefChangeKind.Delete && p.RequireSignedCommits)
+                    {
+                        if (SigningProblem != null) refusals[c.Ref] = $"branch '{branch}' requires signed commits, but {SigningProblem}";
+                        else signedRefs.Add(c.Ref);
+                    }
+                }
             }
             if (parsed.Signed && !IsEmpty) refusals["(signed push)"] = "signed pushes can't be checked against branch protection";
-            return new Decision(refusals, fastForwardOnly);
+            return new Decision(refusals, fastForwardOnly, signedRefs);
         }
     }
 
-    public sealed record Decision(Dictionary<string, string> Refusals, List<string> FastForwardOnly)
+    public sealed record Decision(Dictionary<string, string> Refusals, List<string> FastForwardOnly, List<string>? SignedRefsList = null)
     {
+        /// <summary>Branch refs whose new commits must all be Verified (checked by the hook).</summary>
+        public List<string> SignedRefs => SignedRefsList ?? [];
         public bool Refused => Refusals.Count > 0;
     }
 
@@ -118,7 +134,15 @@ internal static class ProtectedPushGuard
         var role = ProjectRole.Developer; // deploy keys push like a Developer
         if (userId != null && tagRules.Count > 0)
             role = await services.GetRequiredService<ProjectAccess>().GetRoleAsync(projectId, userId) ?? ProjectRole.Viewer;
-        return new Policy(rules, releaseTags, isAdmin) { TagRules = tagRules, Role = role, ReadOnlyReason = readOnly };
+        Signing.SigningMaterialInfo? signing = null;
+        string? signingProblem = null;
+        if (rules.Any(r => r.RequireSignedCommits))
+        {
+            var tools = services.GetRequiredService<Signing.SigningTools>();
+            if (!tools.GpgAvailable && !tools.SshAvailable) signingProblem = "this server can't verify signatures (gpg and ssh-keygen aren't installed)";
+            else signing = await services.GetRequiredService<Signing.SigningMaterial>().EnsureAsync();
+        }
+        return new Policy(rules, releaseTags, isAdmin) { TagRules = tagRules, Role = role, ReadOnlyReason = readOnly, Signing = signing, SigningProblem = signingProblem };
     }
 
     /// <summary>HTTP: reads the commands from the request body, refuses the push or passes it on (with the force-push hook).</summary>
@@ -143,7 +167,7 @@ internal static class ProtectedPushGuard
             return new Result(true, null, null);
         }
 
-        return new Result(false, body, HookEnvironment(storage, decision.FastForwardOnly));
+        return new Result(false, body, HookEnvironment(storage, decision.FastForwardOnly, policy.Signing, decision.SignedRefs));
     }
 
     public static void LogRefusal(ILogger logger, int repositoryId, string pusher, Decision decision) =>
@@ -154,18 +178,35 @@ internal static class ProtectedPushGuard
     /// Environment for <c>receive-pack</c> / <c>http-backend</c> that enables the force-push <c>pre-receive</c> hook for
     /// <paramref name="fastForwardOnly"/>; null when there is nothing to check.
     /// </summary>
-    public static IReadOnlyDictionary<string, string>? HookEnvironment(RepoStorage storage, IReadOnlyCollection<string> fastForwardOnly)
+    public static IReadOnlyDictionary<string, string>? HookEnvironment(RepoStorage storage, IReadOnlyCollection<string> fastForwardOnly,
+        Signing.SigningMaterialInfo? signing = null, IReadOnlyCollection<string>? signedRefs = null)
     {
-        if (fastForwardOnly.Count == 0) return null;
-        return HookEnvironment(storage, "BYTEBENCH_FF_ONLY_REFS", string.Join(' ', fastForwardOnly));
+        var signed = signing != null && signedRefs is { Count: > 0 };
+        if (fastForwardOnly.Count == 0 && !signed) return null;
+        var env = HookEnvironment(storage, "BYTEBENCH_FF_ONLY_REFS", string.Join(' ', fastForwardOnly));
+        if (signed) AddSigning(env, signing!, "BYTEBENCH_SIGNED_REFS", string.Join(' ', signedRefs!));
+        return env;
+    }
+
+    private static void AddSigning(Dictionary<string, string> env, Signing.SigningMaterialInfo signing, string variable, string value)
+    {
+        env[variable] = value;
+        env["BYTEBENCH_SIGNING_DIR"] = signing.Dir;
+        env["BYTEBENCH_GPG"] = signing.GpgPath ?? "";
+        env["BYTEBENCH_SSHKEYGEN"] = signing.SshKeygenPath ?? "";
     }
 
     /// <summary>
     /// SSH: enables the force-push hook for a receive-pack started before the ref commands arrive. The hook reads the
     /// fast-forward-only refs from <paramref name="refsFile"/>, which the caller writes once it has read the commands.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> HookEnvironmentWithRefsFile(RepoStorage storage, string refsFile) =>
-        HookEnvironment(storage, "BYTEBENCH_FF_ONLY_FILE", refsFile);
+    public static IReadOnlyDictionary<string, string> HookEnvironmentWithRefsFile(RepoStorage storage, string refsFile,
+        Signing.SigningMaterialInfo? signing = null, string? signedFile = null)
+    {
+        var env = HookEnvironment(storage, "BYTEBENCH_FF_ONLY_FILE", refsFile);
+        if (signing != null && signedFile != null) AddSigning(env, signing, "BYTEBENCH_SIGNED_FILE", signedFile);
+        return env;
+    }
 
     private static Dictionary<string, string> HookEnvironment(RepoStorage storage, string variable, string value)
     {
@@ -314,15 +355,71 @@ internal static class ProtectedPushGuard
     private const string HookScript = """
         #!/bin/sh
         # Installed by ByteBench (Services/Git/ProtectedPushGuard.cs) and enabled per push through core.hooksPath.
-        # Declines non-fast-forward updates of the refs listed in BYTEBENCH_FF_ONLY_REFS (protected branches), plus those
-        # in the file BYTEBENCH_FF_ONLY_FILE (SSH pushes: the refs are only known after receive-pack has started).
+        # 1. Declines non-fast-forward updates of the refs listed in BYTEBENCH_FF_ONLY_REFS (protected branches), plus those
+        #    in the file BYTEBENCH_FF_ONLY_FILE (SSH pushes: the refs are only known after receive-pack has started).
+        # 2. Declines pushes whose NEW commits aren't signed by a registered key of the committer, for the refs in
+        #    BYTEBENCH_SIGNED_REFS / BYTEBENCH_SIGNED_FILE ("require signed commits"). Keys come only from
+        #    BYTEBENCH_SIGNING_DIR (a snapshot of the registered public keys), never from a real keyring or ~/.ssh.
         status=0
         refs="$BYTEBENCH_FF_ONLY_REFS"
         if [ -n "$BYTEBENCH_FF_ONLY_FILE" ] && [ -f "$BYTEBENCH_FF_ONLY_FILE" ]; then refs="$refs $(cat "$BYTEBENCH_FF_ONLY_FILE")"; fi
+        signed="$BYTEBENCH_SIGNED_REFS"
+        if [ -n "$BYTEBENCH_SIGNED_FILE" ] && [ -f "$BYTEBENCH_SIGNED_FILE" ]; then signed="$signed $(cat "$BYTEBENCH_SIGNED_FILE")"; fi
+
+        is_zero() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }
+
+        # Prints why the commit isn't verified and returns 1, or returns 0.
+        verify_commit() {
+          c="$1"
+          email="$2"
+          raw=$(git cat-file commit "$c" 2>/dev/null)
+          case "$raw" in
+            *"-----BEGIN SSH SIGNATURE-----"*) kind=ssh ;;
+            *"-----BEGIN PGP SIGNATURE-----"*) kind=gpg ;;
+            *) echo "it isn't signed"; return 1 ;;
+          esac
+          dir="$BYTEBENCH_SIGNING_DIR"
+          if [ "$kind" = ssh ]; then
+            prog=""
+            [ -n "$BYTEBENCH_SSHKEYGEN" ] && prog="-c gpg.ssh.program=$BYTEBENCH_SSHKEYGEN"
+            # shellcheck disable=SC2086
+            out=$(git -c gpg.ssh.allowedSignersFile="$dir/allowed_signers" $prog verify-commit "$c" 2>&1) || { echo "the SSH signature is bad or its key isn't registered"; return 1; }
+            principal=$(printf '%s\n' "$out" | sed -n 's/^Good "git" signature for \(.*\) with .* key .*/\1/p' | head -n 1 | tr 'A-Z' 'a-z')
+            [ -n "$principal" ] && [ "$principal" = "$email" ] || { echo "the committer email $email isn't the key owner's confirmed email"; return 1; }
+            return 0
+          fi
+          prog=""
+          [ -n "$BYTEBENCH_GPG" ] && prog="-c gpg.program=$BYTEBENCH_GPG"
+          # shellcheck disable=SC2086
+          out=$(GNUPGHOME="$dir/gnupg" git $prog verify-commit --raw "$c" 2>&1) || { echo "the GPG signature is bad, or its key is unknown, expired or revoked"; return 1; }
+          printf '%s\n' "$out" | grep -q '^\[GNUPG:\] GOODSIG ' || { echo "the GPG signature is bad, or its key is unknown, expired or revoked"; return 1; }
+          primary=$(printf '%s\n' "$out" | sed -n 's/^\[GNUPG:\] VALIDSIG \(.*\)$/\1/p' | head -n 1 | awk '{print $NF}' | tr 'a-z' 'A-Z')
+          [ -n "$primary" ] && grep -Fxqi "$primary $email" "$dir/gpg-fprs" || { echo "the committer email $email isn't the key owner's confirmed email"; return 1; }
+          return 0
+        }
+
+        check_signed() {
+          old="$1"; new="$2"; ref="$3"
+          if is_zero "$old"; then range="$new --not --all"; else range="$new --not $old"; fi
+          # shellcheck disable=SC2086
+          commits=$(git rev-list --max-count=1000 $range 2>/dev/null)
+          for c in $commits; do
+            email=$(git cat-file commit "$c" | sed -n 's/^committer [^<]*<\([^>]*\)>.*/\1/p' | head -n 1 | tr 'A-Z' 'a-z')
+            if ! why=$(verify_commit "$c" "$email"); then
+              short=$(printf '%s' "$c" | cut -c1-7)
+              echo "ByteBench: push refused: commit $short on '${ref#refs/heads/}' is not verified: $why. Branch protection requires every new commit to be signed with a key registered on your ByteBench account." >&2
+              return 1
+            fi
+          done
+          return 0
+        }
+
         while read -r old new ref; do
+          if ! is_zero "$new"; then
+            case " $signed " in *" $ref "*) check_signed "$old" "$new" "$ref" || status=1 ;; esac
+          fi
           case " $refs " in *" $ref "*) ;; *) continue ;; esac
-          case "$old" in *[!0]*) ;; *) continue ;; esac
-          case "$new" in *[!0]*) ;; *) continue ;; esac
+          if is_zero "$old" || is_zero "$new"; then continue; fi
           if ! git merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
             echo "ByteBench: push refused: branch '${ref#refs/heads/}' is protected: force pushes are not allowed" >&2
             status=1

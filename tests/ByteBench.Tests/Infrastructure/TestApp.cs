@@ -70,6 +70,8 @@ public class TestApp : WebApplicationFactory<Program>
             ["Ai:Editor:Backend"] = "Api",
             ["Ai:ClaudeCode:Path"] = Path.Combine(DataRoot, "no-claude-here"),
             ["Ci:Enabled"] = "false",
+            ["AutoMerge:Enabled"] = "false", // AutoMergeTests call the sweep themselves
+
             ["Ci:WorkDirectory"] = Path.Combine(DataRoot, "ci"),
             ["Ci:ArtifactsRoot"] = Path.Combine(DataRoot, "ci-artifacts"),
             ["Ci:CacheRoot"] = Path.Combine(DataRoot, "ci-cache"),
