@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ByteBench.Data.MigrationsPostgres
 {
     [DbContext(typeof(PostgresAppDbContext))]
-    [Migration("20261123023516_Initial")]
+    [Migration("20261123044537_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -1832,6 +1832,44 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("GroupRedirects");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.ImportedItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("ImportId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LocalId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "SourceKey", "Kind", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("ImportedItems");
                 });
 
             modelBuilder.Entity("ByteBench.Data.Issue", b =>
@@ -4896,6 +4934,91 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("SshKeys");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.TrackerImportJob", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CommentsCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("IssuesCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IssuesExpected")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IssuesRead")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IssuesSkipped")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LabelsCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LinksCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MilestonesCreated")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SettingsJson")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceProject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WarningCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("WarningsJson")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedById");
+
+                    b.HasIndex("ProjectId", "Status");
+
+                    b.ToTable("TrackerImportJobs");
+                });
+
             modelBuilder.Entity("ByteBench.Data.User", b =>
                 {
                     b.Property<int>("Id")
@@ -6240,6 +6363,15 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.ImportedItem", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ByteBench.Data.Issue", b =>
                 {
                     b.HasOne("ByteBench.Data.User", "Assignee")
@@ -7271,6 +7403,24 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Repository");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.TrackerImportJob", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.User", "RequestedBy")
+                        .WithMany()
+                        .HasForeignKey("RequestedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("RequestedBy");
                 });
 
             modelBuilder.Entity("ByteBench.Data.UserNotificationSettings", b =>

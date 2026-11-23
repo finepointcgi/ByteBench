@@ -791,6 +791,30 @@ namespace ByteBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "ImportedItems",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    SourceKey = table.Column<string>(type: "character varying(400)", maxLength: 400, nullable: false),
+                    Kind = table.Column<int>(type: "integer", nullable: false),
+                    ExternalId = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    LocalId = table.Column<int>(type: "integer", nullable: false),
+                    ImportId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ImportedItems", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ImportedItems_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "IssueTemplates",
                 columns: table => new
                 {
@@ -1253,6 +1277,51 @@ namespace ByteBench.Data.MigrationsPostgres
                     table.PrimaryKey("PK_Sprints", x => x.Id);
                     table.ForeignKey(
                         name: "FK_Sprints_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TrackerImportJobs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    RequestedById = table.Column<int>(type: "integer", nullable: true),
+                    Source = table.Column<int>(type: "integer", nullable: false),
+                    SourceUrl = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    SourceProject = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: false),
+                    SettingsJson = table.Column<string>(type: "text", nullable: true),
+                    Status = table.Column<int>(type: "integer", nullable: false),
+                    Error = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
+                    IssuesExpected = table.Column<int>(type: "integer", nullable: false),
+                    IssuesRead = table.Column<int>(type: "integer", nullable: false),
+                    IssuesCreated = table.Column<int>(type: "integer", nullable: false),
+                    IssuesSkipped = table.Column<int>(type: "integer", nullable: false),
+                    CommentsCreated = table.Column<int>(type: "integer", nullable: false),
+                    LabelsCreated = table.Column<int>(type: "integer", nullable: false),
+                    MilestonesCreated = table.Column<int>(type: "integer", nullable: false),
+                    LinksCreated = table.Column<int>(type: "integer", nullable: false),
+                    WarningCount = table.Column<int>(type: "integer", nullable: false),
+                    WarningsJson = table.Column<string>(type: "text", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    FinishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TrackerImportJobs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_TrackerImportJobs_AspNetUsers_RequestedById",
+                        column: x => x.RequestedById,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_TrackerImportJobs_Projects_ProjectId",
                         column: x => x.ProjectId,
                         principalTable: "Projects",
                         principalColumn: "Id",
@@ -4269,6 +4338,12 @@ namespace ByteBench.Data.MigrationsPostgres
                 column: "ParentId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_ImportedItems_ProjectId_SourceKey_Kind_ExternalId",
+                table: "ImportedItems",
+                columns: new[] { "ProjectId", "SourceKey", "Kind", "ExternalId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_IssueComponents_IssuesId",
                 table: "IssueComponents",
                 column: "IssuesId");
@@ -5042,6 +5117,16 @@ namespace ByteBench.Data.MigrationsPostgres
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_TrackerImportJobs_ProjectId_Status",
+                table: "TrackerImportJobs",
+                columns: new[] { "ProjectId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TrackerImportJobs_RequestedById",
+                table: "TrackerImportJobs",
+                column: "RequestedById");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Watches_IssueId",
                 table: "Watches",
                 column: "IssueId");
@@ -5254,6 +5339,9 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "GroupRedirects");
 
             migrationBuilder.DropTable(
+                name: "ImportedItems");
+
+            migrationBuilder.DropTable(
                 name: "IssueComponents");
 
             migrationBuilder.DropTable(
@@ -5378,6 +5466,9 @@ namespace ByteBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "SshKeys");
+
+            migrationBuilder.DropTable(
+                name: "TrackerImportJobs");
 
             migrationBuilder.DropTable(
                 name: "UserNotificationSettings");

@@ -1747,6 +1747,42 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("GroupRedirects");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.ImportedItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ImportId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LocalId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "SourceKey", "Kind", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("ImportedItems");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Issue", b =>
                 {
                     b.Property<int>("Id")
@@ -4695,6 +4731,89 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("SshKeys");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.TrackerImportJob", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CommentsCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IssuesCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IssuesExpected")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IssuesRead")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IssuesSkipped")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LabelsCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LinksCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MilestonesCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SettingsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceProject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WarningCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WarningsJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedById");
+
+                    b.HasIndex("ProjectId", "Status");
+
+                    b.ToTable("TrackerImportJobs");
+                });
+
             modelBuilder.Entity("ByteBench.Data.User", b =>
                 {
                     b.Property<int>("Id")
@@ -6011,6 +6130,15 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.ImportedItem", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ByteBench.Data.Issue", b =>
                 {
                     b.HasOne("ByteBench.Data.User", "Assignee")
@@ -7042,6 +7170,24 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Repository");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.TrackerImportJob", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.User", "RequestedBy")
+                        .WithMany()
+                        .HasForeignKey("RequestedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("RequestedBy");
                 });
 
             modelBuilder.Entity("ByteBench.Data.UserNotificationSettings", b =>

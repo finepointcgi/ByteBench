@@ -364,6 +364,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureAiTriage(b);
         ConfigureFlags(b);
         ConfigureAccounts(b);
+        ConfigureTrackerImports(b);
     }
 
     // ----- Forks -----
