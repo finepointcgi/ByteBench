@@ -251,9 +251,11 @@ public sealed class TrackerImportWriter
             await HierarchyRules.RecordAsync(db, issue, null, actorId);
             await db.SaveChangesAsync(ct);
         }
+        var seenPairs = new HashSet<(int, int)>();
         foreach (var (from, to, type) in links.Distinct())
         {
             if (!issueIds.TryGetValue(from, out var a) || !issueIds.TryGetValue(to, out var b) || a == b) continue;
+            if (!seenPairs.Add((Math.Min(a, b), Math.Max(a, b)))) continue;
             if (await db.IssueLinks.AnyAsync(l => (l.SourceIssueId == a && l.TargetIssueId == b) || (l.SourceIssueId == b && l.TargetIssueId == a), ct)) continue;
             db.IssueLinks.Add(new IssueLink { SourceIssueId = a, TargetIssueId = b, Type = type, CreatedById = actorId });
             job.LinksCreated++;
