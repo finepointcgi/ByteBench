@@ -83,6 +83,7 @@
     <TabLink Active="@(Active == "pipelines")" Href="@PipelineUrls.List(Repo)" Icon="@Icons.Material.Outlined.PlayCircleOutline">Pipelines</TabLink>
     <TabLink Active="@(Active == "environments")" Href="@PipelineUrls.Environments(Repo)" Icon="@Icons.Material.Outlined.Cloud">Environments</TabLink>
     <TabLink Active="@(Active == "security")" Href="@ByteBench.Services.Security.SecurityUrls.Repo(Repo)" Icon="@Icons.Material.Outlined.Shield">Security</TabLink>
+    <TabLink Active="@(Active == "insights")" Href="@(RepoUrls.Base(Repo) + "/insights")" Icon="@Icons.Material.Outlined.Insights">Insights</TabLink>
     <TabLink Active="@(Active == "search")" Href="@CodeUrls.Search(Repo, null, Ref)" Icon="@Icons.Material.Outlined.Search">Search</TabLink>
     @if (canManage)
     {

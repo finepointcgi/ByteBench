@@ -1,0 +1,207 @@
+@page "/p/{Key}/repos/{Slug}/insights"
+@inherits RepoPageBase
+@implements IDisposable
+@using ByteBench.Services.Insights
+@using ByteBench.Components.Repositories.Insights
+@inject InsightsService Insights
+@inject ProjectAccess Access
+
+<PageTitle>Insights · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="insights" />
+
+    <div class="ri-head">
+        <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2"><MudIcon Icon="@Icons.Material.Outlined.Insights" /> Insights</MudText>
+        <nav class="ri-ranges" aria-label="Range for contributors">
+            @foreach (var r in InsightsService.Ranges)
+            {
+                <MudButton Href="@RangeUrl(r)" Size="Size.Small" Variant="@(r == range ? Variant.Filled : Variant.Outlined)" Color="@(r == range ? Color.Primary : Color.Default)"
+                           aria-current="@(r == range ? "true" : null)">@RangeLabel(r)</MudButton>
+            }
+        </nav>
+    </div>
+
+    @if (view == null)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mb-3" aria-label="Loading insights" />
+    }
+    else if (view.Status == InsightsStatus.Empty)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">@view.Message</MudAlert>
+    }
+    else if (view.Status == InsightsStatus.Failed && view.CommitsScanned == 0)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true">@view.Message</MudAlert>
+    }
+    else if (view.Status == InsightsStatus.Computing && view.CommitsScanned == 0)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@view.Message</MudAlert>
+        <MudProgressLinear Indeterminate="true" aria-label="Computing insights" />
+    }
+    else
+    {
+        @if (view.Status == InsightsStatus.Computing) { <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">@view.Message</MudAlert> }
+        @if (view.Status == InsightsStatus.Failed) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">Couldn't refresh the numbers: @view.Message The figures below are from an earlier head of the branch.</MudAlert> }
+        @if (view.Truncated)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                The history is longer than this server reads (Insights:MaxCommits, or the time limit): the newest @view.CommitsScanned.ToString("N0") commits on <code>@view.Branch</code> are counted, older ones are not.
+            </MudAlert>
+        }
+
+        <div class="ri-tiles">
+            <MudPaper Outlined="true" Class="ri-tile"><span class="ri-num">@view.CommitsScanned.ToString("N0")</span><span class="ri-label">commits on <code>@view.Branch</code></span></MudPaper>
+            <MudPaper Outlined="true" Class="ri-tile"><span class="ri-num">@view.Contributors.Count.ToString("N0")</span><span class="ri-label">contributor@(view.Contributors.Count == 1 ? "" : "s") (@RangeLabel(range))</span></MudPaper>
+            <MudPaper Outlined="true" Class="ri-tile"><span class="ri-num">@(view.Languages.FirstOrDefault()?.Name ?? "-")</span><span class="ri-label">main language</span></MudPaper>
+            <MudPaper Outlined="true" Class="ri-tile"><span class="ri-num">@view.PullRequests.Sum(p => p.Merged).ToString("N0")</span><span class="ri-label">pull requests merged, last 12 months</span></MudPaper>
+        </div>
+
+        <div class="ri-grid">
+            <MudPaper Outlined="true" Class="pa-4 ri-wide">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Contributors</MudText>
+                @if (view.Contributors.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No commits in this range.</MudText>
+                }
+                else
+                {
+                    <div class="ri-table-wrap">
+                        <table class="ri-table">
+                            <thead><tr><th scope="col">Contributor</th><th scope="col" class="ri-r">Commits</th><th scope="col" class="ri-r">Additions</th><th scope="col" class="ri-r">Deletions</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in view.Contributors.Take(50))
+                                {
+                                    <tr>
+                                        <td class="ri-who">
+                                            @if (c.UserName != null) { <a href="@("/u/" + Uri.EscapeDataString(c.UserName))" title="@("@" + c.UserName)">@(c.DisplayName ?? c.UserName)</a> }
+                                            else { <span title="@c.Email">@c.Name</span> }
+                                            <span class="ri-bar" aria-hidden="true"><span style="@($"width:{Pct(c.Commits, view.Contributors[0].Commits)}%")"></span></span>
+                                        </td>
+                                        <td class="ri-r">@c.Commits.ToString("N0")</td>
+                                        <td class="ri-r ri-add">+@c.Additions.ToString("N0")</td>
+                                        <td class="ri-r ri-del">−@c.Deletions.ToString("N0")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (view.Contributors.Count > 50) { <MudText Typo="Typo.caption" Class="mud-text-secondary">Showing the top 50 of @view.Contributors.Count.</MudText> }
+                }
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">
+                    People are merged by e-mail address and, after that, by name. Additions and deletions leave out lockfiles, vendored and generated files; merge commits aren't counted.
+                </MudText>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Commit activity</MudText>
+                <InsightBars Items="@view.CommitActivity.Select(w => ("Week of " + w.WeekStart, (double)w.Commits)).ToList()" Unit="commits" Title="Commits per week, last 52 weeks"
+                             FirstLabel="@view.CommitActivity.FirstOrDefault()?.WeekStart" LastLabel="@view.CommitActivity.LastOrDefault()?.WeekStart" Caption="commits per week" />
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Code frequency</MudText>
+                <InsightCodeFrequency Weeks="view.CodeFrequency" />
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4 ri-wide">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Commits per day</MudText>
+                <InsightHeatmap Days="view.Heatmap" />
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4 ri-wide">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Languages</MudText>
+                <InsightLanguages Languages="view.Languages" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-2">By file extension on <code>@view.Branch</code>; vendored directories, lockfiles and generated files are left out.</MudText>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Busiest hours (UTC)</MudText>
+                <InsightBars Items="@Enumerable.Range(0, 24).Select(h => ($"{h:00}:00", (double)view.Hours[h])).ToList()" Unit="commits" Title="Commits by hour of day (UTC)"
+                             FirstLabel="00:00" LastLabel="23:00" />
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Busiest weekdays (UTC)</MudText>
+                <InsightBars Items="@WeekdayOrder.Select(d => (Names[d], (double)view.Weekdays[d])).ToList()" Unit="commits" Title="Commits by weekday (UTC)"
+                             FirstLabel="Monday" LastLabel="Sunday" />
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-4 ri-wide">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Pull requests</MudText>
+                <div class="ri-table-wrap">
+                    <table class="ri-table">
+                        <thead><tr><th scope="col">Month</th><th scope="col" class="ri-r">Opened</th><th scope="col" class="ri-r">Merged</th><th scope="col" class="ri-r">Median time to merge</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in view.PullRequests.AsEnumerable().Reverse())
+                            {
+                                <tr><td>@m.Month</td><td class="ri-r">@m.Opened</td><td class="ri-r">@m.Merged</td><td class="ri-r">@Duration(m.MedianHoursToMerge)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </MudPaper>
+        </div>
+
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
+            Computed @(view.ComputedAt is { } at ? at.ToLocalTime().ToString("MMM d, yyyy HH:mm") : "") from <code>@(view.HeadSha?[..Math.Min(7, view.HeadSha.Length)])</code>; refreshed after the next view following a push. Days and hours are UTC.
+        </MudText>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "range")] public string? RangeQuery { get; set; }
+
+    private static readonly int[] WeekdayOrder = [1, 2, 3, 4, 5, 6, 0];
+    private static readonly string[] Names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    private InsightsView? view;
+    private string range = "1y";
+    private Timer? poll;
+    private int loading;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        range = InsightsService.NormalizeRange(RangeQuery);
+        view = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Repo == null || Interlocked.Exchange(ref loading, 1) == 1) return;
+        try
+        {
+            view = await Insights.GetAsync(Repo, range);
+            if (view.Status == InsightsStatus.Computing)
+                poll ??= new Timer(_ => InvokeAsync(RefreshAsync), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+            else { poll?.Dispose(); poll = null; }
+        }
+        finally { Interlocked.Exchange(ref loading, 0); }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try { await LoadAsync(); StateHasChanged(); }
+        catch (InvalidOperationException) { /* lost access or the repository is gone */ }
+    }
+
+    private string RangeUrl(string r) => $"/p/{Repo!.Project.Key}/repos/{Repo.Slug}/insights" + (r == "1y" ? "" : "?range=" + r);
+    private static string RangeLabel(string r) => r switch { "7d" => "7 days", "30d" => "30 days", "90d" => "90 days", "1y" => "1 year", _ => "All time" };
+    private static double Pct(int value, int max) => max <= 0 ? 0 : Math.Round(100.0 * value / max, 1);
+
+    private static string Duration(double? hours) => hours switch
+    {
+        null => "-",
+        < 1 => "< 1 hour",
+        < 48 => $"{hours:0.#} hours",
+        _ => $"{hours / 24:0.#} days",
+    };
+
+    public void Dispose() => poll?.Dispose();
+}

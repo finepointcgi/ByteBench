@@ -1,0 +1,291 @@
+@page "/p/{Key}/repos/{Slug}/settings/dependencies"
+@inherits RepoPageBase
+@using ByteBench.Services.DependencyBot
+@inject DependencyBotService Bot
+@inject ProjectAccess Access
+@inject ISnackbar Snackbar
+
+<PageTitle>Dependencies · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage the dependency bot." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null && input != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="dependencies" />
+        <div class="gb-min0">
+            <div class="mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Update" /> Dependency updates</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    The <b>ByteBench dependency bot</b> reads your manifests (<code>package.json</code>, <code>*.csproj</code> and <code>Directory.Packages.props</code>,
+                    <code>requirements*.txt</code> and <code>pyproject.toml</code> pins, <code>go.mod</code>), asks the public registries for newer versions and opens pull requests that change only the manifest text.
+                    It never runs a package manager, so lockfiles (<code>package-lock.json</code>, <code>go.sum</code>) are not regenerated; each pull request says so.
+                    Registries are public only: private registries and their tokens are not supported. The registry addresses are server settings (<code>DependencyBot:Registries:*</code>).
+                    @if (!Bot.WorkerEnabled) { <span> The schedule is switched off on this server (<code>DependencyBot:Enabled=false</code>): use <b>Check now</b>.</span> }
+                </MudText>
+            </div>
+
+            @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-2">Settings</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12">
+                        <MudSwitch T="bool" @bind-Value="input.Enabled" Color="Color.Primary" Label="Run on a schedule and open pull requests" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="DependencySchedule" Label="Schedule" @bind-Value="input.Schedule" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem T="DependencySchedule" Value="DependencySchedule.Daily">Daily</MudSelectItem>
+                            <MudSelectItem T="DependencySchedule" Value="DependencySchedule.Weekly">Weekly</MudSelectItem>
+                            <MudSelectItem T="DependencySchedule" Value="DependencySchedule.Monthly">Monthly</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="DependencyStrategy" Label="Update strategy" @bind-Value="input.Strategy" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   HelperText="@StrategyHelp">
+                            <MudSelectItem T="DependencyStrategy" Value="DependencyStrategy.Patch">Patch updates only</MudSelectItem>
+                            <MudSelectItem T="DependencyStrategy" Value="DependencyStrategy.Minor">Minor and patch</MudSelectItem>
+                            <MudSelectItem T="DependencyStrategy" Value="DependencyStrategy.Major">Everything, including major</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <fieldset class="dep-fieldset">
+                            <legend>Ecosystems</legend>
+                            @foreach (var eco in Ecosystems.All)
+                            {
+                                var e = eco;
+                                <MudCheckBox T="bool" Value="@input.Ecosystems.Contains(e)" ValueChanged="@(v => ToggleEcosystem(e, v))" Color="Color.Primary" Dense="true">@Ecosystems.Label(e)</MudCheckBox>
+                            }
+                        </fieldset>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSwitch T="bool" @bind-Value="input.Grouped" Color="Color.Primary" Label="One pull request for all updates of a run" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField T="int" Label="Open bot pull requests (max)" @bind-Value="input.MaxOpenPullRequests" Min="1" Max="50" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string" Label="Target branch" @bind-Value="input.TargetBranch" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="@Repo.DefaultBranch"
+                                      HelperText="Updates are based on, and merged into, this branch (default: the default branch)." MaxLength="250" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string" Label="Labels" @bind-Value="input.Labels" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="dependencies, bot" MaxLength="500"
+                                      HelperText="Comma separated. Pull requests have no labels in ByteBench, so they are listed in the description." />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string" Label="Reviewers" @bind-Value="input.Reviewers" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="alice, bob" MaxLength="500"
+                                      HelperText="Comma separated user names; they must be project members who can review." />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField T="string" Label="Ignore list" @bind-Value="input.IgnoreList" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="4" MaxLines="12" MaxLength="4000"
+                                      Class="gb-mono-input" Placeholder="@IgnorePlaceholder"
+                                      HelperText="One per line: a package name (a trailing * matches a prefix), optionally with @@range of versions never to update to, e.g. react@@>=19 or lodash@@4.x." />
+                    </MudItem>
+                </MudGrid>
+                <div class="d-flex gap-2 align-center mt-4 flex-wrap">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy" OnClick="Save">Save settings</MudButton>
+                    @if (settings?.LastRunAt is { } last)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Last scheduled run @last.ToLocalTime().ToString("MMM d, HH:mm"): @settings.LastStatus@(settings.LastMessage != null ? " - " + settings.LastMessage : "")
+                        </MudText>
+                    }
+                    @if (settings?.NextRunAt is { } next && settings.Enabled)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Next run after @next.ToLocalTime().ToString("MMM d, HH:mm").</MudText>
+                    }
+                </div>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <div class="d-flex align-center flex-wrap gap-2 mb-2">
+                    <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold">Outdated dependencies</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" Disabled="@busy" OnClick="CheckNow">Check now</MudButton>
+                    @if (report != null && report.Items.Any(i => i.Status == ItemStatus.Update))
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy" OnClick="() => Create(null)">
+                            @(settings!.Grouped ? "Create the grouped PR" : "Create all update PRs")
+                        </MudButton>
+                    }
+                </div>
+                @if (busy) { <MudProgressLinear Indeterminate="true" Class="mb-2" aria-label="Working" /> }
+
+                @if (report == null)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Not checked yet. Save your settings, then press <b>Check now</b>.</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                        Checked @report.CheckedAt.ToLocalTime().ToString("MMM d, HH:mm") on <code>@report.Branch</code>: @report.ManifestsRead manifest(s), @report.PackagesChecked package(s).
+                    </MudText>
+                    @if (report.Items.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2">Everything the bot can read is up to date.</MudText>
+                    }
+                    else
+                    {
+                        <div class="dep-table-wrap">
+                            <table class="dep-table">
+                                <thead>
+                                    <tr><th scope="col">Package</th><th scope="col">Manifest</th><th scope="col">Current</th><th scope="col">Update to</th><th scope="col">Latest</th><th scope="col">Bump</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Action</span></th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var i in report.Items)
+                                    {
+                                        <tr @key="i.Key">
+                                            <td class="dep-name"><span class="dep-eco">@Ecosystems.Label(i.Ecosystem)</span> @i.Name</td>
+                                            <td><code>@i.Manifest</code></td>
+                                            <td><code>@i.Current</code></td>
+                                            <td>
+                                                @if (i.Proposed != null)
+                                                {
+                                                    @if (i.ReleaseUrl != null) { <a href="@i.ReleaseUrl" target="_blank" rel="noopener noreferrer"><code>@i.Proposed</code></a> } else { <code>@i.Proposed</code> }
+                                                }
+                                                else { <span>-</span> }
+                                            </td>
+                                            <td><code>@i.Latest</code></td>
+                                            <td><span class="dep-kind dep-@i.Kind">@i.Kind</span></td>
+                                            <td>
+                                                @StatusText(i)
+                                                @if (i.SecurityNote != null) { <div class="dep-sec"><MudIcon Icon="@Icons.Material.Outlined.Shield" Size="Size.Small" /> @i.SecurityNote</div> }
+                                            </td>
+                                            <td>
+                                                @if (i.Status == ItemStatus.Update)
+                                                {
+                                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="() => Create(i.Key)" aria-label="@($"Create update PR for {i.Name}")">Create update PR</MudButton>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    @if (report.Warnings.Count > 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                            <b>Warnings</b>
+                            <ul class="dep-warnings">@foreach (var w in report.Warnings.Take(30)) { <li>@w</li> }</ul>
+                            @if (report.Warnings.Count > 30) { <span>…and @(report.Warnings.Count - 30) more.</span> }
+                        </MudAlert>
+                    }
+                }
+                @if (applyWarnings.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                        <ul class="dep-warnings">@foreach (var w in applyWarnings) { <li>@w</li> }</ul>
+                    </MudAlert>
+                }
+            </MudPaper>
+        </div>
+    </div>
+}
+
+@code {
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private DependencyBotSettings? settings;
+    private DependencyBotInput? input;
+    private DependencyReport? report;
+    private List<string> applyWarnings = [];
+    private bool busy;
+    private const string IgnorePlaceholder = "left-pad@>=2\n@types/*\nlodash@4.17.x";
+
+    private string StrategyHelp => input?.Strategy switch
+    {
+        DependencyStrategy.Patch => "1.2.3 can become 1.2.9 but not 1.3.0.",
+        DependencyStrategy.Minor => "1.2.3 can become 1.9.0 but not 2.0.0.",
+        _ => "Any newer stable version, including new major versions.",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (!perms.Can(Permission.ManageRepositories)) return;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        settings = await Bot.GetAsync(Repo!);
+        report = DependencyBotService.Report(settings);
+        input = new DependencyBotInput
+        {
+            Enabled = settings.Enabled, Schedule = settings.Schedule, Strategy = settings.Strategy, Grouped = settings.Grouped,
+            Ecosystems = settings.Ecosystems.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList(),
+            MaxOpenPullRequests = settings.MaxOpenPullRequests, IgnoreList = settings.IgnoreList, TargetBranch = settings.TargetBranch,
+            Labels = settings.Labels, Reviewers = settings.Reviewers,
+        };
+    }
+
+    private void ToggleEcosystem(string eco, bool on)
+    {
+        if (on && !input!.Ecosystems.Contains(eco)) input.Ecosystems.Add(eco);
+        else if (!on) input!.Ecosystems.Remove(eco);
+    }
+
+    private static MarkupString StatusText(OutdatedItem i) => (MarkupString)(i.Status switch
+    {
+        ItemStatus.PullRequestOpen => System.Net.WebUtility.HtmlEncode(i.Note ?? "Pull request open"),
+        ItemStatus.Closed => System.Net.WebUtility.HtmlEncode(i.Note ?? "Closed without merging"),
+        ItemStatus.HeldBack => System.Net.WebUtility.HtmlEncode(i.Note ?? "Held back"),
+        _ => "Update available",
+    });
+
+    private async Task Save()
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            await Me.EnsureLoadedAsync();
+            await Bot.SaveAsync(Repo!, input!, Me.Id);
+            await Load();
+            Snackbar.Add("Dependency bot settings saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task CheckNow()
+    {
+        Error = null; applyWarnings = [];
+        busy = true;
+        try
+        {
+            report = await Bot.CheckNowAsync(Repo!);
+            settings = await Bot.GetAsync(Repo!);
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Create(string? key)
+    {
+        Error = null; applyWarnings = [];
+        busy = true;
+        try
+        {
+            await Me.EnsureLoadedAsync();
+            var result = await Bot.CreatePullRequestAsync(Repo!, key, Me.Id);
+            applyWarnings = result.Warnings;
+            if (result.PullRequests.Count > 0)
+                Snackbar.Add("Opened " + string.Join(", ", result.PullRequests.Select(n => "#" + n)) + ".", Severity.Success);
+            else if (result.Warnings.Count == 0) Snackbar.Add("Nothing to update.", Severity.Info);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
+    }
+}

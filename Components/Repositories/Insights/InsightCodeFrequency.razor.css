@@ -1,0 +1,9 @@
+.icf-figure { margin: 0; }
+.icf-svg { display: block; width: 100%; height: auto; max-height: 180px; }
+.icf-add { fill: var(--mud-palette-success); }
+.icf-del { fill: var(--mud-palette-error); }
+.icf-axis { stroke: var(--mud-palette-lines-default); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.icf-caption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; font-size: .75rem; color: var(--mud-palette-text-secondary); }
+.icf-key { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; vertical-align: -1px; margin-left: 6px; }
+.icf-key-add { background: var(--mud-palette-success); }
+.icf-key-del { background: var(--mud-palette-error); }

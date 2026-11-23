@@ -31,7 +31,8 @@ public partial class MentionLookup(IDbContextFactory<AppDbContext> dbFactory, Pr
 
         var automationBot = Automation.AutomationBot.UserName.ToUpperInvariant();
         var deskBot = ServiceDesk.ServiceDeskBot.UserName.ToUpperInvariant();
-        var users = db.Users.Where(u => u.NormalizedUserName != bot && u.NormalizedUserName != automationBot && u.NormalizedUserName != deskBot);
+        var depBot = DependencyBot.DependencyBotAccount.UserName.ToUpperInvariant();
+        var users = db.Users.Where(u => u.NormalizedUserName != bot && u.NormalizedUserName != automationBot && u.NormalizedUserName != deskBot && u.NormalizedUserName != depBot);
         if (project.Visibility != ProjectVisibility.Internal)
             users = users.Where(u => u.IsAdmin || db.ProjectMembers.Any(m => m.ProjectId == projectId && m.UserId == u.Id));
         if (q.Length > 0)

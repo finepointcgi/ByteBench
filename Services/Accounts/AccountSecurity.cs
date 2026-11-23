@@ -13,7 +13,7 @@ public static class SystemAccounts
 {
     private static readonly HashSet<string> Names = new(StringComparer.OrdinalIgnoreCase)
     {
-        Ai.AiBot.UserName, Automation.AutomationBot.UserName, ServiceDesk.ServiceDeskBot.UserName, Ci.CiJobTokens.UserName,
+        Ai.AiBot.UserName, Automation.AutomationBot.UserName, ServiceDesk.ServiceDeskBot.UserName, Ci.CiJobTokens.UserName, DependencyBot.DependencyBotAccount.UserName,
     };
 
     public static bool IsSystem(User? u) => u?.UserName != null && Names.Contains(u.UserName);

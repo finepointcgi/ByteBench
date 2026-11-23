@@ -130,6 +130,8 @@ builder.Services.AddScoped<ProtectedTagService>();
 ByteBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
 ByteBench.Services.Importing.ImportServiceCollectionExtensions.AddRepositoryImport(builder.Services, builder.Configuration); // repository import wizard
 ByteBench.Services.TrackerImport.TrackerImportServiceCollectionExtensions.AddTrackerImport(builder.Services, builder.Configuration); // issue importers: GitHub, GitLab, Jira
+ByteBench.Services.Insights.InsightsServiceCollectionExtensions.AddInsights(builder.Services, builder.Configuration); // repository insights
+ByteBench.Services.DependencyBot.DependencyBotServiceCollectionExtensions.AddDependencyBot(builder.Services, builder.Configuration); // dependency update bot
 ByteBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
 builder.Services.AddByteBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import
