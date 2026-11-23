@@ -114,7 +114,7 @@
 <h2 id="enforcement">How it is enforced</h2>
 <ul>
 <li>Every service checks access at the start of each write, and reads return only projects you can view. The UI hides what you cannot do, but the server enforces it either way.</li>
-<li>In the <a href="api.html">REST API</a>, a project you cannot see answers 404 and a visible project where you lack the permission answers 403.</li>
+<li>In the <a href="api.html">REST API</a>, a project you cannot see answers 404 and a visible project where you lack the permission answers 403. Every area, including pipelines, packages, Pages and AI review, uses the same permission checks as its UI page, because the endpoints call the same services.</li>
 <li>Notification and mention lookups are restricted to people who can view the project.</li>
 <li>Locked and deactivated users lose access within about a minute.</li>
 </ul>

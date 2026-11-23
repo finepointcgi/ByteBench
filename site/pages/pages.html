@@ -108,7 +108,9 @@
 <tr><td>Change settings, roll back, delete the site</td><td>Maintainer (ManageRepositories)</td></tr>
 <tr><td>Make a site Public</td><td>Owner</td></tr>
 </table>
-<p>There is no separate REST API for Pages; configure through the UI and the CI file.</p>
+<p>Sites are published by the CI file; everything else is also available over the <a href="api.html#api-pages">REST API</a> under <code>/api/v1/projects/{key}/repos/{slug}/pages</code>: site status, deployment history, rollback, deleting the site's content and the settings (<code>GET</code>/<code>PUT .../pages/settings</code>). The roles in the table above apply: reading needs Viewer, everything else Maintainer, and <code>"visibility":"public"</code> an Owner. The audit events and the <code>pages.deployed</code> webhook are the same as in the UI.</p>
+<pre><code>curl -H "Authorization: Bearer $TOKEN" https://bytebench.example.com/api/v1/projects/WEB/repos/site/pages
+curl -X POST -H "Authorization: Bearer $TOKEN" https://bytebench.example.com/api/v1/projects/WEB/repos/site/pages/deployments/3/rollback</code></pre>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <table>

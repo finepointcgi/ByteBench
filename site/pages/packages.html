@@ -135,7 +135,9 @@ docker pull bytebench.example.com/web/app:1.4.0</code></pre>
 <li>Audit events <code>package.published</code>, <code>package.deleted</code>, <code>package.version_deleted</code> and <code>package.settings_changed</code>. Publishes from a job are attributed to whoever triggered the pipeline.</li>
 </ul>
 <h2 id="api">API</h2>
-<p>There is no separate REST API for managing packages: the NuGet, npm and OCI protocol endpoints above <em>are</em> the API. To list what is in a project from a script, use the client protocols (for example <code>GET /packages/WEB/nuget/v3/flatcontainer/{id}/index.json</code>, <code>GET /packages/WEB/npm/{name}</code> or <code>GET /v2/_catalog</code>).</p>
+<p>Publishing and installing use the NuGet, npm and OCI protocol endpoints above. To <em>manage</em> a project's registry from a script there is a REST API under <code>/api/v1/projects/{key}/packages</code>: list packages (<code>?type=</code>, <code>?q=</code>), get one with its versions, files and install commands, delete a version or a whole package, and read or change the registry switch and cleanup policy (<code>GET</code>/<code>PUT .../packages/settings</code>). Reads need Viewer and <code>read_api</code>; deleting and settings need Maintainer and <code>write_api</code>. Deletes write the same audit events and <code>package.deleted</code> webhook as the UI. See the <a href="api.html#api-packages">endpoint catalogue</a>.</p>
+<pre><code>curl -H "Authorization: Bearer $TOKEN" "https://bytebench.example.com/api/v1/projects/WEB/packages?type=nuget"
+curl -X DELETE -H "Authorization: Bearer $TOKEN" https://bytebench.example.com/api/v1/projects/WEB/packages/4/versions/19</code></pre>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <table>

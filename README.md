@@ -586,6 +586,8 @@ dotnet user-secrets set "Ai:ApiKey" "sk-ant-..."
 
 Without a key, every AI control hides itself or shows "AI review isn't set up (set ANTHROPIC_API_KEY)", and nothing is queued.
 
+**REST API** (`Api/AiReviewEndpoints.cs`): `GET`/`PUT …/repos/{slug}/ai-review/settings` (Maintainer), `GET …/pull-requests/{n}/ai-reviews[/{id}]` (reviews with findings), `POST …/pull-requests/{n}/ai-reviews` (Developer; 202, or 409/429/422 with the button's reasons), `POST …/pull-requests/{n}/ai-findings/{commentId}/dismiss|undismiss`.
+
 **What it does**
 
 - **Triggers:** a PR is created; new commits are pushed to an open PR's source branch (debounced by 30 seconds, so a burst of pushes is reviewed once); or someone clicks **Ask ByteBench AI to review** / **Re-run AI review** in the PR sidebar. A head commit is reviewed only once unless someone re-runs it.
@@ -822,6 +824,7 @@ A CI job named `pages` (or with `pages: true`, `pages: dist`, `pages: { path: di
 - **URLs**: `/pages/{KEY}/{slug}/...` (review sites: `/pages/{KEY}/{slug}/-/r/{branch-slug}/`), and with `Pages:BaseDomain` (e.g. `pages.example.com`, needs wildcard DNS/TLS for `*.*.pages.example.com`) `{slug}.{key}.{BaseDomain}` and `{branch-slug}.{slug}.{key}.{BaseDomain}` (slugs with `.`/`_` stay path-only). `Pages:PathModeEnabled=false` serves only dedicated hosts. `index.html` for folders, `name.html` clean URLs, `404.html`, SPA fallback (setting), `ETag`/`If-None-Match`, `Range`, `HEAD`.
 - **Isolation (why the headers look like this)**: uploaded HTML/JS must never run with ByteBench's privileges. On a dedicated host the browser's own origin separation does it; the ByteBench sign-in cookie is ignored there. In path mode the site shares ByteBench's origin, so every response carries `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups ...` **without** `allow-same-origin`: scripts run in an opaque origin and can't read ByteBench cookies/storage or call its API as the user (consequently a site's own `localStorage`/cookies don't work in path mode). Always `X-Content-Type-Options: nosniff`, restrictive `Permissions-Policy`, no `Set-Cookie` (except the host sign-in below). Pages responses set their own full header set (`ProductionSetup.OwnSecurityHeadersKey`); ByteBench's own CSP is unchanged. Keep `Pages:BaseDomain` on a registrable domain (or Public Suffix List entry) separate from ByteBench so sites can't set cookies for it.
 - **Access** (ProjectAccess decides, on every request): *Members* (default; everyone who can view the project) or *Public* (anyone; only Owners can switch, and `Pages:AllowPublic=false` forbids it). Dedicated host, members-only: unauthenticated page loads go to `/pages/-/auth` on ByteBench (sign-in), which hands a 1-minute signed code to `/_gb/pages-login` on the site's host; that sets a host-only, HttpOnly `gb_pages` cookie (`Pages:HostCookieHours`, 8). Path mode, members-only: a page load with the ByteBench cookie is redirected to `/-/t/{token}/...` (signed, repository-bound, `Pages:PathTokenMinutes`, 60, `Referrer-Policy: no-referrer`) because a sandboxed page's sub-requests carry no cookie; relative links keep working. Removing a member ends access at once. Anyone who can see the project but not the site gets 404; anonymous users on a members-only site are sent to sign in (which reveals that the address exists).
+- **REST API** (`Api/PagesEndpoints.cs`): `GET …/repos/{slug}/pages` (status), `GET pages/deployments` (`?slot=`), `POST pages/deployments/{id}/rollback`, `DELETE pages` (`?slot=`), `GET`/`PUT pages/settings` (Maintainer; `visibility: public` needs an Owner).
 - **UI/API**: repository Settings → Pages (enable, visibility, 404 behaviour, review sites, delete site, deployments with rollback); a "Site" button in the repository header; audit events `pages.deployed`, `pages.rolled_back`, `pages.settings_updated`, `pages.deleted`; webhook event `pages.deployed`; a `PagesDeployed` notification to whoever triggered the pipeline.
 
 ## Security scanning (Night Owl)
@@ -1002,6 +1005,8 @@ Code: `Services/Editor/` (workspaces, `WorkspaceSnapshot`, `EditorPushNotifier`)
 ### REST API (`/api/v1`)
 
 Minimal APIs in `Api/`. A short reference page is at `/developers/api` (the **API** link in the top bar), and the full OpenAPI 3.1 document is at **`/api/v1/openapi.json`**.
+
+Packages (`Api/PackageEndpoints.cs`): `GET /projects/{key}/packages` (`?type=`, `?q=`), `GET …/packages/{id}`, `DELETE …/packages/{id}` and `…/versions/{versionId}` (Maintainer), `GET`/`PUT …/packages/settings` (registry switch and cleanup policy, Maintainer). Pipelines, Pages and AI review: see their sections.
 
 **Authentication.** Send a personal access token as a bearer token. A signed-in browser session (cookie) works too, so the UI can call the API.
 
@@ -1539,6 +1544,7 @@ Pipelines can get secrets (deploy keys, API tokens, …) as environment variable
 
 - **Where:** per project in the **CI variables** card at `/p/{KEY}/settings` (every repository in the project gets them), and per repository at `/p/{KEY}/repos/{slug}/settings/ci-variables` (**Settings → CI variables**). A repository variable overrides a project variable with the same name.
 - **Who:** Maintainers and Owners (`ManageRepositories`).
+- **REST API** (`Api/PipelineEndpoints.cs`): `GET`/`POST …/repos/{slug}/pipelines` (`?ref=`, `?status=`), `GET pipelines/{id}`, `POST …/cancel|rerun|approve`, `GET …/steps/{stepId}/log` (`?tail=`, `?offset=&limit=`), `POST …/jobs/{jobId}/retry|play`, artifacts (`GET …/artifacts`, `…/jobs/{jobId}/artifacts`, `artifacts.zip`, `artifacts/file?path=`); CI variables (names and flags only, never values; Maintainer) at `…/repos/{slug}/ci/variables` and `/projects/{key}/ci/variables` (`GET`/`POST`, `PUT`/`DELETE …/{id}`). Tests: `tests/ByteBench.Tests/RestAreasApiTests.cs`.
 - **Fields:** a name (letters, digits and `_`, not starting with a digit; `CI` and `BYTEBENCH_*` are reserved), a single-line value (up to 10,000 characters), and **Protected**.
 - **Storage:** values are encrypted with ASP.NET Core Data Protection (purpose `ByteBench.CiVariables.v1`) and never shown again. The list only says "updated *date* by *user*". Editing with an empty value keeps the stored value. If the Data Protection keys are lost, the variable is skipped with a note in the step log, and must be saved again.
 - **Protected variables** only reach pipelines whose branch matches a [branch protection rule](#branch-protection-reviewers--pr-templates). Pull request pipelines run on the PR's source branch, so a PR from an unprotected branch never sees them. The step log says how many protected variables were held back.

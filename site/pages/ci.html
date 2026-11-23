@@ -164,8 +164,14 @@ jobs:
 <tr><td><code>BYTEBENCH_REGISTRY</code>, <code>BYTEBENCH_REGISTRY_IMAGE</code>, <code>BYTEBENCH_REGISTRY_USER</code>, <code>BYTEBENCH_NUGET_SOURCE_URL</code>, <code>BYTEBENCH_NPM_REGISTRY_URL</code></td><td>Registry addresses and the user name to pair with the token. Only set when the site's public base URL is known (<code>PublicBaseUrl</code> or after the first request).</td></tr>
 </table>
 
+<h3 id="ci-rest-api">REST API</h3>
+<p>Pipelines can be driven from scripts: list and filter them, read a pipeline with its jobs and steps, read a step's log (tail or page it), run a pipeline for a branch, cancel or re-run it, retry or play a job, and list or download a job's artifacts. Under <code>/api/v1/projects/{key}/repos/{slug}/pipelines</code>, with the same roles as the buttons in the UI (read: Viewer and <code>read_api</code>; actions: Developer and <code>write_api</code>). CI variables can be listed (names and flags only, never values), created, updated and deleted by a Maintainer under <code>.../ci/variables</code>. Fork pull request pipelines still wait for approval and never receive variables. See the <a href="api.html#api-pipelines">endpoint catalogue</a>.</p>
+<pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"branch":"main"}' \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines
+curl -H "Authorization: Bearer $TOKEN" "https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines/12/steps/34/log?tail=2000"</code></pre>
+
 <h3 id="ci-variables">CI variables (secrets)</h3>
-<p>Secret values are managed in the UI, not in the YAML: <b>project</b> variables under <b>Project settings → CI variables</b> (<code>/p/{KEY}/settings#ci-variables</code>) and <b>repository</b> variables under <b>Repository → Settings → CI variables</b> (<code>/p/{KEY}/repos/{slug}/settings/ci-variables</code>). Managing them needs <b>Maintainer</b> or higher (ManageRepositories).</p>
+<p>Secret values are managed in the UI or the <a href="api.html#api-pipelines">REST API</a>, not in the YAML: <b>project</b> variables under <b>Project settings → CI variables</b> (<code>/p/{KEY}/settings#ci-variables</code>) and <b>repository</b> variables under <b>Repository → Settings → CI variables</b> (<code>/p/{KEY}/repos/{slug}/settings/ci-variables</code>). Managing them needs <b>Maintainer</b> or higher (ManageRepositories).</p>
 <ul>
 <li>Names: letters, digits and underscores, not starting with a digit, up to 100 characters; <code>CI</code> and <code>BYTEBENCH_*</code> are reserved. Values: a single line, up to 10,000 characters.</li>
 <li>Values are encrypted at rest (ASP.NET Core Data Protection) and are never shown again after saving. If the server's Data Protection keys change, a value can't be decrypted: the log says which variable was skipped and you save it again.</li>
