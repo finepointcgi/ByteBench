@@ -325,6 +325,9 @@ GitLab-style namespaces that own projects (`Group`, `GroupMember`, `GroupRedirec
 - **Explore, stars, profiles, global search and keyboard shortcuts** (see [Explore, profiles & search](#explore-profiles--search))
 - **Custom fields, components, versions, issue templates and estimates** (see [Custom fields, components, versions, templates & estimates](#custom-fields-components-versions-templates--estimates))
 - **Workbench link**: time is logged in Workbench, the company's ERP, from a button on each issue (see [Workbench (time & cost)](#workbench-time--cost))
+- **Merge queue, deployment approvals and deploy freezes**: see [Merge queue](#merge-queue) and [Deployment approvals & deploy freezes](#deployment-approvals--deploy-freezes)
+- **Service desk** (issues from email and a public form), **Slack and Microsoft Teams**: see [Service desk](#service-desk) and [Slack & Microsoft Teams](#slack--microsoft-teams)
+- **Package and container registry**, **feature flags**, **delivery reports and DORA**, **AI review and triage**, **security scanning**, **Pages**: see their sections below and the [documentation site](https://finepointcgi.github.io/ByteBench/)
 
 ## Sprints
 
@@ -430,6 +433,8 @@ Optional Claude-powered helpers (model `claude-opus-5-5` via the official Anthro
 | Milestones | **✨ Release notes**: Markdown grouped into Features / Fixes / Other from the milestone's closed issues and merged PRs that mention their keys, in a dialog with preview and a copyable Markdown box. |
 
 Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls; every call records usage through `AiClient`) and `Services/Ai/IssueAiLogic.cs` (pure prompt building, response parsing and filter mapping). UI lives in `Components/Ai/`. Search and drafting run at `low` effort, summaries at `medium`; JSON answers use structured outputs, and refusals or truncated answers become a friendly message.
+
+**AI issue triage.** A project Maintainer can switch on **AI issue triage** in project settings: for each new issue (and on demand with **Suggest**, Developer+) the AI panel proposes labels, a component, priority, type, an assignee and likely duplicates, each with a reason. Nothing is applied until someone accepts it (as themselves, through the normal issue services), except labels when **Apply suggested labels automatically** is on. Limits are under `Ai:Triage:*`; API under `/api/v1/projects/{key}/triage-settings` and `/issues/{number}/triage`. Details: [AI review and triage](https://finepointcgi.github.io/ByteBench/ai-review-triage.html).
 
 **Prompt-injection hygiene:** issue text is untrusted. It is placed inside delimited data tags (`<description>`, `<comment>`, `<query>`…, with look-alike tags in the content neutralised), and the shared cached system prompt tells Claude to treat that content as data and never follow instructions in it. Model output is rendered only through `Display.Markdown` (raw HTML disabled) or as plain text.
 
@@ -572,6 +577,28 @@ Typing `@` and a letter in any Markdown editor (issue description, new issue, is
 - The editor gets the project from its new optional `ProjectId` parameter. Without it, there's no autocomplete.
 
 
+## Service desk
+
+Let people without an account file issues by email or a public form. Each request becomes an ordinary issue created by the built-in `bytebench-service-desk` user (no password, can't sign in); the person who asked is a *requester* (an email and a name, never an account). Only comments sent as **Reply to requester** leave the building.
+
+- **Enable:** set `ServiceDesk:IncomingAddress` (default `desk@bytebench.localhost`) to a real mailbox that supports plus-addressing, connect mail by IMAP polling (`ServiceDesk:Imap:*`, off by default) or the signed webhook `POST /service-desk/inbound` (`X-ByteBench-Timestamp` and `X-ByteBench-Signature: sha256=` HMAC-SHA256 of `{timestamp}.{body}` keyed with `ServiceDesk:WebhookSecret`; 404 without a secret), turn on outbound email for auto-replies, then a Maintainer switches on **Accept requests for this project** at `/p/{KEY}/settings/service-desk`.
+- **Addresses:** `desk+key@...` opens a request in the project with that key; `desk+r-<token>@...` is the reply address of one request; a per-project custom address can be forwarded to the inbox.
+- **Pages:** the public form `/desk/{KEY}`, the requester's tracking page `/desk/t/{token}` (a 256-bit token is the credential; it shows only the public conversation) and the queue `/p/{KEY}/service-desk` (Developer+; filters Waiting on us, Unanswered, Open, Closed, All; overdue flag from the response target).
+- **Settings:** issue type, assignee, labels, issue template, auto-reply, status notifications, form on/off and introduction, response target (1-720 h).
+- **Abuse protection:** duplicate Message-IDs, auto-replies, bulk mail, bounces, automated and own senders are ignored; per-sender and per-IP rate limits, spam headers, blocked senders and too many links are rejected; executable attachments are skipped. Each outcome is audited (`service_desk.mail_ignored`, `.mail_rejected`, `.request_created`, `.reply_received`, `.reply_sent`, ...).
+- **API:** `GET /api/v1/projects/{key}/service-desk/requests?filter=` (Developer+) and `POST .../issues/{number}/requester-replies` (`{"body": "Markdown"}`).
+
+Code: `Services/ServiceDesk/`, `Api/ServiceDeskEndpoints.cs`. Full guide: [Service desk](https://finepointcgi.github.io/ByteBench/service-desk.html).
+
+## Slack & Microsoft Teams
+
+Two layers, usable separately:
+
+- **Channel integrations** (no server configuration): per project (`/p/{KEY}/settings/integrations`, Maintainer) or per group (Owner), up to 20 each. Choose Slack (incoming webhook, or a bot token plus channel) or Teams (incoming webhook or Workflows URL), tick events and set optional branch, label and minimum priority filters, then **Send test message**. Events: issue created, transitioned, assigned and commented; pull request opened, merged, review requested and approved; pipeline failed and fixed; deployment finished; flag changed; release published; mentions. Group integrations cover every project below the group; a project can opt out. URLs and tokens are encrypted with Data Protection and never shown again. Delivery rides on the webhook queue (10 s timeout, 3 retries, no redirects, the webhook SSRF guard, switched off after 20 failures in a row, last 25 deliveries with Redeliver). Slack messages are Block Kit, Teams messages Adaptive Cards v1.4, with user text escaped so nobody is pinged by an issue title. Extra webhook hosts go in `ChatIntegrations:AllowedHosts`.
+- **Slack app** (server-wide, optional): `Slack:SigningSecret` (required; the endpoints answer 404 without it), `Slack:BotToken` (link previews and DMs), `Slack:TeamId` (accept only this workspace), `Slack:TimestampToleranceSeconds` (default 300) and `Slack:ApiBaseUrl`. Point the Slack app at `/integrations/slack/commands` (slash command `/bytebench`: `issue`, `create`, `search`, `link`, `unlink`, `help`), `/integrations/slack/interactivity` ("Assign to me") and `/integrations/slack/events` (`link_shared`). Commands run as the linked ByteBench user (single-use 10 minute link token at `/integrations/slack/link`, audited as `chat.slack_linked` and `chat.slack_unlinked`), so normal roles apply. With a bot token, linked users can opt in to Slack DMs for their notifications in notification preferences.
+
+Put secrets in environment variables or user-secrets, never committed files. Code: `Services/ChatIntegrations/`. Full guide: [Slack and Microsoft Teams](https://finepointcgi.github.io/ByteBench/chat.html).
+
 ## AI code review
 
 ByteBench AI reviews pull requests with Claude (official Anthropic C# SDK, model `claude-opus-5-5` by default, effort `high`). Its comments come from a bot account, `bytebench-ai` ("ByteBench AI"), which is created at startup and has no password, so nobody can sign in as it. Its comments and reviews carry an **AI** badge.
@@ -622,6 +649,9 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 | Block deletion | Deleting via git push, the Branches page or "delete source branch after merge" is refused |
 | Require checks to pass | Any merge check (e.g. a pipeline) that is Pending or Failed blocks merging. Neutral never blocks |
 | Dismiss approvals when new commits are pushed | Only approvals on the PR's current head count; a push to the source branch removes older ones |
+| Require all threads resolved | Any unresolved inline comment thread blocks merging |
+| Require code owner approval | Each changed file with owners in `CODEOWNERS` needs an approval from one of them |
+| Require a merge queue | Merging into matching branches happens only through the [merge queue](#merge-queue) |
 | Allow admins to bypass | Site admins and project Owners are exempt (off by default). A bypassed merge is noted in the PR timeline |
 | Default reviewers | Added to new PRs that target a matching branch |
 
@@ -636,6 +666,20 @@ Code: `Services/Ai/AiReviewService.cs` (orchestration and streaming descriptions
 **Assigned reviewers.** Pick reviewers on the New PR page (project members with ReviewPullRequest) or with **Edit reviewers** in the PR sidebar (the author or a Maintainer+). The sidebar shows each one as Pending, Approved or Changes requested. Added reviewers get a "requested your review on" notification and start watching the PR. The PR list's **Review requested** button (`?filter=review-requested`) shows open PRs waiting for your verdict.
 
 **PR templates.** The New PR description is prefilled from the target branch's `.bytebench/pull_request_template.md`, falling back to `PULL_REQUEST_TEMPLATE.md`, then `.github/pull_request_template.md`.
+## Merge queue
+
+When many pull requests are ready at once, each can pass its own tests and still break the branch once the others land. A **merge queue** builds a speculative commit for each queued pull request (the target tip plus every entry ahead, merged with the configured method), runs a pipeline on it, and fast-forwards the target branch in order, so the branch only ever moves to commits that were tested exactly as they land.
+
+- **Enable:** tick **Require a merge queue** in a branch protection rule. Merging into matching branches then goes through **Add to merge queue** on the PR (Maintainer; the PR must be open, not a draft and pass every other merge check). A direct API merge is refused with a pointer to the queue.
+- **Rule settings:** max batch size (1-20, default 5), merge method (merge, squash or rebase; must be allowed in the repository), require CI (default on), pipeline timeout (1-1440 min, default 60) and approval timeout for manual jobs (1-10080 min, default 1440). With several matching rules the smallest batch and timeouts win.
+- **Server settings:** `MergeQueue:Enabled` (default `true`) and `MergeQueue:PollSeconds` (default 15). Queue state is derived from the database and the repository, so it survives restarts. Speculative commits live under `refs/merge-queue/{branch}/{id}`; pushes to that namespace are refused.
+- **Pages:** `/p/{KEY}/repos/{slug}/merge-queue` (live) and the PR's merge box. **Remove from queue:** the author or a Maintainer. **Move to front:** Maintainers.
+- **Ejection:** a failed, timed-out, conflicting or changed entry (new commits pushed, draft, closed, checks no longer met) is removed, the person who queued it is notified and the entries behind it are rebuilt.
+- **API:** `GET /api/v1/projects/{key}/repos/{slug}/merge-queue?branch=`, and under `pull-requests/{n}/merge-queue`: `GET`, `POST` (add, 201 or 422), `DELETE` (204) and `POST .../move-to-front`.
+- **Audit:** `merge_queue.enqueued`, `.enqueued_bypassing_protection`, `.merged`, `.failed`, `.removed`, `.moved_to_front`. Pipelines have the trigger `MergeQueue`.
+
+Code: `Services/MergeQueue/`, `Services/PullRequestService.MergeQueue.cs`, `Api/MergeQueueEndpoints.cs`. Full guide: [Branch protection and merge queue](https://finepointcgi.github.io/ByteBench/branch-protection.html).
+
 ## Pull request features: drafts, threads, suggestions, code owners & merge strategies
 
 **Draft pull requests.** Click **Create draft** on the New PR page (or send `"draft": true` to the API). A draft shows a grey **Draft** badge, can never be merged (MergeGate adds a failed "Draft" check that admins can't bypass, protected branch or not), and its assigned reviewers are recorded but **not notified** until the author or a Maintainer+ clicks **Ready for review**. **Convert to draft** goes back. The PR list has a **Drafts and ready / Ready for review / Drafts only** filter (`?draft=ready|only`). Webhooks: `pull_request.updated` with action `ready_for_review` or `converted_to_draft`.
@@ -810,8 +854,31 @@ Unknown keys are still errors (`invalid YAML at line 5, column 7: Property 'expi
 - **Rules / only.** `only: [main, "release/*"]` creates the job only on matching branches. `rules` is a list of `{ branches, when }`. The first rule whose `branches` match (no `branches` means every branch) decides, and `when: never` leaves the job out. If no job is left for a branch, pushes don't create a pipeline and **Run pipeline** says so.
 - **Scheduled pipelines.** **Pipelines → Schedules** (`/p/{KEY}/repos/{slug}/pipelines/schedules`, Maintainer+) lists, creates, edits, deletes and runs schedules. Each has a description, a branch, variables, and a 5-field cron expression in UTC (`minute hour day-of-month month day-of-week`). Fields take `*`, ranges, steps, lists and names such as `mon-fri` and `jan`; `@hourly`, `@daily`, `@weekly`, `@monthly` and `@yearly` also work. `CiScheduleRunner` checks every 30 seconds and starts each due schedule's pipeline on the branch's tip. It runs as the schedule's **owner** (the last person who saved it), with `CI_PIPELINE_SOURCE=schedule` and the schedule's variables. If the owner can no longer push, the schedule records an error instead, and a Maintainer saves it to take it over. **Run now** runs it immediately as you. Schedule variables aren't secret (Maintainers can read them). They override CI variables with the same name and go through the same mode-600 env file. Runs missed while the server was down happen once, then the schedule moves on. Audit events: `pipeline_schedule.created`, `.updated`, `.deleted`.
 - **Environments & deployments.** Each time a job with `environment:` runs, it records a **Deployment** (environment, pipeline, job, commit, branch, user, status). The environment is created the first time, and its URL is updated from the file. The **Environments** tab (`/p/{KEY}/repos/{slug}/environments`) shows each environment's current commit (its last successful deployment), latest deployment and history. **Redeploy** re-runs a deployment's job (PushCode). A deployment's user is whoever ran the manual job or retry, else whoever started the pipeline.
-- **Protected environments.** A Maintainer can mark an environment **Protected** on the Environments tab, or add it there (already protected) before any job deploys to it. Jobs that deploy to it always wait in Manual (blocking, whatever `allow_failure` says) until a Maintainer or Owner runs them. Developers get "Only Maintainers can run jobs that deploy to the protected environment …" for ▶, Retry and Redeploy alike. Protection is checked when the job becomes ready, so a pipeline created before the environment was protected still waits. It controls who runs the job; secrets still follow branch protection, so use protected CI variables for deploy keys. Audit events: `environment.created`, `environment.protected`, `environment.unprotected`, `environment.deleted`.
+- **Protected environments.** A Maintainer can mark an environment **Protected** on the Environments tab, or add it there (already protected) before any job deploys to it. Jobs that deploy to it always wait in Manual (blocking, whatever `allow_failure` says) until enough approvers approve (see [Deployment approvals](#deployment-approvals--deploy-freezes)). With no approvers listed, a Maintainer or Owner approves; Developers can't approve, run, retry or redeploy such a job. Protection is checked when the job becomes ready, so a pipeline created before the environment was protected still waits. It controls who runs the job; secrets still follow branch protection, so use protected CI variables for deploy keys. Audit events: `environment.created`, `environment.protected`, `environment.unprotected`, `environment.approval_rules_changed`, `environment.deleted`.
 
+
+### Deployment approvals & deploy freezes
+
+A protected environment gates its deployments on approvals. Rules are set per environment on the Environments tab (**Approval rules**, Maintainer+) or with `PUT /api/v1/projects/{key}/repos/{slug}/environments/{id}/approval-rules` (`{ "requiredApprovals": 2, "userIds": [4], "groupIds": [9], "isProtected": true }`).
+
+- **Required approvals** 1-10 (default 1), from distinct people. **Approvers** are users and/or groups (a group means its direct members); they must still be able to push (Developer+). With none listed, Maintainers and Owners approve. The person who triggered the pipeline isn't excluded, so require 2 for a second pair of eyes.
+- **Approve / Reject** buttons (with an optional comment) are on the project Environments page ("Waiting for approval") and the pipeline page. The last required approval starts the job, attributed to that approver. One rejection cancels the job and fails the pipeline. Approvers get a notification when a deployment starts waiting.
+- **Redeploy / rollback:** every passed deployment can be redeployed (same pipeline, job and commit); on a protected environment the requester must be an approver and counts as one approval. It's recorded as a new deployment flagged as a rollback when it goes back in history.
+- **Deploy freezes** (project Environments page, Maintainer+): a date range (UTC, start inclusive, end exclusive, either side open) or a recurring pair of cron expressions (5-field, UTC). While active, approving, running, redeploying and rolling back protected environments is refused. Unprotected environments are unaffected.
+- **Traceability:** a "Deployed to" panel on issues, merged pull requests and releases shows which environments contain the work (the environment's current deployment is the commit or a descendant). The same data feeds the DORA metrics.
+- **Webhook:** `deployment.status` (`waiting_for_approval`, `running`, `success`, `failed`, `canceled`).
+- **API** (under `/api/v1/projects/{key}`): `GET /environments`, `GET /deployments/waiting`, `GET /issues/{n}/deployments`, `GET|POST /deploy-freezes`, `DELETE /deploy-freezes/{id}`, and per repository (`/repos/{slug}`) `GET /environments[/{id}]`, `PUT /environments/{id}/approval-rules`, `POST /environments/{id}/stop`, `GET /environments/{id}/deployments`, `GET /deployments/{id}`, `POST /deployments/{id}/approve|reject|rollback` and `GET /deployed?rev=`.
+- **Audit:** `deployment.approved`, `.rejected`, `.redeployed`, `deploy_freeze.created`, `.deleted`, `environment.approval_rules_changed`, `environment.stop_requested`, `environment.stopped`.
+
+Code: `Services/Ci/` (environments and approvals), `Api/EnvironmentEndpoints.cs`. Full guide: [Environments and deployments](https://finepointcgi.github.io/ByteBench/environments.html).
+
+## Package and container registry
+
+Every project has a private NuGet v3 feed (`/packages/{KEY}/nuget/index.json`), npm registry (`/packages/{KEY}/npm/`) and Docker/OCI registry (`host/{key-lowercase}/image:tag`, the `/v2/` API on the same host), at `/p/{KEY}/packages`. On by default per project; a Maintainer can switch it off in project settings. Registry clients must use a token, never a password: a personal access token (`gbp_...`, `write_repository` or `write_api` to publish), the CI job token `BYTEBENCH_JOB_TOKEN` (`gbj_...`, a Developer in its own project), or the short-lived registry token `docker login` trades for. Pull needs ViewProject, publish needs PublishPackages (Developer), delete needs DeletePackages (Maintainer). Settings: `Packages:Root`, plus an optional cleanup policy per project. CI jobs get `BYTEBENCH_REGISTRY*`, `BYTEBENCH_NUGET_SOURCE_URL` and `BYTEBENCH_NPM_REGISTRY_URL`; jobs have no Docker daemon, so use Kaniko, Buildah or Skopeo to push images. Details: [Package and container registry](https://finepointcgi.github.io/ByteBench/packages.html).
+
+## Feature flags
+
+Flags belong to a project (`/p/{KEY}/flags`), have a stable key, a type (boolean, string, number, json) and per-environment state: on/off, a default value and ordered targeting rules (attribute clauses, segments and stable SHA-256 percentage rollouts). Environments are synced from the names your CI `environment:` keys use. Permissions: ToggleFlags (Developer) and ManageFlags (Maintainer), as in the permission table. Applications evaluate flags with a client (`gbsdk_c_`) or server (`gbsdk_s_`) SDK key at `/api/v1/flags/evaluate`, `/evaluate-all`, `/stream` (server-sent events) and, for server keys, `/definitions` for local evaluation, with ETag support. Management API: `/api/v1/projects/{key}/flags`, `/flag-environments`, `/flag-sdk-keys`. Details: [Feature flags](https://finepointcgi.github.io/ByteBench/feature-flags.html).
 
 ## Pages (static sites from CI)
 
@@ -1300,6 +1367,10 @@ Personal dashboards at `/dashboards` (sidebar **Dashboards**): each is a grid of
 
 Code: `Services/Dashboards/` (`DashboardService` for CRUD, sharing and Home; `GadgetDataService` for the viewer-scoped queries; `GadgetMath` for the pure chart aggregation; `GadgetConfig`, the gadget's JSON settings), `Components/Dashboards/` and `Components/Pages/Dashboards/`. Tests: `tests/ByteBench.Tests/RoadmapDashboardTests.cs`.
 
+### Delivery reports & DORA
+
+`/p/{KEY}/reports/delivery` (the **Delivery reports** button on Reports; anyone who can view the project) computes, on demand from existing data, cycle and lead time (average, p50/p85/p95, histogram, trend), time in status, cumulative flow, throughput and WIP, pull request metrics (time to first review, time to merge, size) and the four DORA metrics from recorded production deployments. Filters: date range (default 90 days), week or month buckets, type, label, component and assignee. An Owner chooses the production environment and failure window (1-720 h) on the DORA tab. CSV download on every tab. API: `GET /api/v1/projects/{key}/reports/{cycle-time|time-in-status|cumulative-flow|throughput|wip|dora|pull-requests}` (`?format=csv`) and `GET|PUT .../reports/dora/settings`. Details: [Dashboards and delivery reports](https://finepointcgi.github.io/ByteBench/reports.html).
+
 ### API
 
 | Method | Path (under `/api/v1`) | Notes |
@@ -1599,7 +1670,7 @@ Code: `Services/Explore/` (`StarService`, `ExploreService`, `UserActivityService
 ### Global search
 
 - **App bar:** type in **Search or jump to…** (or press `/`). After a short pause it suggests the top 3 issues, pull requests, projects and users. The first suggestion is the issue when you type a key such as `WEB-12`, otherwise "Search for …", so **Enter** jumps to the issue or opens the results page.
-- **`/search?q=`** groups the results into issues (by key, title or description), pull requests (title, description), projects (key, name, description) and users (username, display name). Each group has a tab with its total. A query that is a visible issue key redirects straight to that issue.
+- **`/search?q=`** groups the results into issues (by key, title or description), pull requests (title, description), projects (key, name, description), users (username, display name) and wiki pages (title, path, content). Each group has a tab with its total. A query that is a visible issue key redirects straight to that issue.
 - **Code** is a separate tab, because it runs `git grep` (`CodeSearchService`). It searches the default branch of each visible, non-archived repository, as plain case-insensitive text, with caps of 25 repositories, 20 matches per repository and 100 matches in all. Use a project's **Code search** for regular expressions and other branches.
 - **Matching** is SQL `LIKE` (case-insensitive for ASCII in SQLite), with `%`, `_` and `\` in your query matched literally. There's no full-text index.
 
@@ -1932,4 +2003,4 @@ The same review runs at start-up (warnings and problems go to the log) and is li
 
 ## Next steps
 
-- **More features:** email delivery of notifications, @mention autocomplete.
+- **Ideas not built yet:** see the "Limits" notes on each feature page of the [documentation site](https://finepointcgi.github.io/ByteBench/), for example [FAQ and troubleshooting](https://finepointcgi.github.io/ByteBench/troubleshooting.html).

@@ -17,12 +17,14 @@
 <div class="cards">
   <a class="card" href="issues.html"><b>Issues and workflows</b><span>Issue types, custom workflows, hierarchy, links and attachments.</span></a>
   <a class="card" href="boards-sprints.html"><b>Boards and sprints</b><span>Kanban and Scrum boards, backlog planning and the roadmap.</span></a>
+  <a class="card" href="explore-shortcuts.html"><b>Explore, search and shortcuts</b><span>Explore, stars, profiles, global search and every keyboard shortcut.</span></a>
   <a class="card" href="fields-filters.html"><b>Fields, filters and search</b><span>Custom fields, saved filters, GQL and CSV import and export.</span></a>
   <a class="card" href="automation.html"><b>Automation rules</b><span>Triggers, conditions and actions run by a bot.</span></a>
   <a class="card" href="reports.html"><b>Dashboards and reports</b><span>Gadgets, cycle time, flow and DORA metrics.</span></a>
   <a class="card" href="service-desk.html"><b>Service desk</b><span>Let people without an account file issues by email or form.</span></a>
   <a class="card" href="workbench.html"><b>Estimates and Workbench</b><span>Story points and the link to Workbench timesheets.</span></a>
   <a class="card" href="repositories.html"><b>Repositories</b><span>Clone over HTTP and SSH, deploy keys, LFS and mirroring.</span></a>
+  <a class="card" href="lfs-mirroring.html"><b>Git LFS and mirroring</b><span>LFS server, pull and push mirrors, credentials and limits.</span></a>
   <a class="card" href="pull-requests.html"><b>Pull requests</b><span>Reviews, threads, suggestions, code owners, forks and merge strategies.</span></a>
   <a class="card" href="branch-protection.html"><b>Branch protection and merge queue</b><span>Protected branches and tags, required checks, batched merges.</span></a>
   <a class="card" href="code-tools.html"><b>Code browsing and tools</b><span>Code view, search, blame, compare, tags and releases.</span></a>
@@ -68,6 +70,10 @@
   <tr><td><code>/p/{KEY}/repos/{slug}/pipelines</code></td><td>CI pipelines of a repository</td></tr>
   <tr><td><code>/p/{KEY}/repos/{slug}/pull-requests</code></td><td>Pull requests of a repository</td></tr>
   <tr><td><code>/p/{KEY}/settings</code></td><td>Project settings (name, visibility, members)</td></tr>
+  <tr><td><code>/p/{KEY}/environments</code>, <code>/p/{KEY}/service-desk</code>, <code>/p/{KEY}/flags</code>, <code>/p/{KEY}/packages</code></td><td>Deployments and approvals, service desk queue, feature flags, package registry</td></tr>
+  <tr><td><code>/p/{KEY}/repos/{slug}/merge-queue</code></td><td>The merge queue of a repository</td></tr>
+  <tr><td><code>/explore</code>, <code>/search</code>, <code>/u/{username}</code></td><td>Explore projects, global search, user profiles</td></tr>
+  <tr><td><code>/desk/{KEY}</code></td><td>The public service desk request form (no sign-in)</td></tr>
   <tr><td><code>/g/{path}</code></td><td>A group or subgroup</td></tr>
   <tr><td><code>/git/{KEY}/{slug}.git</code></td><td>The Git HTTP clone address</td></tr>
   <tr><td><code>/api/v1</code> and <code>/developers/api</code></td><td>The REST API and its documentation page</td></tr>

@@ -1,0 +1,93 @@
+<h1>Explore, search and keyboard shortcuts</h1>
+<p class="lead">Find projects you can see, star the ones you use, read what people have been working on, search everything from one box and move around without the mouse.</p>
+
+<p>Everything on this page is filtered by what you are allowed to see. Nothing from a project you cannot view appears in Explore, search results or on anyone's profile; see <a href="permissions.html">Roles, groups and permissions</a>.</p>
+
+<h2 id="explore">Explore</h2>
+<p><strong>Explore</strong> (<code>/explore</code>, in the sidebar) lists every project you can view, with its visibility, open issues, repositories, star count and last activity (the newest issue update, pull request update or push).</p>
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td>Tabs: <strong>All</strong>, <strong>Starred</strong>, <strong>Mine</strong></td><td>Everything you can view, projects you starred, or projects you are a member of</td></tr>
+  <tr><td>Filter</td><td>Matches the key, name or description</td></tr>
+  <tr><td>Sort</td><td>By name, recently active or most stars</td></tr>
+</table>
+
+<h3 id="stars">Starring projects</h3>
+<p>The star button on each Explore row, and the one next to the project name in the sidebar on any project page, stars or unstars the project and shows its count. Starred projects come first in the sidebar's <strong>Projects</strong> list, marked with a star. Anyone who can view a project can star it, once per person and project. If you lose access to a starred project the star stays but is never shown.</p>
+<p>API: <code>PUT</code> and <code>DELETE /api/v1/projects/{key}/star</code> return <code>{ project, starred, stars }</code>, and <code>GET /api/v1/user/starred</code> lists your starred projects.</p>
+
+<h2 id="profiles">User profiles</h2>
+<p>A profile is at <code>/u/{username}</code> (case-insensitive). Names of authors, commenters, assignees and activity actors on issues, pull requests and feeds link to it.</p>
+<ul>
+  <li><strong>Header:</strong> avatar, display name, <code>@username</code>, the date they joined, and the projects they belong to that you can see.</li>
+  <li><strong>Activity feed:</strong> issues opened and closed (a move into a Done-category status), issue comments, pull requests opened and merged, pull request comments and pushes. Pushes are recorded per branch or tag that moved, with the number of new commits (capped at 100); pushes made before the feature existed are not in the feed.</li>
+  <li><strong>Contribution calendar:</strong> a heatmap of the last 52 weeks. A day counts the feed events plus one per pushed commit; hover a day for its count. It follows the light and dark theme and scrolls sideways on narrow screens.</li>
+  <li>The home dashboard's "Activity from your projects" uses the same feed across every project you can see.</li>
+</ul>
+<p>API: <code>GET /api/v1/users/{username}</code> returns the profile, the visible projects with roles and the latest 30 activity items you can see.</p>
+
+<h2 id="search">Global search</h2>
+<h3 id="search-box">The search box</h3>
+<p>The app bar box (<strong>Search or jump to</strong>) is focused by pressing <kbd>/</kbd>. After a short pause it suggests the top three issues, pull requests, projects and users. If what you typed is an issue key such as <code>WEB-12</code> and that issue is visible to you, it is the first suggestion, so <kbd>Enter</kbd> jumps straight to it. Otherwise the first entry is "Search for ...", and <kbd>Enter</kbd> opens the results page.</p>
+
+<h3 id="search-results">The results page</h3>
+<p><code>/search?q=...</code> groups results into tabs, each with its total. Add <code>&amp;type=</code> to link to one tab: <code>issues</code>, <code>pull-requests</code>, <code>projects</code>, <code>users</code>, <code>wiki</code> or <code>code</code>.</p>
+<table>
+  <tr><th>Tab</th><th>Matches against</th></tr>
+  <tr><td>Issues</td><td>Key, title and description</td></tr>
+  <tr><td>Pull requests</td><td>Title and description</td></tr>
+  <tr><td>Projects</td><td>Key, name and description</td></tr>
+  <tr><td>Users</td><td>Username and display name</td></tr>
+  <tr><td>Wiki</td><td>Page title, path and content, with a short excerpt around the match</td></tr>
+  <tr><td>Code</td><td>File contents (see below)</td></tr>
+</table>
+
+<h3 id="search-syntax">Syntax and limits</h3>
+<p>Global search has no operators. Whatever you type is one plain-text phrase:</p>
+<ul>
+  <li><strong>Substring match, case-insensitive for ASCII.</strong> It is a database <code>LIKE</code> search with no full-text index. The characters <code>%</code>, <code>_</code> and <code>\</code> in your query are matched literally, so searching for <code>100%</code> works as typed.</li>
+  <li><strong>Issue keys</strong> of the form letters-then-digits, like <code>WEB-12</code>, redirect straight to a visible issue. A key that matches nothing falls back to the normal text search.</li>
+  <li>Queries are cut to 200 characters. Each tab lists the most recently updated matches.</li>
+  <li><strong>Code</strong> is a separate tab because it runs <code>git grep</code>. It searches the default branch of each visible, non-archived repository as plain, case-insensitive text, with caps of 25 repositories, 20 matches per repository and 100 matches in all. For regular expressions and other branches use a repository's own code search (<a href="code-tools.html">Code browsing and tools</a>).</li>
+</ul>
+<div class="note"><p>For structured issue queries (<code>project = WEB AND status in ("In Progress", Blocked) AND assignee = currentUser()</code>), use the issue list's advanced search. See <a href="fields-filters.html">Fields, filters and search</a>.</p></div>
+<p>API: <code>GET /api/v1/search?q=...&amp;type=...</code> where <code>type</code> is <code>issues</code>, <code>pull_requests</code>, <code>projects</code>, <code>users</code> or <code>code</code>. Without <code>type</code>, every type except code is searched; code is only searched when asked for. <code>perPage</code> (maximum 100) caps each group, and <code>jumpUrl</code> is set when the query is a visible issue key.</p>
+<pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  "https://bytebench.example.com/api/v1/search?q=WEB-12"
+curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  "https://bytebench.example.com/api/v1/search?q=retry%20policy&amp;type=code"</code></pre>
+
+<h2 id="shortcuts">Keyboard shortcuts</h2>
+<p>Press <kbd>?</kbd> anywhere to open the shortcut help. Shortcuts are single keys, and "g" shortcuts are two keys pressed one after the other (press <kbd>g</kbd>, then the second key within about a second).</p>
+
+<h3 id="shortcuts-list">Every shortcut</h3>
+<table>
+  <tr><th>Group</th><th>Keys</th><th>Action</th></tr>
+  <tr><td rowspan="4">Anywhere</td><td><kbd>?</kbd></td><td>Show the help</td></tr>
+  <tr><td><kbd>/</kbd></td><td>Focus the search box</td></tr>
+  <tr><td><kbd>g</kbd> <kbd>d</kbd></td><td>Go to the dashboard</td></tr>
+  <tr><td><kbd>g</kbd> <kbd>e</kbd></td><td>Go to Explore</td></tr>
+  <tr><td rowspan="5">In a project</td><td><kbd>g</kbd> <kbd>i</kbd></td><td>Go to the project's issues</td></tr>
+  <tr><td><kbd>g</kbd> <kbd>b</kbd></td><td>Go to the board</td></tr>
+  <tr><td><kbd>g</kbd> <kbd>p</kbd></td><td>Go to pull requests</td></tr>
+  <tr><td><kbd>g</kbd> <kbd>r</kbd></td><td>Go to repositories</td></tr>
+  <tr><td><kbd>c</kbd></td><td>Create an issue</td></tr>
+  <tr><td rowspan="3">Issue list</td><td><kbd>j</kbd></td><td>Select the next issue</td></tr>
+  <tr><td><kbd>k</kbd></td><td>Select the previous issue</td></tr>
+  <tr><td><kbd>o</kbd> or <kbd>Enter</kbd></td><td>Open the selected issue</td></tr>
+  <tr><td rowspan="2">Issue</td><td><kbd>e</kbd></td><td>Edit the description</td></tr>
+  <tr><td><kbd>a</kbd></td><td>Assign the issue to me</td></tr>
+</table>
+<p>"In a project" shortcuts use the project in the current address (<code>/p/WEB/...</code>), so they do nothing on pages outside a project. <kbd>j</kbd> and <kbd>k</kbd> start at the first or last row when nothing is selected. <kbd>Enter</kbd> opens the selection only when focus is on the page itself, not on a button or link. <kbd>e</kbd> and <kbd>a</kbd> work when the issue page shows those buttons (assigning to yourself needs permission to assign, as for the button).</p>
+
+<h3 id="shortcuts-rules">When shortcuts are ignored</h3>
+<ul>
+  <li>While you type in a text field, text area, drop-down or editor, and while a menu from a form control is open.</li>
+  <li>While a dialog is open.</li>
+  <li>With <kbd>Ctrl</kbd>, <kbd>Cmd</kbd> or <kbd>Alt</kbd> held, so browser and system shortcuts keep working.</li>
+  <li>When you turned them off.</li>
+</ul>
+
+<h3 id="shortcuts-off">Turning shortcuts off</h3>
+<p>The switch at the top of the <kbd>?</kbd> dialog ("Keyboard shortcuts on/off in this browser") turns them off. The choice is stored in this browser's local storage, not in your account, so it applies per browser and survives sign-out. Screen-reader and voice-control users who find single-key shortcuts get in the way should switch them off.</p>
+<p>The web editor has its own editor shortcuts; see <a href="web-editor.html">Web editor and AI assistant</a>.</p>

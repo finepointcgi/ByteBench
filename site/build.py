@@ -17,6 +17,7 @@ SECTIONS = [
         ("index", "Overview", "What ByteBench is and everything it does"),
         ("getting-started", "Getting started", "Run ByteBench, sign in and create your first project"),
         ("concepts", "Concepts", "Projects, groups, repositories, issues and how they fit together"),
+        ("explore-shortcuts", "Explore, search and keyboard shortcuts", "Explore, stars, profiles, global search and every shortcut"),
         ("configuration", "Configuration reference", "Every setting, file and environment variable"),
     ]),
     ("Plan and track work", [
@@ -30,6 +31,7 @@ SECTIONS = [
     ]),
     ("Code and review", [
         ("repositories", "Repositories and Git hosting", "Clone over HTTP and SSH, deploy keys, LFS, mirroring"),
+        ("lfs-mirroring", "Git LFS and mirroring", "LFS server, pull and push mirrors, credentials and troubleshooting"),
         ("pull-requests", "Pull requests", "Reviews, threads, suggestions, code owners, merge strategies, forks"),
         ("branch-protection", "Branch protection and merge queue", "Protected branches and tags, required checks, the merge queue"),
         ("code-tools", "Code browsing and tools", "Code view, search, blame, compare, releases and tags"),

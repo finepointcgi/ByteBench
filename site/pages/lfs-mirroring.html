@@ -1,0 +1,122 @@
+<h1>Git LFS and mirroring</h1>
+<p class="lead">Store large binary files outside your Git history with Git LFS, and keep a repository in sync with another server using pull and push mirrors.</p>
+
+<p>Both features live in the repository: LFS needs no setup, and mirrors are configured under <strong>Settings, Mirroring</strong>. The basics of cloning and pushing are in <a href="repositories.html">Repositories and Git hosting</a>; this page is the complete reference.</p>
+
+<h2 id="lfs">Git LFS</h2>
+<p>Git LFS replaces large files in your commits with small text pointers and keeps the real content on the server. ByteBench implements the <a href="https://github.com/git-lfs/git-lfs/blob/main/docs/api/batch.md">LFS Batch API</a> with the <code>basic</code> transfer adapter. There is nothing to turn on: every repository accepts LFS objects.</p>
+
+<h3 id="lfs-client">Using it from a client</h3>
+<p>Install the <code>git-lfs</code> client once per machine, then in your clone:</p>
+<pre><code>git lfs install                      # once per machine
+git lfs track "*.psd" "*.zip"        # writes .gitattributes
+git add .gitattributes
+git add design.psd
+git commit -m "Add the design file"
+git push origin main                 # uploads the objects, then the commits</code></pre>
+<p>git-lfs finds the server by itself: it adds <code>/info/lfs</code> to the clone URL, so for <code>https://bytebench.example.com/git/WEB/web-app.git</code> it talks to <code>https://bytebench.example.com/git/WEB/web-app.git/info/lfs/</code>. Cloning a repository that has LFS files downloads them after the checkout.</p>
+
+<h3 id="lfs-endpoints">Endpoints</h3>
+<p>All paths are relative to <code>/git/{KEY}/{slug}.git/info/lfs/</code>.</p>
+<table>
+  <tr><th>Request</th><th>What it does</th></tr>
+  <tr><td><code>POST objects/batch</code></td><td>The client lists the objects it wants (at most 1000 per batch). For <code>download</code> ByteBench returns a download action for every object the repository has, and a per-object <code>404</code> for the rest. For <code>upload</code> it returns an upload action and a verify action, or no action when the repository already has the object. Objects over the size limit get a per-object <code>422</code>.</td></tr>
+  <tr><td><code>PUT objects/{oid}</code></td><td>Upload. The body is streamed to a temporary file and hashed; the object is stored only if its SHA-256 equals the <code>oid</code> (otherwise <code>422</code>). Larger than <code>Lfs:MaxObjectBytes</code> gives <code>413</code>.</td></tr>
+  <tr><td><code>GET objects/{oid}</code></td><td>Download. <code>?download=name</code> adds a <code>Content-Disposition: attachment</code> header.</td></tr>
+  <tr><td><code>POST objects/verify</code></td><td><code>200</code> when the repository has the object with that size, otherwise <code>404</code>.</td></tr>
+</table>
+
+<h3 id="lfs-auth">Authentication and permissions</h3>
+<ul>
+  <li><strong>Same credentials as Git over HTTP:</strong> Basic with your password or a personal access token, or <code>Authorization: Bearer gbp_...</code>. A missing or wrong login gets <code>401</code> with <code>LFS-Authenticate</code>, so git-lfs falls back to git's credential helper. Two-factor accounts must use a token (see <a href="accounts.html">Accounts, sign-in and SSO</a>).</li>
+  <li><strong>Transfer tokens.</strong> The batch response carries a one-hour <code>Bearer</code> token for the upload, download and verify actions. It is limited to one user, one repository and one operation, so your password is never echoed back to the client.</li>
+  <li><strong>Download</strong> needs the Viewer role (<code>ViewProject</code>); a token needs scope <code>read_repository</code> or <code>write_repository</code>. A signed-in browser session can download too, which is what the file viewer's link uses.</li>
+  <li><strong>Upload</strong> needs Developer or higher (<code>PushCode</code>); a token needs <code>write_repository</code>. Archived repositories and pull mirrors refuse uploads.</li>
+</ul>
+
+<h3 id="lfs-storage">Storage and cleanup</h3>
+<ul>
+  <li>Objects are content-addressed under <code>Lfs:Root</code> (default <code>{ContentRoot}/lfs</code>, <code>/data/lfs</code> in the Docker image) as <code>{oid[0..2]}/{oid[2..4]}/{oid}</code>, and stored once even when several repositories hold them.</li>
+  <li>A repository can only download objects that were uploaded to it, even if another repository stores the same content.</li>
+  <li>Deleting a repository deletes its objects unless another repository references them. A daily sweep removes objects left behind by deleted projects and stale temporary files, after a one-day grace period.</li>
+</ul>
+
+<h3 id="lfs-limits">Limits</h3>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Lfs:Root</code></td><td><code>{ContentRoot}/lfs</code></td><td>Where objects are stored</td></tr>
+  <tr><td><code>Lfs:MaxObjectBytes</code></td><td>2 GB</td><td>Largest single object; bigger uploads get <code>413</code></td></tr>
+</table>
+<div class="note"><p><strong>Not implemented:</strong> the LFS file locking API (git-lfs prints a one-time warning and carries on; silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>) and <code>git-lfs-authenticate</code> over SSH. With an SSH remote, set <code>lfs.url</code> to the HTTPS LFS URL:</p>
+<pre><code>git config lfs.url https://bytebench.example.com/git/WEB/web-app.git/info/lfs</code></pre></div>
+
+<h2 id="mirroring">Mirroring</h2>
+<p>A repository can follow an upstream server (a <strong>pull mirror</strong>) and copy itself to other servers (<strong>push mirrors</strong>). Open <strong>Settings, Mirroring</strong> (<code>/p/{KEY}/repos/{slug}/settings/mirroring</code>); you need the Maintainer role or higher. Each mirror shows its last status, time and message (or git's error) and a <strong>Sync now</strong> button.</p>
+<table>
+  <tr><th></th><th>Pull mirror</th><th>Push mirror</th></tr>
+  <tr><td>How many</td><td>At most one</td><td>Up to 10</td></tr>
+  <tr><td>Direction</td><td>Upstream to this repository</td><td>This repository to the target</td></tr>
+  <tr><td>When</td><td>On the interval you set (default 60 minutes, at least <code>Mirroring:MinIntervalMinutes</code>, at most 7 days), and on <strong>Sync now</strong></td><td>After every successful push, after a pull mirror changed something, and on <strong>Sync now</strong></td></tr>
+  <tr><td>Git command</td><td><code>git fetch --prune</code> of branches and tags</td><td>forced <code>git push</code> of branches and tags</td></tr>
+  <tr><td>Effect on this repository</td><td>Becomes read-only for pushes</td><td>None</td></tr>
+</table>
+
+<h3 id="pull-mirror">Pull mirror</h3>
+<ol class="steps">
+  <li>Open <strong>Settings, Mirroring</strong> and add a pull mirror.</li>
+  <li>Enter the <strong>upstream URL</strong>, for example <code>https://git.example.org/team/app.git</code>.</li>
+  <li>If the upstream needs a login, enter a username and a password or access token.</li>
+  <li>Choose the sync <strong>interval</strong> and whether to mirror <strong>only protected branches</strong>.</li>
+  <li>Save. The first sync starts at the next poll (the worker checks for due mirrors every <code>Mirroring:PollSeconds</code>, default 30); press <strong>Sync now</strong> to start it at once.</li>
+</ol>
+<ul>
+  <li><strong>What is synced.</strong> All branches (<code>refs/heads/*</code>) and tags (<code>refs/tags/*</code>) are fetched, forced, straight into the bare repository, and branches or tags deleted upstream are pruned locally. With <strong>only protected branches</strong> the sync lists the upstream branches, fetches only those that match one of this repository's <a href="branch-protection.html">branch protection rules</a> (tags are always fetched), and deletes matching local branches that are gone upstream. Branches that match no rule are neither fetched nor deleted.</li>
+  <li><strong>Read-only repository.</strong> While an enabled pull mirror exists, every push over HTTP and SSH is refused with "this repository is a pull mirror...", creating and deleting tags in ByteBench is refused, and so are LFS uploads and web-editor commits.</li>
+  <li><strong>Hooks do not run.</strong> Webhooks, CI pipelines and smart commits run on pushes, not on mirrored commits. A pull mirror that changed refs does queue the repository's push mirrors.</li>
+</ul>
+
+<h3 id="push-mirror">Push mirrors</h3>
+<p>Add a push mirror with the target URL and credentials. After every successful push to the repository, and on <strong>Sync now</strong>, a background queue runs a forced push of <code>refs/heads/*</code> and <code>refs/tags/*</code> with <code>--prune</code>, so the target follows this repository exactly, including deleted branches. With <strong>only protected branches</strong> it pushes the matching branches plus all tags and deletes nothing.</p>
+<p>Because the push is forced, the target must allow force pushes and ref deletion for the account you give it. If the target has its own branch protection, the sync fails with git's message, which ByteBench shows on the mirror.</p>
+
+<h3 id="mirror-credentials">Credentials</h3>
+<ul>
+  <li>Passwords and tokens are encrypted at rest (ASP.NET Core Data Protection) and never shown again. Leave the field blank when editing to keep the saved one. <strong>Changing the URL drops the saved token</strong>, so it can never follow the URL to another host: enter it again.</li>
+  <li>Credentials written into the URL itself (<code>https://user:pw@host/...</code>) are rejected. Use the fields.</li>
+  <li><strong>ssh:// mirrors</strong> authenticate with the private key in <code>Mirroring:SshKeyFile</code> on the server (one key for all SSH mirrors); without one they cannot authenticate. New host keys are trusted on first use and stored in <code>Mirroring:KnownHostsFile</code> (default <code>{ContentRoot}/keys/mirror_known_hosts</code>). Add the matching public key to the other server's account or as a deploy key there. The username and token fields apply to HTTP(S) only.</li>
+</ul>
+
+<h3 id="mirror-ssrf">URL rules and the SSRF guard</h3>
+<p>A mirror makes your server open connections to a URL a user chose, so the URL is checked when the mirror is saved and again before every sync.</p>
+<table>
+  <tr><th>Rule</th><th>Detail</th></tr>
+  <tr><td>Schemes</td><td><code>http://</code>, <code>https://</code> and <code>ssh://</code> only. Write SSH as <code>ssh://git@host/path.git</code>, not the scp-like <code>git@host:path</code>.</td></tr>
+  <tr><td>No credentials, no options</td><td>No user info in the URL and no option-like host or path (nothing starting with <code>-</code>)</td></tr>
+  <tr><td>Blocked addresses</td><td>Loopback, private (RFC 1918 and ULA), link-local, CGNAT and cloud-metadata addresses</td></tr>
+  <tr><td>No DNS tricks</td><td>The host is resolved right before git runs and git is pinned to the checked address, so DNS rebinding cannot swap it. Redirects are not followed.</td></tr>
+</table>
+<p>To mirror from or to a server on your own network, set <code>Mirroring:AllowPrivateNetworks=true</code>. When it is unset the value of <code>Webhooks:AllowPrivateNetworks</code> applies (on in <code>appsettings.Development.json</code>). It is the same guard that webhooks use; see <a href="api.html">REST API and webhooks</a>.</p>
+
+<h3 id="mirror-interplay">Protected branches and protected tags</h3>
+<ul>
+  <li><strong>Branch protection</strong> decides which branches the "only protected branches" option covers, in both directions. It does not block a pull mirror's sync, because the mirror is the one authority on this repository's refs while it exists.</li>
+  <li><strong>Protected tags</strong> (<a href="branch-protection.html">Branch protection and merge queue</a>) govern pushes and tag actions in ByteBench. A pull mirror writes tags directly and forces them, so a tag that moves or disappears upstream moves or disappears here as well, even if a rule says "block moving". The pull mirror's read-only rule is what stops people from changing tags by hand. A push mirror sends tags forced, so the target must allow tag updates.</li>
+  <li>Not mirrored: <a href="#lfs-mirrors">LFS objects</a>, pull requests, issues and other refs such as <code>refs/pull/*</code>.</li>
+</ul>
+
+<h3 id="lfs-mirrors">LFS and mirrors</h3>
+<p>A mirror copies Git history only, so a mirrored repository holds LFS <em>pointers</em> but not the files. To copy them, run <code>git lfs fetch --all</code> against the source and <code>git lfs push --all &lt;target&gt;</code> to a writable target repository.</p>
+
+<h3 id="mirror-settings">Server settings</h3>
+<p><code>Mirroring:Enabled</code> (default <code>true</code>) runs the background syncs; <code>Mirroring:PollSeconds</code> (30) is how often due pull mirrors are looked for; <code>Mirroring:TimeoutSeconds</code> (600) kills a slow sync; <code>Mirroring:MinIntervalMinutes</code> (5) is the shortest pull interval; <code>Mirroring:AllowPrivateNetworks</code>, <code>SshKeyFile</code> and <code>KnownHostsFile</code> are described above. All keys are in the <a href="configuration.html">Configuration reference</a>. Audit events: <code>mirror.created</code>, <code>mirror.updated</code>, <code>mirror.deleted</code>, <code>mirror.sync_requested</code>.</p>
+
+<h2 id="mirror-troubleshooting">Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Check</th></tr>
+  <tr><td>"this repository is a pull mirror..." when pushing</td><td>Expected while the pull mirror is enabled. Disable or delete it to make the repository writable again.</td></tr>
+  <tr><td>The URL is refused when saving</td><td>Scheme not <code>http</code>, <code>https</code> or <code>ssh</code>; credentials in the URL; scp-like SSH syntax; or the host resolves to a private address (set <code>Mirroring:AllowPrivateNetworks</code>).</td></tr>
+  <tr><td>Push mirror rejected by the target</td><td>The target blocks force pushes, deletions or the tags. Allow them for that account, or turn on <strong>only protected branches</strong> (which never deletes).</td></tr>
+  <tr><td>LFS answers <code>404</code></td><td>You cannot see the project, or the object was never uploaded to this repository. Check the account and run <code>git lfs push --all origin</code> from a clone that has the files.</td></tr>
+  <tr><td><code>413</code> on an LFS upload</td><td>The object is bigger than <code>Lfs:MaxObjectBytes</code> (2 GB by default), or a reverse proxy limits the request body. Set <code>client_max_body_size</code> (nginx) high enough, as in the example in <a href="production.html">Production setup</a>.</td></tr>
+  <tr><td>LFS upload answers <code>422</code></td><td>The upload's SHA-256 differs from the pointer; the file changed after it was tracked. Run <code>git lfs fsck</code> locally and add the file again.</td></tr>
+</table>

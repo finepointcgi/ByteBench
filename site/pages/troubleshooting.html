@@ -114,13 +114,27 @@ PublicBaseUrl=https://bytebench.example.com</code></pre>
 <p>That is deliberate: if you cannot view the project, git sees 404, the same as for a missing repository. Check your role and the project's visibility. A <em>Viewer</em> who pushes gets 403.</p>
 
 <h3 id="lfs-missing">git LFS is missing</h3>
-<p>Two different things. On <strong>your machine</strong>, <code>git-lfs</code> must be installed (<code>git lfs install</code>) to push or pull LFS files; without it you get small pointer files instead of the content. On the <strong>server</strong>, ByteBench implements the LFS Batch API itself and does not need git-lfs installed. Notes: objects over <code>Lfs:MaxObjectBytes</code> (2 GB) get 413; the locks API is not implemented, so git-lfs prints a one-time warning (silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>); and with an SSH remote you must set <code>lfs.url</code> to the HTTPS LFS URL, because <code>git-lfs-authenticate</code> over SSH is not implemented.</p>
+<p>Two different things. On <strong>your machine</strong>, <code>git-lfs</code> must be installed (<code>git lfs install</code>) to push or pull LFS files; without it you get small pointer files instead of the content. On the <strong>server</strong>, ByteBench implements the LFS Batch API itself and does not need git-lfs installed. Notes: objects over <code>Lfs:MaxObjectBytes</code> (2 GB) get 413; the locks API is not implemented, so git-lfs prints a one-time warning (silence it with <code>git config lfs.&lt;url&gt;.locksverify false</code>); and with an SSH remote you must set <code>lfs.url</code> to the HTTPS LFS URL, because <code>git-lfs-authenticate</code> over SSH is not implemented. Full reference: <a href="lfs-mirroring.html#lfs">Git LFS and mirroring</a>.</p>
 
 <h3 id="push-rejected">A push is rejected with "remote rejected"</h3>
 <p>Branch protection, protected tags, an archived repository or a pull mirror. The message after <code>(</code> names the reason. Force pushes to protected branches are refused by the pre-receive hook.</p>
 
 <h2 id="ai-faq">AI features do not appear</h2>
 <p>All AI features hide themselves unless <code>Ai:Enabled</code> is true <em>and</em> a key exists (<code>ANTHROPIC_API_KEY</code> or <code>Ai:ApiKey</code>), or, for the web editor and AI review, Claude Code is installed for the server's account. The site admin page <code>/admin/ai</code> shows what was detected and has a <em>Check again</em> button. See <a href="ai.html">AI overview and setup</a>.</p>
+
+<h2 id="workflow-features">Merge queue, deployments, service desk and chat</h2>
+
+<h3 id="queue-stuck">A pull request sits in the merge queue and nothing happens</h3>
+<p>Check, in order: the queue page (<code>/p/{KEY}/repos/{slug}/merge-queue</code>) for the entry's state and message; that <code>MergeQueue:Enabled</code> is not false; that the repository has a CI file with at least one job that runs on the target branch (queue pipelines pick jobs as if they ran on it) while "Require CI" is on; and whether the queue pipeline is waiting on a manual job (the entry says "Waiting for approval"). See <a href="branch-protection.html#merge-queue">the merge queue</a>.</p>
+
+<h3 id="deploy-waiting">A deployment job never starts</h3>
+<p>On a protected environment it waits for approvals. Look at "Waiting for approval" on the project Environments page, check how many approvals the rule needs and who may approve, and whether a <a href="environments.html">deploy freeze</a> is active.</p>
+
+<h3 id="desk-no-issue">An email to the service desk created no issue</h3>
+<p>Read the audit log (<code>service_desk.mail_ignored</code> and <code>service_desk.mail_rejected</code> record the reason, sender and subject). Usual causes: the project's desk is off, the address has no <code>+KEY</code> tag, an auto-reply or bulk header made it look automated, or IMAP polling is off. See <a href="service-desk.html">Service desk</a>.</p>
+
+<h3 id="chat-silent">Slack or Teams messages do not arrive, or /bytebench fails</h3>
+<p>Press <strong>Send test message</strong> on the integration and read its delivery log. An integration switched off after 20 failures needs <strong>Active</strong> ticked again. For the slash command the signing secret must be set and your server clock accurate. See <a href="chat.html#troubleshooting">Slack and Microsoft Teams</a>.</p>
 
 <h2 id="known-limits">Known limits and what was only tested with fakes</h2>
 <p>ByteBench has a large automated test suite, but a test suite is not the same as years of production use. These are the places where the honest answer is "tested against a stand-in, not the real thing":</p>
