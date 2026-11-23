@@ -82,6 +82,8 @@ public sealed class WebhookMailSource(IOptions<ServiceDeskOptions> options, Time
 {
     public const string SignatureHeader = "X-ByteBench-Signature";
     public const string TimestampHeader = "X-ByteBench-Timestamp";
+    /// <summary>The header names before the rename from GitBench; still accepted when the new ones are absent.</summary>
+    public const string LegacySignatureHeader = "X-GitBench-Signature", LegacyTimestampHeader = "X-GitBench-Timestamp";
 
     public string Name => "webhook";
 
@@ -130,7 +132,7 @@ public sealed class WebhookMailSource(IOptions<ServiceDeskOptions> options, Time
                 if (buffer.Length + n > max) return Results.Text("Message too large.", statusCode: StatusCodes.Status413PayloadTooLarge);
                 buffer.Write(chunk, 0, n);
             }
-            if (!source.Verify(ctx.Request.Headers[TimestampHeader], ctx.Request.Headers[SignatureHeader], buffer.GetBuffer().AsSpan(0, (int)buffer.Length)))
+            if (!source.Verify(Pick(ctx.Request, TimestampHeader, LegacyTimestampHeader), Pick(ctx.Request, SignatureHeader, LegacySignatureHeader), buffer.GetBuffer().AsSpan(0, (int)buffer.Length)))
             {
                 lf.CreateLogger("ByteBench.ServiceDesk").LogWarning("Service desk webhook: bad or missing signature from {Ip}", ctx.Connection.RemoteIpAddress);
                 return Results.Text("Invalid or missing signature.", statusCode: StatusCodes.Status401Unauthorized);
@@ -141,6 +143,10 @@ public sealed class WebhookMailSource(IOptions<ServiceDeskOptions> options, Time
             return Results.Ok(new { outcome = result.Outcome.ToString().ToLowerInvariant(), reason = result.Reason, issueId = result.IssueId });
         }).AllowAnonymous().DisableAntiforgery();
     }
+
+    /// <summary>The header under its current name, else under the name used before the rename from GitBench.</summary>
+    private static string? Pick(HttpRequest r, string name, string legacy) =>
+        r.Headers[name].ToString() is { Length: > 0 } v ? v : r.Headers[legacy].ToString() is { Length: > 0 } l ? l : null;
 }
 
 /// <summary>Polls every enabled pull source every <c>ServiceDesk:Imap:PollSeconds</c>. Idle when none is enabled.</summary>

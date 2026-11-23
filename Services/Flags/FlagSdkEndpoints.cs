@@ -59,7 +59,7 @@ public static class FlagSdkEndpoints
         if (HttpMethods.IsOptions(http.Request.Method))
         {
             h["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
-            h["Access-Control-Allow-Headers"] = "Authorization, Content-Type, If-None-Match, X-ByteBench-SDK-Key";
+            h["Access-Control-Allow-Headers"] = "Authorization, Content-Type, If-None-Match, X-ByteBench-SDK-Key, X-GitBench-SDK-Key";
             h["Access-Control-Max-Age"] = "86400";
             return await next(ctx);
         }
@@ -102,6 +102,7 @@ public static class FlagSdkEndpoints
         var auth = r.Headers.Authorization.ToString();
         if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return auth[7..].Trim();
         if (r.Headers["X-ByteBench-SDK-Key"].ToString() is { Length: > 0 } header) return header.Trim();
+        if (r.Headers["X-GitBench-SDK-Key"].ToString() is { Length: > 0 } legacy) return legacy.Trim(); // before the rename from GitBench
         if (r.Query["sdkKey"].ToString() is { Length: > 0 } q) { viaQuery = true; return q.Trim(); }
         return null;
     }

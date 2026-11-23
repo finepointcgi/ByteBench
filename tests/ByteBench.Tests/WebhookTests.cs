@@ -19,7 +19,7 @@ public sealed class WebhookReceiver : IDisposable
     private readonly List<Received> received = [];
     private readonly SemaphoreSlim signal = new(0);
 
-    public sealed record Received(string Event, string? Signature, byte[] Body);
+    public sealed record Received(string Event, string? Signature, byte[] Body, string? LegacyEvent = null, string? LegacySignature = null);
 
     public string Url { get; }
 
@@ -43,7 +43,8 @@ public sealed class WebhookReceiver : IDisposable
             try { ctx = await listener.GetContextAsync(); } catch { return; }
             using var ms = new MemoryStream();
             await ctx.Request.InputStream.CopyToAsync(ms);
-            lock (received) received.Add(new(ctx.Request.Headers["X-ByteBench-Event"] ?? "", ctx.Request.Headers["X-ByteBench-Signature-256"], ms.ToArray()));
+            lock (received) received.Add(new(ctx.Request.Headers["X-ByteBench-Event"] ?? "", ctx.Request.Headers["X-ByteBench-Signature-256"], ms.ToArray(),
+                ctx.Request.Headers["X-GitBench-Event"], ctx.Request.Headers["X-GitBench-Signature-256"]));
             ctx.Response.StatusCode = 200;
             ctx.Response.Close();
             signal.Release();
@@ -88,6 +89,9 @@ public class WebhookTests(TestApp app) : IClassFixture<TestApp>
 
         var expected = "sha256=" + Convert.ToHexStringLower(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), delivery.Body));
         Assert.Equal(expected, delivery.Signature);
+        // Receivers written before the rename from GitBench still get the old header names, with the same values.
+        Assert.Equal(delivery.Event, delivery.LegacyEvent);
+        Assert.Equal(expected, delivery.LegacySignature);
         Assert.NotEqual(expected, WebhookSender.Sign("another-secret", delivery.Body));
         var body = JsonDocument.Parse(delivery.Body).RootElement;
         Assert.Equal("issue.created", body.GetProperty("event").GetString());

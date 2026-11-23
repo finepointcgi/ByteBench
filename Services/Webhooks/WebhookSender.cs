@@ -86,6 +86,9 @@ public sealed class WebhookSender : IDisposable
         request.Headers.Add("X-ByteBench-Hook-ID", webhookId.ToString());
         request.Headers.Add("X-ByteBench-Signature-256", Sign(secret, body));
         if (redelivery) request.Headers.Add("X-ByteBench-Redelivery", "true");
+        // Receivers written before the rename from GitBench check the old names: send both for now.
+        foreach (var h in request.Headers.Where(h => h.Key.StartsWith("X-ByteBench-", StringComparison.Ordinal)).ToList())
+            request.Headers.TryAddWithoutValidation("X-GitBench-" + h.Key["X-ByteBench-".Length..], h.Value);
 
         try
         {
