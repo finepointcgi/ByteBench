@@ -50,6 +50,7 @@ public sealed record EffectiveProtection(IReadOnlyList<BranchProtectionRule> Rul
     public bool DismissStaleApprovals => Rules.Any(r => r.DismissStaleApprovals);
     public bool RequireThreadResolution => Rules.Any(r => r.RequireThreadResolution);
     public bool RequireCodeOwnerApproval => Rules.Any(r => r.RequireCodeOwnerApproval);
+    public bool RequireSignedCommits => Rules.Any(r => r.RequireSignedCommits);
     public string Describe => string.Join(", ", Rules.Select(r => r.Pattern));
 }
 
@@ -68,7 +69,7 @@ public class BranchProtectedException(string message) : InvalidOperationExceptio
 /// only by "Block deletion"; "Block force pushes" refuses non-fast-forward updates.
 /// </para>
 /// </summary>
-public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, Audit.AuditLog audit)
+public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, Audit.AuditLog audit, LiveEvents live)
 {
     // ---------- Rules ----------
 
@@ -122,6 +123,7 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
         rule.AllowAdminBypass = input.AllowAdminBypass;
         rule.RequireThreadResolution = input.RequireThreadResolution;
         rule.RequireCodeOwnerApproval = input.RequireCodeOwnerApproval;
+        rule.RequireSignedCommits = input.RequireSignedCommits;
         rule.DefaultReviewerIds = reviewers;
         rule.MergeQueueEnabled = input.MergeQueueEnabled;
         rule.MergeQueueMaxBatch = input.MergeQueueMaxBatch;
@@ -136,7 +138,9 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
                   rule.RequireChecksToPass, rule.DismissStaleApprovals, rule.AllowAdminBypass, rule.DefaultReviewerIds,
                   rule.RequireThreadResolution, rule.RequireCodeOwnerApproval,
                   mergeQueue = rule.MergeQueueEnabled ? new { maxBatch = rule.MergeQueueMaxBatch, requireCi = rule.MergeQueueRequireCi,
-                      strategy = rule.MergeQueueStrategy?.ToString().ToLowerInvariant(), timeoutMinutes = rule.MergeQueueTimeoutMinutes, approvalTimeoutMinutes = rule.MergeQueueApprovalTimeoutMinutes } : null }, actorId);
+                      strategy = rule.MergeQueueStrategy?.ToString().ToLowerInvariant(), timeoutMinutes = rule.MergeQueueTimeoutMinutes, approvalTimeoutMinutes = rule.MergeQueueApprovalTimeoutMinutes } : null,
+                  rule.RequireSignedCommits }, actorId);
+        live.Publish(new AutoMerge.BranchProtectionChanged(repositoryId)); // armed auto-merges may now be mergeable
         return rule;
     }
 
@@ -148,6 +152,7 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
             .Select(r => new { r.Pattern, r.Repository.ProjectId }).FirstOrDefaultAsync();
         await db.BranchProtectionRules.Where(r => r.Id == ruleId && r.RepositoryId == repositoryId).ExecuteDeleteAsync();
         if (gone != null) await audit.RecordAsync("branch_protection.deleted", "branch_protection_rule", ruleId, gone.ProjectId, new { repositoryId, gone.Pattern }, actorId);
+        live.Publish(new AutoMerge.BranchProtectionChanged(repositoryId));
     }
 
     // ---------- Evaluation ----------

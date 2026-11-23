@@ -10,6 +10,8 @@
 @inject NavigationManager Nav
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
+@inject ByteBench.Services.Signing.GpgKeyService Gpg
+@inject ByteBench.Services.Signing.CommitSignatureService SigningStatus
 
 <PageTitle>SSH keys · ByteBench</PageTitle>
 
@@ -94,6 +96,76 @@
     }
 </div>
 
+<MudPaper Outlined="true" Class="pa-5 mb-4" id="gpg-keys">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mb-2">Signing keys</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        A commit shows <b>Verified</b> when its signature is good, the key is registered here (an SSH key above, or a GPG key below),
+        the key is neither revoked nor expired, and the committer email is your confirmed account email (<span class="mono">@Me.User?.Email</span>).
+        SSH keys sign with <code>git config gpg.format ssh</code> and <code>git config user.signingkey ~/.ssh/id_ed25519.pub</code>.
+    </MudText>
+    @if (!SigningStatus.SshAvailable || !SigningStatus.GpgAvailable)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            @(!SigningStatus.SshAvailable && !SigningStatus.GpgAvailable ? "This server has neither ssh-keygen nor gpg, so signatures can't be checked: signed commits show as Unverifiable."
+              : !SigningStatus.GpgAvailable ? "gpg isn't installed on this server: GPG keys can't be added, and GPG signatures show as Unverifiable."
+              : "ssh-keygen isn't installed on this server: SSH signatures show as Unverifiable.")
+        </MudAlert>
+    }
+    <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mb-1">Add a GPG key</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+        Paste the public key: <code>gpg --armor --export you@example.com</code>. One key per upload; it needs a user ID with your account email, and must not be expired or revoked. Never paste a private key.
+    </MudText>
+    @if (gpgError != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@gpgError</MudAlert> }
+    <MudTextField T="string" Label="Public key" @bind-Value="gpgText" Lines="6" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----" Class="gb-mono-input" Immediate="true" Disabled="@(!SigningStatus.GpgAvailable)" />
+    <MudTextField T="string" Label="Title" @bind-Value="gpgTitle" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" Class="mt-3"
+                  HelperText="Optional" Disabled="@(!SigningStatus.GpgAvailable)" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="mt-3 mb-4" StartIcon="@Icons.Material.Filled.Add"
+               Disabled="@(string.IsNullOrWhiteSpace(gpgText) || gpgBusy || !SigningStatus.GpgAvailable)" OnClick="AddGpg">Add GPG key</MudButton>
+
+    <div class="gb-rows">
+        @if (gpgKeys == null) { <div class="empty">Loading…</div> }
+        else if (gpgKeys.Count == 0) { <div class="empty">You haven't added any GPG keys.</div> }
+        else
+        {
+            var now = DateTime.UtcNow;
+            @foreach (var k in gpgKeys)
+            {
+                <div class="gb-row" @key="k.Id">
+                    <MudIcon Icon="@Icons.Material.Outlined.Key" Size="Size.Small" Class="mud-text-secondary" />
+                    <div class="gb-row-main gb-min0">
+                        <div class="gb-row-title">
+                            @k.Title
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="ma-0 ml-2">@k.Algorithm</MudChip>
+                            @if (k.RevokedAt != null) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Revoked</MudChip> }
+                            else if (k.IsExpired(now)) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Expired</MudChip> }
+                        </div>
+                        <div class="gb-row-meta">
+                            <span class="mono gpg-fpr">@FormatFingerprint(k.Fingerprint)</span><br />
+                            Emails: @(k.Emails.Length == 0 ? "none" : k.Emails.Replace(" ", ", ")) ·
+                            Added @k.CreatedAt.ToLocalTime().ToString("d") ·
+                            @(k.ExpiresAt is { } e ? $"expires {e.ToLocalTime():d}" : "never expires")
+                        </div>
+                    </div>
+                    <div class="gb-row-right">
+                        @if (k.RevokedAt == null)
+                        {
+                            <MudTooltip Text="Revoke: commits signed with this key stop showing as Verified">
+                                <MudIconButton Icon="@Icons.Material.Outlined.Block" Color="Color.Warning" Variant="Variant.Outlined" Size="Size.Small"
+                                               aria-label="@($"Revoke the GPG key {k.Title}")" OnClick="() => RevokeGpg(k)" />
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Delete key">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Color="Color.Error" Variant="Variant.Outlined" Size="Size.Small"
+                                           aria-label="@($"Delete the GPG key {k.Title}")" OnClick="() => DeleteGpg(k)" />
+                        </MudTooltip>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</MudPaper>
+
 @if (SshServer.HostKeyFingerprint is { } hostKey)
 {
     <MudText Typo="Typo.body2" Class="mud-text-secondary">
@@ -116,7 +188,49 @@
         await Load();
     }
 
-    private async Task Load() => keys = await Keys.ListUserKeysAsync(Me.Id);
+    private async Task Load()
+    {
+        keys = await Keys.ListUserKeysAsync(Me.Id);
+        gpgKeys = await Gpg.ListAsync(Me.Id);
+    }
+
+    private List<GpgKey>? gpgKeys;
+    private string? gpgText, gpgTitle, gpgError;
+    private bool gpgBusy;
+
+    /// <summary>40 hex digits as groups of four, for reading aloud and comparing.</summary>
+    private static string FormatFingerprint(string fp) => string.Join(' ', Enumerable.Range(0, (fp.Length + 3) / 4).Select(i => fp.Substring(i * 4, Math.Min(4, fp.Length - i * 4))));
+
+    private async Task AddGpg()
+    {
+        gpgError = null;
+        gpgBusy = true;
+        try
+        {
+            var key = await Gpg.AddAsync(Me.Id, gpgTitle ?? "", gpgText ?? "");
+            Snackbar.Add($"Added the GPG key '{key.Title}'.", Severity.Success);
+            gpgText = gpgTitle = null;
+            await Load();
+        }
+        catch (InvalidOperationException ex) { gpgError = ex.Message; }
+        finally { gpgBusy = false; }
+    }
+
+    private async Task RevokeGpg(GpgKey k)
+    {
+        if (!await Dialogs.ConfirmAsync("Revoke GPG key", $"Revoke '{k.Title}'? Commits signed with it stop showing as Verified. This can't be undone.")) return;
+        await Gpg.RevokeAsync(Me.Id, k.Id);
+        Snackbar.Add($"Revoked the GPG key '{k.Title}'.", Severity.Success);
+        await Load();
+    }
+
+    private async Task DeleteGpg(GpgKey k)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete GPG key", $"Delete the GPG key '{k.Title}'? Commits signed with it stop showing as Verified.")) return;
+        await Gpg.DeleteAsync(Me.Id, k.Id);
+        Snackbar.Add($"Deleted the GPG key '{k.Title}'.", Severity.Success);
+        await Load();
+    }
 
     private async Task Add()
     {

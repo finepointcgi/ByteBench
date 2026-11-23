@@ -350,6 +350,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         NotificationKind.IssueHierarchyChanged => "changed the parent of",
         NotificationKind.Automation => "notifies you:",
         NotificationKind.MergeQueueRemoved => "removed from the merge queue:",
+        NotificationKind.AutoMergeCancelled => "cancelled auto-merge:",
         NotificationKind.SecurityFindings => "found new security issues:",
         NotificationKind.DeploymentApprovalRequested => "asks you to approve a deployment:",
         NotificationKind.DeploymentApproved => "approved a deployment:",

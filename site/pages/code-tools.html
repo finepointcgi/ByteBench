@@ -40,7 +40,7 @@
 <p><code>/p/{KEY}/repos/{slug}/commits?ref=&amp;path=&amp;page=</code> lists commits newest first for a branch, tag or SHA, optionally for one file or folder. Each row links to the commit view. Issue keys in messages (such as <code>WEB-5</code>) are links to the issue. After a push, commits that mention an issue key also appear in that issue's Development panel (smart commits).</p>
 
 <h2 id="commit-view">Commit view</h2>
-<p><code>/p/{KEY}/repos/{slug}/commits/{sha}</code> shows the full message, author, time, parent links and the full SHA, plus a unified diff of every changed file against the first parent (merge commits say so). The diff is highlighted per side, so multi-line strings and comments colour correctly. A button opens the tree at that commit.</p>
+<p><code>/p/{KEY}/repos/{slug}/commits/{sha}</code> shows the full message, author, time, parent links and the full SHA, plus a <strong>Verified / Unverified</strong> badge for signed commits (<a href="signed-commits.html">Signed commits</a>) and a unified diff of every changed file against the first parent (merge commits say so). The diff is highlighted per side, so multi-line strings and comments colour correctly. A button opens the tree at that commit.</p>
 
 <h2 id="compare">Compare branches</h2>
 <p><code>/p/{KEY}/repos/{slug}/compare/{base}...{head}</code> lets you pick two branches and shows the commits on <code>head</code> that are not on <code>base</code>, plus the diff since their merge base, with a prefilled <strong>Create pull request</strong> button. The Branches page links here from the toolbar (<strong>Compare</strong>) and from each branch. The same data is available as <code>GET .../repos/{slug}/compare?base=&amp;head=</code>.</p>
@@ -94,6 +94,13 @@
 <h3 id="release-notes">Generating release notes</h3>
 <p><strong>Generate notes</strong> fills the notes from git history since the previous release, which is the other release whose tag is the closest ancestor of this one. The notes list merged pull requests (matched by merge commit), non-merge commits, and the issues mentioned in their messages with linked keys. Without an earlier release the whole history is used, up to 300 commits. Edit the text before publishing.</p>
 
+<h4 id="release-notes-draft">Draft notes from merged pull requests, or with AI</h4>
+<p>Next to <strong>Generate notes</strong> the release form (Developer or higher, the same permission as creating a release) has two more buttons. Both put an editable <strong>draft</strong> into the notes editor; nothing is saved until you publish or save the release. They gather the merged pull requests and the commits that no pull request covers between the previous release tag and this tag (at most <code>Ai:ReleaseNotes:MaxItems</code>, default 300; the newest win and the draft says how many were left out), with the labels and types of the issues they mention.</p>
+<ul>
+  <li><strong>Generate from merged PRs</strong> needs no AI. It groups the items into <em>Breaking changes</em>, <em>Features</em>, <em>Fixes</em> and <em>Other</em> using issue labels (<code>breaking</code>, <code>bug</code>/<code>fix</code>, <code>feature</code>/<code>enhancement</code>), bug and feature issue types, and conventional commit prefixes (<code>feat:</code>, <code>fix:</code>, <code>feat!:</code>).</li>
+  <li><strong>Generate notes with AI</strong> (disabled with the reason when AI is off or not set up; after the first draft it reads <strong>Regenerate with AI</strong> and replaces the previous draft) sends the same items to the AI backend that <a href="ai-review-triage.html">AI pull request review</a> uses. The model only classifies each item and words one line; ByteBench writes the PR numbers, links and <code>@authors</code> itself, ignores any item the model invents, lists items it skipped under Other, and reduces its text to plain text (HTML, scripts and links are removed). Preview it with the editor's Preview tab. The prompt contains titles, label names, issue keys and user names only, with anything that looks like a token or password redacted. One call per draft is capped at <code>Ai:ReleaseNotes:MaxOutputTokens</code> (default 4000) and each repository gets <code>Ai:ReleaseNotes:MaxPerRepoPerHour</code> (default 10) drafts per hour. <code>Ai:ReleaseNotes:Enabled=false</code> switches the AI variant off. Audit event <code>release.ai_notes_generated</code> records counts, never the text.</li>
+</ul>
+
 <h3 id="release-assets">Release assets</h3>
 <p>Upload files on the release page (Developer or higher). Limits: <code>Releases:MaxAssetBytes</code> per file (default 512 MB) and 50 files per release. Files are stored under random names in <code>Attachments:Root</code>. Downloads (<code>/release-assets/{id}/{name}</code>) are served as attachments with <code>nosniff</code> and a sandbox policy (only verified png, jpeg, gif and webp display inline). Download counts are shown.</p>
 
@@ -117,6 +124,8 @@
   <tr><td><code>GET .../repos/{slug}/tags</code></td><td>Tags with archive links</td></tr>
   <tr><td><code>GET .../repos/{slug}/releases</code>, <code>/releases/latest</code>, <code>/releases/{id}</code>, <code>/releases/tags/{tag}</code></td><td>Releases (drafts only for Developers and above)</td></tr>
   <tr><td><code>POST .../repos/{slug}/releases</code></td><td>Create a release: <code>tagName</code>, <code>target</code> (branch or SHA for a new tag), <code>tagMessage</code>, <code>generateNotes</code>, plus <code>title</code>, <code>notes</code>, <code>prerelease</code>, <code>draft</code></td></tr>
+  <tr><td><code>POST .../repos/{slug}/releases/notes:generate</code></td><td>Draft notes (not saved): body <code>tag</code> (existing tag, or the branch a new tag will come from), <code>ai</code> (default true; false gives the plain grouped list), <code>excludeTag</code>. Returns <code>markdown</code>, <code>mode</code>, <code>previousTag</code>, counts and a <code>notice</code>. 422 with the reason when AI is off or the hourly limit is reached</td></tr>
+  <tr><td><code>GET .../repos/{slug}/commits/{sha}/signature</code></td><td>Signature status of a commit (see <a href="signed-commits.html">Signed commits</a>)</td></tr>
 </table>
 <pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
   https://bytebench.example.com/api/v1/projects/WEB/repos/web-app/releases/latest</code></pre>

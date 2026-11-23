@@ -14,6 +14,7 @@
 @inject RepositorySettingsService RepoSettings
 @inject CodeOwnersService CodeOwners
 @inject ByteBench.Services.MergeQueue.MergeQueueService MergeQueues
+@inject ByteBench.Services.AutoMerge.AutoMergeService AutoMerges
 
 <PageTitle>@(pr != null ? $"{pr.Repository.Slug}#{pr.Number} {pr.Title}" : "Pull request")</PageTitle>
 
@@ -312,6 +313,27 @@ else if (pr != null)
                     {
                         <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-2">Only Maintainers and Owners can merge.</MudText>
                     }
+                    @if (autoMerge is { State: AutoMergeState.Armed or AutoMergeState.Merging })
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="merge-status mt-3" Icon="@Icons.Material.Outlined.Schedule" id="auto-merge-banner">
+                            <div><b>Auto-merge is on.</b> It will @(queue.Config != null ? "add this pull request to the merge queue" : $"merge this pull request ({MergeStrategySettings.Label(autoMerge.Strategy).ToLowerInvariant()})")
+                                as soon as every requirement is met@(autoMerge.DeleteSourceBranch ? ", then delete the source branch" : ""). Set by <UserLink User="autoMerge.ArmedBy" />.</div>
+                            @if (!string.IsNullOrEmpty(autoMerge.WaitingFor)) { <div class="small mt-1">Waiting for: @autoMerge.WaitingFor</div> }
+                        </MudAlert>
+                        @if (autoMerge.ArmedById == Me.Id || perms.Can(Permission.MergePullRequest))
+                        {
+                            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Small" Class="mt-2" StartIcon="@Icons.Material.Outlined.Cancel"
+                                       Disabled="@busy" OnClick="CancelAutoMerge" id="cancel-auto-merge">Cancel auto-merge</MudButton>
+                        }
+                    }
+                    else if (ShowAutoMerge)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Success" FullWidth="true" Class="mt-2" StartIcon="@Icons.Material.Outlined.Schedule"
+                                   Disabled="@busy" OnClick="ArmAutoMerge" id="merge-when-ready">Merge when ready</MudButton>
+                        <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mt-1">
+                            Merges @(queue.Config != null ? "(through the merge queue) " : "")with the selected options as soon as approvals, checks, branch protection and conflicts allow. New commits from anyone but you cancel it.
+                        </MudText>
+                    }
                     @if (CanEditPr)
                     {
                         <MudButton Variant="Variant.Outlined" Color="Color.Error" FullWidth="true" Size="Size.Small" Class="mt-2"
@@ -471,6 +493,10 @@ else if (pr != null)
     private bool CanMerge => pr?.State == PullRequestState.Open && mergeStatus?.Check == MergeCheck.Clean && !pr.Repository.IsArchived
                              && (gate == null || !gate.Blocked || gate.CanBypass);
     private MergeGateResult? gate; // branch protection + IMergeCheck results (open PRs only)
+    private PullRequestAutoMerge? autoMerge; // "merge when ready" (open PRs only)
+    // Offered while the pull request can't be merged yet (a draft, blocked by protection, conflicts); needs merge permission.
+    private bool ShowAutoMerge => pr?.State == PullRequestState.Open && !pr.Repository.IsArchived && perms.Can(Permission.MergePullRequest)
+                                  && (pr.IsDraft || gate is { Blocked: true } || mergeStatus?.Check == MergeCheck.Conflicts);
 
     private Severity MergeSeverity => mergeStatus?.Check switch
     {
@@ -525,6 +551,7 @@ else if (pr != null)
         canComment = perms.Can(Permission.Comment) || (pr.IsCrossFork && pr.AuthorId == Me.Id);
         gate = pr.State == PullRequestState.Open ? await MergeGateSvc.EvaluateAsync(pr.Id, Me.Id) : null;
         queue = pr.State == PullRequestState.Open ? await MergeQueues.StatusAsync(pr.Id, Me.Id) : ByteBench.Services.MergeQueue.MergeQueueStatus.None;
+        autoMerge = pr.State == PullRequestState.Open ? await AutoMerges.GetAsync(pr.Id) : null;
         if (full)
         {
             changes = await PRs.GetChangesAsync(pr);
@@ -614,6 +641,18 @@ else if (pr != null)
             if (outcome.ConflictPaths.Count > 0) actionError += " Conflicting files: " + string.Join(", ", outcome.ConflictPaths);
         }
     }, full: true);
+
+    private Task ArmAutoMerge() => Run(async () =>
+    {
+        await AutoMerges.ArmAsync(pr!.Id, Me.Id, new MergeRequest(SelectedStrategy, deleteSource && !pr.IsCrossFork, strategy == "ff"));
+        Snackbar.Add("Auto-merge is on: this pull request merges as soon as it is ready.", Severity.Success);
+    }, full: false);
+
+    private Task CancelAutoMerge() => Run(async () =>
+    {
+        await AutoMerges.CancelAsync(pr!.Id, Me.Id);
+        Snackbar.Add("Auto-merge cancelled.", Severity.Normal);
+    }, full: false);
 
     private Task Decline() => Run(() => PRs.DeclineAsync(pr!.Id, Me.Id), full: true);
     private Task Reopen() => Run(() => PRs.ReopenAsync(pr!.Id, Me.Id), full: true);

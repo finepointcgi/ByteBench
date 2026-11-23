@@ -96,9 +96,19 @@ const timeoutSeconds = 30;
   <li><strong>Conflicts</strong>: ByteBench computes the merge in memory; conflicting files are listed and nothing is written.</li>
   <li><strong>Approvals</strong>, <strong>Change requests</strong>, <strong>Threads</strong> and <strong>Code owners</strong>, from the target branch's <a href="branch-protection.html">protection rule</a>.</li>
   <li><strong>External checks</strong> such as the CI pipeline, which block when pending or failed if the rule has <em>Require checks to pass</em>. A neutral result never blocks. Pipelines are described in <a href="ci.html">CI pipelines</a>.</li>
+  <li><strong>Signed commits</strong>: with <em>Require signed commits</em> on the target branch, every commit the PR brings must be Verified (see <a href="signed-commits.html">Signed commits</a>).</li>
   <li><strong>AI review</strong>: when enabled for the repository, unresolved blocker findings block merging (see <a href="ai-review-triage.html">AI review and triage</a>).</li>
 </ul>
 <p>An admin who is allowed to bypass sees <strong>Merge (bypass protection)</strong>; a bypassed merge is noted in the timeline and audit log (<code>pull_request.merged_bypassing_protection</code>). If the target branch uses a <a href="branch-protection.html#merge-queue">merge queue</a>, the button becomes <strong>Add to merge queue</strong>.</p>
+
+<h3 id="auto-merge">Merge when ready (auto-merge)</h3>
+<p>While a PR can't be merged yet (a draft, blocked by protection, or conflicting), a Maintainer sees <strong>Merge when ready</strong> under the merge button. It uses the strategy and <em>Delete source branch</em> choice currently selected in the merge box. ByteBench then merges the PR the moment every requirement is satisfied: required approvals, passing checks, branch protection, no conflicts, not a draft. It goes through the same merge gate and the same merge code as a manual merge, <strong>as the person who armed it</strong> (they are recorded as the merger), and an admin's bypass of protection never counts. If the target branch uses a <a href="branch-protection.html#merge-queue">merge queue</a>, the PR is added to the queue instead.</p>
+<ul>
+  <li><strong>When it is checked</strong>: right away, after reviews and comments, when a pipeline finishes, after any push to the repository, when branch protection changes, and every <code>AutoMerge:SweepSeconds</code> (default 30) as a safety sweep. <code>AutoMerge:Enabled=false</code> turns the background worker off.</li>
+  <li><strong>It cancels itself</strong>, with a timeline entry, an audit event and a notification to the person who armed it, when someone other than that person pushes new commits, when they lose merge permission or their account is deactivated, when the PR is closed or retargeted, when nothing is left to merge, or when a check that blocks merging fails. A PR merged by hand just ends it. Conflicts, missing approvals and pending checks keep it waiting; the banner shows what it is waiting for.</li>
+  <li><strong>Race safe</strong>: one attempt per PR at a time (a conditional update claims it; a claim abandoned by a crashed worker is taken over after <code>AutoMerge:LeaseMinutes</code>, default 10), and the merge is refused if the source branch moved after it was evaluated.</li>
+  <li>The PR page shows a banner with <strong>Cancel auto-merge</strong> (the person who set it, or any Maintainer); the PR list shows an <em>Auto-merge</em> chip. Audit events: <code>pull_request.auto_merge_armed</code>, <code>.auto_merge_cancelled</code>, <code>.auto_merge_merged</code>.</li>
+</ul>
 
 <h3 id="merge-strategies">Merge strategies</h3>
 <table>
@@ -138,6 +148,7 @@ const timeoutSeconds = 30;
   <tr><td><code>POST .../repos/{slug}/pull-requests</code></td><td><code>title</code>, <code>sourceBranch</code>, <code>targetBranch</code>, <code>description</code>, <code>draft</code>, <code>sourceRepository</code> ("KEY/slug" for a cross-fork PR)</td></tr>
   <tr><td><code>PATCH .../pull-requests/{n}</code></td><td><code>title</code>, <code>description</code>, <code>draft</code> (only present fields change)</td></tr>
   <tr><td><code>POST .../pull-requests/{n}/merge</code></td><td>Optional body: <code>strategy</code> (<code>merge</code>, <code>squash</code>, <code>rebase</code>), <code>commitMessage</code> (squash), <code>deleteSourceBranch</code>, <code>fastForward</code>. <code>409</code> with <code>conflictPaths</code> if it cannot merge</td></tr>
+  <tr><td><code>GET/PUT/DELETE .../pull-requests/{n}/auto-merge</code></td><td>Merge when ready. PUT needs Maintainer; optional body <code>strategy</code>, <code>deleteSourceBranch</code>. GET returns <code>state</code> (armed, merging, merged, cancelled), <code>waitingFor</code>, <code>cancelReason</code>; DELETE cancels (404 if not armed)</td></tr>
   <tr><td><code>GET/POST .../pull-requests/{n}/comments</code></td><td><code>path</code> + <code>line</code> (or <code>oldLine</code>) for inline; <code>parentId</code> to reply; <code>startLine</code> for multi-line</td></tr>
   <tr><td><code>POST .../comments/{id}/resolve</code>, <code>/unresolve</code></td><td>Thread state</td></tr>
   <tr><td><code>POST .../comments/{id}/apply-suggestion</code>, <code>POST .../apply-suggestions</code></td><td><code>409</code> if the lines changed; the second takes <code>{ "commentIds": [..] }</code></td></tr>

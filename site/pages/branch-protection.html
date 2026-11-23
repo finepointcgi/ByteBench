@@ -23,6 +23,7 @@
   <tr><td>Dismiss approvals when new commits are pushed</td><td>off</td><td>Only approvals on the PR's current head count; a push removes older ones</td></tr>
   <tr><td>Require all threads resolved</td><td>off</td><td>Any unresolved inline comment thread blocks merging</td></tr>
   <tr><td>Require code owner approval</td><td>off</td><td>Each changed file with owners in <code>CODEOWNERS</code> needs an approval from one of them. See <a href="pull-requests.html#code-owners">Code owners</a></td></tr>
+  <tr><td>Require signed commits</td><td>off</td><td>Every new commit pushed to the branch, and every commit of a PR merged into it, must be Verified. See <a href="signed-commits.html">Signed commits</a></td></tr>
   <tr><td>Allow admins to bypass</td><td>off</td><td>Site admins and project Owners are exempt from this rule. A bypassed merge is noted in the PR timeline and audit log</td></tr>
   <tr><td>Require a merge queue</td><td>off</td><td>See <a href="#merge-queue">Merge queue</a></td></tr>
   <tr><td>Default reviewers</td><td>none</td><td>Added to new PRs that target a matching branch (only people who can review are kept)</td></tr>
@@ -36,6 +37,8 @@
   <li><strong>Pull request merges</strong>, direct and through the queue, which refuse with the list of reasons.</li>
   <li><strong>The web editor</strong>: committing to a branch with "block direct pushes" is refused and the editor offers a new branch plus pull request instead (see <a href="web-editor.html">Web editor</a>).</li>
 </ul>
+
+<p>With <strong>Require signed commits</strong> the push is accepted only if a <code>pre-receive</code> hook can verify every new commit against the keys registered on ByteBench accounts (needs git 2.34 or newer on the server for SSH signatures, plus <code>ssh-keygen</code> and/or <code>gpg</code>). A refused push names the first commit and why, for example <code>commit 1a2b3c4 on 'main' is not verified: it isn't signed</code>. If the server has neither tool the push is refused with that explanation. Merges made by ByteBench itself are not pushes and are not signed; see <a href="signed-commits.html#bytebench-merges">ByteBench's own merge commits</a>.</p>
 
 <h3 id="push-rules">What about "push rules"?</h3>
 <p>ByteBench has no separate "push rules" feature (no commit message regexes, file size or author checks at push time). What is checked on every push, by every route, is: branch protection, <a href="#protected-tags">protected tags</a>, tags used by a release (cannot be deleted), archived repositories, and pull mirrors (read-only). Two further things are refused when any rule exists: signed pushes (<code>git push --signed</code>) because they cannot be checked, and any push to <code>refs/merge-queue/</code>, which belongs to the merge queue.</p>

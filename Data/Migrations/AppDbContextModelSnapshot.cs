@@ -567,6 +567,9 @@ namespace ByteBench.Data.Migrations
                     b.Property<bool>("RequireCodeOwnerApproval")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("RequireSignedCommits")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("RequireThreadResolution")
                         .HasColumnType("INTEGER");
 
@@ -854,6 +857,54 @@ namespace ByteBench.Data.Migrations
                     b.HasIndex("AuthorId", "CreatedAt");
 
                     b.ToTable("Comments");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.CommitSignature", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeyFingerprint")
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeysStamp")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Sha")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("SignerUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("VerifiedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Sha")
+                        .IsUnique();
+
+                    b.ToTable("CommitSignatures");
                 });
 
             modelBuilder.Entity("ByteBench.Data.ContainerBlob", b =>
@@ -1761,6 +1812,63 @@ namespace ByteBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("FlagSegments");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.GpgKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Algorithm")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Emails")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeyFingerprints")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("GpgKeys");
                 });
 
             modelBuilder.Entity("ByteBench.Data.Group", b =>
@@ -3486,6 +3594,67 @@ namespace ByteBench.Data.Migrations
                     b.HasIndex("PullRequestId");
 
                     b.ToTable("PullRequestActivities");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.PullRequestAutoMerge", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ArmedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ArmedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ArmedHeadSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArmedTargetBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ClaimedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("DeleteSourceBranch")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastCheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Strategy")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WaitingFor")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ArmedById");
+
+                    b.HasIndex("PullRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("State");
+
+                    b.ToTable("PullRequestAutoMerges");
                 });
 
             modelBuilder.Entity("ByteBench.Data.PullRequestComment", b =>
@@ -6374,6 +6543,17 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.GpgKey", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Group", b =>
                 {
                     b.HasOne("ByteBench.Data.Group", "Parent")
@@ -7015,6 +7195,25 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Actor");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.PullRequestAutoMerge", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "ArmedBy")
+                        .WithMany()
+                        .HasForeignKey("ArmedById")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.PullRequest", "PullRequest")
+                        .WithMany()
+                        .HasForeignKey("PullRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ArmedBy");
+
+                    b.Navigation("PullRequest");
                 });
 
             modelBuilder.Entity("ByteBench.Data.PullRequestComment", b =>
