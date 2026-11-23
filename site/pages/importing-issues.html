@@ -1,12 +1,12 @@
-<h1>Importing issues from GitHub, GitLab and Jira</h1>
-<p class="lead">Copy the issues of a GitHub repository, a GitLab project or a Jira project into a ByteBench project, with their comments, labels and milestones. You can run it again later to pick up what is new.</p>
+<h1>Importing issues from GitHub, GitLab, Jira, Trello, Linear and Asana</h1>
+<p class="lead">Copy the issues of a GitHub repository, a GitLab project, a Jira project, a Trello board, a Linear team or an Asana project into a ByteBench project, with their comments, labels and milestones. You can run it again later to pick up what is new.</p>
 
 <p>The importer reads the source's API with a token you provide, creates the issues here and remembers what it created, so nothing is duplicated. To import from a spreadsheet instead, see <a href="fields-filters.html#csv-import">CSV import</a>. For copying a Git repository, see <a href="repositories.html">Repositories and Git hosting</a>.</p>
 
 <h2 id="start">Start an import</h2>
 <p>Open the project's issue list, then <b>Menu, Import from GitHub, GitLab or Jira</b> (<code>/p/{KEY}/import/tracker</code>). You need the <b>Maintainer</b> role in the project. The page also has a link from the CSV import page. There are three steps.</p>
 <ol>
-<li><b>Source.</b> Choose GitHub, GitLab or Jira and fill in the fields (see the table below). <b>Check connection</b> asks the source for the project; a wrong address, project name or token is shown as an error. Nothing is created in this step.</li>
+<li><b>Source.</b> Choose GitHub, GitLab, Jira, Trello, Linear or Asana and fill in the fields (see the table below). <b>Check connection</b> asks the source for the project; a wrong address, project name or token is shown as an error. Nothing is created in this step.</li>
 <li><b>Review.</b> The page shows the project's name, description, how many issues, labels and milestones it has, a few sample titles and any warning from the source. GitHub's issue count includes pull requests. Choose whether to include closed issues, comments and (GitHub only) pull requests as issues. When the source has statuses beyond Open and Closed, and always for Jira, a table maps each source status to one of this project's workflow statuses. <b>Start import</b> queues the import.</li>
 <li><b>Progress.</b> A background job reads the source. The page updates every two seconds with a progress bar, counters (created, already imported, comments, labels, milestones, links) and, when it ends, the warnings. <b>Cancel import</b> stops it. The project's recent imports are listed under the wizard, and <b>Open</b> reopens the progress of any of them.</li>
 </ol>
@@ -15,6 +15,9 @@
   <tr><td>GitHub</td><td>Repository as <code>owner/name</code>. Address: leave blank for github.com; for GitHub Enterprise Server enter the API root, for example <code>https://ghe.example.com/api/v3</code>. Token: optional for a public repository.</td></tr>
   <tr><td>GitLab</td><td>Project path (<code>group/subgroup/project</code>) or numeric id. Address: blank for gitlab.com, or your self-hosted GitLab. Token: optional for a public project.</td></tr>
   <tr><td>Jira</td><td>Address (required, for example <code>https://example.atlassian.net</code>), project key (for example <code>PROJ</code>), and the credentials: on Jira Cloud your account email plus an API token; on Server or Data Center a personal access token (leave the user blank) or a username and password.</td></tr>
+  <tr><td>Trello</td><td>Board: the short link or id, or the board's address (<code>https://trello.com/b/AbCdEfGh/name</code>). API key and token (both needed; the token may be left out for a public board). No address field: the importer talks to <code>api.trello.com</code>.</td></tr>
+  <tr><td>Linear</td><td>Team key (the prefix of the issue numbers, for example <code>ENG</code>) or the team's id, and a personal API key. No address field: <code>api.linear.app</code>.</td></tr>
+  <tr><td>Asana</td><td>Project id (the long number in the project's address, <code>app.asana.com/0/&lt;project id&gt;/list</code>) and a personal access token. No address field: <code>app.asana.com</code>.</td></tr>
 </table>
 
 <h2 id="tokens">Tokens and the least access they need</h2>
@@ -22,6 +25,9 @@
   <li><b>GitHub:</b> a fine-grained token limited to the one repository with <em>Issues: read-only</em> and <em>Metadata: read-only</em>, or a classic token with the <code>repo</code> scope (<code>public_repo</code> for a public repository).</li>
   <li><b>GitLab:</b> a personal or project access token with the <code>read_api</code> scope.</li>
   <li><b>Jira Cloud:</b> an API token created at id.atlassian.com for your own account, with your account email. Only the issues that account can browse are imported. <b>Jira Server and Data Center:</b> a personal access token, or a username and password.</li>
+  <li><b>Trello:</b> an <em>API key</em> from <code>trello.com/power-ups/admin</code> (create a Power-Up, then copy its key) and a <em>token</em> generated for that key and authorized with <b>read</b> access. Enter the key in the API key field and the token in the token field. Trello takes both as the <code>key</code> and <code>token</code> query parameters of each request, so they are part of the request address; ByteBench never puts request addresses into messages, warnings, the audit log or the job record.</li>
+  <li><b>Linear:</b> a <em>personal API key</em> from Settings, Account, Security &amp; access (read-only is enough). It is sent as the bare <code>Authorization</code> header, as Linear expects for personal keys; a Linear OAuth access token (<code>lin_oauth_...</code>) is sent as <code>Bearer</code> automatically.</li>
+  <li><b>Asana:</b> a <em>personal access token</em> from the developer console (<code>app.asana.com/0/my-apps</code>), sent as <code>Authorization: Bearer</code>.</li>
 </ul>
 <p>The token is sent only to the source's own API for this import. It is kept in server memory for the one run and is <b>never stored</b>: not in the database, the import record, the audit log, the server log or any error message, and the page never shows it again. If the server restarts mid-import the token is gone, so you start the import again.</p>
 
@@ -42,8 +48,50 @@
   <tr><td>Comments</td><td>Comments with their dates, when <b>Include comments</b> is on</td></tr>
   <tr><td>Attachments</td><td>Listed in the description with a link back to the source; the files are not copied</td></tr>
 </table>
-<p><b>Not imported:</b> sprints, attachment files, pull-request branches and code, reactions, watchers, time tracking, and anything the source's API doesn't offer. If a reader could not carry something over for one issue (for example a comment list that was cut short), the import records a warning naming the issue.</p>
+<p><b>Not imported:</b> sprints (Linear cycles become a label), attachment files, pull-request branches and code, reactions, watchers, time tracking, and anything the source's API doesn't offer. If a reader could not carry something over for one issue (for example a comment list that was cut short), the import records a warning naming the issue.</p>
 <p>Each imported issue ends its description with a footer, <em>Imported from GitHub #12</em> (linked to the original when the source gave an address) and the original author's name when no user matched. It also gets the activity entry <em>imported from GitHub #12</em>.</p>
+
+<h2 id="trello-linear-asana">Trello, Linear and Asana</h2>
+<p>These three have no statuses beyond what their own structure offers, so the status mapping table always appears for them. Each source fills the fields below; whatever a source lacks stays empty. Tokens never appear in messages (see <a href="#tokens">tokens</a>). People are matched as described under <a href="#people">people</a>: Linear gives the key owner people's email, Asana the assignee's email, Trello only a user name.</p>
+<h3 id="map-trello">Trello</h3>
+<table>
+  <tr><th>Trello</th><th>In ByteBench</th></tr>
+  <tr><td>Board</td><td>The source project (name, description, number of cards including archived ones)</td></tr>
+  <tr><td>List</td><td>The status. A list named done, complete, shipped, released, closed or finished counts as Done, one with review or testing as In Review, doing, progress or wip as In Progress, anything else as To Do. A card that is archived, or whose due date is marked complete, is Done even in another list (it then has no status name, so the category decides). Cards of archived lists are Done and left out when closed issues are off</td></tr>
+  <tr><td>Card</td><td>An issue: name as title, description, short link as the address, <code>#</code> plus the card number as the key, created date from the card id, last activity as updated date</td></tr>
+  <tr><td>Labels</td><td>Labels; an unnamed label is known by its colour name. A label named bug, feature or epic sets the type</td></tr>
+  <tr><td>Due date, members</td><td>Due date; the first member is the assignee</td></tr>
+  <tr><td>Checklists</td><td>Appended to the description as Markdown task lists (<code>- [x]</code> for complete items)</td></tr>
+  <tr><td>Comments, attachments</td><td>Comments (author and date kept); attachments listed with their links</td></tr>
+</table>
+<p>Trello has no sub-tasks, links, milestones or story points, so none are created. The importer reads a board with a handful of requests (cards and comments are paged with <code>before</code>), well inside Trello's per-token limits.</p>
+<h3 id="map-linear">Linear</h3>
+<table>
+  <tr><th>Linear</th><th>In ByteBench</th></tr>
+  <tr><td>Team</td><td>The source project. Workflow states are the statuses: backlog, unstarted and triage count as To Do, started as In Progress, completed and canceled as Done (a canceled issue gets a warning saying so)</td></tr>
+  <tr><td>Issue</td><td>An issue: <code>ENG-12</code> as the key, its Markdown description, address, created, updated and completed dates. Archived issues are read only when closed issues are on</td></tr>
+  <tr><td>Priority</td><td>Urgent is Highest, High, Medium and Low as they are; no priority leaves the project's default</td></tr>
+  <tr><td>Estimate, due date</td><td>Story points (rounded, 0 to 100) and due date</td></tr>
+  <tr><td>Labels</td><td>Labels; a label in a group is named <code>Group/Label</code>. The issue's cycle becomes a label <code>cycle: &lt;name or number&gt;</code> (cycles are not imported as sprints). Labels named bug or feature set the type</td></tr>
+  <tr><td>Sub-issues</td><td>A sub-issue becomes a Sub-task under its parent. Under a parent labelled epic it stays a task or feature instead, and a sub-issue of a sub-issue is imported without a parent, with a warning (ByteBench sub-tasks don't nest)</td></tr>
+  <tr><td>Project</td><td>The milestone, with start and target date; completed or canceled projects are closed. Projects shared with other teams but not listed under this team are not carried over (a warning names the issue)</td></tr>
+  <tr><td>Relations</td><td>Blocks, duplicate and related relations between imported issues, recorded on the issue that owns the relation</td></tr>
+  <tr><td>Comments, attachments</td><td>Comments with their author (matched by email) and date; attachments listed with their links</td></tr>
+</table>
+<p>Issues are read oldest first, 50 per request, with cursor paging. If Linear refuses a query as too complex the page size is halved and the page is asked again. Linear rate limits (the <code>RATELIMITED</code> error, or HTTP 429 with a wait) end the import with a message saying to wait a few minutes, or are waited out when Linear names a short wait. Linear answers HTTP 400 for some refused queries without saying why in a form the importer can read, so a persistent 400 is reported as "Linear rejected the request".</p>
+<h3 id="map-asana">Asana</h3>
+<table>
+  <tr><th>Asana</th><th>In ByteBench</th></tr>
+  <tr><td>Project</td><td>The source project; the count comes from the project's task counts. Sections are the statuses (same name rules as Trello lists; a completed task is Done in any section)</td></tr>
+  <tr><td>Task</td><td>An issue: notes (plain text) as the description, permalink as the address, the last six digits of the task id as the key (<code>#678901</code>), created, modified and completion dates, due date, assignee (with email), creator's name</td></tr>
+  <tr><td>Tags</td><td>Labels. Tags named bug, feature or epic set the type; a tag like <code>priority: high</code> or <code>High priority</code> sets the priority</td></tr>
+  <tr><td>Custom fields</td><td>A number field named story points, points, estimate or effort gives the story points; an option field named Priority gives the priority (low, medium, high, critical)</td></tr>
+  <tr><td>Milestone tasks</td><td>An issue with the label <code>milestone</code> (Asana milestones are tasks, ByteBench milestones are not created)</td></tr>
+  <tr><td>Subtasks</td><td>One level of subtasks, each a Sub-task under its task (a task with the epic tag keeps its subtasks as tasks, since an epic can't have sub-tasks). A task that is a subtask of a subtask is not read deeper and gets a warning</td></tr>
+  <tr><td>Dependencies</td><td>"Blocks" links to the task's dependents</td></tr>
+  <tr><td>Comments, attachments</td><td>Comments (stories of type comment; system activity is skipped) with author name and date; attachments listed with their links</td></tr>
+</table>
+<p>Tasks are read in the project's own order (Asana has no creation-order listing) with <code>limit=100</code> and an <code>offset</code> that is applied to ByteBench's own request address, never to a link Asana returns. With closed issues off, only incomplete tasks are asked for. Each task costs a few extra requests (comments, dependents, attachments, subtasks), so a big project is subject to Asana's per-minute limit: a 429 is waited out as described under limits.</p>
 
 <h2 id="mapping">How things are matched</h2>
 <h3 id="mapping-status">Statuses</h3>
@@ -111,6 +159,8 @@
   <tr><th>Message</th><th>What to check</th></tr>
   <tr><td>rejected the credentials (wrong, expired or missing token)</td><td>The source answered 401. Create a new token; for Jira Cloud use your account email with an API token, not your password.</td></tr>
   <tr><td>says the token isn't allowed to read this</td><td>The source answered 403. Check the token's scopes (see above) and that the account can see the project; fine-grained GitHub tokens must be granted this repository.</td></tr>
+  <tr><td>Linear rejected the request (HTTP 400)</td><td>Linear refused the query, usually because a team with very large issues exceeded its complexity limit, or because of its rate limit. Run the import again (it continues), or turn off comments.</td></tr>
+  <tr><td>Trello needs your API key</td><td>Both the API key and a token are needed; see <a href="#tokens">tokens</a>.</td></tr>
   <tr><td>says this doesn't exist, or the token can't see it</td><td>The source answered 404. Check the project name (<code>owner/name</code>, group path, project key), the address, and that the token's account can see the project; private projects look like missing ones.</td></tr>
   <tr><td>is rate limiting the import</td><td>Try again after the time in the message, or use a token for a higher limit. Raise <code>TrackerImport:MaxRateLimitWaitSeconds</code> to let a run wait longer.</td></tr>
   <tr><td>answered HTTP 5xx, didn't answer within N seconds, Couldn't reach</td><td>The source is down or slow, or the address is wrong or blocked by a firewall. Run the import again; it continues.</td></tr>

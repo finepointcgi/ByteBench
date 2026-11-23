@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace ByteBench.Data;
 
 /// <summary>Which tracker an import reads from.</summary>
-public enum TrackerSourceKind { GitHub, GitLab, Jira }
+public enum TrackerSourceKind { GitHub, GitLab, Jira, Trello, Linear, Asana }
 
 public enum TrackerImportStatus { Queued, Running, Done, Failed, Cancelled }
 
