@@ -25,6 +25,9 @@ else if (project != null)
         Into @project.Name. The first row names the columns. At most @Importer.Limits.MaxRows.ToString("N0") rows and @(Importer.Limits.MaxBytes / 1024) KB;
         all rows are imported together, or none.
     </MudText>
+    <MudText Class="mud-text-secondary mb-4" Typo="Typo.body2">
+        Coming from GitHub, GitLab or Jira? <MudLink Href="@($"/p/{project.Key}/import/tracker")">Import directly</MudLink>.
+    </MudText>
 
     @* 1. Upload *@
     <MudPaper Outlined="true" Class="pa-4 mb-3">

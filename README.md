@@ -1320,6 +1320,18 @@ ByteBench implements the [Git LFS Batch API](https://github.com/git-lfs/git-lfs/
 
 Code: `Services/Git/ProtectedTagService.cs`, `Services/Mirroring/` (`MirrorService`, `MirrorSyncRunner`, `MirrorGit`, `MirrorUrlGuard`, `MirrorWorker`), `Services/Lfs/` (`LfsEndpoints`, `LfsStorage`), `Components/Pages/Repositories/Repo{ProtectedTags,Mirroring}.razor`, `Components/Repositories/MirrorStatus.razor`. Schema: `ProtectedTagRule`, `RepositoryMirror`, `LfsObject` (migration `MirrorTagsLfs`). Tests: `tests/ByteBench.Tests/MirrorTagsLfsTests.cs` (the git-lfs end-to-end test is skipped when `git-lfs` isn't installed).
 
+
+## Importing from GitHub, GitLab and Jira
+
+**Menu, Import from GitHub, GitLab or Jira** on a project's issue list (`/p/{KEY}/import/tracker`, Maintainer+, also linked from the CSV import page) copies a GitHub repository's, a GitLab project's or a Jira project's issues into the project in three steps: source (product, project, optional address, optional token; **Check connection**), review (what the source has, include closed issues / comments / GitHub pull requests, and a status mapping table for sources with statuses, always for Jira) and progress (polled every two seconds, **Cancel**, warnings, and the project's recent imports, reopened with `?import=<id>`).
+
+- **Backend**: `Services/TrackerImport/` (`TrackerImportService`, `TrackerImportRunner`, `TrackerImportWriter`, `TrackerHttp`, one reader per source), `Data/TrackerImportModels.cs`. The wizard is `Components/Pages/Projects/ImportIssues.razor`.
+- **Credentials** are held in memory for the one run and never stored, logged, audited or put in error messages. A restart fails running imports; run the import again.
+- **Re-runs** are safe: `ImportedItem` remembers source id to local id per source project, so only new issues and comments are added, existing issues are never changed, and missing parents and links are completed.
+- **Mapping**: statuses by your choice, then by name, then by category; people by email, then user name (unmatched people are named in the text and listed in a warning); labels by name; milestones by title. Imported issues get an "Imported from ..." footer and an `imported from <source>` activity. No notifications or webhooks are sent.
+- **Safety**: the SSRF guard from webhooks and mirrors (`TrackerImport:AllowPrivateNetworks`, else `Webhooks:AllowPrivateNetworks`), no redirects, a response size cap, timeouts and rate-limit waits. Audit events: `project.tracker_import_requested`, `project.tracker_imported`, `project.tracker_import_cancel_requested`.
+- **Configuration** (`TrackerImport:*`): `Enabled`, `MaxConcurrent` (2), `MaxActivePerProject` (1), `MaxIssues` (20000), `AllowPrivateNetworks`, `RequestTimeoutSeconds` (60), `MaxRateLimitWaitSeconds` (120). Full guide: `site/pages/importing-issues.html`.
+
 ## Linked work: sub-tasks, epics and issue links
 
 **Hierarchy.** `Issue.ParentId` links an issue to a parent in the same project, up to three levels: **Epic › Story/Task/Bug/Feature › Sub-task** (`IssueType.Subtask`).

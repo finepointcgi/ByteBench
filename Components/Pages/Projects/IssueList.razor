@@ -30,6 +30,7 @@ else if (project != null)
                 @if (perms.Role >= ProjectRole.Maintainer)
                 {
                     <MudMenuItem Icon="@Icons.Material.Outlined.FileUpload" Href="@($"/p/{project.Key}/import")">Import CSV…</MudMenuItem>
+                    <MudMenuItem Icon="@Icons.Material.Outlined.CloudDownload" Href="@($"/p/{project.Key}/import/tracker")">Import from GitHub, GitLab or Jira…</MudMenuItem>
                 }
             </MudMenu>
             @if (canCreate)

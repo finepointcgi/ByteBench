@@ -57,6 +57,7 @@ git push bytebench --tags</code></pre></li>
   <tr><td><code>Import:MaxConcurrent</code></td><td><code>2</code></td><td>Imports running at once</td></tr>
   <tr><td><code>Import:MaxActivePerProject</code></td><td><code>3</code></td><td>Queued or running imports per project</td></tr>
 </table>
+<p>These keys are for repository imports. Importing <em>issues</em> from GitHub, GitLab or Jira has its own <code>TrackerImport:*</code> keys: <code>Enabled</code> (<code>true</code>), <code>MaxConcurrent</code> (<code>2</code>), <code>MaxActivePerProject</code> (<code>1</code>), <code>MaxIssues</code> (<code>20000</code>), <code>AllowPrivateNetworks</code> (follows <code>Webhooks:AllowPrivateNetworks</code>), <code>RequestTimeoutSeconds</code> (<code>60</code>) and <code>MaxRateLimitWaitSeconds</code> (<code>120</code>). See <a href="importing-issues.html#config">Importing issues</a>.</p>
 
 <h2 id="cloning-over-http">Cloning over HTTP</h2>
 <p>Every repository is served over the Git Smart HTTP protocol at <code>/git/{KEY}/{slug}.git</code>:</p>

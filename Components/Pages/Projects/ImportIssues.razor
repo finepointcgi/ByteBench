@@ -1,0 +1,504 @@
+@page "/p/{Key}/import/tracker"
+@using ByteBench.Services.TrackerImport
+@implements IDisposable
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TrackerImportService Importer
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Import from GitHub, GitLab or Jira · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !canImport)
+{
+    <Forbidden Message="Importing issues needs the Maintainer role." BackHref="@($"/p/{project.Key}/issues")" />
+}
+else if (project != null)
+{
+<div class="ti-page">
+    <div class="ti-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="ti-title">Import from GitHub, GitLab or Jira</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">Into @project.Name. Issues, comments, labels and milestones are copied; existing issues are never changed.</MudText>
+        </div>
+        <MudButton Href="@($"/p/{project.Key}/issues")" Variant="Variant.Outlined">Back to issues</MudButton>
+    </div>
+
+    <ol class="ti-steps" aria-label="Import steps">
+        <li class="@StepClass(1)" aria-current="@(step == 1 ? "step" : null)">1 &middot; Source</li>
+        <li class="@StepClass(2)" aria-current="@(step == 2 ? "step" : null)">2 &middot; Review</li>
+        <li class="@StepClass(3)" aria-current="@(step == 3 ? "step" : null)">3 &middot; Progress</li>
+    </ol>
+
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" role="alert">@error</MudAlert> }
+
+    @if (step == 1)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <fieldset class="ti-fieldset">
+                <legend class="mud-typography mud-typography-subtitle1 mb-2">Where are the issues?</legend>
+                <div class="ti-cards">
+                    @foreach (var s in Sources)
+                    {
+                        var kind = s.Kind;
+                        <label class="ti-card">
+                            <input type="radio" name="ti-source" checked="@(source == kind)" @onchange="() => Pick(kind)" />
+                            <span class="ti-card-name">@s.Name</span>
+                            <span class="ti-card-note">@s.Note</span>
+                        </label>
+                    }
+                </div>
+            </fieldset>
+
+            <MudStack Spacing="3" Class="mt-4">
+                @if (source == TrackerSourceKind.GitHub)
+                {
+                    <MudTextField T="string" Immediate="true" Label="Repository" @bind-Value="projectName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                                  Placeholder="owner/name" MaxLength="201" Required="true" />
+                    <MudTextField T="string" Immediate="true" Label="Address (optional)" @bind-Value="baseUrl" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" MaxLength="500"
+                                  HelperText="GitHub Enterprise API root, e.g. https://ghe.example.com/api/v3. Leave blank for github.com." />
+                    <MudTextField T="string" Immediate="true" Label="Token (optional for public repositories)" @bind-Value="secret" InputType="InputType.Password"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" UserAttributes="@NoAutofill" />
+                }
+                else if (source == TrackerSourceKind.GitLab)
+                {
+                    <MudTextField T="string" Immediate="true" Label="Project path or id" @bind-Value="projectName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                                  Placeholder="group/project or 12345" MaxLength="300" Required="true" />
+                    <MudTextField T="string" Immediate="true" Label="Address (optional)" @bind-Value="baseUrl" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" MaxLength="500"
+                                  HelperText="Your GitLab address, e.g. https://gitlab.example.com. Leave blank for gitlab.com." />
+                    <MudTextField T="string" Immediate="true" Label="Token (optional for public projects)" @bind-Value="secret" InputType="InputType.Password"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" UserAttributes="@NoAutofill" />
+                }
+                else
+                {
+                    <MudTextField T="string" Immediate="true" Label="Jira address" @bind-Value="baseUrl" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" MaxLength="500"
+                                  Placeholder="https://example.atlassian.net" Required="true" />
+                    <MudTextField T="string" Immediate="true" Label="Project key" @bind-Value="projectName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                                  Placeholder="PROJ" MaxLength="20" Required="true" />
+                    <MudGrid Spacing="3">
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Immediate="true" Label="Email or username" @bind-Value="username" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200"
+                                          HelperText="Jira Cloud: your account email. Leave blank for a personal access token." />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Immediate="true" Label="API token, password or personal access token" @bind-Value="secret" InputType="InputType.Password"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" UserAttributes="@NoAutofill" />
+                        </MudItem>
+                    </MudGrid>
+                }
+
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">The token is used for this import only and is never stored.</MudText>
+
+                <details class="ti-help">
+                    <summary>How to get a token</summary>
+                    @if (source == TrackerSourceKind.GitHub)
+                    {
+                        <p>Create a fine-grained token (GitHub, Settings, Developer settings) for just this repository with <b>Issues: read-only</b> and <b>Metadata: read-only</b>.
+                           Or use a classic token with the <code>repo</code> scope (<code>public_repo</code> is enough for a public repository).</p>
+                    }
+                    else if (source == TrackerSourceKind.GitLab)
+                    {
+                        <p>Create a personal or project access token with the <code>read_api</code> scope (User settings, Access tokens). Nothing else is needed.</p>
+                    }
+                    else
+                    {
+                        <p><b>Jira Cloud:</b> create an API token at id.atlassian.com (Security, API tokens) for your own account and enter your account email above.
+                           Only issues your account can browse are imported.</p>
+                        <p><b>Jira Server / Data Center:</b> create a personal access token (leave the username blank), or enter your username and password.</p>
+                    }
+                </details>
+
+                <div class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || !CanCheck)" OnClick="CheckAsync">
+                        @(busy ? "Checking…" : "Check connection")
+                    </MudButton>
+                </div>
+            </MudStack>
+        </MudPaper>
+    }
+    else if (step == 2 && check != null)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <MudText Typo="Typo.h6" Class="mb-1">@check.Probe.ProjectName</MudText>
+            @if (!string.IsNullOrWhiteSpace(check.Probe.Description))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">@check.Probe.Description</MudText>
+            }
+            <MudText Typo="Typo.body2">
+                <b>@check.Probe.IssueCount.ToString("N0")</b> issue@(check.Probe.IssueCount == 1 ? "" : "s")@(source == TrackerSourceKind.GitHub ? " (GitHub's count includes pull requests)" : "") &middot;
+                <b>@check.LabelCount</b> label@(check.LabelCount == 1 ? "" : "s") &middot; <b>@check.MilestoneCount</b> milestone@(check.MilestoneCount == 1 ? "" : "s")
+            </MudText>
+            @if (check.Probe.SampleTitles.Count > 0)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">For example</MudText>
+                <ul class="ti-samples">
+                    @foreach (var t in check.Probe.SampleTitles.Take(5)) { <li>@t</li> }
+                </ul>
+            }
+            @if (!string.IsNullOrWhiteSpace(check.Probe.Warning))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@check.Probe.Warning</MudAlert>
+            }
+            @if (check.Probe.IssueCount > Importer.Limits.MaxIssues)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                    Only the first @Importer.Limits.MaxIssues.ToString("N0") issues are read per import; run it again to continue with the rest.
+                </MudAlert>
+            }
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Options</MudText>
+            <div class="ti-options">
+                <MudCheckBox T="bool" @bind-Value="settings.IncludeClosed" Label="Include closed issues" Dense="true" />
+                <MudCheckBox T="bool" @bind-Value="settings.IncludeComments" Label="Include comments" Dense="true" />
+                @if (source == TrackerSourceKind.GitHub)
+                {
+                    <MudCheckBox T="bool" @bind-Value="settings.IncludePullRequests" Label="Include pull requests as issues" Dense="true" />
+                }
+            </div>
+        </MudPaper>
+
+        @if (ShowStatusTable)
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">Statuses</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">Choose the status here for each status of the source. Matching names are pre-selected, otherwise the first status of the same category.</MudText>
+                <div class="ti-map" role="table" aria-label="Status mapping">
+                    @foreach (var s in check.SourceStatuses)
+                    {
+                        var name = s.Name;
+                        <div class="ti-map-row" role="row">
+                            <div class="ti-map-from" role="cell">
+                                <span>@name</span>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@s.Category</MudChip>
+                            </div>
+                            <div class="ti-map-to" role="cell">
+                                <MudSelect T="int" Value="@statusSel[name]" ValueChanged="@(v => statusSel[name] = v)" Label="@($"Map {name} to")" Dense="true"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    @foreach (var w in workflow)
+                                    {
+                                        <MudSelectItem T="int" Value="w.Id">@w.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </MudPaper>
+        }
+
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            Sprints, attachments' files and pull-request branches aren't copied. People are matched by email or user name. Run it again later to pick up new issues; existing issues are never changed.
+        </MudAlert>
+
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Outlined" Disabled="busy" OnClick="Back">Back</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="StartAsync">@(busy ? "Starting…" : "Start import")</MudButton>
+        </div>
+    }
+    else if (step == 3)
+    {
+        @if (job == null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">This import doesn't exist, or it belongs to another project.</MudAlert>
+            <MudButton Href="@PageUrl" Variant="Variant.Outlined">Start over</MudButton>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3" aria-live="polite">
+                <div class="ti-status-line">
+                    <MudText Typo="Typo.h6">@job.Source @job.SourceProject</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="@StatusColor(job.Status)">@job.Status</MudChip>
+                </div>
+                @if (job.IsActive)
+                {
+                    <MudProgressLinear Class="my-3" Color="Color.Primary" Indeterminate="@(job.IssuesExpected <= 0 || job.Status == TrackerImportStatus.Queued)"
+                                       Value="@Percent" Max="100" aria-label="Import progress" />
+                }
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                    @(job.Status == TrackerImportStatus.Queued ? "Waiting for a free import slot." : $"Read {job.IssuesRead:N0}{(job.IssuesExpected > 0 ? $" of about {job.IssuesExpected:N0}" : "")} issues.")
+                </MudText>
+                <dl class="ti-counters">
+                    <div><dt>Created</dt><dd>@job.IssuesCreated.ToString("N0")</dd></div>
+                    <div><dt>Already imported</dt><dd>@job.IssuesSkipped.ToString("N0")</dd></div>
+                    <div><dt>Comments</dt><dd>@job.CommentsCreated.ToString("N0")</dd></div>
+                    <div><dt>Labels</dt><dd>@job.LabelsCreated.ToString("N0")</dd></div>
+                    <div><dt>Milestones</dt><dd>@job.MilestonesCreated.ToString("N0")</dd></div>
+                    <div><dt>Links</dt><dd>@job.LinksCreated.ToString("N0")</dd></div>
+                </dl>
+
+                @if (job.Status == TrackerImportStatus.Done)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">Import finished: @job.IssuesCreated issue@(job.IssuesCreated == 1 ? "" : "s") created@(job.IssuesSkipped > 0 ? $", {job.IssuesSkipped} already imported" : "").</MudAlert>
+                }
+                else if (job.Status is TrackerImportStatus.Failed or TrackerImportStatus.Cancelled)
+                {
+                    <MudAlert Severity="@(job.Status == TrackerImportStatus.Failed ? Severity.Error : Severity.Warning)" Dense="true" Class="mt-3" role="alert">
+                        @(job.Status == TrackerImportStatus.Failed ? "The import failed: " : "")@(job.Error ?? (job.Status == TrackerImportStatus.Cancelled ? "The import was cancelled." : "Unknown error."))
+                    </MudAlert>
+                }
+
+                @if (!job.IsActive && job.WarningCount > 0)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Warnings (@job.WarningCount)</MudText>
+                    <ul class="ti-warnings" tabindex="0" aria-label="Import warnings">
+                        @foreach (var w in warnings) { <li>@w</li> }
+                    </ul>
+                    @if (job.WarningCount > warnings.Count)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Showing the first @warnings.Count of @job.WarningCount warnings.</MudText>
+                    }
+                }
+
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    @if (job.IsActive)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="cancelling" OnClick="CancelAsync">Cancel import</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Href="@($"/p/{project.Key}/issues")" Variant="Variant.Filled" Color="Color.Primary">View issues</MudButton>
+                        <MudButton Href="@PageUrl" Variant="Variant.Outlined">Import more</MudButton>
+                    }
+                </div>
+            </MudPaper>
+        }
+    }
+
+    @if (recent.Count > 0)
+    {
+        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Recent imports</MudText>
+        <MudSimpleTable Dense="true" Hover="true" Class="ti-recent">
+            <thead>
+                <tr><th>Source</th><th>Project</th><th>Status</th><th>Created</th><th>Skipped</th><th>When</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var i in recent)
+                {
+                    <tr @key="i.Id">
+                        <td>@i.Source</td>
+                        <td class="mono">@i.SourceProject</td>
+                        <td>@i.Status</td>
+                        <td>@i.IssuesCreated.ToString("N0")</td>
+                        <td>@i.IssuesSkipped.ToString("N0")</td>
+                        <td>@Display.Ago(i.CreatedAt)</td>
+                        <td><MudButton Size="Size.Small" Variant="Variant.Text" Href="@($"{PageUrl}?import={i.Id}")" aria-label="@($"Open import {i.Id}")">Open</MudButton></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</div>
+}
+
+@code {
+    private sealed record SourceChoice(TrackerSourceKind Kind, string Name, string Note);
+    private static readonly SourceChoice[] Sources =
+    [
+        new(TrackerSourceKind.GitHub, "GitHub", "Issues of a repository on github.com or GitHub Enterprise."),
+        new(TrackerSourceKind.GitLab, "GitLab", "Issues of a project on gitlab.com or a self-hosted GitLab."),
+        new(TrackerSourceKind.Jira, "Jira", "Issues of a Jira Cloud, Server or Data Center project."),
+    ];
+    private static readonly Dictionary<string, object> NoAutofill = new() { ["autocomplete"] = "new-password" };
+
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "import")] public int? ImportId { get; set; }
+
+    private Project? project;
+    private bool notFound, canImport, busy, cancelling;
+    private int step = 1;
+    private string? error;
+
+    private TrackerSourceKind source = TrackerSourceKind.GitHub;
+    private string? projectName, baseUrl, username, secret;
+    private TrackerImportSettings settings = new();
+    private TrackerImportCheck? check;
+    private IReadOnlyList<WorkflowStatus> workflow = [];
+    private Dictionary<string, int> statusSel = new(StringComparer.OrdinalIgnoreCase);
+
+    private TrackerImportJob? job;
+    private IReadOnlyList<string> warnings = [];
+    private List<TrackerImportJob> recent = [];
+    private CancellationTokenSource? polling;
+
+    private string PageUrl => $"/p/{Key}/import/tracker";
+    private bool CanCheck => !string.IsNullOrWhiteSpace(projectName) && (source != TrackerSourceKind.Jira || !string.IsNullOrWhiteSpace(baseUrl));
+    private bool ShowStatusTable => check != null && workflow.Count > 0 && (source == TrackerSourceKind.Jira
+        || check.SourceStatuses.Any(s => !s.Name.Equals("Open", StringComparison.OrdinalIgnoreCase) && !s.Name.Equals("Closed", StringComparison.OrdinalIgnoreCase)));
+    private double Percent => job is { IssuesExpected: > 0 } ? Math.Min(100, job.IssuesRead * 100.0 / job.IssuesExpected) : 0;
+    private string StepClass(int n) => "ti-step" + (step == n ? " active" : "");
+
+    private static Color StatusColor(TrackerImportStatus s) => s switch
+    {
+        TrackerImportStatus.Done => Color.Success,
+        TrackerImportStatus.Failed => Color.Error,
+        TrackerImportStatus.Cancelled => Color.Warning,
+        _ => Color.Info,
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        canImport = (await Access.GetRoleAsync(project.Id)) >= ProjectRole.Maintainer;
+        if (!canImport) return;
+        if (ImportId is { } id && job?.Id != id)
+        {
+            var found = await FindAsync(id);
+            job = found != null && found.ProjectId == project.Id ? found : null;
+            warnings = job == null ? [] : TrackerImportService.WarningsOf(job);
+            step = 3;
+            StartPolling();
+        }
+        else if (ImportId == null && step == 3)
+        {
+            // "Import more" / "Start over" links come back here without ?import=
+            StopPolling();
+            (job, check, step, error, projectName, baseUrl, username, secret) = (null, null, 1, null, null, null, null, null);
+            settings = new();
+        }
+        await LoadRecentAsync();
+    }
+
+    // GetAsync needs the settings permission (Owner) while Start and List need Maintainer, so Maintainers read their imports from the list.
+    private async Task<TrackerImportJob?> FindAsync(int id)
+    {
+        var found = await Importer.GetAsync(id);
+        if (found != null) return found;
+        try { return (await Importer.ListAsync(project!.Id, 50)).FirstOrDefault(i => i.Id == id); }
+        catch (InvalidOperationException) { return null; }
+    }
+
+    private async Task LoadRecentAsync()
+    {
+        try { recent = await Importer.ListAsync(project!.Id, 10); }
+        catch (InvalidOperationException) { recent = []; }
+    }
+
+    private void Pick(TrackerSourceKind kind)
+    {
+        if (source == kind) return;
+        source = kind;
+        (projectName, baseUrl, username, secret, error) = (null, null, null, null, null);
+    }
+
+    private TrackerImportInput BuildInput() => new()
+    {
+        Source = source, BaseUrl = baseUrl, Project = projectName ?? "", Username = username, Secret = secret, Settings = settings,
+    };
+
+    private async Task CheckAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            check = await Importer.CheckAsync(project!.Id, BuildInput());
+            workflow = await Importer.WorkflowAsync(project.Id);
+            statusSel = new(StringComparer.OrdinalIgnoreCase);
+            if (workflow.Count > 0)
+                foreach (var s in check.SourceStatuses)
+                {
+                    var byName = workflow.FirstOrDefault(w => w.Name.Equals(s.Name, StringComparison.OrdinalIgnoreCase));
+                    statusSel[s.Name] = (byName ?? TrackerImportWriter.DefaultFor(workflow, s.Category)).Id;
+                }
+            step = 2;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private void Back()
+    {
+        step = 1;
+        error = null;
+    }
+
+    private async Task StartAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var input = BuildInput();
+            input.Settings = new TrackerImportSettings
+            {
+                IncludeClosed = settings.IncludeClosed, IncludeComments = settings.IncludeComments,
+                IncludePullRequests = source == TrackerSourceKind.GitHub && settings.IncludePullRequests,
+                StatusMap = ShowStatusTable ? new Dictionary<string, int>(statusSel, StringComparer.OrdinalIgnoreCase) : [],
+            };
+            job = await Importer.StartAsync(project!.Id, input);
+            secret = null; // the token now lives only in the running import
+            warnings = [];
+            step = 3;
+            Nav.NavigateTo($"{PageUrl}?import={job.Id}", replace: true);
+            StartPolling();
+            await LoadRecentAsync();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (job == null) return;
+        if (await Dialogs.ShowMessageBoxAsync("Cancel import", "Stop this import? Issues already imported are kept, and you can run it again to continue.",
+                yesText: "Cancel import", cancelText: "Keep going") != true) return;
+        cancelling = true;
+        try { await Importer.CancelAsync(job.Id); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { cancelling = false; }
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (job == null) return;
+        job = await FindAsync(job.Id) ?? job;
+        warnings = TrackerImportService.WarningsOf(job);
+        if (!job.IsActive) await LoadRecentAsync();
+    }
+
+    private void StartPolling()
+    {
+        StopPolling();
+        if (job is not { IsActive: true }) return;
+        polling = new CancellationTokenSource();
+        _ = PollAsync(polling.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    try { await RefreshAsync(); } catch (InvalidOperationException) { }
+                    StateHasChanged();
+                });
+                if (job is not { IsActive: true }) break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void StopPolling()
+    {
+        polling?.Cancel();
+        polling?.Dispose();
+        polling = null;
+    }
+
+    public void Dispose() => StopPolling();
+}
