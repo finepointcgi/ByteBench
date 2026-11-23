@@ -24,6 +24,7 @@ SECTIONS = [
         ("issues", "Issues and workflows", "Issues, statuses, workflows, hierarchy, links and attachments"),
         ("boards-sprints", "Boards and sprints", "Kanban boards, sprints, backlog and roadmap"),
         ("fields-filters", "Fields, filters and search", "Custom fields, components, versions, saved filters, GQL and CSV"),
+        ("importing-issues", "Importing from GitHub, GitLab and Jira", "Copy issues, comments, labels and milestones from another tracker"),
         ("automation", "Automation rules", "Triggers, conditions and actions"),
         ("reports", "Dashboards and delivery reports", "Dashboards, cycle time, flow and DORA metrics"),
         ("service-desk", "Service desk", "Let people without an account file issues by email or form"),

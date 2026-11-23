@@ -1,0 +1,121 @@
+<h1>Importing issues from GitHub, GitLab and Jira</h1>
+<p class="lead">Copy the issues of a GitHub repository, a GitLab project or a Jira project into a ByteBench project, with their comments, labels and milestones. You can run it again later to pick up what is new.</p>
+
+<p>The importer reads the source's API with a token you provide, creates the issues here and remembers what it created, so nothing is duplicated. To import from a spreadsheet instead, see <a href="fields-filters.html#csv-import">CSV import</a>. For copying a Git repository, see <a href="repositories.html">Repositories and Git hosting</a>.</p>
+
+<h2 id="start">Start an import</h2>
+<p>Open the project's issue list, then <b>Menu, Import from GitHub, GitLab or Jira</b> (<code>/p/{KEY}/import/tracker</code>). You need the <b>Maintainer</b> role in the project. The page also has a link from the CSV import page. There are three steps.</p>
+<ol>
+<li><b>Source.</b> Choose GitHub, GitLab or Jira and fill in the fields (see the table below). <b>Check connection</b> asks the source for the project; a wrong address, project name or token is shown as an error. Nothing is created in this step.</li>
+<li><b>Review.</b> The page shows the project's name, description, how many issues, labels and milestones it has, a few sample titles and any warning from the source. GitHub's issue count includes pull requests. Choose whether to include closed issues, comments and (GitHub only) pull requests as issues. When the source has statuses beyond Open and Closed, and always for Jira, a table maps each source status to one of this project's workflow statuses. <b>Start import</b> queues the import.</li>
+<li><b>Progress.</b> A background job reads the source. The page updates every two seconds with a progress bar, counters (created, already imported, comments, labels, milestones, links) and, when it ends, the warnings. <b>Cancel import</b> stops it. The project's recent imports are listed under the wizard, and <b>Open</b> reopens the progress of any of them.</li>
+</ol>
+<table>
+  <tr><th>Source</th><th>Fields</th></tr>
+  <tr><td>GitHub</td><td>Repository as <code>owner/name</code>. Address: leave blank for github.com; for GitHub Enterprise Server enter the API root, for example <code>https://ghe.example.com/api/v3</code>. Token: optional for a public repository.</td></tr>
+  <tr><td>GitLab</td><td>Project path (<code>group/subgroup/project</code>) or numeric id. Address: blank for gitlab.com, or your self-hosted GitLab. Token: optional for a public project.</td></tr>
+  <tr><td>Jira</td><td>Address (required, for example <code>https://example.atlassian.net</code>), project key (for example <code>PROJ</code>), and the credentials: on Jira Cloud your account email plus an API token; on Server or Data Center a personal access token (leave the user blank) or a username and password.</td></tr>
+</table>
+
+<h2 id="tokens">Tokens and the least access they need</h2>
+<ul>
+  <li><b>GitHub:</b> a fine-grained token limited to the one repository with <em>Issues: read-only</em> and <em>Metadata: read-only</em>, or a classic token with the <code>repo</code> scope (<code>public_repo</code> for a public repository).</li>
+  <li><b>GitLab:</b> a personal or project access token with the <code>read_api</code> scope.</li>
+  <li><b>Jira Cloud:</b> an API token created at id.atlassian.com for your own account, with your account email. Only the issues that account can browse are imported. <b>Jira Server and Data Center:</b> a personal access token, or a username and password.</li>
+</ul>
+<p>The token is sent only to the source's own API for this import. It is kept in server memory for the one run and is <b>never stored</b>: not in the database, the import record, the audit log, the server log or any error message, and the page never shows it again. If the server restarts mid-import the token is gone, so you start the import again.</p>
+
+<h2 id="what">What is imported</h2>
+<p>Readers fill what the source has; a field the source does not have stays empty (GitHub and GitLab have no statuses beyond open and closed, for example). Text is converted to Markdown.</p>
+<table>
+  <tr><th>Source data</th><th>In ByteBench</th></tr>
+  <tr><td>Title and body</td><td>Title (cut at 200 characters, the full title then goes at the top of the description) and description</td></tr>
+  <tr><td>Type</td><td>The issue type, when the source has one; otherwise Task</td></tr>
+  <tr><td>Status</td><td>A workflow status of this project, see <a href="#mapping">mapping</a></td></tr>
+  <tr><td>Priority, story points, due date</td><td>The same fields when the source has them (story points 0 to 100); priority otherwise Medium</td></tr>
+  <tr><td>Created, updated and closed dates</td><td>Kept as they were in the source</td></tr>
+  <tr><td>Author and assignee</td><td>Matched to a user here, see <a href="#people">people</a></td></tr>
+  <tr><td>Labels</td><td>Labels of this project (created with the source's colour when missing, matched by name otherwise)</td></tr>
+  <tr><td>Milestones</td><td>Milestones of this project with their dates and open or closed state; matched by title when one exists already</td></tr>
+  <tr><td>Parent or epic, sub-tasks</td><td>The issue's parent, when the parent was imported and the project's hierarchy rules allow it</td></tr>
+  <tr><td>Links between issues</td><td>Issue links (blocks, relates to, duplicates, clones) between imported issues</td></tr>
+  <tr><td>Comments</td><td>Comments with their dates, when <b>Include comments</b> is on</td></tr>
+  <tr><td>Attachments</td><td>Listed in the description with a link back to the source; the files are not copied</td></tr>
+</table>
+<p><b>Not imported:</b> sprints, attachment files, pull-request branches and code, reactions, watchers, time tracking, and anything the source's API doesn't offer. If a reader could not carry something over for one issue (for example a comment list that was cut short), the import records a warning naming the issue.</p>
+<p>Each imported issue ends its description with a footer, <em>Imported from GitHub #12</em> (linked to the original when the source gave an address) and the original author's name when no user matched. It also gets the activity entry <em>imported from GitHub #12</em>.</p>
+
+<h2 id="mapping">How things are matched</h2>
+<h3 id="mapping-status">Statuses</h3>
+<p>Each issue gets a workflow status of the project in this order: the status you chose in the mapping table; otherwise the status with the same name (ignoring case); otherwise the first status of the same category (Backlog, To Do, In Progress, In Review, Done). If the project has no status of that category, closed issues go to the last status and open ones to the first To Do status. GitHub and GitLab only have open and closed, so open issues land in the first To Do status and closed ones in the first Done status unless you map them. A closed issue gets a closed date.</p>
+<h3 id="people">People</h3>
+<p>The author, assignee and each commenter are matched by email address first, then by user name. A person only counts when they can view the target project. People the source doesn't show an email for (GitHub and GitLab often hide it) are matched by user name. If nobody matches, the issue or comment is attributed to the person who ran the import and the original person's name is written into the text (the description's footer, or the comment's first line). The import ends with one warning listing the people who weren't matched; add them as members and run it again.</p>
+<h3 id="labels-milestones">Labels and milestones</h3>
+<p>Labels are matched by name, ignoring case, against the project's labels and its groups' labels; missing ones are created (names are cut at 40 characters). Milestones are matched by title; missing ones are created.</p>
+
+<h2 id="rerun">Running it again</h2>
+<p>ByteBench remembers which source issue, comment, label and milestone became which here, per source project. Running the same import again therefore:</p>
+<ul>
+  <li>creates only issues it hasn't imported before (they show up as <em>already imported</em> in the counters for the others);</li>
+  <li><b>never changes an existing issue</b>: edits you made here stay, and edits made in the source are not copied;</li>
+  <li>adds comments that are new in the source to the already imported issues;</li>
+  <li>completes parents (only for issues that have no parent yet) and links that were missing.</li>
+</ul>
+<p>Re-running is also how you continue after a cancel, a failure or a restart, and how you import the issues past the per-import limit. The remembered source is identified by the kind, the address and the project name in lower case, so importing the same repository twice with a different address is treated as a different source.</p>
+
+<h2 id="limits">Limits, rate limits and waits</h2>
+<ul>
+  <li><b>Issues per import:</b> at most <code>TrackerImport:MaxIssues</code> (default 20000) are read; the import then stops with a warning, and a second run continues with the rest.</li>
+  <li><b>Concurrency:</b> <code>TrackerImport:MaxConcurrent</code> imports run at once on the server (default 2); a project can have <code>TrackerImport:MaxActivePerProject</code> (default 1) queued or running at a time.</li>
+  <li><b>Requests:</b> one request is abandoned after <code>TrackerImport:RequestTimeoutSeconds</code> (default 60). Answers larger than 16 MB are refused, and redirects are not followed (use the project's current address). A server error (5xx) is retried a couple of times.</li>
+  <li><b>Rate limits:</b> when the source answers 429, or 403 with a used-up limit, the import waits for the time the source gives (<code>Retry-After</code> or the reset header) and then continues, as long as the wait is at most <code>TrackerImport:MaxRateLimitWaitSeconds</code> (default 120) and it has not happened more than four times in a row for the same request. Otherwise it fails with a message saying about how long to wait. Anonymous access to GitHub and GitLab has low limits, so use a token for large projects.</li>
+</ul>
+
+<h2 id="cancel">Cancelling, restarts and failures</h2>
+<ul>
+  <li><b>Cancel</b> stops the run. Issues already written stay. The import is shown as Cancelled, and running it again continues where it stopped.</li>
+  <li>An import that is still waiting in the queue when you cancel it is simply marked Cancelled.</li>
+  <li>If the server restarts while an import is queued or running, it is marked Failed (<em>The server restarted before this import finished</em>) on the next start, because the token was only in memory. Issues already imported are kept; start it again.</li>
+  <li>A problem with the source (bad token, project not found, rate limit) ends the import as Failed with the source's message; the issues written before it are kept.</li>
+</ul>
+
+<h2 id="safety">Safety</h2>
+<ul>
+  <li><b>No notifications or webhooks.</b> Importing creates issues, comments and activity directly, so nobody is emailed or notified, and no webhooks, automation rules or CI triggers fire for them. When an import finishes, open boards and issue lists refresh.</li>
+  <li><b>Audit log.</b> <code>project.tracker_import_requested</code> when it is queued (source, project, address, and only whether credentials were given), <code>project.tracker_imported</code> when it finishes (counts), and <code>project.tracker_import_cancel_requested</code> when someone cancels. Credentials are never recorded.</li>
+  <li><b>SSRF rule.</b> Addresses must be <code>http://</code> or <code>https://</code> without credentials, query or fragment. Loopback, private, link-local, carrier-grade NAT and cloud-metadata addresses are refused, both when you enter the address and again for every connection (so DNS tricks can't redirect it). To import from a GitLab, GitHub Enterprise or Jira server on your own network, set <code>TrackerImport:AllowPrivateNetworks</code> to <code>true</code>; when unset, <code>Webhooks:AllowPrivateNetworks</code> applies, the same rule as webhooks, mirrors and Workbench (see <a href="api.html">REST API and webhooks</a>).</li>
+</ul>
+
+<h2 id="selfhosted">Self-hosted servers</h2>
+<ul>
+  <li><b>GitHub Enterprise Server:</b> put the <em>API</em> root in Address, typically <code>https://HOST/api/v3</code>, not the web address.</li>
+  <li><b>Self-hosted GitLab:</b> put the GitLab address (for example <code>https://gitlab.example.com</code>) in Address.</li>
+  <li><b>Jira Server and Data Center:</b> put the Jira address in Address and use a personal access token, or a username and password. Jira Cloud needs the account email and an API token.</li>
+  <li>If the server is on a private network, see the SSRF rule above.</li>
+</ul>
+
+<h2 id="config">Configuration</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>TrackerImport:Enabled</code></td><td><code>true</code></td><td>Run queued imports in the background (off: they stay queued)</td></tr>
+  <tr><td><code>TrackerImport:MaxConcurrent</code></td><td><code>2</code></td><td>Imports running at once</td></tr>
+  <tr><td><code>TrackerImport:MaxActivePerProject</code></td><td><code>1</code></td><td>Queued or running imports per project</td></tr>
+  <tr><td><code>TrackerImport:MaxIssues</code></td><td><code>20000</code></td><td>Most issues one import reads</td></tr>
+  <tr><td><code>TrackerImport:AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>Allow sources on loopback, private, link-local and metadata addresses</td></tr>
+  <tr><td><code>TrackerImport:RequestTimeoutSeconds</code></td><td><code>60</code></td><td>Abandon one API request after this long</td></tr>
+  <tr><td><code>TrackerImport:MaxRateLimitWaitSeconds</code></td><td><code>120</code></td><td>Longest pause for a rate limit before failing</td></tr>
+</table>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+  <tr><th>Message</th><th>What to check</th></tr>
+  <tr><td>rejected the credentials (wrong, expired or missing token)</td><td>The source answered 401. Create a new token; for Jira Cloud use your account email with an API token, not your password.</td></tr>
+  <tr><td>says the token isn't allowed to read this</td><td>The source answered 403. Check the token's scopes (see above) and that the account can see the project; fine-grained GitHub tokens must be granted this repository.</td></tr>
+  <tr><td>says this doesn't exist, or the token can't see it</td><td>The source answered 404. Check the project name (<code>owner/name</code>, group path, project key), the address, and that the token's account can see the project; private projects look like missing ones.</td></tr>
+  <tr><td>is rate limiting the import</td><td>Try again after the time in the message, or use a token for a higher limit. Raise <code>TrackerImport:MaxRateLimitWaitSeconds</code> to let a run wait longer.</td></tr>
+  <tr><td>answered HTTP 5xx, didn't answer within N seconds, Couldn't reach</td><td>The source is down or slow, or the address is wrong or blocked by a firewall. Run the import again; it continues.</td></tr>
+  <tr><td>redirected; redirects aren't followed</td><td>Use the project's current address (for example the new group path or the https address).</td></tr>
+  <tr><td>The source can't be on this server or another local address</td><td>The SSRF rule: set <code>TrackerImport:AllowPrivateNetworks</code>.</td></tr>
+  <tr><td>This project already has an import in progress</td><td>Wait for it, or cancel it; the limit is <code>TrackerImport:MaxActivePerProject</code>.</td></tr>
+  <tr><td>Issues are attributed to me, not to the original authors</td><td>Add those people as project members with the same email or user name as in the source, then run the import again; existing issues are not changed, so fix those by hand or import into a new project.</td></tr>
+</table>
