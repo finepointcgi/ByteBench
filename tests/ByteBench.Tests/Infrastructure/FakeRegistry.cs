@@ -13,12 +13,16 @@ public sealed class FakeRegistry : IDisposable
 {
     private readonly HttpListener listener = new();
     private readonly Dictionary<string, (int Status, string Body)> routes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> redirects = new(StringComparer.Ordinal);
+    private readonly List<(string Prefix, string Header)> authRules = [];
     public string Url { get; }
     public string Npm => Url + "/npm/";
     public string NuGet => Url + "/nuget/";
     public string PyPI => Url + "/pypi/";
     public string Go => Url + "/go/";
     public List<string> Requests { get; } = [];
+    /// <summary>Every request's path and the Authorization header it carried (null when none), in arrival order.</summary>
+    public List<(string Path, string? Authorization)> Auths { get; } = [];
     public int Count { get { lock (Requests) return Requests.Count; } }
 
     public FakeRegistry()
@@ -35,6 +39,30 @@ public sealed class FakeRegistry : IDisposable
 
     /// <summary>Serves <paramref name="body"/> at the raw request path (e.g. <c>/npm/left-pad</c>).</summary>
     public FakeRegistry Serve(string rawPath, string body, int status = 200) { lock (routes) routes[rawPath] = (status, body); return this; }
+
+    /// <summary>Requests whose path starts with <paramref name="prefix"/> must carry exactly this Authorization header, else 401.</summary>
+    public FakeRegistry RequireAuth(string prefix, string header) { lock (routes) authRules.Add((prefix, header)); return this; }
+    public FakeRegistry RequireBasic(string prefix, string user, string password) => RequireAuth(prefix, "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(user + ":" + password)));
+    public FakeRegistry RequireBearer(string prefix, string token) => RequireAuth(prefix, "Bearer " + token);
+
+    /// <summary>Answers 302 with a Location header at the raw request path.</summary>
+    public FakeRegistry Redirect(string rawPath, string location) { lock (routes) redirects[rawPath] = location; return this; }
+
+    /// <summary>A NuGet v3 service index at <paramref name="rawPath"/> whose PackageBaseAddress/3.0.0 resource is <paramref name="packageBase"/>.</summary>
+    public FakeRegistry NuGetServiceIndex(string rawPath, string packageBase) => Serve(rawPath, new JsonObject
+    {
+        ["version"] = "3.0.0",
+        ["resources"] = new JsonArray(
+            new JsonObject { ["@id"] = packageBase, ["@type"] = "PackageBaseAddress/3.0.0" },
+            new JsonObject { ["@id"] = Url + "/search/query", ["@type"] = "SearchQueryService" }),
+    }.ToJsonString());
+
+    /// <summary>A PEP 691 simple project page at <c>{simplePath}/{name}/</c>.</summary>
+    public FakeRegistry PySimple(string simplePath, string name, params string[] versions) => Serve($"{simplePath.TrimEnd('/')}/{name.ToLowerInvariant()}/", new JsonObject
+    {
+        ["name"] = name.ToLowerInvariant(),
+        ["files"] = new JsonArray(versions.Select(v => (JsonNode)new JsonObject { ["filename"] = $"{name.ToLowerInvariant()}-{v}.tar.gz", ["url"] = "https://files.example.invalid/x.tar.gz" }).ToArray()),
+    }.ToJsonString());
 
     public FakeRegistry NpmPackage(string name, string[] versions, string? deprecated = null, string? homepage = null)
     {
@@ -70,13 +98,22 @@ public sealed class FakeRegistry : IDisposable
             try { ctx = await listener.GetContextAsync(); }
             catch (Exception) { return; }
             var path = ctx.Request.RawUrl!.Split('?')[0];
-            lock (Requests) Requests.Add(path);
+            string? authorization = ctx.Request.Headers["Authorization"];
+            lock (Requests) { Requests.Add(path); Auths.Add((path, authorization)); }
             (int Status, string Body) answer;
-            lock (routes) answer = routes.TryGetValue(path, out var r) ? r : (404, "{}");
+            string? location = null;
+            lock (routes)
+            {
+                answer = routes.TryGetValue(path, out var r) ? r : (404, "{}");
+                if (redirects.TryGetValue(path, out var loc)) { location = loc; answer = (302, ""); }
+                var rule = authRules.FirstOrDefault(a => path.StartsWith(a.Prefix, StringComparison.Ordinal));
+                if (rule.Prefix != null && authorization != rule.Header) { answer = (401, "{}"); location = null; }
+            }
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(answer.Body);
                 ctx.Response.StatusCode = answer.Status;
+                if (location != null) ctx.Response.RedirectLocation = location;
                 ctx.Response.ContentType = path.EndsWith("/@v/list", StringComparison.Ordinal) ? "text/plain" : "application/json";
                 ctx.Response.ContentLength64 = bytes.Length;
                 await ctx.Response.OutputStream.WriteAsync(bytes);

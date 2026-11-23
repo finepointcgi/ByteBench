@@ -370,6 +370,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigurePrSigning(b);
         ConfigureScimGroups(b);
         ConfigureMcpOAuth(b);
+        ConfigureDependencyRegistries(b);
     }
 
     // ----- Forks -----
