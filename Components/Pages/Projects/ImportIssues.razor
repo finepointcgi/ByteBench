@@ -202,6 +202,7 @@ else if (project != null)
             <div class="ti-options">
                 <MudCheckBox T="bool" @bind-Value="settings.IncludeClosed" Label="Include closed issues" Dense="true" />
                 <MudCheckBox T="bool" @bind-Value="settings.IncludeComments" Label="Include comments" Dense="true" />
+                <MudCheckBox T="bool" @bind-Value="settings.IncludeAttachments" Label="Copy attachment files (GitHub, GitLab and Jira)" Dense="true" />
                 @if (source == TrackerSourceKind.GitHub)
                 {
                     <MudCheckBox T="bool" @bind-Value="settings.IncludePullRequests" Label="Include pull requests as issues" Dense="true" />
@@ -239,7 +240,7 @@ else if (project != null)
         }
 
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-            Sprints, attachments' files and pull-request branches aren't copied. People are matched by email or user name. Run it again later to pick up new issues; existing issues are never changed.
+            Jira sprints become sprints here; attachment files are copied only if you tick the box above. Pull-request branches, time tracking and reactions aren't copied. People are matched by email or user name. Run it again later to pick up new issues; existing issues are never changed.
         </MudAlert>
 
         <div class="d-flex gap-2">
