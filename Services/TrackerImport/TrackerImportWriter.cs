@@ -312,6 +312,12 @@ public sealed class TrackerImportWriter
             var upper = login.ToUpperInvariant();
             found = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.NormalizedUserName == upper, ct);
         }
+        if (found == null && who.Login == null && who.Email == null && who.Name is { Length: > 0 } display)
+        {
+            // Jira Cloud shows neither a user name nor an email: accept an exact display-name match only when exactly one account has it.
+            var same = await db.Users.AsNoTracking().Where(u => u.DisplayName == display).Take(2).ToListAsync(ct);
+            if (same.Count == 1) found = same[0];
+        }
         if (found != null && !await access.CanAsync(job.ProjectId, Permission.ViewProject, found.Id)) found = null;
         if (found == null) unmatched.Add(Name(who) ?? key);
         return users[key] = found;
