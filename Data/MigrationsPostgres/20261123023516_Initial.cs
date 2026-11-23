@@ -55,6 +55,7 @@ namespace ByteBench.Data.MigrationsPostgres
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    MustChangePassword = table.Column<bool>(type: "boolean", nullable: false),
                     DisplayName = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: false),
                     Color = table.Column<string>(type: "character varying(9)", maxLength: 9, nullable: false),
                     IsAdmin = table.Column<bool>(type: "boolean", nullable: false),
@@ -151,6 +152,26 @@ namespace ByteBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "RegistrationInvites",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    TokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                    CreatedById = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UsedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    UsedById = table.Column<int>(type: "integer", nullable: true),
+                    RevokedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RegistrationInvites", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "ServiceDeskContacts",
                 columns: table => new
                 {
@@ -163,6 +184,40 @@ namespace ByteBench.Data.MigrationsPostgres
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ServiceDeskContacts", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SiteSettings",
+                columns: table => new
+                {
+                    Key = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Value = table.Column<string>(type: "text", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedById = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SiteSettings", x => x.Key);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "WorkbenchConnections",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false),
+                    BaseUrl = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    ApiKeyProtected = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    KeyHint = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
+                    KeySetAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    KeySetById = table.Column<int>(type: "integer", nullable: true),
+                    LastTestAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastTestOk = table.Column<bool>(type: "boolean", nullable: true),
+                    LastTestJson = table.Column<string>(type: "text", nullable: true),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkbenchConnections", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -463,7 +518,8 @@ namespace ByteBench.Data.MigrationsPostgres
                     ProductionEnvironment = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     DoraFailureWindowHours = table.Column<int>(type: "integer", nullable: false),
                     AiTriageEnabled = table.Column<bool>(type: "boolean", nullable: false),
-                    AiTriageAutoApplyLabels = table.Column<bool>(type: "boolean", nullable: false)
+                    AiTriageAutoApplyLabels = table.Column<bool>(type: "boolean", nullable: false),
+                    WorkbenchPushEnabled = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -1271,6 +1327,89 @@ namespace ByteBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "WorkbenchOutbox",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    WbsCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    WorkbenchProjectCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Percent = table.Column<decimal>(type: "numeric", nullable: false),
+                    Status = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    IdempotencyKey = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: false),
+                    State = table.Column<int>(type: "integer", nullable: false),
+                    Attempts = table.Column<int>(type: "integer", nullable: false),
+                    NextAttemptAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    LastError = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    Note = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkbenchOutbox", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WorkbenchOutbox_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "WorkbenchPlanSyncs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    RootWbsCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    EpicLevels = table.Column<int>(type: "integer", nullable: false),
+                    ReconcileEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    State = table.Column<int>(type: "integer", nullable: false),
+                    Total = table.Column<int>(type: "integer", nullable: false),
+                    Processed = table.Column<int>(type: "integer", nullable: false),
+                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastRunAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastError = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    ReportJson = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkbenchPlanSyncs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WorkbenchPlanSyncs_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "WorkbenchTaskSyncs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    WbsCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    LastPercent = table.Column<decimal>(type: "numeric", nullable: true),
+                    LastStatus = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    LastPushedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkbenchTaskSyncs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WorkbenchTaskSyncs_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "WorkflowStatuses",
                 columns: table => new
                 {
@@ -2020,6 +2159,53 @@ namespace ByteBench.Data.MigrationsPostgres
                         principalTable: "Repositories",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RepositoryImports",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    RequestedById = table.Column<int>(type: "integer", nullable: true),
+                    SourceUrl = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: false),
+                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Slug = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Description = table.Column<string>(type: "text", nullable: true),
+                    DefaultBranch = table.Column<string>(type: "character varying(250)", maxLength: 250, nullable: true),
+                    KeepAsMirror = table.Column<bool>(type: "boolean", nullable: false),
+                    Status = table.Column<int>(type: "integer", nullable: false),
+                    Error = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
+                    BytesReceived = table.Column<long>(type: "bigint", nullable: false),
+                    BranchCount = table.Column<int>(type: "integer", nullable: false),
+                    TagCount = table.Column<int>(type: "integer", nullable: false),
+                    RepositoryId = table.Column<int>(type: "integer", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    FinishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RepositoryImports", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RepositoryImports_AspNetUsers_RequestedById",
+                        column: x => x.RequestedById,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_RepositoryImports_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_RepositoryImports_Repositories_RepositoryId",
+                        column: x => x.RepositoryId,
+                        principalTable: "Repositories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateTable(
@@ -3186,6 +3372,38 @@ namespace ByteBench.Data.MigrationsPostgres
                         name: "FK_Watches_PullRequests_PullRequestId",
                         column: x => x.PullRequestId,
                         principalTable: "PullRequests",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "WorkbenchIssueLinks",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProjectId = table.Column<int>(type: "integer", nullable: false),
+                    IssueId = table.Column<int>(type: "integer", nullable: false),
+                    TaskId = table.Column<Guid>(type: "uuid", nullable: false),
+                    WbsCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    LastTitle = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    Missing = table.Column<bool>(type: "boolean", nullable: false),
+                    MissingSince = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastSyncedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkbenchIssueLinks", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WorkbenchIssueLinks_Issues_IssueId",
+                        column: x => x.IssueId,
+                        principalTable: "Issues",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_WorkbenchIssueLinks_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -4539,6 +4757,12 @@ namespace ByteBench.Data.MigrationsPostgres
                 columns: new[] { "UserId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_RegistrationInvites_TokenHash",
+                table: "RegistrationInvites",
+                column: "TokenHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ReleaseAssets_ReleaseId",
                 table: "ReleaseAssets",
                 column: "ReleaseId");
@@ -4586,6 +4810,21 @@ namespace ByteBench.Data.MigrationsPostgres
                 table: "RepositoryAiReviewSettings",
                 column: "RepositoryId",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RepositoryImports_ProjectId_Status",
+                table: "RepositoryImports",
+                columns: new[] { "ProjectId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RepositoryImports_RepositoryId",
+                table: "RepositoryImports",
+                column: "RepositoryId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RepositoryImports_RequestedById",
+                table: "RepositoryImports",
+                column: "RequestedById");
 
             migrationBuilder.CreateIndex(
                 name: "IX_RepositoryMirrors_CreatedById",
@@ -4851,6 +5090,40 @@ namespace ByteBench.Data.MigrationsPostgres
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_WorkbenchIssueLinks_IssueId",
+                table: "WorkbenchIssueLinks",
+                column: "IssueId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkbenchIssueLinks_ProjectId_TaskId",
+                table: "WorkbenchIssueLinks",
+                columns: new[] { "ProjectId", "TaskId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkbenchOutbox_ProjectId_CreatedAt",
+                table: "WorkbenchOutbox",
+                columns: new[] { "ProjectId", "CreatedAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkbenchOutbox_State_NextAttemptAt",
+                table: "WorkbenchOutbox",
+                columns: new[] { "State", "NextAttemptAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkbenchPlanSyncs_ProjectId",
+                table: "WorkbenchPlanSyncs",
+                column: "ProjectId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkbenchTaskSyncs_ProjectId_WbsCode",
+                table: "WorkbenchTaskSyncs",
+                columns: new[] { "ProjectId", "WbsCode" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_WorkflowStatuses_ProjectId_Order",
                 table: "WorkflowStatuses",
                 columns: new[] { "ProjectId", "Order" });
@@ -5059,10 +5332,16 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "PushEvents");
 
             migrationBuilder.DropTable(
+                name: "RegistrationInvites");
+
+            migrationBuilder.DropTable(
                 name: "ReleaseAssets");
 
             migrationBuilder.DropTable(
                 name: "RepositoryAiReviewSettings");
+
+            migrationBuilder.DropTable(
+                name: "RepositoryImports");
 
             migrationBuilder.DropTable(
                 name: "RepositoryMirrors");
@@ -5089,6 +5368,9 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "ServiceDeskSettings");
 
             migrationBuilder.DropTable(
+                name: "SiteSettings");
+
+            migrationBuilder.DropTable(
                 name: "SnippetComments");
 
             migrationBuilder.DropTable(
@@ -5108,6 +5390,21 @@ namespace ByteBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "WikiPageIndex");
+
+            migrationBuilder.DropTable(
+                name: "WorkbenchConnections");
+
+            migrationBuilder.DropTable(
+                name: "WorkbenchIssueLinks");
+
+            migrationBuilder.DropTable(
+                name: "WorkbenchOutbox");
+
+            migrationBuilder.DropTable(
+                name: "WorkbenchPlanSyncs");
+
+            migrationBuilder.DropTable(
+                name: "WorkbenchTaskSyncs");
 
             migrationBuilder.DropTable(
                 name: "WorkflowTransitions");

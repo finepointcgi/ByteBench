@@ -3132,6 +3132,9 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<bool>("WorkbenchPushEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("WorkbenchWbs")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -3676,6 +3679,49 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("PushEvents");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RegistrationInvite", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UsedById")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("RegistrationInvites");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Release", b =>
                 {
                     b.Property<int>("Id")
@@ -3885,6 +3931,84 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("RepositoryAiReviewSettings");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.RepositoryImport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BranchCount")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("BytesReceived")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DefaultBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("KeepAsMirror")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TagCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("RequestedById");
+
+                    b.HasIndex("ProjectId", "Status");
+
+                    b.ToTable("RepositoryImports");
                 });
 
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
@@ -4488,6 +4612,27 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("ServiceDeskTickets");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.SiteSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("SiteSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Snippet", b =>
                 {
                     b.Property<int>("Id")
@@ -4799,6 +4944,9 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
@@ -5062,6 +5210,240 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("WikiPageIndex");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchConnection", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ApiKeyProtected")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("KeyHint")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("KeySetAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("KeySetById")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastTestAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastTestJson")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("LastTestOk")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WorkbenchConnections");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchIssueLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("IssueId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("LastSyncedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("Missing")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("MissingSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WbsCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "TaskId")
+                        .IsUnique();
+
+                    b.ToTable("WorkbenchIssueLinks");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchOutboxItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<decimal>("Percent")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("WbsCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("WorkbenchProjectCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.HasIndex("State", "NextAttemptAt");
+
+                    b.ToTable("WorkbenchOutbox");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchPlanSync", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("EpicLevels")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Processed")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ReconcileEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ReportJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RootWbsCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("WorkbenchPlanSyncs");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchTaskSync", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("LastPercent")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime?>("LastPushedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastStatus")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("WbsCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "WbsCode")
+                        .IsUnique();
+
+                    b.ToTable("WorkbenchTaskSyncs");
                 });
 
             modelBuilder.Entity("ByteBench.Data.WorkflowStatus", b =>
@@ -6607,6 +6989,31 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryImport", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ByteBench.Data.User", "RequestedBy")
+                        .WithMany()
+                        .HasForeignKey("RequestedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Repository");
+
+                    b.Navigation("RequestedBy");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
                 {
                     b.HasOne("ByteBench.Data.User", "CreatedBy")
@@ -6920,6 +7327,48 @@ namespace ByteBench.Data.MigrationsPostgres
                 });
 
             modelBuilder.Entity("ByteBench.Data.WikiPageIndex", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchIssueLink", b =>
+                {
+                    b.HasOne("ByteBench.Data.Issue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchOutboxItem", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchPlanSync", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchTaskSync", b =>
                 {
                     b.HasOne("ByteBench.Data.Project", null)
                         .WithMany()

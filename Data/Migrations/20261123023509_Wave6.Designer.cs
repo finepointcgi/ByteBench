@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ByteBench.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261123022630_WorkbenchIntegration")]
-    partial class WorkbenchIntegration
+    [Migration("20261123023509_Wave6")]
+    partial class Wave6
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -3528,6 +3528,47 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("PushEvents");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RegistrationInvite", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CreatedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("UsedById")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("RegistrationInvites");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Release", b =>
                 {
                     b.Property<int>("Id")
@@ -3729,6 +3770,82 @@ namespace ByteBench.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("RepositoryAiReviewSettings");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.RepositoryImport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BranchCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("BytesReceived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DefaultBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("KeepAsMirror")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagCount")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("RequestedById");
+
+                    b.HasIndex("ProjectId", "Status");
+
+                    b.ToTable("RepositoryImports");
                 });
 
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
@@ -4312,6 +4429,27 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("ServiceDeskTickets");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.SiteSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("UpdatedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("SiteSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Snippet", b =>
                 {
                     b.Property<int>("Id")
@@ -4608,6 +4746,9 @@ namespace ByteBench.Data.Migrations
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
@@ -6623,6 +6764,31 @@ namespace ByteBench.Data.Migrations
                         .HasForeignKey("RepositoryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.RepositoryImport", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ByteBench.Data.User", "RequestedBy")
+                        .WithMany()
+                        .HasForeignKey("RequestedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Repository");
+
+                    b.Navigation("RequestedBy");
                 });
 
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
