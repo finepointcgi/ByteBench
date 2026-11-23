@@ -123,6 +123,7 @@ builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git
 // ----- Mirroring, protected tags & Git LFS -----
 builder.Services.AddScoped<ProtectedTagService>();
 ByteBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
+ByteBench.Services.Importing.ImportServiceCollectionExtensions.AddRepositoryImport(builder.Services, builder.Configuration); // repository import wizard
 ByteBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
 builder.Services.AddByteBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import

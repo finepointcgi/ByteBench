@@ -1,0 +1,5 @@
+.repo-page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.import-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.import-steps .step { font-size: 12.5px; padding: 3px 12px; border-radius: 12px; border: 1px solid var(--border); color: var(--muted); }
+.import-steps .step.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+code { background: var(--mud-palette-action-default-hover); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }

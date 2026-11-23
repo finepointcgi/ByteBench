@@ -486,6 +486,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
     // ----- Mirroring, tags & LFS -----
     public DbSet<ProtectedTagRule> ProtectedTagRules => Set<ProtectedTagRule>();
     public DbSet<RepositoryMirror> RepositoryMirrors => Set<RepositoryMirror>();
+    public DbSet<RepositoryImport> RepositoryImports => Set<RepositoryImport>();
     public DbSet<LfsObject> LfsObjects => Set<LfsObject>();
 
     private static void ConfigureMirrorTagsLfs(ModelBuilder b)
@@ -493,6 +494,11 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         b.Entity<ProtectedTagRule>().HasIndex(r => new { r.RepositoryId, r.Pattern }).IsUnique();
         b.Entity<ProtectedTagRule>().HasOne(r => r.Repository).WithMany().HasForeignKey(r => r.RepositoryId).OnDelete(DeleteBehavior.Cascade);
 
+        b.Entity<RepositoryImport>().HasIndex(i => new { i.ProjectId, i.Status });
+        b.Entity<RepositoryImport>().HasOne(i => i.Project).WithMany().HasForeignKey(i => i.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<RepositoryImport>().HasOne(i => i.RequestedBy).WithMany().HasForeignKey(i => i.RequestedById).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<RepositoryImport>().HasOne(i => i.Repository).WithMany().HasForeignKey(i => i.RepositoryId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<RepositoryImport>().Property(i => i.Status).HasConversion<int>();
         b.Entity<RepositoryMirror>().HasIndex(m => m.RepositoryId);
         // At most one pull mirror per repository (Direction 0 = Pull).
         b.Entity<RepositoryMirror>().HasIndex(m => m.RepositoryId, "IX_RepositoryMirrors_OnePullPerRepository").IsUnique().HasFilter("\"Direction\" = 0");

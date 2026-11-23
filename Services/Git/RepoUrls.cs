@@ -9,6 +9,8 @@ namespace ByteBench.Services.Git;
 public static class RepoUrls
 {
     public static string List(string projectKey) => $"/p/{projectKey}/repos";
+    public static string Import(string projectKey) => $"/p/{projectKey}/repos/import";
+    public static string ImportProgress(string projectKey, int importId) => $"/p/{projectKey}/repos/import/{importId}";
     public static string Base(Repository r) => $"/p/{r.Project.Key}/repos/{r.Slug}";
 
     public static string Source(Repository r, string? @ref = null, string? path = null) =>

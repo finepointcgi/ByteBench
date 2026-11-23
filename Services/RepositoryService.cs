@@ -45,6 +45,20 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
         return s.Length > 100 ? s[..100] : s;
     }
 
+    /// <summary>Trims the name and derives or checks the slug, throwing <see cref="InvalidOperationException"/> with a message for the user.</summary>
+    internal static (string Name, string Slug) NormalizeNameAndSlug(string name, string? slug)
+    {
+        name = (name ?? "").Trim();
+        if (name.Length is 0 or > 100) throw new InvalidOperationException("Name is required (max 100 characters).");
+        slug = string.IsNullOrWhiteSpace(slug) ? Slugify(name) : slug.Trim().ToLowerInvariant();
+        if (slug.Length is 0 or > 100 || !SlugRx().IsMatch(slug) || slug.EndsWith(".git"))
+            throw new InvalidOperationException("Slug must start with a letter or digit and use only lowercase letters, digits, '.', '_' or '-'.");
+        if (Wiki.WikiService.IsReservedRepositorySlug(slug))
+            throw new InvalidOperationException("Slugs 'wiki' and '….wiki' are reserved for the project wiki.");
+        if (slug == "import") throw new InvalidOperationException("The slug 'import' is reserved for the import wizard.");
+        return (name, slug);
+    }
+
     // ---------- Queries ----------
 
     public async Task<List<RepoSummary>> GetRepositoriesAsync(int projectId)
@@ -86,13 +100,7 @@ public partial class RepositoryService(IDbContextFactory<AppDbContext> dbFactory
     public async Task<Repository> CreateAsync(int projectId, string name, string? slug, string? description, User author)
     {
         await access.RequireAsync(projectId, Permission.ManageRepositories, author.Id);
-        name = name.Trim();
-        if (name.Length is 0 or > 100) throw new InvalidOperationException("Name is required (max 100 characters).");
-        slug = string.IsNullOrWhiteSpace(slug) ? Slugify(name) : slug.Trim().ToLowerInvariant();
-        if (slug.Length is 0 or > 100 || !SlugRx().IsMatch(slug) || slug.EndsWith(".git"))
-            throw new InvalidOperationException("Slug must start with a letter or digit and use only lowercase letters, digits, '.', '_' or '-'.");
-        if (Wiki.WikiService.IsReservedRepositorySlug(slug))
-            throw new InvalidOperationException("Slugs 'wiki' and '….wiki' are reserved for the project wiki.");
+        (name, slug) = NormalizeNameAndSlug(name, slug);
 
         await using var db = await dbFactory.CreateDbContextAsync();
         var project = await db.Projects.FindAsync(projectId) ?? throw new InvalidOperationException("Project not found.");
