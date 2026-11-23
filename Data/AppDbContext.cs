@@ -368,6 +368,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureSamlScim(b);
         ConfigureInsights(b);
         ConfigurePrSigning(b);
+        ConfigureScimGroups(b);
     }
 
     // ----- Forks -----

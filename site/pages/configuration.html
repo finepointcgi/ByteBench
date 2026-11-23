@@ -440,6 +440,9 @@ Authentication__Oidc__Providers__0__ClientSecret=...   # keep in a secret store<
   <tr><td><code>MaxFailuresPerIp</code>, <code>FailureWindowMinutes</code></td><td>10, 15</td><td>Failed token attempts per client address before 429</td></tr>
   <tr><td><code>ManageAdmins</code></td><td><code>false</code></td><td>Let SCIM change or deactivate site administrators</td></tr>
   <tr><td><code>DefaultPageSize</code>, <code>MaxPageSize</code></td><td>100, 200</td><td>List paging</td></tr>
+  <tr><td><code>GroupVisibility</code></td><td><code>Private</code></td><td>Visibility of groups SCIM creates (<code>Private</code> or <code>Internal</code>)</td></tr>
+  <tr><td><code>GroupMemberRole</code></td><td><code>Developer</code></td><td>Role of members SCIM adds to groups; capped at <code>Maintainer</code> (SCIM never grants Owner)</td></tr>
+  <tr><td><code>GroupMappings</code></td><td>none</td><td>List of <code>{ "DisplayName": "…", "Group": "full/path" }</code>: a SCIM group with that displayName adopts the existing ByteBench group</td></tr>
 </table>
 <p>The on/off switch and the tokens live on <code>/admin/authentication</code>, not in the configuration.</p>
 

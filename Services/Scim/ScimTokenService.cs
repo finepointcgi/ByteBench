@@ -20,6 +20,25 @@ public sealed class ScimOptions
     /// <summary>The page size when the IdP doesn't send <c>count</c>, and the largest one allowed.</summary>
     public int DefaultPageSize { get; set; } = 100;
     public int MaxPageSize { get; set; } = 200;
+    /// <summary>Visibility of groups SCIM creates (<c>Private</c> or <c>Internal</c>).</summary>
+    public Data.ProjectVisibility GroupVisibility { get; set; } = Data.ProjectVisibility.Private;
+    /// <summary>The role SCIM gives the members it adds to a group. Capped at Maintainer: SCIM can never grant Owner.</summary>
+    public Data.ProjectRole GroupMemberRole { get; set; } = Data.ProjectRole.Developer;
+    /// <summary>
+    /// Existing ByteBench groups SCIM may adopt: when the IdP creates a group whose displayName matches <c>DisplayName</c>
+    /// (case-insensitive), it takes over the group at <c>Group</c> (full path) instead of creating a new one.
+    /// </summary>
+    public List<ScimGroupMapping> GroupMappings { get; set; } = [];
+
+    /// <summary><see cref="GroupMemberRole"/> with the cap applied.</summary>
+    public Data.ProjectRole EffectiveGroupMemberRole => GroupMemberRole >= Data.ProjectRole.Owner ? Data.ProjectRole.Maintainer : GroupMemberRole;
+}
+
+/// <summary>One <c>Scim:GroupMappings</c> entry.</summary>
+public sealed class ScimGroupMapping
+{
+    public string DisplayName { get; set; } = "";
+    public string Group { get; set; } = "";
 }
 
 /// <summary>

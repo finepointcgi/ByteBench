@@ -359,7 +359,7 @@ public class ScimTests(ScimTestApp app) : IClassFixture<ScimTestApp>
     }
 
     [Fact]
-    public async Task Groups_are_read_only_and_list_members()
+    public async Task Groups_made_in_ByteBench_are_listed_with_members_but_not_writable()
     {
         var c = await ClientAsync();
         string path;
@@ -376,11 +376,12 @@ public class ScimTests(ScimTestApp app) : IClassFixture<ScimTestApp>
         var id = group["id"]!.GetValue<string>();
         Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/scim/v2/Groups/" + id)).StatusCode);
 
-        var post = await c.PostAsync("/scim/v2/Groups", Body(new { displayName = "new" }));
-        Assert.Equal(HttpStatusCode.NotImplemented, post.StatusCode);
-        AssertScimError(await JsonAsync(post), 501);
-        Assert.Equal(HttpStatusCode.NotImplemented, (await c.PatchAsync("/scim/v2/Groups/" + id, Body(new { Operations = Array.Empty<object>() }))).StatusCode);
-        Assert.Equal(HttpStatusCode.NotImplemented, (await c.DeleteAsync("/scim/v2/Groups/" + id)).StatusCode);
+        // Not created by SCIM and not mapped: SCIM can't change or delete it (ScimGroupTests covers writable groups).
+        var patch = await c.PatchAsync("/scim/v2/Groups/" + id, Body(new { Operations = new object[] { new { op = "replace", path = "displayName", value = "x" } } }));
+        Assert.Equal(HttpStatusCode.Forbidden, patch.StatusCode);
+        AssertScimError(await JsonAsync(patch), 403);
+        Assert.Equal(HttpStatusCode.Forbidden, (await c.DeleteAsync("/scim/v2/Groups/" + id)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await c.PutAsync("/scim/v2/Groups/" + id, Body(new { displayName = "x" }))).StatusCode);
     }
 }
 
