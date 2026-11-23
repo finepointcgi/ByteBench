@@ -276,6 +276,31 @@
         }
     </section>
 
+    <section class="profile-section" id="ai-cli">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Use with AI tools / CLI</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            AI assistants that speak the Model Context Protocol (MCP), and the <code>bytebench</code> command-line tool, use a personal access token from above:
+            give it <code>read_api</code> to let them read, and <code>write_api</code> only if they may create and change issues. They act as you and see only what you can see.
+            Replace <code>&lt;your-token&gt;</code> with the token; it is never filled in here.
+        </MudText>
+        <div class="gb-field">
+            <label class="gb-field-label" for="mcp-url">MCP server address</label>
+            <input id="mcp-url" class="gb-input mono" readonly value="@McpUrl" onfocus="this.select()" />
+        </div>
+        <div class="gb-field">
+            <label class="gb-field-label" for="mcp-claude">Claude Code</label>
+            <textarea id="mcp-claude" class="gb-input mono" readonly rows="3" onfocus="this.select()">@ClaudeCodeSnippet</textarea>
+        </div>
+        <div class="gb-field">
+            <label class="gb-field-label" for="mcp-json">Other MCP clients (JSON configuration)</label>
+            <textarea id="mcp-json" class="gb-input mono" readonly rows="10" onfocus="this.select()">@McpJsonSnippet</textarea>
+        </div>
+        <div class="gb-field">
+            <label class="gb-field-label" for="cli-login">Command-line tool</label>
+            <textarea id="cli-login" class="gb-input mono" readonly rows="2" onfocus="this.select()">@CliSnippet</textarea>
+        </div>
+    </section>
+
     <section class="profile-section" id="ssh-keys">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">SSH keys</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
@@ -311,6 +336,15 @@
     private int? RevokeTokenId { get; set; }
 
     private List<PersonalAccessToken> tokens = [];
+
+    // ----- Use with AI tools / CLI (the token is never prefilled) -----
+    [Inject] private ByteBench.Api.PublicBaseUrl PublicUrl { get; set; } = default!;
+    private string SiteUrl => PublicUrl.For(HttpContext.Request);
+    private string McpUrl => SiteUrl + "/mcp";
+    private string ClaudeCodeSnippet => $"claude mcp add --transport http bytebench {McpUrl} --header \"Authorization: Bearer <your-token>\"";
+    private string McpJsonSnippet => "{\n  \"mcpServers\": {\n    \"bytebench\": {\n      \"type\": \"http\",\n      \"url\": \"" + McpUrl
+        + "\",\n      \"headers\": { \"Authorization\": \"Bearer <your-token>\" }\n    }\n  }\n}";
+    private string CliSnippet => $"echo \"<your-token>\" | bytebench login --server {SiteUrl}\nbytebench whoami";
 
     // ----- Connected accounts (SSO) -----
     private bool hasPassword = true, isDirectoryUser;

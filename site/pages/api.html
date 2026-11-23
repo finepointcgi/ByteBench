@@ -29,6 +29,7 @@
 <li><strong>CSRF protection:</strong> a cookie-authenticated write must send <code>Content-Type: application/json</code> or an <code>X-Requested-With</code> header, otherwise <code>403</code>. Token requests are not affected.</li>
 </ul>
 <p>The caller's <a href="permissions.html">project role</a> decides everything else. A project you cannot see answers <code>404</code>, exactly like one that does not exist. A visible project where you lack the permission answers <code>403</code> (for example a Viewer creating an issue, or a Developer merging).</p>
+<p>The same tokens also work for AI assistants and the terminal: ByteBench has an MCP server at <code>/mcp</code> and a <code>bytebench</code> command-line tool that uses this API. See <a href="mcp-cli.html">AI tools (MCP) and the command line</a>. The MCP endpoint shares a token's rate limit below.</p>
 
 <h2 id="pagination">Pagination</h2>
 <p>List endpoints take <code>?page=</code> (default 1) and <code>?perPage=</code> (default 30, maximum 100). They return an <code>X-Total-Count</code> header and an RFC 8288 <code>Link</code> header with <code>first</code>, <code>prev</code>, <code>next</code> and <code>last</code> relations.</p>
@@ -52,7 +53,7 @@
 </tbody></table>
 
 <h2 id="rate-limits">Rate limiting</h2>
-<p>By default <code>/api/*</code> allows <strong>300 requests per 60 seconds</strong>, counted per access token (else per signed-in user, else per client IP). Over the limit you get <code>429</code> with a <code>Retry-After</code> header and a problem+json body. Change it with <code>RateLimiting:Api:PermitLimit</code> and <code>WindowSeconds</code>, or switch it off with a limit of <code>0</code>. Full details are on the <a href="admin.html#rate-limits">Administration page</a>. Rate limiting is off in the Development configuration.</p>
+<p>By default <code>/api/*</code> (and the <a href="mcp-cli.html#mcp">MCP endpoint</a> <code>/mcp</code>) allows <strong>300 requests per 60 seconds</strong>, counted per access token (else per signed-in user, else per client IP). Over the limit you get <code>429</code> with a <code>Retry-After</code> header and a problem+json body. Change it with <code>RateLimiting:Api:PermitLimit</code> and <code>WindowSeconds</code>, or switch it off with a limit of <code>0</code>. Full details are on the <a href="admin.html#rate-limits">Administration page</a>. Rate limiting is off in the Development configuration.</p>
 
 <h2 id="catalogue">Endpoint catalogue</h2>
 <p>All paths are under <code>/api/v1</code>. <code>{key}</code> is the project key (for example <code>WEB</code>), <code>{slug}</code> a repository slug and <code>{number}</code> an issue or pull request number. The role column lists the minimum role when it is not just "can view". Check <code>/api/v1/openapi.json</code> for the request and response shape of each operation.</p>

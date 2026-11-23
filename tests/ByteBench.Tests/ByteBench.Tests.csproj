@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\ByteBench.csproj" />
+    <ProjectReference Include="..\..\cli\ByteBench.Cli\ByteBench.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>
