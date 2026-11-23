@@ -34,6 +34,9 @@ public sealed class TrackerImportService(IDbContextFactory<AppDbContext> dbFacto
     private static readonly Regex GitHubName = new(@"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$", RegexOptions.Compiled);
     private static readonly Regex GitLabPath = new(@"^([A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+){0,10}|[0-9]{1,12})$", RegexOptions.Compiled);
     private static readonly Regex JiraKey = new(@"^[A-Za-z][A-Za-z0-9_]{1,19}$", RegexOptions.Compiled);
+    private static readonly Regex TrelloBoard = new(@"^[A-Za-z0-9]{8,24}$", RegexOptions.Compiled);
+    private static readonly Regex LinearTeam = new(@"^([A-Z][A-Z0-9]{1,9}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$", RegexOptions.Compiled);
+    private static readonly Regex AsanaGid = new(@"^[0-9]{5,25}$", RegexOptions.Compiled);
 
     public TrackerImportOptions Limits => options.CurrentValue;
 
@@ -116,11 +119,16 @@ public sealed class TrackerImportService(IDbContextFactory<AppDbContext> dbFacto
     private SourceConnection Validate(TrackerImportInput input)
     {
         var project = (input.Project ?? "").Trim();
+        if (input.Source == TrackerSourceKind.Trello) project = TrelloReader.BoardId(project); // a board address gives its short link
+        if (input.Source == TrackerSourceKind.Linear && !project.Contains('-')) project = project.ToUpperInvariant();
         var ok = input.Source switch
         {
             TrackerSourceKind.GitHub => GitHubName.IsMatch(project),
             TrackerSourceKind.GitLab => GitLabPath.IsMatch(project),
             TrackerSourceKind.Jira => JiraKey.IsMatch(project),
+            TrackerSourceKind.Trello => TrelloBoard.IsMatch(project),
+            TrackerSourceKind.Linear => LinearTeam.IsMatch(project),
+            TrackerSourceKind.Asana => AsanaGid.IsMatch(project),
             _ => false,
         };
         if (!ok)
@@ -128,6 +136,9 @@ public sealed class TrackerImportService(IDbContextFactory<AppDbContext> dbFacto
             {
                 TrackerSourceKind.GitHub => "Enter the repository as owner/name.",
                 TrackerSourceKind.GitLab => "Enter the project's path (group/project) or its numeric id.",
+                TrackerSourceKind.Trello => "Enter the board's short link or id (or its address, trello.com/b/...).",
+                TrackerSourceKind.Linear => "Enter the Linear team key (for example ENG) or the team's id.",
+                TrackerSourceKind.Asana => "Enter the Asana project's numeric id (the number in the project's address).",
                 _ => "Enter the Jira project key (for example PROJ).",
             });
         var baseUrl = string.IsNullOrWhiteSpace(input.BaseUrl) ? null : input.BaseUrl.Trim().TrimEnd('/');
@@ -136,6 +147,9 @@ public sealed class TrackerImportService(IDbContextFactory<AppDbContext> dbFacto
         var secret = string.IsNullOrWhiteSpace(input.Secret) ? null : input.Secret.Trim();
         if (user?.Length > 200 || user?.Any(char.IsControl) == true) throw new InvalidOperationException("The username isn't valid.");
         if (secret?.Length > 2000 || secret?.Any(char.IsControl) == true) throw new InvalidOperationException("The token isn't valid.");
+        if (input.Source == TrackerSourceKind.Trello && user == null) throw new InvalidOperationException("Enter your Trello API key (trello.com/power-ups/admin) and a token.");
+        if (input.Source is TrackerSourceKind.Linear or TrackerSourceKind.Asana && secret == null)
+            throw new InvalidOperationException(input.Source == TrackerSourceKind.Linear ? "Enter a Linear personal API key." : "Enter an Asana personal access token.");
         input.Settings ??= new();
         return new SourceConnection(input.Source, baseUrl, project, user, secret);
     }

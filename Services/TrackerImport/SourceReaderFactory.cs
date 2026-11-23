@@ -17,6 +17,9 @@ public sealed class SourceReaderFactory(TrackerHttp http, TrackerUrlGuard guard)
         TrackerSourceKind.GitHub => new GitHubReader(c, http),
         TrackerSourceKind.GitLab => new GitLabReader(c, http),
         TrackerSourceKind.Jira => new JiraReader(c, http),
+        TrackerSourceKind.Trello => new TrelloReader(c, http),
+        TrackerSourceKind.Linear => new LinearReader(c, http),
+        TrackerSourceKind.Asana => new AsanaReader(c, http),
         _ => throw new SourceException("Unknown source."),
     };
 

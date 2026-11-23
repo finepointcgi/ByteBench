@@ -8,7 +8,7 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Nav
 
-<PageTitle>Import from GitHub, GitLab or Jira · @project?.Name</PageTitle>
+<PageTitle>Import issues from another tracker · @project?.Name</PageTitle>
 
 @if (notFound)
 {
@@ -23,7 +23,7 @@ else if (project != null)
 <div class="ti-page">
     <div class="ti-header">
         <div>
-            <MudText Typo="Typo.h5" HtmlTag="h1" Class="ti-title">Import from GitHub, GitLab or Jira</MudText>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="ti-title">Import issues from another tracker</MudText>
             <MudText Class="mud-text-secondary" Typo="Typo.body2">Into @project.Name. Issues, comments, labels and milestones are copied; existing issues are never changed.</MudText>
         </div>
         <MudButton Href="@($"/p/{project.Key}/issues")" Variant="Variant.Outlined">Back to issues</MudButton>
@@ -74,6 +74,36 @@ else if (project != null)
                     <MudTextField T="string" Immediate="true" Label="Token (optional for public projects)" @bind-Value="secret" InputType="InputType.Password"
                                   Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" UserAttributes="@NoAutofill" />
                 }
+                else if (source == TrackerSourceKind.Trello)
+                {
+                    <MudTextField T="string" Immediate="true" Label="Board" @bind-Value="projectName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                                  Placeholder="Short link, id or board address" MaxLength="200" Required="true"
+                                  HelperText="For example the code in https://trello.com/b/AbCdEfGh/my-board." />
+                    <MudGrid Spacing="3">
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Immediate="true" Label="API key" @bind-Value="username" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" MaxLength="200"
+                                          Required="true" UserAttributes="@NoAutofill" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField T="string" Immediate="true" Label="Token (optional for public boards)" @bind-Value="secret" InputType="InputType.Password"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" UserAttributes="@NoAutofill" />
+                        </MudItem>
+                    </MudGrid>
+                }
+                else if (source == TrackerSourceKind.Linear)
+                {
+                    <MudTextField T="string" Immediate="true" Label="Team key" @bind-Value="projectName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                                  Placeholder="ENG" MaxLength="40" Required="true" HelperText="The prefix of your issue numbers (ENG-12), or the team's id." />
+                    <MudTextField T="string" Immediate="true" Label="Personal API key" @bind-Value="secret" InputType="InputType.Password"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" Required="true" UserAttributes="@NoAutofill" />
+                }
+                else if (source == TrackerSourceKind.Asana)
+                {
+                    <MudTextField T="string" Immediate="true" Label="Project id" @bind-Value="projectName" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                                  Placeholder="1200345678901" MaxLength="25" Required="true" HelperText="The long number in the project's address: app.asana.com/0/<project id>/list." />
+                    <MudTextField T="string" Immediate="true" Label="Personal access token" @bind-Value="secret" InputType="InputType.Password"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" Required="true" UserAttributes="@NoAutofill" />
+                }
                 else
                 {
                     <MudTextField T="string" Immediate="true" Label="Jira address" @bind-Value="baseUrl" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input" MaxLength="500"
@@ -104,6 +134,21 @@ else if (project != null)
                     else if (source == TrackerSourceKind.GitLab)
                     {
                         <p>Create a personal or project access token with the <code>read_api</code> scope (User settings, Access tokens). Nothing else is needed.</p>
+                    }
+                    else if (source == TrackerSourceKind.Trello)
+                    {
+                        <p>Open <b>trello.com/power-ups/admin</b>, create a Power-Up (or open yours) and copy its <b>API key</b>. On the same page choose <b>Generate a new API token</b>
+                           (or the Token link next to the key) and authorize it with <b>read</b> access. Enter the key and the token above. Both are sent to Trello for this import only.</p>
+                    }
+                    else if (source == TrackerSourceKind.Linear)
+                    {
+                        <p>In Linear open <b>Settings, Account, Security &amp; access</b> and create a <b>personal API key</b> (read-only is enough). The key is sent as the
+                           Authorization header exactly as Linear shows it. Only teams and issues your account can see are imported; Linear shows your email to the key's owner, so people are matched by email.</p>
+                    }
+                    else if (source == TrackerSourceKind.Asana)
+                    {
+                        <p>Open the <b>Asana developer console</b> (app.asana.com/0/my-apps), choose <b>Create new token</b> under Personal access tokens, and paste it above.
+                           Only projects and tasks your account can see are imported.</p>
                     }
                     else
                     {
@@ -304,6 +349,9 @@ else if (project != null)
         new(TrackerSourceKind.GitHub, "GitHub", "Issues of a repository on github.com or GitHub Enterprise."),
         new(TrackerSourceKind.GitLab, "GitLab", "Issues of a project on gitlab.com or a self-hosted GitLab."),
         new(TrackerSourceKind.Jira, "Jira", "Issues of a Jira Cloud, Server or Data Center project."),
+        new(TrackerSourceKind.Trello, "Trello", "The cards of a board; lists become statuses."),
+        new(TrackerSourceKind.Linear, "Linear", "Issues of a Linear team, with projects as milestones."),
+        new(TrackerSourceKind.Asana, "Asana", "Tasks and subtasks of a project; sections become statuses."),
     ];
     private static readonly Dictionary<string, object> NoAutofill = new() { ["autocomplete"] = "new-password" };
 
@@ -328,7 +376,9 @@ else if (project != null)
     private CancellationTokenSource? polling;
 
     private string PageUrl => $"/p/{Key}/import/tracker";
-    private bool CanCheck => !string.IsNullOrWhiteSpace(projectName) && (source != TrackerSourceKind.Jira || !string.IsNullOrWhiteSpace(baseUrl));
+    private bool CanCheck => !string.IsNullOrWhiteSpace(projectName) && (source != TrackerSourceKind.Jira || !string.IsNullOrWhiteSpace(baseUrl))
+        && (source != TrackerSourceKind.Trello || !string.IsNullOrWhiteSpace(username))
+        && (source is not (TrackerSourceKind.Linear or TrackerSourceKind.Asana) || !string.IsNullOrWhiteSpace(secret));
     private bool ShowStatusTable => check != null && workflow.Count > 0 && (source == TrackerSourceKind.Jira
         || check.SourceStatuses.Any(s => !s.Name.Equals("Open", StringComparison.OrdinalIgnoreCase) && !s.Name.Equals("Closed", StringComparison.OrdinalIgnoreCase)));
     private double Percent => job is { IssuesExpected: > 0 } ? Math.Min(100, job.IssuesRead * 100.0 / job.IssuesExpected) : 0;
