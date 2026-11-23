@@ -99,6 +99,10 @@ public static class ApiEndpoints
         api.MapFlagEndpoints(); // feature flags: management API
         api.MapEnvironmentEndpoints(); // environments, deployments, approvals, rollback, traceability, deploy freezes
         api.MapTriageEndpoints(); // AI triage suggestions for issues
+        api.MapPipelineEndpoints(); // CI pipelines, jobs, logs, artifacts, CI variables
+        api.MapPackageEndpoints(); // package registry: packages, versions, settings
+        api.MapPagesEndpoints(); // Pages sites: status, deployments, rollback, settings
+        api.MapAiReviewEndpoints(); // AI pull request review: settings, reviews, findings
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

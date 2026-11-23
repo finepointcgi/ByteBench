@@ -124,6 +124,19 @@
 </tbody></table>
 <p>The issue text is untrusted and goes into delimited data blocks. The answer must match a JSON schema, and every label, component, assignee and duplicate in it is validated against the project's real data before it is stored.</p>
 
+<h3 id="review-api">AI review API</h3>
+<p>Under <code>/api/v1/projects/{key}/repos/{slug}</code> (see the <a href="api.html#api-ai-review">endpoint catalogue</a>). The permissions and guards are those of the UI: settings need Maintainer, asking for a review needs Developer and hits the same per-repository hourly limit.</p>
+<table>
+<thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>GET</code>, <code>PUT /ai-review/settings</code></td><td>Maintainer. The repository's settings; PUT keeps omitted fields. The GET also reports whether an AI backend is available.</td></tr>
+<tr><td><code>GET /pull-requests/{number}/ai-reviews</code></td><td>Reviews of the pull request with status, counts, summary and inline findings.</td></tr>
+<tr><td><code>POST /pull-requests/{number}/ai-reviews</code></td><td>Queue a review. 202, or 409 (already reviewed or pending), 429 (hourly limit), 422 (off, not set up, pull request closed).</td></tr>
+<tr><td><code>POST /pull-requests/{number}/ai-findings/{commentId}/dismiss</code>, <code>/undismiss</code></td><td>Dismiss a finding's thread as not applicable, or bring it back.</td></tr>
+</tbody></table>
+<pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pull-requests/7/ai-reviews</code></pre>
+
 <h3 id="triage-api">Triage API</h3>
 <p>All paths are under <code>/api/v1/projects/{key}</code> (see the <a href="api.html">REST API</a> for authentication).</p>
 <table>

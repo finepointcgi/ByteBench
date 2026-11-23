@@ -129,7 +129,59 @@
 <tr><td>GET</td><td><code>.../deployed?rev=</code>, <code>.../pull-requests/{number}/deployments</code>, <code>.../releases/{id}/deployments</code>, <code>/projects/{key}/issues/{number}/deployments</code></td><td>Traceability: where is this commit, tag, pull request, release or issue deployed</td></tr>
 <tr><td>GET / POST / DELETE</td><td><code>/projects/{key}/deploy-freezes</code>, <code>.../{id}</code></td><td>Freeze windows (Maintainer to change)</td></tr>
 </tbody></table>
-<p>Pipelines and package registries have no REST endpoints today. Pipelines are driven by the CI file and the web UI, and packages use the NuGet, npm and Docker protocols (<a href="ci.html">CI</a>, <a href="packages.html">packages</a>). To react to either, subscribe to the <code>pipeline.completed</code>, <code>package.published</code> and <code>package.deleted</code> <a href="#events">webhook events</a>.</p>
+<p>Pipelines, packages, Pages and AI review have their own sections below: <a href="#api-pipelines">pipelines and CI variables</a>, <a href="#api-packages">packages</a>, <a href="#api-pages">Pages</a> and <a href="#api-ai-review">AI review</a>.</p>
+
+<h3 id="api-pipelines">Pipelines and CI variables</h3>
+<p>Under <code>/projects/{key}/repos/{slug}</code>. Reads need Viewer, so a token with <code>read_api</code> can follow a pipeline; the actions below need <code>write_api</code> and the same role as the button in the UI. Pipelines run only when CI is on (<code>Ci:Enabled</code>); otherwise the actions answer 422.</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>.../pipelines</code></td><td>Newest first, paged. <code>?ref=</code> (branch) and <code>?status=</code> (<code>queued</code>, <code>running</code>, <code>passed</code>, <code>failed</code>, <code>canceled</code>, <code>error</code>, <code>skipped</code>, <code>manual</code>)</td></tr>
+<tr><td>GET</td><td><code>.../pipelines/{id}</code></td><td>One pipeline with its jobs and steps (no logs)</td></tr>
+<tr><td>POST</td><td><code>.../pipelines</code></td><td>Developer. Body <code>{"branch":"main"}</code> (default: the default branch). 201 with the new pipeline. Ignores the file's branch filters</td></tr>
+<tr><td>POST</td><td><code>.../pipelines/{id}/cancel</code>, <code>/rerun</code>, <code>/approve</code></td><td>Developer. Cancel; run its commit again (201, new pipeline); <code>approve</code> releases a fork pull request's pipeline (Maintainer; it still gets no CI variables)</td></tr>
+<tr><td>GET</td><td><code>.../pipelines/{id}/steps/{stepId}/log</code></td><td>Plain text. <code>?tail=N</code> returns the last N characters, <code>?offset=</code> and <code>?limit=</code> (max 1048576) page through a big log. Headers <code>X-Log-Total-Length</code>, <code>X-Log-Offset</code>, <code>X-Log-Next-Offset</code> (absent at the end) and <code>X-Log-Truncated</code>. Secrets are already masked</td></tr>
+<tr><td>POST</td><td><code>.../pipelines/{id}/jobs/{jobId}/retry</code>, <code>/play</code></td><td>Developer. Run a finished job again; run a manual job. A job that deploys to a protected environment needs Maintainer and goes through <a href="environments.html">deployment approvals</a>. Returns the job</td></tr>
+<tr><td>GET</td><td><code>.../pipelines/{id}/artifacts</code>, <code>.../jobs/{jobId}/artifacts</code></td><td>Artifacts per job; one job's artifacts with the list of files in the zip</td></tr>
+<tr><td>GET</td><td><code>.../jobs/{jobId}/artifacts.zip</code>, <code>.../artifacts/file?path=</code></td><td>Download the zip or one file in it. Streamed as an attachment (range requests work), never rendered</td></tr>
+<tr><td>GET / POST</td><td><code>.../ci/variables</code>; project-wide: <code>/projects/{key}/ci/variables</code></td><td>Maintainer. List names, <code>protected</code> and <code>masked</code> flags (never values); create with <code>{"name","value","protected"}</code></td></tr>
+<tr><td>PUT / DELETE</td><td><code>.../ci/variables/{id}</code></td><td>Maintainer. Omitted fields keep their stored value; a value can be replaced but never read back</td></tr>
+</tbody></table>
+<p>Variables follow the rules on the <a href="ci.html#ci-variables">CI page</a>: a protected variable only reaches pipelines on protected branches, a fork pull request's pipeline gets none, and <code>masked</code> is always <code>true</code> (values are scrubbed from logs). Audit events and webhooks are the same as in the UI (<code>ci_variable.created</code>, <code>.updated</code>, <code>.deleted</code>, <code>pipeline.completed</code>).</p>
+
+<h3 id="api-packages">Packages</h3>
+<p>Under <code>/projects/{key}/packages</code> (a registry belongs to the project). Publishing and installing stay with the NuGet, npm and Docker protocols (<a href="packages.html">packages</a>); this API manages what is there.</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/projects/{key}/packages</code></td><td>Paged. <code>?type=nuget|npm|container</code>, <code>?q=</code> (name contains)</td></tr>
+<tr><td>GET</td><td><code>.../packages/{id}</code></td><td>Versions (newest first) with files, hashes, download URLs, publisher, pipeline and the install command; npm dist-tags</td></tr>
+<tr><td>DELETE</td><td><code>.../packages/{id}</code>, <code>.../packages/{id}/versions/{versionId}</code></td><td>Maintainer. 204. Audited and sent as the <code>package.deleted</code> webhook</td></tr>
+<tr><td>GET / PUT</td><td><code>.../packages/settings</code></td><td>Maintainer. <code>{"enabled":true,"keepLatest":10}</code>: the registry switch and the cleanup policy (1 to 1000 newest versions per package; <code>null</code> keeps everything). Lowering it cleans up at once</td></tr>
+</tbody></table>
+
+<h3 id="api-pages">Pages</h3>
+<p>Under <code>/projects/{key}/repos/{slug}/pages</code>. Sites are published by CI jobs with a <code>pages</code> section (<a href="pages.html">Pages</a>); there is no upload endpoint.</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>.../pages</code></td><td>Status: <code>exists</code>, settings (visibility included), the live deployment (version, commit, size, URL), review sites, whether the server has Pages on and allows public sites</td></tr>
+<tr><td>GET</td><td><code>.../pages/deployments</code></td><td>History, newest first, paged (last 100 versions). <code>?slot=</code> for one review site (empty: the main site)</td></tr>
+<tr><td>POST</td><td><code>.../pages/deployments/{id}/rollback</code></td><td>Maintainer. Make an earlier version live again. 422 if it is already live, expired or gone</td></tr>
+<tr><td>DELETE</td><td><code>.../pages</code></td><td>Maintainer. Delete all deployments and files (or one review site with <code>?slot=</code>); settings stay. 204</td></tr>
+<tr><td>GET / PUT</td><td><code>.../pages/settings</code></td><td>Maintainer. <code>{"enabled","visibility":"members|public","notFound":"site404|plain|spaFallback","reviewSites","reviewExpireDays"}</code>; omitted fields keep their value. <code>"visibility":"public"</code> needs an Owner (and <code>Pages:AllowPublic</code>)</td></tr>
+</tbody></table>
+
+<h3 id="api-ai-review">AI review</h3>
+<p>Under <code>/projects/{key}/repos/{slug}</code>. Needs the server's AI backend (<a href="ai-review-triage.html">AI review and triage</a>).</p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>GET / PUT</td><td><code>.../ai-review/settings</code></td><td>Maintainer. <code>enabled</code>, <code>mode</code> (<code>onDemand|onOpen|onPush</code>), <code>maxDiffChars</code>, <code>ignorePaths</code> (array), <code>focusPrompt</code>, <code>blockOnUnresolvedFindings</code>; omitted fields keep their value. The GET also says whether AI is available and the limits</td></tr>
+<tr><td>GET</td><td><code>.../pull-requests/{number}/ai-reviews</code>, <code>.../ai-reviews/{reviewId}</code></td><td>Reviews, newest first, each with status (<code>queued</code>, <code>running</code>, <code>completed</code>, <code>failed</code>, <code>skipped</code>), counts, its summary and its inline findings (severity <code>bug</code>, <code>security</code>, <code>suggestion</code> or <code>nit</code>; resolved and dismissed flags)</td></tr>
+<tr><td>POST</td><td><code>.../pull-requests/{number}/ai-reviews</code></td><td>Developer. Same guards as the "Review with AI" button. 202 with the queued review (poll the GET); 409 if the commit was reviewed or a review is pending (<code>existingReviewId</code>); 429 at the repository's hourly limit; 422 if AI review is off, AI is not set up or the pull request is closed</td></tr>
+<tr><td>POST</td><td><code>.../pull-requests/{number}/ai-findings/{commentId}/dismiss</code>, <code>/undismiss</code></td><td>The pull request's author or a Maintainer. Resolve a finding's thread as not applicable (it stops blocking merges), or bring it back</td></tr>
+</tbody></table>
 
 <h3 id="api-flags">Feature flags</h3>
 <table>
@@ -193,7 +245,37 @@ curl -X POST https://bytebench.example.com/api/v1/projects/WEB/repos/site/pull-r
 
 # where is this tag deployed?
 curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
-  "https://bytebench.example.com/api/v1/projects/WEB/repos/site/deployed?rev=v1.4.0"</code></pre>
+  "https://bytebench.example.com/api/v1/projects/WEB/repos/site/deployed?rev=v1.4.0"
+# run a pipeline for a branch, list failed ones, read the tail of a step's log
+curl -X POST https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" -d '{"branch":"main"}'
+curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" "https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines?status=failed&amp;ref=main"
+curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  "https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines/12/steps/34/log?tail=4000"
+
+# download a job's artifacts
+curl -L -o artifacts.zip -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines/12/jobs/21/artifacts.zip
+
+# add a protected CI variable (the value is never returned)
+curl -X POST https://bytebench.example.com/api/v1/projects/WEB/repos/site/ci/variables \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"DEPLOY_TOKEN","value":"s3cret","protected":true}'
+
+# keep the 10 newest versions of every package, and list npm packages
+curl -X PUT https://bytebench.example.com/api/v1/projects/WEB/packages/settings \
+  -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: application/json" -d '{"enabled":true,"keepLatest":10}'
+curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" "https://bytebench.example.com/api/v1/projects/WEB/packages?type=npm"
+
+# roll the Pages site back to an earlier deployment
+curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pages/deployments/3/rollback
+
+# ask for an AI review of a pull request, then dismiss one of its findings
+curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pull-requests/7/ai-reviews
+curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pull-requests/7/ai-findings/55/dismiss</code></pre>
 
 <h2 id="webhooks">Webhooks</h2>
 <p>A project can POST JSON events to your own services. Webhooks are managed by <strong>Maintainers and Owners</strong> (the manage-repositories permission) at <strong>Settings, Webhooks</strong> (<code>/p/{KEY}/settings/webhooks</code>). A project may have at most 20 generic webhooks. Slack and Teams integrations are separate (see <a href="chat.html">Slack and Microsoft Teams</a>).</p>

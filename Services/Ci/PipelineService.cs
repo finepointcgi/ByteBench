@@ -27,11 +27,13 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
 {
     public bool Enabled => triggers.Enabled;
 
-    public async Task<PipelinePage> ListAsync(Repository repo, int page, int pageSize = 30)
+    public async Task<PipelinePage> ListAsync(Repository repo, int page, int pageSize = 30, string? branch = null, PipelineStatus? status = null)
     {
         if (!await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return new([], 0, 1, pageSize);
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.Pipelines.AsNoTracking().Where(p => p.RepositoryId == repo.Id);
+        if (!string.IsNullOrEmpty(branch)) q = q.Where(p => p.Ref == branch);
+        if (status is { } st) q = q.Where(p => p.Status == st);
         var total = await q.CountAsync();
         page = Math.Max(1, page);
         var items = await q.OrderByDescending(p => p.Id).Skip((page - 1) * pageSize).Take(pageSize)

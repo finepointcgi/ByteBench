@@ -81,7 +81,7 @@ public static class CiServiceCollectionExtensions
     }
 
     /// <summary>Headers for a CI download: an attachment that is never sniffed, rendered or cached by shared caches.</summary>
-    private static void SafeDownloadHeaders(HttpContext ctx, string fileName)
+    internal static void SafeDownloadHeaders(HttpContext ctx, string fileName)
     {
         var h = ctx.Response.Headers;
         h.XContentTypeOptions = "nosniff";
