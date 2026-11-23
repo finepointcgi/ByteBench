@@ -239,6 +239,9 @@ git push</code></pre>
 <h3 id="delete">Delete</h3>
 <p>Type the repository name to confirm. The database rows go first (pull requests with their comments, reviews and activity, watches, AI reviews, redirects, plus notifications linking into it), then the bare repository is moved aside and deleted. This cannot be undone, so take a <a href="production.html">backup</a> first if in doubt. Deleting an upstream leaves its forks working, just no longer linked.</p>
 
+<h3 id="insights-dependencies">Insights and dependency updates</h3>
+<p>The <strong>Insights</strong> tab shows contributors, commit activity, code frequency, languages, busiest times and pull request statistics for the default branch. <strong>Settings, Dependencies</strong> (Maintainer or higher) sets up the dependency bot that opens pull requests for outdated npm, NuGet, pip and Go dependencies. Both are described in <a href="insights-dependencies.html">Repository insights and the dependency bot</a>.</p>
+
 <h2 id="storage-layout">Storage layout on disk</h2>
 <table>
   <tr><th>What</th><th>Where (default)</th><th>Setting</th></tr>
@@ -260,6 +263,7 @@ git push</code></pre>
   <tr><td><code>GET .../repos/{slug}/commits?ref=&amp;path=</code></td><td>Commit list</td></tr>
   <tr><td><code>GET .../repos/{slug}/raw/{path}?ref=</code></td><td>Raw file</td></tr>
   <tr><td><code>GET/POST .../repos/{slug}/forks</code>, <code>POST .../sync-fork</code></td><td>Forks</td></tr>
+  <tr><td><code>GET .../repos/{slug}/insights?range=</code></td><td>Contributors, activity, languages and pull request statistics (see <a href="insights-dependencies.html#insights-api">Insights</a>)</td></tr>
 </table>
 <pre><code>curl -H "Authorization: Bearer $BYTEBENCH_TOKEN" \
   https://bytebench.example.com/api/v1/projects/WEB/repos</code></pre>

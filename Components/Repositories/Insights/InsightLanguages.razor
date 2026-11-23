@@ -1,0 +1,37 @@
+@* The language breakdown: one stacked bar plus a legend with file counts and sizes. Pure CSS; the rules are in the Insights docs page. *@
+@using ByteBench.Services.Insights
+@if (Languages.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">No recognised source files on the default branch.</MudText>
+}
+else
+{
+    <div class="il-bar" role="img" aria-label="@("Languages: " + string.Join(", ", Languages.Take(6).Select(l => $"{l.Name} {l.Percent:0.#}%")))">
+        @foreach (var l in Languages)
+        {
+            <span class="il-seg" style="@($"width:{l.Percent.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}%;background:{l.Color}")" title="@l.Name @l.Percent.ToString("0.#")%"></span>
+        }
+    </div>
+    <ul class="il-legend">
+        @foreach (var l in Languages)
+        {
+            <li>
+                <span class="il-dot" style="@($"background:{l.Color}")" aria-hidden="true"></span>
+                <span class="il-name">@l.Name</span>
+                <span class="il-pct">@l.Percent.ToString("0.#")%</span>
+                <span class="il-meta">@l.Files file@(l.Files == 1 ? "" : "s") · @Size(l.Bytes)</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<LanguageStat> Languages { get; set; } = [];
+
+    private static string Size(long bytes) => bytes switch
+    {
+        < 1024 => bytes + " B",
+        < 1024 * 1024 => (bytes / 1024.0).ToString("0.#") + " KB",
+        _ => (bytes / 1024.0 / 1024.0).ToString("0.#") + " MB",
+    };
+}

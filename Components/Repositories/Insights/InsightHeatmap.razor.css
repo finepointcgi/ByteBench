@@ -1,0 +1,9 @@
+.ihm-figure { margin: 0; }
+.ihm-svg { display: block; width: 100%; height: auto; }
+.ihm-l0 { fill: var(--mud-palette-lines-default); background: var(--mud-palette-lines-default); }
+.ihm-l1 { fill: var(--mud-palette-success); fill-opacity: .3; background: color-mix(in srgb, var(--mud-palette-success) 30%, transparent); }
+.ihm-l2 { fill: var(--mud-palette-success); fill-opacity: .55; background: color-mix(in srgb, var(--mud-palette-success) 55%, transparent); }
+.ihm-l3 { fill: var(--mud-palette-success); fill-opacity: .8; background: color-mix(in srgb, var(--mud-palette-success) 80%, transparent); }
+.ihm-l4 { fill: var(--mud-palette-success); background: var(--mud-palette-success); }
+.ihm-caption { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: .75rem; color: var(--mud-palette-text-secondary); }
+.ihm-key { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; vertical-align: -1px; margin: 0 1px; fill-opacity: 1; }

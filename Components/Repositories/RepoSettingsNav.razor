@@ -20,6 +20,8 @@
                          Class="@ItemClass("security")" aria-current="@(Active == "security" ? "page" : null)">Security</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/mirroring")" Icon="@Icons.Material.Outlined.Sync"
                          Class="@ItemClass("mirroring")" aria-current="@(Active == "mirroring" ? "page" : null)">Mirroring</MudListItem>
+            <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/dependencies")" Icon="@Icons.Material.Outlined.Update"
+                         Class="@ItemClass("dependencies")" aria-current="@(Active == "dependencies" ? "page" : null)">Dependencies</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/pages")" Icon="@Icons.Material.Outlined.Language"
                          Class="@ItemClass("pages")" aria-current="@(Active == "pages" ? "page" : null)">Pages</MudListItem>
         </MudList>

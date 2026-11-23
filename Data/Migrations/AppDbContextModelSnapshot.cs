@@ -1076,6 +1076,125 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("DashboardHomes");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.DependencyBotPullRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Ecosystem")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FromVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Package")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ToVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Ecosystem", "Package");
+
+                    b.ToTable("DependencyBotPullRequests");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DependencyBotSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ecosystems")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Grouped")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IgnoreList")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Labels")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastReportJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastStatus")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MaxOpenPullRequests")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("NextRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Reviewers")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Schedule")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Strategy")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TargetBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.HasIndex("Enabled", "NextRunAt");
+
+                    b.ToTable("DependencyBotSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.DeployFreezeWindow", b =>
                 {
                     b.Property<int>("Id")
@@ -3881,6 +4000,46 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("RepositoryImports");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryInsight", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CommitsScanned")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ComputedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HeadSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.ToTable("RepositoryInsights");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
                 {
                     b.Property<int>("Id")
@@ -5990,6 +6149,26 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.DependencyBotPullRequest", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DependencyBotSettings", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+                });
+
             modelBuilder.Entity("ByteBench.Data.DeployFreezeWindow", b =>
                 {
                     b.HasOne("ByteBench.Data.User", null)
@@ -7019,6 +7198,17 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Repository");
 
                     b.Navigation("RequestedBy");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.RepositoryInsight", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
                 });
 
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>

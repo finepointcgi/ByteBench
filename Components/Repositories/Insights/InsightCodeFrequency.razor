@@ -1,0 +1,33 @@
+@* Additions (up, green) and deletions (down, red) per week, drawn as SVG around a centre line. *@
+@using ByteBench.Services.Insights
+<figure class="icf-figure">
+    <svg class="icf-svg" viewBox="0 0 @Width @Height" preserveAspectRatio="none" role="img"
+         aria-label="@($"Code frequency: {Weeks.Sum(w => (long)w.Additions):N0} lines added and {Weeks.Sum(w => (long)w.Deletions):N0} deleted over the last {Weeks.Count} weeks")">
+        @for (var i = 0; i < Weeks.Count; i++)
+        {
+            var w = Weeks[i];
+            var slot = (double)Width / Weeks.Count;
+            var up = Max == 0 ? 0 : (double)w.Additions / Max * (Height / 2.0 - 2);
+            var down = Max == 0 ? 0 : (double)w.Deletions / Max * (Height / 2.0 - 2);
+            <rect class="icf-add" x="@Num(i * slot + slot * 0.12)" width="@Num(slot * 0.76)" y="@Num(Height / 2.0 - up)" height="@Num(up)">
+                <title>Week of @w.WeekStart: +@w.Additions.ToString("N0") −@w.Deletions.ToString("N0")</title>
+            </rect>
+            <rect class="icf-del" x="@Num(i * slot + slot * 0.12)" width="@Num(slot * 0.76)" y="@Num(Height / 2.0)" height="@Num(down)">
+                <title>Week of @w.WeekStart: +@w.Additions.ToString("N0") −@w.Deletions.ToString("N0")</title>
+            </rect>
+        }
+        <line class="icf-axis" x1="0" x2="@Width" y1="@Num(Height / 2.0)" y2="@Num(Height / 2.0)" />
+    </svg>
+    <figcaption class="icf-caption">
+        <span>@(Weeks.FirstOrDefault()?.WeekStart)</span>
+        <span><span class="icf-key icf-key-add" aria-hidden="true"></span> additions <span class="icf-key icf-key-del" aria-hidden="true"></span> deletions</span>
+        <span>@(Weeks.LastOrDefault()?.WeekStart)</span>
+    </figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<WeekLines> Weeks { get; set; } = [];
+    private const int Width = 520, Height = 140;
+    private int Max => Weeks.Count == 0 ? 0 : Math.Max(Weeks.Max(w => w.Additions), Weeks.Max(w => w.Deletions));
+    private static string Num(double d) => d.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

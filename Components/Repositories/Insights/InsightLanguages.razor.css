@@ -1,0 +1,8 @@
+.il-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--mud-palette-lines-default); }
+.il-seg { display: block; height: 100%; min-width: 2px; }
+.il-legend { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 6px 16px; }
+.il-legend li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; font-size: .875rem; }
+.il-dot { width: .7rem; height: .7rem; border-radius: 50%; flex: none; align-self: center; }
+.il-name { font-weight: 600; }
+.il-pct { color: var(--mud-palette-text-secondary); }
+.il-meta { flex-basis: 100%; padding-left: calc(.7rem + 6px); font-size: .75rem; color: var(--mud-palette-text-secondary); }

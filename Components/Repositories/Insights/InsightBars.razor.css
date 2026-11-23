@@ -1,0 +1,8 @@
+.ib-figure { margin: 0; }
+.ib-svg { display: block; width: 100%; height: auto; max-height: 150px; overflow: visible; }
+.ib-axis { stroke: var(--mud-palette-lines-default); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ib-bar { fill: var(--mud-palette-primary); }
+.ib-bar:hover { fill: var(--mud-palette-primary-darken); }
+.ib-bar-zero { fill: transparent; }
+.ib-caption { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: .75rem; color: var(--mud-palette-text-secondary); }
+.ib-mid { text-align: center; flex: 1; }

@@ -1,0 +1,102 @@
+<h1>Repository insights and the dependency bot</h1>
+<p class="lead">See who works on a repository, how active it is and what it is written in, and let a bot open pull requests that bump outdated dependencies.</p>
+
+<p>Both features belong to one repository. <strong>Insights</strong> is a tab next to Source and Commits (<code>/p/{KEY}/repos/{slug}/insights</code>); the <strong>dependency bot</strong> is under <strong>Settings, Dependencies</strong> (<code>/p/{KEY}/repos/{slug}/settings/dependencies</code>).</p>
+
+<h2 id="insights">Insights</h2>
+<p>Anyone who can view the project (Viewer or higher) can open the Insights tab. It shows:</p>
+<ul>
+  <li><strong>Contributors</strong>: commits, additions and deletions over the range you pick (7 days, 30 days, 90 days, 1 year or all time; the default is 1 year). People are merged by e-mail address and then by name, so one person with two addresses counts once. When the e-mail matches a ByteBench user, the name links to their profile. Merge commits are not counted.</li>
+  <li><strong>Commit activity</strong>: commits per week for the last 52 weeks, and a <strong>commits per day</strong> heatmap for the same period. Weeks start on Monday.</li>
+  <li><strong>Code frequency</strong>: additions (up) and deletions (down) per week.</li>
+  <li><strong>Languages</strong>: a size breakdown of the default branch.</li>
+  <li><strong>Busiest hours and weekdays</strong>: commits by hour of the day and by weekday.</li>
+  <li><strong>Pull requests</strong>: opened, merged and the median time to merge, per month for the last 12 months.</li>
+</ul>
+<p>All dates and hours are in UTC (the commit's author time). The charts are drawn on the server as plain SVG and CSS: no script runs in your browser, they follow the light and dark theme and fit a phone-width screen. Every bar has a tooltip with its value.</p>
+
+<h3 id="insights-rules">What is counted</h3>
+<ul>
+  <li><strong>Languages</strong> are decided by file extension (for example <code>.cs</code> is C#, <code>.py</code> is Python, <code>.razor</code> is Razor; <code>Dockerfile</code> and <code>Makefile</code> by name). Files with an extension that is not in the built-in table are not counted. Sizes are the files' bytes on the default branch.</li>
+  <li><strong>Left out</strong> of both the language sizes and the additions/deletions: dependency and build directories (<code>node_modules</code>, <code>vendor</code>, <code>third_party</code>, <code>bower_components</code>, <code>bin</code>, <code>obj</code>, <code>dist</code>, <code>out</code>, <code>target</code>, ...), lockfiles (<code>package-lock.json</code>, <code>yarn.lock</code>, <code>pnpm-lock.yaml</code>, <code>Cargo.lock</code>, <code>go.sum</code>, <code>poetry.lock</code>, any <code>*.lock</code>, ...) and generated files (<code>*.min.js</code>, <code>*.min.css</code>, <code>*.map</code>, <code>*.designer.cs</code>, <code>*.g.cs</code>, <code>*.generated.*</code>, <code>*.pb.go</code>, ...). Binary files add no lines.</li>
+</ul>
+
+<h3 id="insights-cost">How it is computed</h3>
+<p>The numbers come from <code>git log --numstat</code> on the default branch, streamed and added up as it is read, never held in memory. It reads at most <code>Insights:MaxCommits</code> commits (newest first) and is stopped after <code>Insights:TimeoutSeconds</code>; when either limit cuts the history short the page says so and counts what it read. The result is cached per repository and default-branch head commit. A push moves the head, so the next view finds the cache stale and recomputes it in the background: one computation at a time per repository, never on the page's own request. The first view of a large repository shows "computing" and refreshes itself; during a recomputation the older numbers stay visible with a note.</p>
+
+<h3 id="insights-api">REST API</h3>
+<p><code>GET /api/v1/projects/{key}/repos/{slug}/insights?range=7d|30d|90d|1y|all</code> returns the same data as JSON (<code>contributors</code>, <code>commitActivity</code>, <code>heatmap</code>, <code>codeFrequency</code>, <code>languages</code>, <code>hours</code>, <code>weekdays</code>, <code>pullRequests</code>, and <code>status</code>, <code>commitsScanned</code>, <code>truncated</code>, <code>headSha</code>, <code>computedAt</code>). It needs the same access as viewing the repository and a token with the read scope (<code>read_api</code> or <code>write_api</code>); a project you cannot see answers <code>404</code>. When the cache is stale the call waits up to <code>Insights:ApiWaitSeconds</code> (default 20) for the computation and otherwise answers <code>202</code> with <code>status: "computing"</code>: ask again. <code>status: "empty"</code> means the default branch has no commits yet. See <a href="api.html">REST API and webhooks</a> for tokens.</p>
+
+<h3 id="insights-config">Configuration (<code>Insights:*</code>)</h3>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Insights:MaxCommits</code></td><td>50000</td><td>Most commits read from the default branch</td></tr>
+  <tr><td><code>Insights:TimeoutSeconds</code></td><td>120</td><td><code>git log</code> is killed after this long</td></tr>
+  <tr><td><code>Insights:MaxFiles</code></td><td>100000</td><td>Most files looked at for the language breakdown</td></tr>
+  <tr><td><code>Insights:ApiWaitSeconds</code></td><td>20</td><td>How long the REST call waits for a computation</td></tr>
+</table>
+
+<h2 id="dependency-bot">The dependency bot</h2>
+<p>The <strong>ByteBench dependency bot</strong> reads a repository's dependency manifests, asks the public package registries for newer versions and opens pull requests that change only the version text in the manifest. You need the Maintainer role or higher (the <code>ManageRepositories</code> permission) to see or change any of it. Pull requests are opened by a system account named <code>bytebench-dependencies</code> ("ByteBench dependency bot"), which has no password and cannot sign in.</p>
+<div class="note"><p><strong>It never runs a package manager.</strong> No <code>npm install</code>, <code>dotnet restore</code>, <code>pip</code> or <code>go</code> command is executed. Manifests are parsed as text and edited by replacing the one version string, so formatting, comments, line endings and a byte order mark are kept exactly. The consequence is that lockfiles are <strong>not</strong> regenerated: when <code>package-lock.json</code>, <code>yarn.lock</code>, <code>pnpm-lock.yaml</code>, <code>packages.lock.json</code>, <code>poetry.lock</code>, <code>Pipfile.lock</code> or <code>go.sum</code> sits next to a changed manifest, the pull request says so and asks you to regenerate it on the branch before merging.</p></div>
+
+<h3 id="bot-ecosystems">What it reads</h3>
+<table>
+  <tr><th>Ecosystem</th><th>Manifests</th><th>Registry API</th><th>Notes</th></tr>
+  <tr><td>npm</td><td><code>package.json</code> (<code>dependencies</code>, <code>devDependencies</code>, <code>optionalDependencies</code>)</td><td>npm registry, <code>{base}/{name}</code></td><td>Plain versions with an optional <code>^</code>, <code>~</code>, <code>&gt;=</code> or <code>=</code> are read and the prefix is kept. Ranges with spaces, tags, <code>file:</code>, <code>git</code>, <code>workspace:</code>, <code>npm:</code> aliases and URLs are left alone. Deprecated versions are not offered.</td></tr>
+  <tr><td>NuGet</td><td><code>*.csproj</code> and <code>Directory.Packages.props</code> (<code>PackageReference</code> and <code>PackageVersion</code>, as <code>Version=</code> or a <code>&lt;Version&gt;</code> child)</td><td>v3 flat container, <code>{base}/{id}/index.json</code></td><td>Ranges, floating versions (<code>1.*</code>) and <code>$(Property)</code> versions are left alone.</td></tr>
+  <tr><td>pip</td><td><code>requirements*.txt</code> and <code>pyproject.toml</code></td><td>PyPI JSON API, <code>{base}/{name}/json</code></td><td>Only exact pins (<code>name==1.2.3</code>, also with extras and markers). Yanked releases are not offered.</td></tr>
+  <tr><td>Go</td><td><code>go.mod</code> <code>require</code> lines</td><td>Go module proxy, <code>{base}/{module}/@v/list</code></td><td>Direct requirements only (<code>// indirect</code> lines are skipped). A new major version has a new module path, so it is not detected.</td></tr>
+</table>
+<p>Manifests under <code>node_modules</code>, <code>vendor</code>, <code>bin</code>, <code>obj</code> and similar directories are ignored. At most <code>DependencyBot:MaxManifests</code> manifests of at most <code>DependencyBot:MaxManifestBytes</code> are read per check.</p>
+
+<h3 id="bot-settings">Settings</h3>
+<table>
+  <tr><th>Setting</th><th>Meaning</th></tr>
+  <tr><td>Run on a schedule</td><td>When on, the server checks the repository on the schedule and opens the pull requests. Off: only the buttons below work.</td></tr>
+  <tr><td>Schedule</td><td>Daily, weekly or monthly. The next run is planned from the end of the last one. Repositories are run one at a time.</td></tr>
+  <tr><td>Ecosystems</td><td>Which of npm, NuGet, pip and Go to read.</td></tr>
+  <tr><td>Update strategy</td><td><strong>Patch</strong>: <code>1.2.3</code> may become <code>1.2.9</code>. <strong>Minor</strong>: <code>1.2.3</code> may become <code>1.9.0</code>. <strong>Major</strong>: any newer stable version. The bot proposes the newest version the strategy allows. Pre-releases are only offered to a package that is already on a pre-release.</td></tr>
+  <tr><td>Grouped</td><td>One pull request for all updates of a run instead of one per package.</td></tr>
+  <tr><td>Open pull requests (max)</td><td>The bot stops opening pull requests while this many of its own are open (1 to 50, default 5).</td></tr>
+  <tr><td>Target branch</td><td>The branch updates are based on and merged into. Default: the repository's default branch.</td></tr>
+  <tr><td>Ignore list</td><td>One rule per line: a package name (a trailing <code>*</code> matches a prefix, for example <code>@types/*</code>), optionally followed by <code>@range</code> of versions never to update to: <code>left-pad@&gt;=2</code>, <code>react@^18 &lt;18.3</code>, <code>lodash@4.x</code>. Ranges use space or comma separated comparators (<code>&gt;=</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&lt;</code>, <code>=</code>, <code>^</code>, <code>~</code>, <code>1.x</code>, <code>*</code>). Lines starting with <code>#</code> are comments.</td></tr>
+  <tr><td>Labels</td><td>Written into the pull request description (pull requests have no labels in ByteBench).</td></tr>
+  <tr><td>Reviewers</td><td>User names added as reviewers; they must be project members who can review.</td></tr>
+</table>
+
+<h3 id="bot-outdated">The outdated dependencies table</h3>
+<p><strong>Check now</strong> reads the manifests on the target branch, asks the registries and shows one row per outdated dependency and manifest: the current version, the version the bot would update to, the newest stable version, the kind of bump (major, minor or patch), and a status:</p>
+<ul>
+  <li><strong>Update available</strong>: the row has a <strong>Create update PR</strong> button. <strong>Create all update PRs</strong> (or <strong>Create the grouped PR</strong>) opens everything at once, within the open pull request limit.</li>
+  <li><strong>Pull request open</strong>: the bot already has an open pull request for that package; none is opened again.</li>
+  <li><strong>Closed without merging</strong>: the bot's pull request for exactly that version was declined. It is remembered and not proposed again; a newer version is.</li>
+  <li><strong>Held back</strong>: newer versions exist but the strategy or the ignore list does not allow them.</li>
+</ul>
+<p>Rows with an open Night Owl dependency advisory for the current version show a shield note and say whether the proposed version fixes it; see <a href="security-scanning.html#dependency-bot">Security scanning</a>. A registry problem (an unknown package, an unreadable answer, a timeout) becomes a warning under the table for that package and never stops the check. A registry that refuses or does not answer ends the lookups for that ecosystem for this run.</p>
+
+<h3 id="bot-pr">The pull request</h3>
+<p>For each package (or once for the group) the bot creates a branch <code>bytebench/deps/&lt;ecosystem&gt;-&lt;name&gt;-&lt;version&gt;</code> (grouped: <code>bytebench/deps/group-&lt;date&gt;-&lt;sha&gt;</code>) from the target branch with one commit that changes only the manifest files, written with Git object plumbing in the bare repository, then opens a pull request from it. The description lists package, ecosystem, manifest, old and new version and the kind of bump, a release-notes link when the registry provides one (the project's GitHub releases page, the NuGet page, a PyPI changelog URL), the Night Owl advisory note when there is one, the lockfile note, and the configured labels. If the pull request cannot be opened (an archived repository, for example) the branch is removed again. Opening one writes the audit event <code>repository.dependency_pr_opened</code>, attributed to the person who clicked or, for a scheduled run, to the bot; saving the settings writes <code>repository.dependency_bot_updated</code>.</p>
+
+<h3 id="bot-registries">Registries, safety and limits</h3>
+<ul>
+  <li><strong>Public registries only.</strong> Private registries and registry tokens are not supported: the bot sends no credentials, and registry addresses with credentials in them are refused.</li>
+  <li><strong>Addresses</strong> are server settings, not repository settings: <code>DependencyBot:Registries:Npm</code>, <code>NuGet</code>, <code>PyPI</code> and <code>Go</code> (defaults: the public npm, NuGet, PyPI and Go proxy hosts). A mirror or caching proxy that needs no login can be configured there.</li>
+  <li><strong>SSRF guard</strong>, like webhooks, mirrors and the importers: http and https only, no loopback, private, link-local, CGNAT or metadata addresses (checked again on every connection, so DNS rebinding cannot swap them) unless <code>DependencyBot:AllowPrivateNetworks</code> is on; when it is not set, <code>Webhooks:AllowPrivateNetworks</code> decides. No redirects are followed. Package names from manifests are validated and escaped as a single path segment.</li>
+  <li><strong>Traffic is capped</strong>: <code>DependencyBot:RequestsPerSecond</code> requests per second for the whole server, <code>DependencyBot:MaxPackagesPerRun</code> distinct packages per check, <code>DependencyBot:MaxResponseBytes</code> per answer and a per-request timeout.</li>
+</ul>
+
+<h3 id="bot-config">Configuration (<code>DependencyBot:*</code>)</h3>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>DependencyBot:Enabled</code></td><td>true</td><td>The background schedule. Off: nothing runs by itself and no registry is contacted until someone presses <strong>Check now</strong>.</td></tr>
+  <tr><td><code>DependencyBot:PollSeconds</code></td><td>60</td><td>How often the schedule looks for repositories that are due</td></tr>
+  <tr><td><code>DependencyBot:AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>Allow registries on private and local addresses</td></tr>
+  <tr><td><code>DependencyBot:Registries:Npm</code>, <code>NuGet</code>, <code>PyPI</code>, <code>Go</code></td><td>the public registries</td><td>Registry base URLs</td></tr>
+  <tr><td><code>DependencyBot:RequestsPerSecond</code></td><td>5</td><td>Server-wide request rate (0: no limit)</td></tr>
+  <tr><td><code>DependencyBot:RequestTimeoutSeconds</code></td><td>30</td><td>One request is abandoned after this long</td></tr>
+  <tr><td><code>DependencyBot:MaxResponseBytes</code></td><td>8 MB</td><td>Largest accepted registry answer</td></tr>
+  <tr><td><code>DependencyBot:MaxPackagesPerRun</code></td><td>200</td><td>Distinct packages looked up per check; the rest are reported as skipped</td></tr>
+  <tr><td><code>DependencyBot:MaxManifests</code>, <code>MaxManifestBytes</code></td><td>100, 1 MB</td><td>Manifests read per check and their largest size</td></tr>
+</table>
+<p>Related: <a href="repositories.html#repository-settings">repository settings</a>, <a href="pull-requests.html">pull requests</a>, <a href="security-scanning.html">security scanning</a>.</p>

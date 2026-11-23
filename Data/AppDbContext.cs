@@ -366,6 +366,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureAccounts(b);
         ConfigureTrackerImports(b);
         ConfigureSamlScim(b);
+        ConfigureInsights(b);
     }
 
     // ----- Forks -----

@@ -1,0 +1,39 @@
+@* A bar chart drawn as SVG on the server (no script). Colours come from the MudBlazor palette variables, so it follows dark mode;
+   the viewBox scales it to any width (phones included). Every bar has a <title> (hover/long-press) and the figure has a text summary. *@
+<figure class="ib-figure">
+    <svg class="ib-svg" viewBox="0 0 @Width @Height" preserveAspectRatio="none" role="img" aria-label="@Summary">
+        <line class="ib-axis" x1="0" x2="@Width" y1="@(Height - 0.5)" y2="@(Height - 0.5)" />
+        @for (var i = 0; i < Items.Count; i++)
+        {
+            var (label, value) = Items[i];
+            var h = Max <= 0 ? 0 : value / Max * (Height - 4);
+            var slot = (double)Width / Items.Count;
+            <rect class="ib-bar @(value == 0 ? "ib-bar-zero" : "")" x="@Num(i * slot + slot * 0.12)" width="@Num(slot * 0.76)"
+                  y="@Num(Height - 1 - Math.Max(h, value > 0 ? 1 : 0))" height="@Num(Math.Max(h, value > 0 ? 1 : 0))">
+                <title>@label: @value.ToString("N0") @Unit</title>
+            </rect>
+        }
+    </svg>
+    <figcaption class="ib-caption">
+        <span>@FirstLabel</span>
+        @if (!string.IsNullOrEmpty(Caption)) { <span class="ib-mid">@Caption</span> }
+        <span>@LastLabel</span>
+    </figcaption>
+</figure>
+
+@code {
+    /// <summary>Label (shown in the tooltip) and value of each bar, in order.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<(string Label, double Value)> Items { get; set; } = [];
+    [Parameter] public string Unit { get; set; } = "";
+    /// <summary>What the chart shows, read by screen readers together with the total and the peak.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? FirstLabel { get; set; }
+    [Parameter] public string? LastLabel { get; set; }
+    [Parameter] public string? Caption { get; set; }
+    [Parameter] public int Width { get; set; } = 520;
+    [Parameter] public int Height { get; set; } = 110;
+
+    private double Max => Items.Count == 0 ? 0 : Items.Max(i => i.Value);
+    private string Summary => $"{Title}: total {Items.Sum(i => i.Value):N0} {Unit}, peak {Max:N0}";
+    private static string Num(double d) => d.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}
