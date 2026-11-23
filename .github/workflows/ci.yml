@@ -16,3 +16,19 @@ jobs:
         run: dotnet build ByteBench.sln -warnaserror
       - name: Test (without Docker)
         run: dotnet test ByteBench.sln --no-build --filter "Category!=Docker" --logger "console;verbosity=normal"
+
+  cli-pack:
+    # The bytebench CLI must stay packable as a .NET tool (the cli-release workflow packs it on cli-v* tags).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Pack the CLI
+        run: dotnet pack cli/ByteBench.Cli -c Release -warnaserror -o nupkg
+      - name: Install and run the packed tool
+        run: |
+          dotnet tool install --tool-path tools --add-source nupkg ByteBench.Cli
+          tools/bytebench --version
+          tools/bytebench --help

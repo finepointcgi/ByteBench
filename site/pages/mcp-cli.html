@@ -66,6 +66,20 @@
 <pre><code>dotnet pack cli/ByteBench.Cli -c Release -o ./nupkg
 dotnet tool install --global ByteBench.Cli --add-source ./nupkg</code></pre>
 
+<h3 id="cli-install">Installing a release</h3>
+<p>Released versions are published as the NuGet package <code>ByteBench.Cli</code> (when the project publishes to nuget.org) and as GitHub releases tagged <code>cli-v&lt;version&gt;</code>:</p>
+<pre><code>dotnet tool install -g ByteBench.Cli
+dotnet tool update -g ByteBench.Cli
+bytebench --version</code></pre>
+<p>Each GitHub release also carries self-contained single-file binaries that need no .NET installed (<code>bytebench-&lt;version&gt;-osx-arm64</code>, <code>osx-x64</code>, <code>linux-x64</code>, <code>linux-arm64</code>, <code>win-x64.exe</code>), a <code>.sha256</code> file for each and a combined <code>SHA256SUMS</code>. Check a download before you run it, for example <code>shasum -a 256 -c bytebench-1.2.3-linux-x64.sha256</code>, then make it executable and put it on your <code>PATH</code> as <code>bytebench</code>.</p>
+<p><code>bytebench --version</code> prints the package version. Shell completion for commands, subcommands and options:</p>
+<pre><code>source &lt;(bytebench completion bash)    # in ~/.bashrc
+source &lt;(bytebench completion zsh)     # in ~/.zshrc
+bytebench completion fish | source     # in ~/.config/fish/config.fish</code></pre>
+
+<h3 id="cli-releasing">Releasing the CLI (maintainers)</h3>
+<p>The workflow <code>.github/workflows/cli-release.yml</code> runs when a tag <code>cli-v&lt;semver&gt;</code> is pushed (for example <code>cli-v0.2.0</code>; a version with a suffix such as <code>-beta.1</code> becomes a pre-release). It builds the solution, runs the CLI tests, packs the tool with the tag's version, publishes the five self-contained binaries with their checksums, and creates the GitHub release with the binaries, the checksums and the <code>.nupkg</code>. It pushes the package to nuget.org only when the repository has a secret named <code>NUGET_API_KEY</code>: create a key on nuget.org with the <b>Push</b> scope limited to <code>ByteBench.Cli</code>, and add it under <b>Settings, Secrets and variables, Actions</b>. Without the secret that step is skipped. The package version defaults to <code>0.1.0</code> for local builds. Every pull request also checks that the tool still packs and installs (<code>cli-pack</code> in <code>ci.yml</code>).</p>
+
 <h3 id="cli-login">Logging in</h3>
 <p>Pipe the token on standard input (or set <code>BYTEBENCH_TOKEN</code>), so it never appears in your shell history or the process list:</p>
 <pre><code>echo "$TOKEN" | bytebench login --server https://bytebench.example.com
@@ -91,6 +105,7 @@ bytebench logout</code></pre>
   <tr><td><code>bytebench pipelines logs KEY/slug ID [--step ID] [--tail CHARS]</code></td><td>The end of a step's log (the first failed step unless you pick one).</td></tr>
   <tr><td><code>bytebench open KEY-N</code></td><td>Prints the issue's web address.</td></tr>
 </table>
+<p><code>bytebench completion bash|zsh|fish</code> prints a shell completion script (see <a href="#cli-install">Installing a release</a>).</p>
 <p>Every command takes <code>--json</code> for machine-readable output (the API's JSON, unchanged) and <code>--help</code>. Text output is plain. Colour is used only when standard output is a terminal and <code>NO_COLOR</code> is not set. Text that came from the server (titles, comments, logs) has terminal control characters replaced with <code>?</code>, so an issue cannot rewrite your screen.</p>
 
 <h3 id="cli-exit">Exit codes</h3>

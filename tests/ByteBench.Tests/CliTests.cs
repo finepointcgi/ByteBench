@@ -234,6 +234,29 @@ public class CliTests(TestApp app) : IClassFixture<TestApp>, IDisposable
         Assert.Equal(ExitCodes.Usage, (await Run(["issues", "comment", "WEB-1"])).Code); // no body
     }
 
+    [Fact]
+    public async Task Version_prints_the_package_version_and_completion_scripts_cover_every_command()
+    {
+        var version = await Run(["--version"]);
+        Assert.Equal(0, version.Code);
+        Assert.Matches(@"^bytebench \d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\s*$", version.Out);
+        Assert.DoesNotContain("+", version.Out); // no source-revision suffix
+        Assert.Equal("bytebench " + CliApp.VersionText, version.Out.Trim());
+
+        foreach (var shell in new[] { "bash", "zsh", "fish" })
+        {
+            var r = await Run(["completion", shell]);
+            Assert.Equal(0, r.Code);
+            foreach (var command in CliApp.CompletionCommands.Keys) Assert.Contains(command, r.Out);
+            Assert.Contains("pipelines", r.Out);
+            Assert.Contains("logs", r.Out);
+        }
+        Assert.Contains("complete -F _bytebench bytebench", (await Run(["completion", "bash"])).Out);
+        Assert.Equal(ExitCodes.Usage, (await Run(["completion"])).Code);
+        Assert.Equal(ExitCodes.Usage, (await Run(["completion", "powershell"])).Code);
+        Assert.Equal(ExitCodes.Usage, (await Run(["completion", "bash", "--project", "X"])).Code);
+    }
+
     // ---------- commands ----------
 
     [Fact]

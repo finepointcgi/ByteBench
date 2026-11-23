@@ -1,0 +1,157 @@
+# Releases the `bytebench` CLI when a tag like cli-v1.2.3 is pushed:
+#   1. build and run the CLI tests,
+#   2. pack the .NET tool (ByteBench.Cli.<version>.nupkg),
+#   3. publish self-contained single-file binaries for macOS, Linux and Windows with SHA-256 checksums,
+#   4. create a GitHub release with the binaries, checksums and the .nupkg,
+#   5. push the package to nuget.org, ONLY when the repository has a NUGET_API_KEY secret.
+#
+# To publish to nuget.org: create an API key on nuget.org (scope "Push", glob ByteBench.Cli), then add it to the
+# repository under Settings > Secrets and variables > Actions > New repository secret, named NUGET_API_KEY.
+# Without the secret the release still happens; the nuget.org step is skipped.
+name: CLI release
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version from tag
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#cli-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not cli-v<semver>" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore ByteBench.sln
+      - name: Build
+        run: dotnet build ByteBench.sln -c Release --no-restore -warnaserror
+      - name: Test the CLI
+        run: dotnet test tests/ByteBench.Tests -c Release --no-build --filter "FullyQualifiedName~ByteBench.Tests.CliTests"
+
+      - name: Pack the .NET tool
+        run: dotnet pack cli/ByteBench.Cli -c Release -p:Version=${{ steps.version.outputs.version }} -o dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: dist/*.nupkg
+          if-no-files-found: error
+
+  binaries:
+    needs: build
+    # macOS binaries are built on macOS so the SDK can ad-hoc sign them (an unsigned arm64 binary is killed by macOS).
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - { rid: osx-arm64, os: macos-latest }
+          - { rid: osx-x64, os: macos-latest }
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-latest }
+          - { rid: win-x64, os: ubuntu-latest }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish self-contained single file
+        run: >
+          dotnet publish cli/ByteBench.Cli -c Release -r ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:PackAsTool=false
+          -p:DebugType=none
+          -p:Version=${{ needs.build.outputs.version }}
+          -o publish/${{ matrix.rid }}
+
+      - name: Name the binary and write its checksum
+        shell: bash
+        run: |
+          mkdir -p out
+          src="publish/${{ matrix.rid }}/ByteBench.Cli"
+          name="bytebench-${{ needs.build.outputs.version }}-${{ matrix.rid }}"
+          if [[ "${{ matrix.rid }}" == win-* ]]; then src="$src.exe"; name="$name.exe"; fi
+          cp "$src" "out/$name"
+          (cd out && shasum -a 256 "$name" > "$name.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.rid }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    needs: [build, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Combined checksums
+        shell: bash
+        run: |
+          cd assets
+          sha256sum bytebench-* *.nupkg | grep -v '\.sha256$' > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          prerelease=""
+          if [[ "$VERSION" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ByteBench CLI $VERSION" \
+            --notes "Install with: dotnet tool install -g ByteBench.Cli --version $VERSION (or download a self-contained binary below and check it against SHA256SUMS)." \
+            $prerelease
+
+  nuget:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+    steps:
+      - uses: actions/setup-dotnet@v4
+        if: env.NUGET_API_KEY != ''
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        if: env.NUGET_API_KEY != ''
+        with:
+          name: nupkg
+          path: nupkg
+      - name: Push to nuget.org
+        if: env.NUGET_API_KEY != ''
+        # The key is only read from the step's environment (never written into this file or echoed); Actions masks it in logs.
+        shell: bash
+        run: dotnet nuget push "nupkg/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: No NUGET_API_KEY secret
+        if: env.NUGET_API_KEY == ''
+        run: echo "NUGET_API_KEY is not set; skipping the nuget.org push (the GitHub release has the .nupkg)."

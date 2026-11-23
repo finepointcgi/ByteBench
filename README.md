@@ -1254,6 +1254,8 @@ bytebench pipelines logs WEB/api 41
 
 Other commands: `logout`, `whoami`, `projects`, `issues show|comment|assign`, `prs list|show`, `repos list`, `pipelines list`, `open KEY-N`. `--json` for machine output; no colour unless stdout is a terminal and `NO_COLOR` is unset; exit codes 0 ok, 1 error, 2 usage, 3 authentication. HTTPS is required except for localhost (`--insecure` to override at login); redirects are never followed; the config file is refused if it is a symlink or readable by others.
 
+**Installing and releasing the CLI.** Released versions install with `dotnet tool install -g ByteBench.Cli` and update with `dotnet tool update -g ByteBench.Cli`; `bytebench --version` prints the package version (0.1.0 for local builds, `-p:Version=` overrides it) and `bytebench completion bash|zsh|fish` prints a completion script. Pushing a tag `cli-v<semver>` runs `.github/workflows/cli-release.yml`: build, CLI tests, `dotnet pack`, self-contained single-file binaries for `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64` and `win-x64` with SHA-256 checksums, and a GitHub release with those and the `.nupkg`. The nuget.org push runs only when the repository secret `NUGET_API_KEY` exists (nuget.org key with the Push scope for `ByteBench.Cli`, added under Settings > Secrets and variables > Actions). CI checks on every push and pull request that the tool packs and installs (`cli-pack` in `ci.yml`). The repository has no LICENSE file, so the package carries no license metadata.
+
 ## Tags & releases
 
 **Tags** (`/p/{KEY}/repos/{slug}/tags`, the **Tags** tab) lists every tag, newest first. Each row shows the commit, the release that uses the tag, **zip** and **tar.gz** source downloads, and, for annotated tags, the tagger, date and message.
