@@ -9,6 +9,7 @@
 @inject ByteBench.Services.Audit.AuditLog Audit
 @inject ByteBench.Services.Sso.SsoService Sso
 @inject ByteBench.Services.Sso.Ldap.LdapAuthService Ldap
+@inject ByteBench.Services.Accounts.EmailConfirmationService EmailConfirmation
 
 <PageTitle>Your profile · ByteBench</PageTitle>
 
@@ -417,8 +418,10 @@
         user.DisplayName = ProfileInput.DisplayName.Trim();
         if (AvatarPalette.Colors.Contains(ProfileInput.Color)) user.Color = ProfileInput.Color;
 
+        // With Account:RequireEmailConfirmation a new address only takes effect once its owner opens the emailed link.
+        var confirmChange = emailChanged && EmailConfirmation.Required;
         // SetEmailAsync validates and persists the whole user, display name and color included.
-        var result = emailChanged ? await Users.SetEmailAsync(user, newEmail) : await Users.UpdateAsync(user);
+        var result = emailChanged && !confirmChange ? await Users.SetEmailAsync(user, newEmail) : await Users.UpdateAsync(user);
         if (!result.Succeeded)
         {
             profileErrors.AddRange(result.Errors.Select(e => e.Description));
@@ -427,6 +430,14 @@
 
         await SignIn.RefreshSignInAsync(user);
         profileSuccess = "Your profile was saved.";
+        if (confirmChange)
+        {
+            if (await EmailConfirmation.RequestChangeAsync(user, newEmail) is { } problem)
+                profileErrors.Add(problem);
+            else
+                profileSuccess = $"Your profile was saved. We sent a confirmation link to {newEmail}; your email stays {user.Email} until you open it.";
+            ProfileInput!.Email = user.Email ?? "";
+        }
     }
 
     private async Task ChangePassword()

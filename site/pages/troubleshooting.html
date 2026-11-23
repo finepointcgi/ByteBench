@@ -16,7 +16,7 @@
 <p>Five failed sign-ins lock an account for five minutes. In addition, sign-in POSTs are rate limited per IP (10 per minute by default); see <a href="#rate-limits">rate limits</a>. A site admin can manage accounts at <code>/admin/users</code>.</p>
 
 <h3 id="no-admin">There is no admin account in my new Docker install</h3>
-<p>Production has no demo data. Register at <code>/account/register</code>, then restart once with <code>Bootstrap__AdminUsers=your-username</code>. There is no password-reset email flow yet (see <a href="#known-limits">known limits</a>); a site admin can help from <code>/admin/users</code>.</p>
+<p>Production has no demo data. Register at <code>/account/register</code>, then restart once with <code>Bootstrap__AdminUsers=your-username</code>. With registration closed, keep it open for this first sign-up or have another admin create the account. Lost passwords are handled by <strong>Forgot password?</strong> on the sign-in page (needs email) or by an admin on <code>/admin/users</code> (reset email or temporary password).</p>
 
 <h2 id="csp-section">Browser and CSP</h2>
 
@@ -113,6 +113,18 @@ PublicBaseUrl=https://bytebench.example.com</code></pre>
 </ol>
 <p>See <a href="notifications.html">Notifications and email</a>.</p>
 
+<h3 id="email-not-arriving">The password reset or confirmation email does not arrive</h3>
+<p>The page always says "a link is on its way", by design, so it cannot tell you whether anything was sent. Check in this order:</p>
+<ol>
+  <li>Everything under <a href="#email-not-sending">Email is not sending</a>: <code>Email:Enabled</code> must be <code>true</code> and the sender must deliver. In Development the <code>Pickup</code> sender writes the message to <code>mail-drop/</code> instead.</li>
+  <li>The address must belong to an account with a ByteBench password that is not deactivated, locked by an admin or a system account. SSO and LDAP accounts get no reset email. The audit log shows <code>auth.password_reset_requested</code> when a link was queued.</li>
+  <li>You may have hit the limits: 3 emails per account and 10 requests per IP in 15 minutes. Wait and try once.</li>
+  <li>The link in the mail is wrong or opens on the wrong host: set <code>PublicBaseUrl</code> or <code>Email:BaseUrl</code>.</li>
+  <li>Links are single-use and expire (60 minutes for reset, 48 hours for confirmation by default). Ask for a new one.</li>
+  <li>Cannot get email working? A site admin can set a temporary password or mark the address confirmed on <code>/admin/users</code>.</li>
+  <li>Users blocked after switching on <code>Account:RequireEmailConfirmation</code> see "Confirm your email address before signing in": they use <code>/account/resend-confirmation</code>, or an admin marks the address confirmed.</li>
+</ol>
+
 <h2 id="rate-limits">Rate limits (429)</h2>
 <p>Requests over a limit get <code>429</code> with <code>Retry-After</code> (problem+json for the API, plain text elsewhere). Defaults per 60 seconds: sign-in POSTs 10, API 300, Git over HTTP 120, Git over SSH 120, package and image registry 3000 per credential and 6000 per IP, webhook test pings 5. In Development rate limiting is off.</p>
 <p>Causes you will actually meet: many users behind one NAT or an unconfigured proxy (everyone shares one IP bucket; fix the forwarded headers first), a CI farm pulling and pushing images, or a script polling the API. Raise a limit with <code>RateLimiting__Api__PermitLimit=600</code>, or set a <code>PermitLimit</code> of <code>0</code> to switch one off. Over SSH, git prints "Too many requests. Try again in N seconds."</p>
@@ -166,7 +178,6 @@ PublicBaseUrl=https://bytebench.example.com</code></pre>
 
 <h3 id="not-implemented">Not implemented or partial</h3>
 <ul>
-  <li><strong>No password-reset or email-confirmation flow.</strong> The Identity email sender exists but nothing calls it yet.</li>
   <li><strong>Git LFS</strong>: no locks API and no <code>git-lfs-authenticate</code> over SSH.</li>
   <li><strong>SSH</strong>: FIDO (<code>sk-...</code>) keys are not supported; the server offers no shell, no sftp and no forwarding, only <code>git-upload-pack</code> and <code>git-receive-pack</code>; it is not a post-quantum key exchange.</li>
   <li><strong>Git over HTTP</strong>: protocol v2 works, the legacy "dumb" protocol does not.</li>

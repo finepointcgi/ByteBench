@@ -6,10 +6,30 @@
 @inject NavigationManager Nav
 @inject ILogger<Register> Log
 @inject ByteBench.Services.Audit.AuditLog Audit
+@inject ByteBench.Services.Accounts.RegistrationPolicy Registration
+@inject ByteBench.Services.Accounts.EmailConfirmationService Confirmation
+@inject ByteBench.Services.Accounts.AccountEmails AccountMail
 
 <PageTitle>Create account · ByteBench</PageTitle>
 
 <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Create your account</MudText>
+
+@if (checkEmail)
+{
+    <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert mt-3" role="status">
+        Almost there. We sent a confirmation link to the address you entered. Open it, then sign in.
+        @if (!AccountMail.IsEnabled)
+        {
+            <span> Email delivery is switched off on this server, so ask a site admin to confirm your address.</span>
+        }
+    </MudAlert>
+}
+else if (closedMessage != null)
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Class="auth-alert mt-3" role="status">@closedMessage</MudAlert>
+}
+else
+{
 <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Track issues, plan sprints and ship with your team.</MudText>
 
 <StatusMessage Errors="errors" />
@@ -45,6 +65,7 @@
     </div>
     <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Create account</MudButton>
 </EditForm>
+}
 
 <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">
     Already have an account? <a href="@LoginHref">Sign in</a>
@@ -56,7 +77,19 @@
     [SupplyParameterFromForm]
     private InputModel? Input { get; set; }
 
-    protected override void OnInitialized() => Input ??= new();
+    private string? closedMessage;
+    private bool checkEmail;
+
+    [SupplyParameterFromQuery]
+    private string? Invite { get; set; }
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        if (HttpMethods.IsGet(HttpContext.Request.Method)) closedMessage = await Registration.CheckPageAsync(Invite);
+    }
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
@@ -67,23 +100,49 @@
 
     private async Task RegisterUser()
     {
+        var email = Input!.Email.Trim();
+        // The rules are checked again on the POST: the page may be stale, and an invitation can be tied to one address.
+        if (await Registration.CheckRegistrationAsync(email, Invite) is { } refused)
+        {
+            errors.Add(refused);
+            return;
+        }
+        var invite = string.IsNullOrEmpty(Invite) ? null : await Registration.FindActiveInviteAsync(Invite, email);
+        // An invitation is single-use: claim it before creating the account, give it back if that fails.
+        if (invite != null && !await Registration.TryConsumeInviteAsync(invite.Id))
+        {
+            errors.Add("This invitation was just used. Ask a site admin for a new one.");
+            return;
+        }
+        var consumed = invite != null;
+        var needsConfirmation = Confirmation.Required;
+
         var user = new User
         {
             UserName = Input!.UserName.Trim(),
-            Email = Input!.Email.Trim(),
+            Email = email,
             DisplayName = Input!.DisplayName.Trim(),
             Color = AvatarPalette.Random(),
+            // An invitation was sent to this address by an admin, but that doesn't prove the mailbox: confirm when required.
         };
 
         var result = await Users.CreateAsync(user, Input!.Password);
         if (!result.Succeeded)
         {
+            if (consumed) await Registration.FinishInviteAsync(invite!.Id, null);
             errors.AddRange(result.Errors.Select(e => e.Description));
             return;
         }
+        if (consumed) await Registration.FinishInviteAsync(invite!.Id, user.Id);
 
         Log.LogInformation("Created account {User}.", user.UserName);
-        await Audit.RecordAsync("auth.registered", "user", user.Id, details: new { user.UserName }, actorId: user.Id);
+        await Audit.RecordAsync("auth.registered", "user", user.Id, details: new { user.UserName, invited = consumed }, actorId: user.Id);
+        if (needsConfirmation)
+        {
+            await Confirmation.SendAsync(user);
+            checkEmail = true;
+            return;
+        }
         await SignIn.SignInAsync(user, isPersistent: false);
         Nav.NavigateTo(AccountUrls.SafeReturnUrl(ReturnUrl), forceLoad: true);
     }

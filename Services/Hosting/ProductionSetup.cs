@@ -280,10 +280,12 @@ public static class ProductionSetup
         var names = (section.Get<string[]>() ?? (section.Value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Select(n => n.ToUpperInvariant()).ToList();
         if (names.Count == 0) return;
-        foreach (var user in db.Users.Where(u => names.Contains(u.NormalizedUserName!) && !u.IsAdmin).ToList())
+        foreach (var user in db.Users.Where(u => names.Contains(u.NormalizedUserName!) && (!u.IsAdmin || !u.EmailConfirmed)).ToList())
         {
+            // Whoever can set this variable controls the server, so the address counts as confirmed (Account:RequireEmailConfirmation must never lock out the first admin).
+            if (!user.IsAdmin) log.LogWarning("Bootstrap:AdminUsers: {User} is now a site admin", user.UserName);
             user.IsAdmin = true;
-            log.LogWarning("Bootstrap:AdminUsers: {User} is now a site admin", user.UserName);
+            user.EmailConfirmed = true;
         }
         db.SaveChanges();
     }

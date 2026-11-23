@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace ByteBench.Services.Sso.Ldap;
 
-public enum LdapLoginStatus { Success, InvalidCredentials, Conflict, NoAccount, Locked, Unavailable }
+public enum LdapLoginStatus { Success, InvalidCredentials, Conflict, NoAccount, Locked, Unavailable, RegistrationClosed }
 
 /// <summary>The outcome; on success, <see cref="Key"/> is the provider key for <c>ExternalLoginSignInAsync("ldap", Key, …)</c>.</summary>
 public sealed record LdapLoginResult(LdapLoginStatus Status, User? User = null, string? Key = null);
@@ -32,7 +32,7 @@ public enum GitPasswordCheck
 /// </para>
 /// </summary>
 public class LdapAuthService(IOptionsMonitor<LdapOptions> options, ILdapClient client, UserManager<User> users, ExternalGroupSync groupSync,
-    IDbContextFactory<AppDbContext> dbFactory, Audit.AuditLog audit, ILogger<LdapAuthService> log)
+    IDbContextFactory<AppDbContext> dbFactory, Audit.AuditLog audit, ILogger<LdapAuthService> log, Accounts.RegistrationPolicy registration)
 {
     public const string LoginProvider = "ldap";
     public const string Prefix = "ldap:";
@@ -177,6 +177,7 @@ public class LdapAuthService(IOptionsMonitor<LdapOptions> options, ILdapClient c
             if (email == null) { log.LogWarning("LDAP entry {Dn} has no email ({Attr}); can't create an account", entry.Dn, o.Attributes.Email); return (null, LdapLoginStatus.NoAccount); }
             // Never take over a local account with the same username or email.
             if (await users.FindByNameAsync(key) != null || await users.FindByEmailAsync(email) != null) return (null, LdapLoginStatus.Conflict);
+            if (await registration.CheckProvisioningAsync(email, ct) != null) return (null, LdapLoginStatus.RegistrationClosed);
             user = new User
             {
                 UserName = key, Email = email, EmailConfirmed = true, DisplayName = displayName,

@@ -1,0 +1,126 @@
+@using ByteBench.Services.Accounts
+@inject RegistrationPolicy Policy
+@inject AccountEmails AccountMail
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="pa-4 mb-4" id="registration">
+    <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-1">Registration</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Who may create an account at <code>/account/register</code> and, unless <code>Registration:ApplyToSso</code> is off, through SSO or LDAP.
+        Admins can always create users. Changes apply immediately and are recorded as <code>admin.registration_changed</code>.
+    </MudText>
+
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+    @if (state != null)
+    {
+        @if (state.LockedByConfig)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Fixed by <code>Registration:LockedByConfig</code>: change the configuration and restart to edit these.</MudAlert>
+        }
+        <MudRadioGroup T="RegistrationMode" @bind-Value="mode" Disabled="state.LockedByConfig">
+            <MudRadio Value="RegistrationMode.Open" Color="Color.Primary">Open: anyone can register</MudRadio>
+            <MudRadio Value="RegistrationMode.Closed" Color="Color.Primary">Closed: only admins create accounts (or invitations)</MudRadio>
+        </MudRadioGroup>
+        <MudTextField T="string" @bind-Value="domains" Label="Allowed email domains" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" Class="mt-3"
+                      Disabled="state.LockedByConfig" HelperText="One per line or comma separated, e.g. example.com. Empty allows any domain. Invited users and admin-created users are exempt." />
+        <div class="mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="state.LockedByConfig" OnClick="Save">Save registration settings</MudButton>
+        </div>
+
+        <MudDivider Class="my-4" />
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mb-1">Invitations</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">A single-use link that lets one person register while registration is closed. Optionally tied to one email address.</MudText>
+        <div class="d-flex flex-wrap gap-3 align-center mb-2">
+            <MudTextField T="string" @bind-Value="inviteEmail" Label="Email (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:22rem" />
+            <MudSelect T="int" @bind-Value="inviteDays" Label="Valid for" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:10rem">
+                <MudSelectItem Value="1">1 day</MudSelectItem>
+                <MudSelectItem Value="7">7 days</MudSelectItem>
+                <MudSelectItem Value="30">30 days</MudSelectItem>
+            </MudSelect>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CreateInvite">Create invitation</MudButton>
+        </div>
+        @if (newLink != null)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2">
+                Invitation link (shown once, copy it now):
+                <MudTextField T="string" Value="newLink" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-1" aria-label="Invitation link" />
+            </MudAlert>
+        }
+        @if (invites.Count > 0)
+        {
+            var now = DateTime.UtcNow;
+            <MudSimpleTable Dense="true" Elevation="0" Outlined="true">
+                <thead><tr><th>Email</th><th>Created by</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var i in invites)
+                    {
+                        <tr @key="i.Id">
+                            <td>@(i.Email ?? "any address")</td>
+                            <td>@@@i.CreatedBy</td>
+                            <td>@i.ExpiresAt.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                            <td>@(i.UsedAt != null ? "Used" : i.RevokedAt != null ? "Revoked" : i.ExpiresAt <= now ? "Expired" : "Active")</td>
+                            <td>@if (i.IsActive(now)) { <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => Revoke(i.Id)">Revoke</MudButton> }</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    }
+</MudPaper>
+
+@code {
+    private RegistrationState? state;
+    private RegistrationMode mode;
+    private string domains = "";
+    private string? error, inviteEmail, newLink;
+    private int inviteDays = 7;
+    private List<InviteRow> invites = [];
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            state = await Policy.GetStateAsync();
+            mode = state.Mode;
+            domains = string.Join("\n", state.AllowedDomains);
+            invites = await Policy.ListInvitesAsync();
+        }
+        catch (ForbiddenException ex) { error = ex.Message; }
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        try
+        {
+            await Policy.SetAsync(mode, domains.Split(['\n', ',', ';', ' '], StringSplitOptions.RemoveEmptyEntries));
+            Snackbar.Add(mode == RegistrationMode.Open ? "Registration is open." : "Registration is closed.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private async Task CreateInvite()
+    {
+        error = null;
+        try
+        {
+            var (_, token) = await Policy.CreateInviteAsync(inviteEmail, inviteDays);
+            newLink = AccountMail.InviteLink(token);
+            inviteEmail = null;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private async Task Revoke(int id)
+    {
+        error = null;
+        try { await Policy.RevokeInviteAsync(id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+}

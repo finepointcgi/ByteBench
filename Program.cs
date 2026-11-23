@@ -15,6 +15,7 @@ using ByteBench.Services.Automation;
 using ByteBench.Services.Query;
 using ByteBench.Services.Sso;
 using ByteBench.Services.Fields;
+using ByteBench.Services.Accounts;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -51,8 +52,9 @@ builder.Services.AddIdentityCore<User>(o =>
         o.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
     })
     .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager()
+    .AddAccountTokenProviders() // password reset token provider (own lifespan) and the sign-in manager that enforces Account:RequireEmailConfirmation
     .AddDefaultTokenProviders();
+ByteBench.Services.Accounts.AccountSecurityExtensions.AddAccountSecurity(builder.Services, builder.Configuration); // forgot password, email confirmation, registration control
 builder.Services.ConfigureApplicationCookie(o =>
 {
     o.LoginPath = "/account/login";
@@ -175,6 +177,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 // UseStatusCodePagesWithReExecute/UseExceptionHandler re-execute into /not-found or /Error,
 // which carry authorization metadata ([AllowAnonymous]).
 app.UseAuthentication();
+ByteBench.Services.Accounts.AccountSecurityExtensions.UseMustChangePassword(app); // temporary passwords: only /account/change-password until it is changed
 // Pages serves /pages/... and Pages:BaseDomain hosts only. It sits before UseAuthorization, which would otherwise challenge the
 // app's own endpoints that a site's "/" matches (Home); it does its own access checks. Before rate limiting, antiforgery and static assets.
 ByteBench.Services.Pages.PagesServiceCollectionExtensions.UsePages(app);

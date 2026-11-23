@@ -23,7 +23,7 @@ public static class SsoErrors
 {
     public const string Failed = "failed", Cancelled = "cancelled", Domain = "domain", Unverified = "unverified", NoEmail = "no_email",
         Exists = "exists", NoAccount = "no_account", Locked = "locked", NotAllowed = "not_allowed", LinkedElsewhere = "linked_elsewhere",
-        UnknownProvider = "unknown_provider", Expired = "expired", LastLogin = "last_login";
+        UnknownProvider = "unknown_provider", Expired = "expired", LastLogin = "last_login", RegistrationClosed = "registration_closed";
 
     public static string Message(string? code, string provider) => code switch
     {
@@ -38,6 +38,7 @@ public static class SsoErrors
         LinkedElsewhere => $"That {provider} account is already connected to another ByteBench user.",
         UnknownProvider => "That sign-in provider isn't configured.",
         Expired => "The link expired. Try again.",
+        RegistrationClosed => "New accounts can't be created on this server right now: registration is closed, or limited to certain email domains. Ask a site admin.",
         LastLogin => $"You can't disconnect {provider}: it's the only way to sign in to this account. Connect another provider first.",
         _ => $"Sign-in with {provider} failed. Try again.",
     };
@@ -56,7 +57,8 @@ public static class SsoErrors
 /// </para>
 /// </summary>
 public class SsoService(SsoSettings settings, UserManager<User> users, SignInManager<User> signIn, IDbContextFactory<AppDbContext> dbFactory,
-    ExternalGroupSync groupSync, IDataProtectionProvider dataProtection, Audit.AuditLog audit, ILogger<SsoService> log)
+    ExternalGroupSync groupSync, IDataProtectionProvider dataProtection, Audit.AuditLog audit, ILogger<SsoService> log,
+    Accounts.RegistrationPolicy registration)
 {
     /// <summary>
     /// RFC 8176 <c>amr</c> values that mean the provider did more than a password (Entra sends <c>mfa</c>; others list the
@@ -113,6 +115,8 @@ public class SsoService(SsoSettings settings, UserManager<User> users, SignInMan
             {
                 if (!p.AutoCreateUsers) return await FailAsync(p, id, SsoErrors.NoAccount);
                 if (!id.EmailVerified) return await FailAsync(p, id, SsoErrors.Unverified);
+                // Registration:Mode / AllowedDomains apply to first-time provisioning too (Registration:ApplyToSso, default on).
+                if (await registration.CheckProvisioningAsync(id.Email) != null) return await FailAsync(p, id, SsoErrors.RegistrationClosed);
                 user = await CreateUserAsync(p, id);
                 if (user == null) return await FailAsync(p, id, SsoErrors.Failed, "could not create the account");
                 created = true;
