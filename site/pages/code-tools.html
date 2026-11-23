@@ -24,8 +24,17 @@
   <li>Raw content is available through the API: <code>GET /api/v1/projects/{key}/repos/{slug}/raw/{path}?ref=</code>.</li>
 </ul>
 
-<h3 id="no-blame">Blame</h3>
-<p>There is <strong>no blame (annotate) view</strong> yet. To find who last changed a file, use <strong>History</strong> for that path, or the last-commit column in the folder listing.</p>
+<h3 id="blame">Blame</h3>
+<p>The <strong>Blame</strong> button next to <strong>History</strong> on a text file opens <code>/p/{KEY}/repos/{slug}/blame/{rev}/{path}</code>, which shows who last changed each line at that branch, tag or commit. Anyone who can view the file can view its blame.</p>
+<ul>
+  <li><strong>Per line</strong>: author, short SHA (a link to the commit), relative date, and the commit subject as a tooltip. Consecutive lines from one commit are grouped, with a divider between groups.</li>
+  <li><strong>Age gutter</strong>: a coloured bar beside each line, darker for recent changes, scaled between the oldest and newest commit in that file.</li>
+  <li><strong>View blame before this commit</strong>: the arrow in a group opens the same file at that commit's parent, so you can step back through history. It follows a rename (the parent may know the file under an old name). It is missing for the commit that first added the file.</li>
+  <li><strong>Line links and highlighting</strong> work as in the file view: <code>#L12</code> and shift-click ranges, with the same syntax highlighting.</li>
+  <li><strong>Renames</strong> are followed, so lines keep the commit that wrote them even if the file was moved later. Lines are attributed to the commit that last changed them, never to a merge commit that only combined branches.</li>
+  <li><strong>Limits</strong>: binary files and files over <code>Blame:MaxFileBytes</code> (default 1 MB) or <code>Blame:MaxLines</code> (default 20,000) show a message with a link to the history instead. Results are cached per repository, commit and path (<code>Blame:CacheChars</code>, default about 32 MB of file text), so a commit's blame is computed once.</li>
+</ul>
+<p>The API is <code>GET /api/v1/projects/{key}/repos/{slug}/blame?rev=&amp;path=</code> (<code>rev</code> defaults to the default branch). It returns the resolved <code>sha</code>, the commits involved (author, date, subject, the file's <code>path</code> in that commit, and <code>parentSha</code> / <code>parentPath</code> to step back) and <code>ranges</code> of consecutive lines per commit. It answers 404 for an unknown ref or file, 422 for a binary file and 413 for a file over the limits.</p>
 
 <h2 id="history">History</h2>
 <p><code>/p/{KEY}/repos/{slug}/commits?ref=&amp;path=&amp;page=</code> lists commits newest first for a branch, tag or SHA, optionally for one file or folder. Each row links to the commit view. Issue keys in messages (such as <code>WEB-5</code>) are links to the issue. After a push, commits that mention an issue key also appear in that issue's Development panel (smart commits).</p>
@@ -103,6 +112,7 @@
   <tr><th>Endpoint</th><th>What</th></tr>
   <tr><td><code>GET /api/v1/projects/{key}/repos/{slug}/commits?ref=&amp;path=</code></td><td>Commit list</td></tr>
   <tr><td><code>GET .../repos/{slug}/raw/{path}?ref=</code></td><td>Raw file (text as <code>text/plain</code>)</td></tr>
+  <tr><td><code>GET .../repos/{slug}/blame?rev=&amp;path=</code></td><td>Who last changed each line, grouped into ranges per commit</td></tr>
   <tr><td><code>GET .../repos/{slug}/compare?base=&amp;head=</code></td><td>Commits and changed files</td></tr>
   <tr><td><code>GET .../repos/{slug}/tags</code></td><td>Tags with archive links</td></tr>
   <tr><td><code>GET .../repos/{slug}/releases</code>, <code>/releases/latest</code>, <code>/releases/{id}</code>, <code>/releases/tags/{tag}</code></td><td>Releases (drafts only for Developers and above)</td></tr>

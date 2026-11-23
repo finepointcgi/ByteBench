@@ -876,6 +876,14 @@ Why client-side: highlight.js is maintained, small and covers far more languages
 
 **Line links:** line numbers in the file viewer are links. `#L42` highlights and scrolls to a line, shift-click selects a range (`#L10-L20`), and the URL updates so it can be shared.
 
+### Blame
+
+The **Blame** button next to **History** on a text file opens `/p/{KEY}/repos/{slug}/blame/{rev}/{path}` (`rev` is a branch, tag or commit, escaped as one route segment; Razor page `RepoBlame`). Per line it shows the author, the short SHA (a commit link), a relative date and the commit subject as a tooltip; consecutive lines of one commit form a group with a divider. A coloured **age gutter** shades lines from the newest to the oldest commit in the file. The arrow on a group (**View blame before this commit**) opens the same file at that commit's first parent, using the file's old name if the commit renamed it, so you can walk back through history. Line anchors (`#L12`, shift-click ranges) and highlighting reuse the file view's `code-table`, `CodeLanguages.Line` and `code-tools.js`, so nothing new is needed in the JavaScript.
+
+`GitOps.Blame` (`Services/Git/GitOps.Blame.cs`) uses LibGit2Sharp's blame, which follows renames, and merges adjacent hunks of one commit into ranges. `BlameService` (`Services/Code/BlameService.cs`) resolves the rev to a commit, then caches by (repository path, commit sha, file path) in a size-limited `MemoryCache` (`Blame:CacheChars`, default 32 MB of text), so a moving branch is never stale. Binary files, files over `Blame:MaxFileBytes` (1 MB) or `Blame:MaxLines` (20,000) get a message instead. Access is the file view's: the repository must be visible to the user (`RepositoryService.GetRepositoryAsync`), otherwise "not found".
+
+REST: `GET /api/v1/projects/{key}/repos/{slug}/blame?rev=&path=` (`read_api`; `Api/BlameEndpoints.cs`) returns `sha`, `commits` (author, date, subject, `path`, `parentSha`, `parentPath`) and `ranges` (`startLine`, `endLine`, `commit`); 404 for an unknown ref or file, 422 binary, 413 too large. Tests: `BlameTests.cs` (several authors, a rename, a merge commit).
+
 ### Code search
 
 | Route | Page |
@@ -1206,6 +1214,18 @@ Each mirror shows its last sync status, time and message (or git's error), with 
 **Not mirrored**: Git LFS objects, pull requests, issues and other refs (`refs/pull/*` and so on).
 
 **Audit**: `mirror.created`, `mirror.updated`, `mirror.deleted`, `mirror.sync_requested`. Sync outcomes are recorded on the mirror and logged.
+
+### Import wizard
+
+**Import repository** (next to **Create repository** on `/p/{KEY}/repos`, route `/p/{KEY}/repos/import`, Maintainer+ like creating a repository) copies a remote repository in three steps: source URL with optional username and token (checked with `git ls-remote --symref`, which also detects the default branch), name, slug, description and default branch, then a progress page (`/p/{KEY}/repos/import/{id}`) with status, size so far and **Cancel**. A repository's visibility is its project's, so the wizard shows it rather than asking.
+
+- **URL rules** are the mirror feature's: `MirrorUrlGuard` (http/https/ssh, no credentials in the URL, the same private/loopback/link-local/metadata refusal and the `Mirroring:AllowPrivateNetworks` / `Webhooks:AllowPrivateNetworks` override, DNS resolved and pinned right before git runs) and `MirrorGit` (no shell, ignores global git config, credentials only through a temporary 0600 credential file). `file://` is refused; tests turn it on with the `ImportTestHooks` singleton, which is not configuration.
+- **Job**: `RepositoryImport` rows (`Queued`, `Cloning`, `Done`, `Failed`, `Cancelled`) are run by `ImportRunner`, started by `ImportWorker` (`Import:MaxConcurrent`, default 2). `RunAsync` claims the row atomically, so an import never runs twice. Git fetches `refs/heads/*` and `refs/tags/*` into a bare repository under `{RepositoryRoot}/.imports/{id}-{guid}` (same filesystem as the final location, so the move is a rename). While it runs, the folder's size is polled: past `Import:MaxRepoBytes` (default 1 GiB) the clone is killed; git is also killed after `Import:TimeoutMinutes` (30). Failed, cancelled or too-large imports delete the temporary folder.
+- **Not imported**: pull requests, issues, LFS objects and every ref outside heads and tags, so `refs/pull/*`, `refs/merge-queue/*`, `refs/upstream/*` and the preview refs never arrive.
+- **Credentials** live only in memory for the one run (`ImportRunner`), never in the database, audit log or logs. With **Keep as a pull mirror** they are handed to `MirrorService.SavePullAsync`, which encrypts them with the mirror feature's Data Protection purpose. A source a mirror can't use gets the repository anyway, with a note on the import.
+- **Creation** goes through `RepositoryService.CreateImportedAsync` (same permission, slug rules and `repository.created` audit event as `CreateAsync`, marked `imported`). The push listeners then run once with a single captured ref update for the default branch (`PushCapture.SetRefs`, as the web editor does), so webhooks, CI detection, smart commits and the rest hear one event, not one per branch or tag. Audit: `repository.import_requested`, `repository.imported`, `repository.import_failed`, `repository.import_cancel_requested`, `repository.import_cancelled`.
+- **Restart safety**: when the worker starts, imports left `Queued` or `Cloning` by a previous process are marked failed ("The server restarted…") and `.imports` is cleaned. The slug `import` is reserved.
+- Code: `Services/Importing/` (`ImportOptions`, `ImportRunner`, `ImportService`, `ImportWorker`), `Services/RepositoryService.Import.cs`, `Data/RepositoryImport.cs` (migration `RepositoryImports`), `Components/Pages/Repositories/RepoImport.razor` and `RepoImportProgress.razor`. Tests: `ImportTests.cs` (local bare repositories, an HTTP source with credentials, size limit, cancel, restart, SSRF and permission cases).
 
 ### Git LFS
 

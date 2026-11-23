@@ -24,7 +24,7 @@
 <p>The new repository starts with one commit on <code>main</code> containing a <code>README.md</code> built from the name and description. The default branch of a new repository is always <code>main</code>; change it later in <a href="#repository-settings">Settings</a>. The slug must be unique inside the project. Creation is recorded in the audit log as <code>repository.created</code>.</p>
 
 <h2 id="importing">Bringing existing code in</h2>
-<p>ByteBench has no "import from URL" wizard. There are three ways to get history in:</p>
+<p>The quickest way is the <a href="#import-wizard">import wizard</a>. There are also three alternatives, which still work and suit other situations:</p>
 <ul>
   <li><strong>Push it.</strong> Add the new repository as a remote and push. Because a new repository already has a README commit, either push to a different branch name, or force-push if you want your history to replace <code>main</code> (branch protection must allow it):
 <pre><code>git remote add bytebench https://bytebench.example.com/git/WEB/web-app.git
@@ -34,6 +34,29 @@ git push bytebench --tags</code></pre></li>
   <li><strong>Fork it.</strong> To copy a repository that already lives in ByteBench, use <a href="#forks">Fork</a>.</li>
 </ul>
 <p>Issues and pull requests from other systems are not imported by repository tools. For issues use the CSV import described in <a href="fields-filters.html">Fields, filters and search</a>.</p>
+
+<h3 id="import-wizard">The import wizard</h3>
+<p><strong>Import repository</strong>, next to <strong>Create repository</strong> on the Repositories page (<code>/p/{KEY}/repos/import</code>), copies a repository from another server in three steps. It needs the same permission as creating a repository (Maintainer or Owner).</p>
+<ol>
+  <li><strong>Source.</strong> Enter an <code>https://</code>, <code>http://</code> or <code>ssh://</code> URL and, if the source is private, a username and a password or token. ByteBench lists the remote's refs to check the address and credentials, and detects the default branch. The URL follows the same <a href="#mirror-security">SSRF rules</a> as mirrors: private, loopback, link-local and metadata addresses are refused unless <code>Mirroring:AllowPrivateNetworks</code> (or, when unset, <code>Webhooks:AllowPrivateNetworks</code>) allows them. <code>file://</code> and other schemes are always refused.</li>
+  <li><strong>Details.</strong> Choose the name, slug, description and default branch (preselected from the source). A repository's visibility is its project's, so it is shown, not chosen. Tick <strong>Keep as a pull mirror</strong> to have ByteBench keep fetching the source afterwards.</li>
+  <li><strong>Import.</strong> A background job clones every branch and tag. The progress page shows queued, cloning (with the size so far), done or failed (with git's error), and has a <strong>Cancel</strong> button.</li>
+</ol>
+<ul>
+  <li><strong>Credentials</strong> are used for this one clone, kept only in server memory and passed to git through a temporary 0600 credential file; they are never stored, logged or audited. Only if you choose <em>keep as a pull mirror</em> are they saved, encrypted, through the mirror feature (see <a href="#mirror-security">credentials and safety</a>).</li>
+  <li><strong>What is imported</strong>: all branches and tags. Not imported: pull requests, issues, LFS objects, and refs outside <code>refs/heads</code> and <code>refs/tags</code> (so no <code>refs/pull/*</code> or other reserved namespaces).</li>
+  <li><strong>Limits</strong>: the clone is stopped if its data on disk passes <code>Import:MaxRepoBytes</code> or git runs longer than <code>Import:TimeoutMinutes</code>. The data is cloned into a private temporary folder under the repository root and only moved into place when complete, so a failed or cancelled import leaves nothing behind.</li>
+  <li><strong>After the import</strong> the repository is created through the normal service: the same slug rules, <code>repository.created</code> audit event (marked as imported), plus <code>repository.import_requested</code> and <code>repository.imported</code>. Push listeners (webhooks, CI pipeline detection, smart commits and so on) run <strong>once</strong>, as a single push of the default branch, not once per imported branch or tag.</li>
+  <li><strong>Restarts</strong>: an import interrupted by a server restart is marked failed on the next start and its temporary data is removed; start it again. The slug <code>import</code> is reserved for the wizard.</li>
+</ul>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>Import:Enabled</code></td><td><code>true</code></td><td>Run queued imports in the background (off: they stay queued)</td></tr>
+  <tr><td><code>Import:MaxRepoBytes</code></td><td><code>1073741824</code> (1 GiB)</td><td>Stop an import whose data grows beyond this</td></tr>
+  <tr><td><code>Import:TimeoutMinutes</code></td><td><code>30</code></td><td>Kill a clone that takes longer</td></tr>
+  <tr><td><code>Import:MaxConcurrent</code></td><td><code>2</code></td><td>Imports running at once</td></tr>
+  <tr><td><code>Import:MaxActivePerProject</code></td><td><code>3</code></td><td>Queued or running imports per project</td></tr>
+</table>
 
 <h2 id="cloning-over-http">Cloning over HTTP</h2>
 <p>Every repository is served over the Git Smart HTTP protocol at <code>/git/{KEY}/{slug}.git</code>:</p>
