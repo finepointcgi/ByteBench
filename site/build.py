@@ -35,6 +35,7 @@ SECTIONS = [
         ("lfs-mirroring", "Git LFS and mirroring", "LFS server, pull and push mirrors, credentials and troubleshooting"),
         ("pull-requests", "Pull requests", "Reviews, threads, suggestions, code owners, merge strategies, forks"),
         ("branch-protection", "Branch protection and merge queue", "Protected branches and tags, required checks, the merge queue"),
+        ("signed-commits", "Signed commits", "Verified badges, registering GPG and SSH signing keys, requiring signatures"),
         ("code-tools", "Code browsing and tools", "Code view, search, blame, compare, releases and tags"),
         ("web-editor", "Web editor and AI assistant", "Edit code in the browser with an AI assistant"),
         ("wiki-snippets", "Wiki and snippets", "Project wikis and shareable snippets"),

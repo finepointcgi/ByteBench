@@ -316,7 +316,7 @@ else if (pr != null)
                     @if (autoMerge is { State: AutoMergeState.Armed or AutoMergeState.Merging })
                     {
                         <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="merge-status mt-3" Icon="@Icons.Material.Outlined.Schedule" id="auto-merge-banner">
-                            <div><b>Auto-merge is on.</b> It will @(queue.Config != null ? "add this pull request to the merge queue" : MergeStrategySettings.Label(autoMerge.Strategy).ToLowerInvariant() + " and merge it")
+                            <div><b>Auto-merge is on.</b> It will @(queue.Config != null ? "add this pull request to the merge queue" : $"merge this pull request ({MergeStrategySettings.Label(autoMerge.Strategy).ToLowerInvariant()})")
                                 as soon as every requirement is met@(autoMerge.DeleteSourceBranch ? ", then delete the source branch" : ""). Set by <UserLink User="autoMerge.ArmedBy" />.</div>
                             @if (!string.IsNullOrEmpty(autoMerge.WaitingFor)) { <div class="small mt-1">Waiting for: @autoMerge.WaitingFor</div> }
                         </MudAlert>

@@ -106,6 +106,7 @@ public static class ApiEndpoints
         api.MapAiReviewEndpoints(); // AI pull request review: settings, reviews, findings
         api.MapAutoMergeEndpoints(); // pull requests: merge when ready
         api.MapReleaseNotesEndpoints(); // draft release notes (AI and plain)
+        api.MapSignedCommitEndpoints(); // commit signature status
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

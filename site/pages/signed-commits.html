@@ -1,0 +1,40 @@
+<h1>Signed commits</h1>
+<p class="lead">Show which commits really come from who they say, and optionally require it on protected branches. ByteBench never trusts the pusher: every signature is checked against keys registered on ByteBench accounts.</p>
+
+<h2 id="verified">What "Verified" means</h2>
+<p>A commit is <strong>Verified</strong> only when all of these hold:</p>
+<ol>
+  <li>its signature is good (checked with <code>ssh-keygen -Y verify</code> or <code>gpg --verify</code>),</li>
+  <li>the key is registered on a ByteBench account: an SSH key on the account (the same keys used for git over SSH; deploy keys never count) or a GPG key,</li>
+  <li>the key is not revoked and not expired, and its owner's account is active,</li>
+  <li>the committer email of the commit is the owner's <strong>confirmed</strong> account email.</li>
+</ol>
+<p>Otherwise a signed commit is <strong>Unverified</strong> and the badge tooltip says why (<em>Unverified (the committer email ... isn't a confirmed email of ...)</em>, <em>signed with a key that isn't registered</em>, <em>the signing key was revoked</em>, <em>expired</em>, <em>the signature doesn't match the commit</em>). If the server has no <code>gpg</code> or <code>ssh-keygen</code>, signed commits show <strong>Unverifiable</strong> and everything else keeps working. Unsigned commits show no badge. The badge appears in commit lists, the commit page and the pull request's commit list; <code>GET .../commits/{sha}/signature</code> returns the same.</p>
+<p>Verification runs in a throw-away directory with a keyring or allowed-signers file built from the database. The machine's own keyrings and <code>~/.ssh</code> are never read. Results are cached per commit and recomputed when keys are added, removed or revoked, when the key expires, and after <code>Signing:CacheHours</code> (default 12).</p>
+
+<h2 id="keys">Registering keys</h2>
+<p>Open <strong>Account, SSH keys</strong> (<code>/account/ssh-keys</code>).</p>
+<ul>
+  <li><strong>SSH keys</strong> you already added sign commits too: <code>git config gpg.format ssh</code>, <code>git config user.signingkey ~/.ssh/id_ed25519.pub</code>, <code>git config commit.gpgsign true</code> (git 2.34 or newer). Deleting the key revokes it; an expiry date on the key limits how long it verifies.</li>
+  <li><strong>GPG keys</strong>: paste the output of <code>gpg --armor --export you@example.com</code>. It must be one public key (private keys are refused), not expired or revoked, and have a user ID with your account email. The list shows the fingerprint, the emails, the algorithm and the expiry; <strong>Revoke</strong> makes the key stop verifying (irreversible), <strong>Delete</strong> removes it. Needs <code>gpg</code> on the server (<code>Signing:GpgPath</code>). Audit events: <code>gpg_key.added</code>, <code>.revoked</code>, <code>.removed</code>.</li>
+</ul>
+
+<h2 id="require">Require signed commits</h2>
+<p>A <a href="branch-protection.html#rule-options">branch protection rule</a> can turn on <strong>Require signed commits</strong>.</p>
+<ul>
+  <li><strong>Push</strong>: the new commits of every push to a matching branch must be Verified, or the whole push is refused with the first offending commit and the reason. A rule with <em>Allow admins to bypass</em> exempts Owners.</li>
+  <li><strong>Pull request merge</strong>: every commit the PR brings must be Verified (a <em>Signed commits</em> check in the merge box), whatever the merge strategy.</li>
+</ul>
+
+<h2 id="bytebench-merges">ByteBench's own merge commits</h2>
+<p>ByteBench has no server signing key. Merge, squash and rebase results created by ByteBench's merge service are not signed; instead the merge commit of a merged pull request is shown as Verified (tooltip: created by ByteBench's own merge). Web merges are not pushes, so protected branches that require signed commits still accept them. Other commits of a rebase carry no badge.</p>
+
+<h2 id="config">Settings</h2>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Signing:GpgPath</code></td><td><code>gpg</code></td><td>Executable (name on PATH or full path)</td></tr>
+  <tr><td><code>Signing:SshKeygenPath</code></td><td><code>ssh-keygen</code></td><td>OpenSSH 8.0 or newer</td></tr>
+  <tr><td><code>Signing:CacheHours</code></td><td>12</td><td>Re-check cached results after this long</td></tr>
+  <tr><td><code>Signing:ToolTimeoutSeconds</code></td><td>15</td><td>Limit for one tool run</td></tr>
+  <tr><td><code>Signing:MaxCommitsPerCheck</code></td><td>300</td><td>Commits checked per page or merge check</td></tr>
+</table>

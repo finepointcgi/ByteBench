@@ -1,5 +1,7 @@
 @* Commits grouped by day, newest first. *@
 @inject PipelineService Pipelines
+@inject ByteBench.Services.Signing.CommitSignatureService Signatures
+@inject ILogger<CommitList> Log
 @if (Commits.Count == 0)
 {
     <div class="empty">@EmptyText</div>
@@ -20,6 +22,7 @@ else
                         <div class="gb-row-meta">
                             <b>@c.AuthorName</b> committed @Display.Ago(c.When.UtcDateTime)
                             @if (c.ParentShas.Count > 1) { <span class="merge-tag">merge</span> }
+                            <SignatureBadge Result="@(signatures.GetValueOrDefault(c.Sha))" />
                         </div>
                     </div>
                     <div class="commit-actions">
@@ -44,7 +47,12 @@ else
     [Parameter] public string EmptyText { get; set; } = "No commits.";
 
     private Dictionary<string, PipelineBadgeInfo> pipelines = [];
+    private IReadOnlyDictionary<string, ByteBench.Services.Signing.CommitSignatureResult> signatures = new Dictionary<string, ByteBench.Services.Signing.CommitSignatureResult>();
 
-    protected override async Task OnParametersSetAsync() =>
+    protected override async Task OnParametersSetAsync()
+    {
         pipelines = await Pipelines.LatestForCommitsAsync(Repo, Commits.Select(c => c.Sha));
+        try { signatures = await Signatures.GetManyAsync(Repo, Commits.Select(c => c.Sha)); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { Log.LogWarning(ex, "Commit signatures could not be read"); signatures = new Dictionary<string, ByteBench.Services.Signing.CommitSignatureResult>(); }
+    }
 }

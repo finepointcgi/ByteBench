@@ -1,5 +1,6 @@
 @page "/p/{Key}/repos/{Slug}/commits/{Sha}"
 @inherits RepoPageBase
+@inject ByteBench.Services.Signing.CommitSignatureService Signatures
 
 <PageTitle>@detail?.Commit.MessageShort · @Repo?.Name</PageTitle>
 
@@ -42,6 +43,13 @@ else if (Repo != null)
                     · commit <span class="sha-pill commit-sha" title="@c.Sha">@c.Sha</span>
                 </span>
             </div>
+            @if (signature is { Status: not CommitSignatureStatus.Unsigned } sig && !(sig.Status == CommitSignatureStatus.Unverifiable && sig.Format == null))
+            {
+                <div class="commit-meta mt-2" id="commit-signature">
+                    <SignatureBadge Result="sig" />
+                    <span class="muted small">@sig.Tooltip</span>
+                </div>
+            }
         </MudPaper>
 
         @if (c.ParentShas.Count > 1)
@@ -56,11 +64,18 @@ else if (Repo != null)
     [Parameter] public string Sha { get; set; } = "";
 
     private CommitDetail? detail;
+    private ByteBench.Services.Signing.CommitSignatureResult? signature;
 
     protected override async Task OnParametersSetAsync()
     {
         if (!await LoadRepoAsync()) return;
         var sha = Sha;
         detail = await Git(path => GitOps.GetCommitDetail(path, sha));
+        signature = null;
+        if (detail != null)
+        {
+            try { signature = await Signatures.GetAsync(Repo!, detail.Commit.Sha); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { signature = null; }
+        }
     }
 }

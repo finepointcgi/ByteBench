@@ -1,0 +1,12 @@
+@using ByteBench.Services.Signing
+@* "Verified" / "Unverified" / "Unverifiable" badge of a signed commit; the tooltip says why. Unsigned commits show nothing. *@
+@if (Result is { } r && r.Status != CommitSignatureStatus.Unsigned && !(r.Status == CommitSignatureStatus.Unverifiable && r.Format == null))
+{
+    <span class="@("sig-badge sig-" + r.Status.ToString().ToLowerInvariant())" title="@r.Tooltip" tabindex="0" role="img" aria-label="@r.Tooltip">
+        <MudIcon Icon="@(r.IsVerified ? Icons.Material.Filled.Verified : Icons.Material.Outlined.GppMaybe)" Style="font-size: 14px" />@r.Label
+    </span>
+}
+
+@code {
+    [Parameter] public CommitSignatureResult? Result { get; set; }
+}

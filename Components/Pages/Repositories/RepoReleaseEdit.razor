@@ -4,6 +4,7 @@
 @inherits RepoPageBase
 @inject ReleaseService Releases
 @inject ProjectAccess Access
+@inject ReleaseNotesService DraftNotes
 
 <PageTitle>@(Id == null ? "New release" : "Edit release") · @Repo?.Name</PageTitle>
 
@@ -64,11 +65,29 @@ else if (Repo != null && loaded)
                 <MudItem xs="12">
                     <div class="notes-head">
                         <span class="gb-section-label mb-0">Release notes</span>
-                        <MudTooltip Text="Build notes from the commits and merged pull requests since the previous release">
-                            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoFixHigh"
-                                       Disabled="@(busy || string.IsNullOrWhiteSpace(NotesSource))" OnClick="Generate">Generate notes</MudButton>
-                        </MudTooltip>
+                        <div class="notes-actions">
+                            <MudTooltip Text="Build notes from the commits and merged pull requests since the previous release">
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoFixHigh"
+                                           Disabled="@(busy || string.IsNullOrWhiteSpace(NotesSource))" OnClick="Generate">Generate notes</MudButton>
+                            </MudTooltip>
+                            <MudTooltip Text="A plain list of the merged pull requests and commits, grouped by label (no AI)">
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Checklist" id="notes-from-prs"
+                                           Disabled="@(busy || string.IsNullOrWhiteSpace(NotesSource))" OnClick="GeneratePlain">Generate from merged PRs</MudButton>
+                            </MudTooltip>
+                            <MudTooltip Text="@(aiReason ?? "Group the changes into Features, Fixes, Breaking changes and Other with AI. You review and edit the draft; nothing is saved automatically.")">
+                                <span>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoAwesome" id="notes-with-ai"
+                                               Disabled="@(busy || !aiAvailable || string.IsNullOrWhiteSpace(NotesSource))" OnClick="GenerateAi">@(lastMode == "ai" ? "Regenerate with AI" : "Generate notes with AI")</MudButton>
+                                </span>
+                            </MudTooltip>
+                        </div>
                     </div>
+                    @if (lastMode == "ai")
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-2" id="ai-draft-banner">
+                            AI draft: check it against the changes and edit it. It is only in the editor; nothing is saved until you publish or save the release. Use the Preview tab to see how it reads.
+                        </MudAlert>
+                    }
                     @if (generatedInfo != null) { <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-1">@generatedInfo</MudText> }
                     <MarkdownEditor @bind-Value="input.Notes" Rows="14" Placeholder="Describe this release (Markdown)" />
                 </MudItem>
@@ -108,6 +127,8 @@ else if (Repo != null && loaded)
     private ProjectPermissions perms = ProjectPermissions.None;
     private bool loaded, busy;
     private string? generatedInfo;
+    private bool aiAvailable;
+    private string? aiReason, lastDraft, lastMode;
 
     private bool TagTaken => existing == null && !string.IsNullOrWhiteSpace(input.TagName) && usedTags.Contains(input.TagName.Trim());
     private bool TagIsNew => !string.IsNullOrWhiteSpace(input.TagName) && !allTags.Contains(input.TagName.Trim());
@@ -141,7 +162,36 @@ else if (Repo != null && loaded)
         {
             input = new ReleaseInput { TagName = TagQuery ?? "", Target = Repo!.DefaultBranch };
         }
+        (aiAvailable, aiReason) = await DraftNotes.GetAiAvailabilityAsync();
         loaded = true;
+    }
+
+    /// <summary>Puts a draft into the editor: replaces the previous draft, fills empty notes, or goes below what is already written.</summary>
+    private void InsertDraft(string markdown, string mode)
+    {
+        if (lastDraft != null && input.Notes != null && input.Notes.Contains(lastDraft, StringComparison.Ordinal)) input.Notes = input.Notes.Replace(lastDraft, markdown);
+        else if (string.IsNullOrWhiteSpace(input.Notes)) input.Notes = markdown;
+        else input.Notes = input.Notes.TrimEnd() + "\n\n" + markdown;
+        lastDraft = markdown;
+        lastMode = mode;
+    }
+
+    private Task GeneratePlain() => RunDraft(() => DraftNotes.GeneratePlainAsync(Repo!, NotesSource!, existing?.TagName ?? input.TagName?.Trim()));
+    private Task GenerateAi() => RunDraft(() => DraftNotes.GenerateWithAiAsync(Repo!, NotesSource!, existing?.TagName ?? input.TagName?.Trim()));
+
+    private async Task RunDraft(Func<Task<ReleaseNotesDraft>> make)
+    {
+        Error = null;
+        busy = true;
+        try
+        {
+            var draft = await make();
+            InsertDraft(draft.Markdown, draft.Mode);
+            generatedInfo = (draft.PreviousTag == null ? "From every change in the repository (no earlier release tag found)" : $"From the changes since {draft.PreviousTag}")
+                            + $": {draft.PullRequests} merged pull request(s), {draft.Commits} direct commit(s)." + (draft.Notice == null ? "" : " " + draft.Notice);
+        }
+        catch (InvalidOperationException ex) { Error = ex.Message; }
+        finally { busy = false; }
     }
 
     /// <summary>Tags without a release; any other text becomes a new tag.</summary>
