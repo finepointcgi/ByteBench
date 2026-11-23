@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ByteBench.Data.MigrationsPostgres
 {
     [DbContext(typeof(PostgresAppDbContext))]
-    [Migration("20261123044537_Initial")]
+    [Migration("20261123154638_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -598,6 +598,9 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Property<bool>("RequireCodeOwnerApproval")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("RequireSignedCommits")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("RequireThreadResolution")
                         .HasColumnType("boolean");
 
@@ -901,6 +904,56 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("Comments");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.CommitSignature", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("KeyFingerprint")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("KeysStamp")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Sha")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("SignerUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Sha")
+                        .IsUnique();
+
+                    b.ToTable("CommitSignatures");
+                });
+
             modelBuilder.Entity("ByteBench.Data.ContainerBlob", b =>
                 {
                     b.Property<int>("Id")
@@ -1129,6 +1182,129 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.HasIndex("DashboardId");
 
                     b.ToTable("DashboardHomes");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DependencyBotPullRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Ecosystem")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("FromVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Package")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("PullRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ToVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Ecosystem", "Package");
+
+                    b.ToTable("DependencyBotPullRequests");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DependencyBotSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Ecosystems")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("Grouped")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("IgnoreList")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Labels")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("LastMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("LastReportJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastStatus")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("MaxOpenPullRequests")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("NextRunAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reviewers")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Schedule")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Strategy")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TargetBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.HasIndex("Enabled", "NextRunAt");
+
+                    b.ToTable("DependencyBotSettings");
                 });
 
             modelBuilder.Entity("ByteBench.Data.DeployFreezeWindow", b =>
@@ -1723,6 +1899,65 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("FlagSegments");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.GpgKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Algorithm")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Emails")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("KeyFingerprints")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("GpgKeys");
                 });
 
             modelBuilder.Entity("ByteBench.Data.Group", b =>
@@ -3520,6 +3755,69 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("PullRequestActivities");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.PullRequestAutoMerge", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ArmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ArmedById")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ArmedHeadSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ArmedTargetBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("ClaimedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("DeleteSourceBranch")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PullRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Strategy")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("WaitingFor")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ArmedById");
+
+                    b.HasIndex("PullRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("State");
+
+                    b.ToTable("PullRequestAutoMerges");
+                });
+
             modelBuilder.Entity("ByteBench.Data.PullRequestComment", b =>
                 {
                     b.Property<int>("Id")
@@ -4052,6 +4350,48 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("RepositoryImports");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryInsight", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.Property<int>("CommitsScanned")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ComputedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("HeadSha")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId")
+                        .IsUnique();
+
+                    b.ToTable("RepositoryInsights");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
                 {
                     b.Property<int>("Id")
@@ -4182,6 +4522,35 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("RepositorySecuritySettings");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.SamlMessageRecord", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReturnUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.ToTable("SamlMessages");
+                });
+
             modelBuilder.Entity("ByteBench.Data.SavedFilter", b =>
                 {
                     b.Property<int>("Id")
@@ -4249,6 +4618,84 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsUnique();
 
                     b.ToTable("SavedFilterStars");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.ScimIdentity", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("NormalizedUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("ExternalId");
+
+                    b.HasIndex("NormalizedUserName")
+                        .IsUnique();
+
+                    b.ToTable("ScimIdentities");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.ScimToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("ScimTokens");
                 });
 
             modelBuilder.Entity("ByteBench.Data.SecurityFinding", b =>
@@ -6118,6 +6565,26 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.DependencyBotPullRequest", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DependencyBotSettings", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+                });
+
             modelBuilder.Entity("ByteBench.Data.DeployFreezeWindow", b =>
                 {
                     b.HasOne("ByteBench.Data.User", null)
@@ -6321,6 +6788,17 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.GpgKey", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ByteBench.Data.Group", b =>
@@ -6966,6 +7444,25 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Actor");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.PullRequestAutoMerge", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "ArmedBy")
+                        .WithMany()
+                        .HasForeignKey("ArmedById")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.PullRequest", "PullRequest")
+                        .WithMany()
+                        .HasForeignKey("PullRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ArmedBy");
+
+                    b.Navigation("PullRequest");
+                });
+
             modelBuilder.Entity("ByteBench.Data.PullRequestComment", b =>
                 {
                     b.HasOne("ByteBench.Data.User", "Author")
@@ -7149,6 +7646,17 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("RequestedBy");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryInsight", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
                 {
                     b.HasOne("ByteBench.Data.User", "CreatedBy")
@@ -7217,6 +7725,17 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.ScimIdentity", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ByteBench.Data.SecurityFinding", b =>
