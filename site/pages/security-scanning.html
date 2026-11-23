@@ -159,6 +159,9 @@ curl -X POST -H "Authorization: Bearer $BYTEBENCH_TOKEN" -H "Content-Type: appli
 </table>
 <p>Per-repository options (merge check on/off and severity, alert severity) live in <b>Settings → Security</b>. Audit events: <code>security.finding_triaged</code>, <code>security.triage_imported</code>, <code>repository.security_settings_changed</code>.</p>
 
+<h2 id="dependency-bot">Outdated dependencies and the dependency bot</h2>
+<p>Night Owl reports tell you which dependencies are vulnerable; the <a href="insights-dependencies.html#dependency-bot">dependency bot</a> (Settings, Dependencies) opens pull requests that bump them. When the default branch's latest scan has an open dependency finding for a package at its current version, the bot's "Outdated dependencies" table and the pull request description add a security note listing the advisory ids and whether the proposed version is one of the finding's fixed versions. Findings that triage has dismissed (false positive, accepted risk, fixed) are not mentioned, and with no scan the note is simply absent. Because the bot only edits manifests and never regenerates lockfiles, the next scan on the pull request runs against the updated manifest and the merge check above applies as usual.</p>
+
 <h2 id="example">Complete example: scan on every push, gate pull requests</h2>
 <pre><code>include: [nightowl]
 on:

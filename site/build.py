@@ -36,6 +36,7 @@ SECTIONS = [
         ("pull-requests", "Pull requests", "Reviews, threads, suggestions, code owners, merge strategies, forks"),
         ("branch-protection", "Branch protection and merge queue", "Protected branches and tags, required checks, the merge queue"),
         ("code-tools", "Code browsing and tools", "Code view, search, blame, compare, releases and tags"),
+        ("insights-dependencies", "Insights and the dependency bot", "Contributors, activity and languages, and automatic dependency update pull requests"),
         ("web-editor", "Web editor and AI assistant", "Edit code in the browser with an AI assistant"),
         ("wiki-snippets", "Wiki and snippets", "Project wikis and shareable snippets"),
     ]),
