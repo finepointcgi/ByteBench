@@ -120,7 +120,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
     public async Task<List<User>> GetUsersAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName && u.UserName != Automation.AutomationBot.UserName && u.UserName != ServiceDesk.ServiceDeskBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // bots are not assignable
+        return await db.Users.Where(u => u.UserName != Ai.AiBot.UserName && u.UserName != Automation.AutomationBot.UserName && u.UserName != ServiceDesk.ServiceDeskBot.UserName && u.UserName != Workbench.WorkbenchBot.UserName).OrderBy(u => u.DisplayName).ToListAsync(); // bots are not assignable
     }
 
     // ---------- Issues ----------

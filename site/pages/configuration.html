@@ -249,7 +249,14 @@ Ai__Review__MaxReviewsPerRepoPerHour=6</code></pre>
 <h2 id="workbench">Workbench</h2>
 <table>
   <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
-  <tr><td><code>Workbench:BaseUrl</code></td><td>none (off)</td><td>Address of Workbench, e.g. <code>https://workbench.example.com</code>. When set, issues show a "Log time in Workbench" button</td></tr>
+  <tr><td><code>Workbench:BaseUrl</code></td><td>none (off)</td><td>Address of Workbench, e.g. <code>https://workbench.example.com</code>. When set, issues show a "Log time in Workbench" button; the address and API key can also be set on <code>/admin/workbench</code>, which overrides this key</td></tr>
+  <tr><td><code>Workbench:AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>Allow the Workbench address to be loopback, private, link-local or metadata (SSRF guard)</td></tr>
+  <tr><td><code>Workbench:TimeoutSeconds</code></td><td>5</td><td>Time limit for one call to the Workbench API</td></tr>
+  <tr><td><code>Workbench:CacheSeconds</code></td><td>60</td><td>How long project and WBS lists and task context are cached (failures: at most 15 s)</td></tr>
+  <tr><td><code>Workbench:PushWorkerEnabled</code></td><td>true</td><td>Runs the background workers (work-state push, queued plan syncs, periodic reconcile)</td></tr>
+  <tr><td><code>Workbench:PushIntervalSeconds</code></td><td>30</td><td>Seconds between work-state push sweeps</td></tr>
+  <tr><td><code>Workbench:ReconcileMinutes</code></td><td>15</td><td>Minutes between plan-to-issues reconciles of the projects that opted in; 0 turns it off</td></tr>
+  <tr><td><code>Workbench:MaxTasksPerSync</code></td><td>2000</td><td>The most plan tasks one sync handles; a bigger plan is refused</td></tr>
 </table>
 <p>See <a href="workbench.html">Estimates and Workbench</a>.</p>
 

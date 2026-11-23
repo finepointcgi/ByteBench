@@ -120,6 +120,9 @@ RateLimiting__Auth__PermitLimit=20</code></pre>
 </tbody></table>
 <div class="warn">The archive holds password hashes, webhook and CI secrets and the key ring. Store it encrypted and access-controlled. Details of backup, restore and upgrades are in <a href="production.html">Production setup</a>.</div>
 
+<h2 id="workbench-admin">Workbench connection (/admin/workbench)</h2>
+<p>Site administrators set Workbench's address and a scoped API key, test what the key can read and write, replace or remove the key, and see the recent <code>workbench.*</code> audit events. The key is stored encrypted and never shown back. See <a href="workbench.html#setup">Setup: address, key and scopes</a>.</p>
+
 <h2 id="explore">Explore, search and profiles</h2>
 <p>These are open to every signed-in user, and everything is filtered to projects the user can view, so nothing from a project you cannot see shows up anywhere.</p>
 <ul>

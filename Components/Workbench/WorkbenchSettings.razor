@@ -1,7 +1,13 @@
-@* Project setting (Maintainer+): the Workbench charge code (WBS) and project code that "Log time in Workbench" uses.
-   Self-contained so the Settings page only renders it. *@
+@* Project setting (Maintainer+): the Workbench mapping (pickers fed by the Workbench API when connected, free text otherwise), what Workbench says
+   about the mapped task, the opt-in push of work state, and the plan-to-issues sync. Self-contained so the Settings page only renders it. *@
+@using ByteBench.Data
 @using ByteBench.Services.Workbench
+@implements IDisposable
 @inject WorkbenchService Workbench
+@inject WorkbenchDirectory Directory
+@inject WorkbenchContextService Context
+@inject WorkbenchPushService Push
+@inject WorkbenchPlanSyncService PlanSync
 @inject ProjectAccess Access
 @inject ISnackbar Snackbar
 
@@ -10,52 +16,253 @@
     <MudPaper Outlined="true" Class="settings-card pa-5 mb-4" id="workbench">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Workbench (time &amp; cost)</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
-            Time is recorded in Workbench timesheets, the company's cost record. Issues in this project show a
-            "Log time in Workbench" button with this charge code. An issue can override the code.
+            Time is recorded in Workbench timesheets, the company's cost record; ByteBench never writes it. Issues show a "Log time in Workbench" button with the charge code.
+            An issue can override the code.
         </MudText>
         @if (!Workbench.IsConfigured)
         {
-            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                Workbench isn't set up on this site (Workbench:BaseUrl), so the button stays hidden until an administrator configures it.
-            </MudAlert>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Workbench isn't set up on this site, so the button stays hidden until an administrator sets the address (Admin › Workbench, or Workbench:BaseUrl).</MudAlert>
+        }
+        else if (!Workbench.IsConnected)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">No API key is stored, so the codes below are free text. A site administrator can connect Workbench under Admin › Workbench to pick them from a list and see plan context.</MudAlert>
         }
         @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
         <div class="d-flex flex-wrap gap-2 align-start">
-            <MudTextField T="string" @bind-Value="wbs" Label="Workbench charge code (WBS)" Placeholder="e.g. 1.2.3" Immediate="true"
-                          MaxLength="WorkbenchService.MaxCodeLength" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono"
-                          HelperText="Leave empty to hide the button." />
-            <MudTextField T="string" @bind-Value="projectCode" Label="Workbench project code (optional)" Immediate="true"
-                          MaxLength="WorkbenchService.MaxCodeLength" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono" />
+            @if (pickers)
+            {
+                <MudAutocomplete T="string" @bind-Value="projectCode" SearchFunc="SearchProjects" Label="Workbench project" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 CoerceValue="true" CoerceText="false" Clearable="true" MaxItems="25" ResetValueOnEmptyText="true" DebounceInterval="150" data-testid="wb-project-picker" Class="settings-mono">
+                    <ItemTemplate>@context<span class="mud-text-secondary"> · @NameOf(context)</span></ItemTemplate>
+                </MudAutocomplete>
+                <MudAutocomplete T="string" @bind-Value="wbs" SearchFunc="SearchWbs" Label="WBS task (charge code)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 CoerceValue="true" CoerceText="false" Clearable="true" MaxItems="40" ResetValueOnEmptyText="true" DebounceInterval="150" data-testid="wb-wbs-picker" Class="settings-mono">
+                    <ItemTemplate>@context<span class="mud-text-secondary"> · @WbsName(context)</span></ItemTemplate>
+                </MudAutocomplete>
+            }
+            else
+            {
+                <MudTextField T="string" @bind-Value="wbs" Label="Workbench charge code (WBS)" Placeholder="e.g. 1.2.3" Immediate="true"
+                              MaxLength="WorkbenchService.MaxCodeLength" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono"
+                              HelperText="Leave empty to hide the button." />
+                <MudTextField T="string" @bind-Value="projectCode" Label="Workbench project code (optional)" Immediate="true"
+                              MaxLength="WorkbenchService.MaxCodeLength" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono" />
+            }
         </div>
+        @if (pickers && pickerNote != null) { <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">@pickerNote</MudText> }
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Class="mt-2" Disabled="@(!Changed)" OnClick="Save">Save</MudButton>
+
+        @if (Workbench.IsConnected)
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" HtmlTag="h3">In Workbench</MudText>
+            <WorkbenchTaskSummary ProjectId="Project.Id" Wbs="@Project.WorkbenchWbs" @key="@($"{Project.WorkbenchProjectCode}/{Project.WorkbenchWbs}")" />
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" HtmlTag="h3">Push work state to Workbench</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                Off by default. When on, ByteBench sets the mapped WBS task's % complete (and Status "In Progress" / "Done") from this project's issues, since ByteBench owns work state.
+                Schedule, hours and WBS are never written, and neither is time. Needs a key with <code>sheets:write</code> and an Editor role on the plan sheet.
+            </MudText>
+            <MudSwitch T="bool" Value="pushOn" ValueChanged="SetPush" Color="Color.Primary" Label="Push % complete and status for issues mapped to a WBS task" data-testid="wb-push-toggle" />
+            @if (pushOn)
+            {
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="SyncNow" Disabled="syncing">Sync now</MudButton>
+                @if (log.Count > 0)
+                {
+                    <MudSimpleTable Dense="true" Elevation="0" Class="mt-2" data-testid="wb-push-log">
+                        <thead><tr><th>When</th><th>WBS</th><th>Set</th><th>State</th><th>Detail</th><th></th></tr></thead>
+                        <tbody>
+                        @foreach (var r in log)
+                        {
+                            <tr><td>@r.CreatedAt.ToLocalTime().ToString("g")</td><td><code>@r.WbsCode</code></td><td>@r.Percent.ToString("0.##")%@(r.Status != null ? " · " + r.Status : "")</td>
+                                <td>@r.State@(r.State == WorkbenchOutboxState.Pending && r.Attempts > 0 ? $" (try {r.Attempts})" : "")</td><td>@(r.Error ?? r.Note)</td>
+                                <td>@if (r.State == WorkbenchOutboxState.Failed) { <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => Retry(r.Id)">Retry</MudButton> }</td></tr>
+                        }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            }
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" HtmlTag="h3" id="workbench-plan">Create epics and issues from the WBS</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                Workbench owns the schedule and structure (WBS codes and nesting, dates, planned hours, dependencies): edits to those here are put back at the next sync and noted on the issue.
+                ByteBench owns work state: status and progress are never overwritten. Tasks removed or moved in Workbench are flagged, never deleted.
+            </MudText>
+            @if (string.IsNullOrEmpty(Project.WorkbenchProjectCode))
+            {
+                <MudText Typo="Typo.body2">Pick the Workbench project above and save first.</MudText>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-2 align-start">
+                    <MudTextField T="string" @bind-Value="planRoot" Label="WBS subtree (optional)" Placeholder="whole plan" Variant="Variant.Outlined" Margin="Margin.Dense" Class="settings-mono" MaxLength="50" />
+                    <MudNumericField T="int" @bind-Value="planLevels" Label="Summary levels that become epics" Min="0" Max="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+                <MudCheckBox T="bool" @bind-Value="planReconcile" Label="Reconcile periodically (every Workbench:ReconcileMinutes)" Color="Color.Primary" />
+                <div class="d-flex flex-wrap gap-2 mt-1">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="syncing" OnClick="SavePlanSettings">Save settings</MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="syncing" OnClick="DoPreview" data-testid="wb-plan-preview">Preview</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(syncing || plan.State is WorkbenchPlanSyncState.Queued or WorkbenchPlanSyncState.Running)" OnClick="RunPlan" data-testid="wb-plan-run">@(plan.LastRunAt == null ? "Create epics and issues" : "Sync now")</MudButton>
+                </div>
+                @if (plan.State is WorkbenchPlanSyncState.Queued or WorkbenchPlanSyncState.Running)
+                {
+                    <MudText Typo="Typo.caption" Class="d-block mt-2">@(plan.State == WorkbenchPlanSyncState.Queued ? "Queued…" : $"Running: {plan.Processed} of {plan.Total} tasks")</MudText>
+                }
+                @if (preview is { } pv)
+                {
+                    @if (pv.Error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@pv.Error</MudAlert> }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2" data-testid="wb-plan-preview-result">Would create @pv.ToCreate, update @pv.ToUpdate, leave @pv.Unchanged, flag @pv.ToFlag. Nothing has been written.</MudAlert>
+                        <MudSimpleTable Dense="true" Elevation="0" Class="mt-2" Style="max-height: 320px; overflow:auto">
+                            <thead><tr><th>Task</th><th>Becomes</th><th>WBS</th><th>Under</th><th>Action</th></tr></thead>
+                            <tbody>
+                            @foreach (var r in pv.Rows.Where(x => x.Action != "Unchanged"))
+                            {
+                                <tr><td>@r.Title</td><td>@r.Type</td><td><code>@r.Wbs</code></td><td>@r.Parent</td><td>@r.Action@(r.Detail != null ? " (" + r.Detail + ")" : "")</td></tr>
+                            }
+                            </tbody>
+                        </MudSimpleTable>
+                        @foreach (var n in pv.Notes) { <MudText Typo="Typo.caption" Class="d-block mt-1">@n</MudText> }
+                        @if (pv.UnmatchedPeople.Count > 0) { <MudText Typo="Typo.caption" Class="d-block mt-1">No ByteBench account for: @string.Join(", ", pv.UnmatchedPeople) (never created automatically).</MudText> }
+                    }
+                }
+                @if (report is { } rp)
+                {
+                    <MudAlert Severity="@(rp.Error == null ? Severity.Success : Severity.Error)" Dense="true" Class="mt-2" data-testid="wb-plan-report">
+                        @if (rp.Error != null) { @rp.Error }
+                        else { <span>Last sync @rp.At.ToLocalTime().ToString("g"): created @rp.Created, updated @rp.Updated, unchanged @rp.Unchanged, flagged @rp.Flagged, dependency links @rp.Links.</span> }
+                    </MudAlert>
+                    @foreach (var n in rp.Notes) { <MudText Typo="Typo.caption" Class="d-block mt-1">@n</MudText> }
+                    @if (rp.UnmatchedPeople.Count > 0) { <MudText Typo="Typo.caption" Class="d-block mt-1">No ByteBench account for: @string.Join(", ", rp.UnmatchedPeople) (never created automatically).</MudText> }
+                }
+                @if (flagged.Count > 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">Issues whose task is gone from Workbench (not deleted; close, delete or move the task back):</MudText>
+                    <ul>@foreach (var f in flagged) { <li><a href="/p/@Project.Key/issues/@f.Number">#@f.Number @f.Title</a></li> }</ul>
+                }
+            }
+        }
     </MudPaper>
 }
 
 @code {
     [Parameter, EditorRequired] public Project Project { get; set; } = null!;
 
-    private bool canManage;
-    private string? wbs, projectCode, error;
+    private bool canManage, pickers, pushOn, syncing, planReconcile;
+    private string? wbs, projectCode, error, pickerNote, planRoot;
+    private int planLevels = 1;
+    private IReadOnlyList<WbProject> projects = [];
+    private IReadOnlyList<WbWbs> wbsList = [];
+    private List<WorkbenchPushLogRow> log = [];
+    private WorkbenchPlanSync plan = new();
+    private PlanPreview? preview;
+    private PlanReport? report;
+    private IReadOnlyList<(int IssueId, int Number, string Title, DateTime? Since)> flagged = [];
+    private System.Threading.Timer? poll;
 
     private bool Changed => Norm(wbs) != Project.WorkbenchWbs || Norm(projectCode) != Project.WorkbenchProjectCode;
 
     private static string? Norm(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
+    private string NameOf(string code) => projects.FirstOrDefault(p => p.Code == code)?.Name ?? "";
+    private string WbsName(string code) => wbsList.FirstOrDefault(w => w.Code == code)?.Name ?? "";
+
     protected override async Task OnParametersSetAsync()
     {
         canManage = (await Access.GetPermissionsAsync(Project.Id)).Role >= ProjectRole.Maintainer;
         (wbs, projectCode) = (Project.WorkbenchWbs, Project.WorkbenchProjectCode);
+        if (!canManage) return;
+        if (Workbench.IsConnected) await LoadPickersAsync();
+        if (Workbench.IsConnected) await ReloadSyncAsync();
     }
 
-    private async Task Save()
+    private async Task LoadPickersAsync()
+    {
+        var all = await Directory.ListProjectsAsync();
+        pickers = all.Ok;
+        pickerNote = all.Ok ? null : all.Message;
+        if (!all.Ok) { pickers = false; return; }
+        projects = all.Value!;
+        await LoadWbsAsync();
+    }
+
+    private async Task LoadWbsAsync()
+    {
+        wbsList = [];
+        if (Norm(projectCode) is { } code && projects.FirstOrDefault(p => p.Code.Equals(code, StringComparison.OrdinalIgnoreCase)) is { } p)
+        {
+            var r = await Directory.ListWbsAsync(p.Id);
+            if (r.Ok) wbsList = r.Value!;
+        }
+    }
+
+    private Task<IEnumerable<string>> SearchProjects(string? text, CancellationToken ct) =>
+        Task.FromResult(WorkbenchDirectory.SearchProjects(projects, text).Select(p => p.Code));
+
+    private async Task<IEnumerable<string>> SearchWbs(string? text, CancellationToken ct)
+    {
+        if (wbsList.Count == 0) await LoadWbsAsync();
+        return WorkbenchDirectory.SearchWbs(wbsList, text).Select(w => w.Code);
+    }
+
+    private async Task ReloadSyncAsync()
+    {
+        pushOn = await Push.IsEnabledAsync(Project.Id);
+        log = pushOn ? (await Push.RecentAsync(Project.Id)).ToList() : [];
+        plan = await PlanSync.GetAsync(Project.Id);
+        (planRoot, planLevels, planReconcile) = (plan.RootWbsCode, plan.EpicLevels, plan.ReconcileEnabled);
+        report = WorkbenchPlanSyncService.ReportOf(plan);
+        flagged = await PlanSync.FlaggedAsync(Project.Id);
+        if (plan.State is WorkbenchPlanSyncState.Queued or WorkbenchPlanSyncState.Running) poll ??= new System.Threading.Timer(async _ => { await InvokeAsync(async () => { await ReloadSyncAsync(); StateHasChanged(); }); }, null, 2000, 2000);
+        else { poll?.Dispose(); poll = null; }
+    }
+
+    private async Task Run(Func<Task> action)
     {
         error = null;
-        try
-        {
-            await Workbench.SetProjectMappingAsync(Project.Id, wbs, projectCode);
-            (Project.WorkbenchWbs, Project.WorkbenchProjectCode) = (Norm(wbs), Norm(projectCode));
-            Snackbar.Add("Workbench charge code saved.", Severity.Success);
-        }
+        try { await action(); }
         catch (InvalidOperationException ex) { error = ex.Message; }
     }
+
+    private Task Save() => Run(async () =>
+    {
+        await Workbench.SetProjectMappingAsync(Project.Id, wbs, projectCode);
+        (Project.WorkbenchWbs, Project.WorkbenchProjectCode) = (Norm(wbs), Norm(projectCode));
+        Snackbar.Add("Workbench mapping saved.", Severity.Success);
+        if (Workbench.IsConnected) await ReloadSyncAsync();
+    });
+
+    private Task SetPush(bool on) => Run(async () => { await Push.SetEnabledAsync(Project.Id, on); await ReloadSyncAsync(); });
+
+    private Task SyncNow() => Run(async () =>
+    {
+        syncing = true;
+        try { var n = await Push.SyncNowAsync(Project.Id); Snackbar.Add(n == 0 ? "Nothing to push." : $"{n} update(s) queued and sent.", Severity.Info); }
+        finally { syncing = false; }
+        await ReloadSyncAsync();
+    });
+
+    private Task Retry(int id) => Run(async () => { await Push.RetryAsync(Project.Id, id); await ReloadSyncAsync(); });
+
+    private Task SavePlanSettings() => Run(async () => { await PlanSync.SaveSettingsAsync(Project.Id, planRoot, planLevels, planReconcile); Snackbar.Add("Saved.", Severity.Success); });
+
+    private Task DoPreview() => Run(async () =>
+    {
+        syncing = true;
+        try { await PlanSync.SaveSettingsAsync(Project.Id, planRoot, planLevels, planReconcile); preview = await PlanSync.PreviewAsync(Project.Id); }
+        finally { syncing = false; }
+    });
+
+    private Task RunPlan() => Run(async () =>
+    {
+        await PlanSync.SaveSettingsAsync(Project.Id, planRoot, planLevels, planReconcile);
+        await PlanSync.QueueAsync(Project.Id);
+        preview = null;
+        await ReloadSyncAsync();
+    });
+
+    public void Dispose() => poll?.Dispose();
 }

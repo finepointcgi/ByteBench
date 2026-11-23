@@ -1577,6 +1577,19 @@ Code: `Services/Workbench/WorkbenchService.cs`, `Components/Workbench/` (`Workbe
 - **GQL:** `wbs = "1.2.3"` (alias `chargeCode`) matches the issue's override, else its project's code; `wbs is EMPTY` finds issues with neither.
 - **Upgrading:** the `RemoveTimeTracking` migration drops the `WorkLogs` table. **Existing work logs are deleted**; export them first if you need them (e.g. from a database backup). Estimates are kept.
 
+### Workbench integration (API key)
+
+Beyond the link, a site admin connects ByteBench to the Workbench REST API on **Admin > Workbench** (`/admin/workbench`): address (overrides `Workbench:BaseUrl`), a scoped `wbk_` key stored encrypted and never shown back, replace/remove, and **Test connection**, which probes what the key can read and write (needs `projects:read` and `sheets:read`; `sheets:write` only for pushing; never `time`). ByteBench never writes time.
+
+Code: `Services/Workbench/` (`WorkbenchClient` SSRF-guarded API client, `WorkbenchDirectory` cached lists, `WorkbenchContextService`, `WorkbenchPush*` outbox, `WorkbenchPlan*` plan sync), `Components/Workbench/`, `Components/Pages/Admin/WorkbenchAdminPage.razor`, `Data/WorkbenchModels.cs`. Tests: `tests/ByteBench.Tests/WorkbenchIntegrationTests.cs` against a fake Workbench (`Infrastructure/FakeWorkbench.cs`).
+
+- **Pickers:** the project's Workbench card lists Workbench projects and WBS tasks (searchable, cached) and validates codes; free text when not connected. Same for an issue's WBS override.
+- **Read-only context:** title, status, % complete, dates, planned vs charged hours and links back, loaded after render, cached, hidden on 403 or when Workbench is down.
+- **Plan to epics and issues (Maintainer):** preview, then create/sync epics, tasks and sub-tasks from the WBS (idempotent by Workbench task id; Workbench owns schedule and structure, ByteBench owns work state; removed tasks are flagged, not deleted; people matched by email). Periodic reconcile `Workbench:ReconcileMinutes`, limit `Workbench:MaxTasksPerSync`. Workbench emits no plan webhooks, so there is no inbound endpoint.
+- **Push work state (Maintainer, off by default):** % complete and Status through `POST /api/v1/sheets/{sheet}/tasks/{item}/status`, via a durable outbox with retry/backoff and a visible log.
+- **Config keys:** `Workbench:AllowPrivateNetworks`, `TimeoutSeconds`, `CacheSeconds`, `PushWorkerEnabled`, `PushIntervalSeconds`, `ReconcileMinutes`, `MaxTasksPerSync`. Audit events: `workbench.*`, `project.workbench_push_changed`, `project.workbench_plan_sync_*`.
+- Details: [site/pages/workbench.html](site/pages/workbench.html).
+
 ## Explore, profiles & search
 
 Code: `Services/Explore/` (`StarService`, `ExploreService`, `UserActivityService`, `SearchService`, `PushActivityListener`), pages `Components/Pages/Explore.razor`, `UserProfilePage.razor` and `SearchPage.razor`, the app-bar box `Components/Layout/GlobalSearchBox.razor`, and `wwwroot/js/shortcuts.js`. Everything is filtered with `ProjectAccess.VisibleProjectIdsAsync`, so nothing from a project you can't see shows up anywhere: not in search, not in Explore, and not on someone else's profile.

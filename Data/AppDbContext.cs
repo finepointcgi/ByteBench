@@ -358,6 +358,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureMergeQueue(b);
         ConfigureSecurity(b);
         ConfigurePages(b);
+        ConfigureWorkbench(b);
         ConfigureChatIntegrations(b);
         ConfigureServiceDesk(b);
         ConfigureAiTriage(b);

@@ -10,6 +10,7 @@ public static class FieldsServiceCollectionExtensions
         services.AddScoped<IssueTemplateService>();
         services.AddScoped<EstimateService>();
         services.AddScoped<Workbench.WorkbenchService>();
+        Workbench.WorkbenchServiceCollectionExtensions.AddWorkbenchIntegration(services);
         // GQL: component, fixVersion, affectsVersion, estimates, wbs and cf[key].
         services.AddSingleton<Query.IQueryFieldProvider, IssueFieldQueryFields>();
         return services;

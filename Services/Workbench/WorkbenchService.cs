@@ -2,7 +2,6 @@ using System.Text.RegularExpressions;
 using ByteBench.Data;
 using ByteBench.Services.Audit;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace ByteBench.Services.Workbench;
 
@@ -11,6 +10,23 @@ public class WorkbenchOptions
 {
     /// <summary>Workbench's address, e.g. <c>https://workbench.example.com</c>. Unset (the default) turns the link off.</summary>
     public string? BaseUrl { get; set; }
+    /// <summary>
+    /// Allow the Workbench address to be loopback, private, link-local or a metadata address (the SSRF guard). Null (the default)
+    /// follows <c>Webhooks:AllowPrivateNetworks</c>, which appsettings.Development.json turns on.
+    /// </summary>
+    public bool? AllowPrivateNetworks { get; set; }
+    /// <summary>Seconds one call to the Workbench API may take before it is given up on.</summary>
+    public int TimeoutSeconds { get; set; } = 5;
+    /// <summary>How long Workbench data (project and WBS lists, task context) is cached.</summary>
+    public int CacheSeconds { get; set; } = 60;
+    /// <summary>Runs the background worker that pushes work state to Workbench for projects that opted in.</summary>
+    public bool PushWorkerEnabled { get; set; } = true;
+    /// <summary>Seconds between the push worker's sweeps.</summary>
+    public int PushIntervalSeconds { get; set; } = 30;
+    /// <summary>Minutes between plan-to-issues reconciles of the projects that enabled it (0 turns the periodic reconcile off).</summary>
+    public int ReconcileMinutes { get; set; } = 15;
+    /// <summary>The most plan tasks one sync will handle; a bigger plan is refused (choose a WBS subtree) rather than cut off.</summary>
+    public int MaxTasksPerSync { get; set; } = 2000;
 }
 
 /// <summary>Where to log time for an issue: its effective charge code and the Workbench timesheet to open.</summary>
@@ -23,7 +39,7 @@ public sealed record WorkbenchLink(string Wbs, string? ProjectCode, bool IsIssue
 /// (<c>{BaseUrl}/time</c>, the current week) in a new tab. Workbench's timesheet route takes no charge code, so the code
 /// is shown next to the button for the user to pick in the grid.
 /// </summary>
-public partial class WorkbenchService(IOptions<WorkbenchOptions> options, IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access,
+public partial class WorkbenchService(WorkbenchCredentials credentials, WorkbenchDirectory directory, IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access,
     IssueService issues, AuditLog audit)
 {
     public const int MaxCodeLength = 50;
@@ -34,10 +50,16 @@ public partial class WorkbenchService(IOptions<WorkbenchOptions> options, IDbCon
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._\-/]*$")]
     private static partial Regex CodePattern();
 
-    /// <summary>The configured base URL without a trailing slash, or null when unset or not an absolute http(s) URL.</summary>
-    public string? BaseUrl { get; } = Normalize(options.Value.BaseUrl);
+    /// <summary>
+    /// The Workbench address without a trailing slash: the one saved on the admin page, else <c>Workbench:BaseUrl</c>; null when
+    /// neither is set (or not an absolute http(s) URL).
+    /// </summary>
+    public string? BaseUrl => credentials.BaseUrl;
 
     public bool IsConfigured => BaseUrl != null;
+
+    /// <summary>True when an API key is stored too, so pickers, context and push can talk to the Workbench API.</summary>
+    public bool IsConnected => BaseUrl != null && credentials.ApiKey != null;
 
     public static string? Normalize(string? url)
     {
@@ -56,7 +78,8 @@ public partial class WorkbenchService(IOptions<WorkbenchOptions> options, IDbCon
     /// <summary>The link for an issue (with its Project loaded), or null when Workbench isn't configured or there's no WBS code.</summary>
     public WorkbenchLink? LinkFor(Issue issue, Project project)
     {
-        if (TimesheetUrl() is not { } url || EffectiveWbs(issue.WorkbenchWbs, project.WorkbenchWbs) is not { } wbs) return null;
+        // Workbench's timesheet route takes only ?date=: for finished work, open the period of the day it was closed.
+        if (TimesheetUrl(issue.ClosedAt is { } closed ? DateOnly.FromDateTime(closed) : null) is not { } url || EffectiveWbs(issue.WorkbenchWbs, project.WorkbenchWbs) is not { } wbs) return null;
         return new WorkbenchLink(wbs, project.WorkbenchProjectCode, issue.WorkbenchWbs != null, url);
     }
 
@@ -75,6 +98,7 @@ public partial class WorkbenchService(IOptions<WorkbenchOptions> options, IDbCon
     {
         await access.RequireRoleAsync(projectId, ProjectRole.Maintainer, "change the Workbench charge code", actorId);
         var (newWbs, newCode) = (CleanCode(wbs, "WBS code"), CleanCode(projectCode, "Workbench project code"));
+        await ValidateCodesAsync(newCode, newWbs);
         await using var db = await dbFactory.CreateDbContextAsync();
         var p = await db.Projects.FirstOrDefaultAsync(x => x.Id == projectId) ?? throw new InvalidOperationException("Project not found.");
         var before = new { wbs = p.WorkbenchWbs, projectCode = p.WorkbenchProjectCode };
@@ -90,6 +114,13 @@ public partial class WorkbenchService(IOptions<WorkbenchOptions> options, IDbCon
     {
         var actor = await access.ResolveUserIdAsync(actorId) ?? throw new ForbiddenException("Sign in to edit issues.");
         var code = CleanCode(wbs, "WBS code");
+        if (code != null && await IsConnectedAsync())
+        {
+            string? projectCode;
+            await using (var db = await dbFactory.CreateDbContextAsync())
+                projectCode = await db.Issues.Where(i => i.Id == issueId).Select(i => i.Project.WorkbenchProjectCode).FirstOrDefaultAsync();
+            await ValidateCodesAsync(projectCode, code);
+        }
         string? old = null;
         var projectId = 0;
         var changed = false;
@@ -104,5 +135,22 @@ public partial class WorkbenchService(IOptions<WorkbenchOptions> options, IDbCon
         });
         if (changed)
             await audit.RecordAsync("issue.workbench_changed", "issue", issueId, projectId, new { before = old, after = code }, actor);
+    }
+
+    private Task<bool> IsConnectedAsync() => Task.FromResult(IsConnected);
+
+    /// <summary>
+    /// When connected, checks that the Workbench project code and WBS element exist, so a typo is caught here rather than when
+    /// someone charges time. Not connected, or Workbench unreachable or refusing the key: the codes are accepted as free text.
+    /// </summary>
+    public async Task ValidateCodesAsync(string? projectCode, string? wbs)
+    {
+        if (!IsConnected || (projectCode == null && wbs == null)) return;
+        if (projectCode == null) return; // a WBS code alone can't be checked: which project's?
+        var project = await directory.FindProjectAsync(projectCode);
+        if (project.Status == WbStatus.NotFound) throw new InvalidOperationException(project.Message);
+        if (!project.Ok || wbs == null) return;
+        var element = await directory.FindWbsAsync(project.Value!, wbs, fresh: true);
+        if (element.Status == WbStatus.NotFound) throw new InvalidOperationException(element.Message);
     }
 }

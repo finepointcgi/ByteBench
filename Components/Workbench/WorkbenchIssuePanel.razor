@@ -3,6 +3,7 @@
    the code for this issue. *@
 @using ByteBench.Services.Workbench
 @inject WorkbenchService Workbench
+@inject WorkbenchDirectory Directory
 
 @if (Workbench.IsConfigured)
 {
@@ -26,14 +27,27 @@
                 Time is logged in Workbench. <a href="/p/@Project.Key/settings#workbench">Set a Workbench charge code</a> to show a "Log time in Workbench" button here.
             </MudText>
         }
+        @if (Workbench.IsConnected && link != null)
+        {
+            <WorkbenchTaskSummary ProjectId="Project.Id" Wbs="@link.Wbs" @key="link.Wbs" />
+        }
         @if (Perms.Can(Permission.EditIssues))
         {
             @if (editing)
             {
                 <div class="wb-edit">
-                    <MudTextField T="string" @bind-Value="draft" Label="Charge code for this issue" Placeholder="@(Project.WorkbenchWbs ?? "e.g. 1.2.3")"
-                                  MaxLength="WorkbenchService.MaxCodeLength" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  HelperText="Empty uses the project's code." Error="@(error != null)" ErrorText="@error" />
+                    @if (wbsList.Count > 0)
+                    {
+                        <MudAutocomplete T="string" @bind-Value="draft" SearchFunc="SearchWbs" Label="Charge code for this issue" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         CoerceValue="true" CoerceText="false" Clearable="true" MaxItems="40" ResetValueOnEmptyText="true" HelperText="Empty uses the project's code."
+                                         Error="@(error != null)" ErrorText="@error" data-testid="wb-issue-wbs-picker" />
+                    }
+                    else
+                    {
+                        <MudTextField T="string" @bind-Value="draft" Label="Charge code for this issue" Placeholder="@(Project.WorkbenchWbs ?? "e.g. 1.2.3")"
+                                      MaxLength="WorkbenchService.MaxCodeLength" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      HelperText="Empty uses the project's code." Error="@(error != null)" ErrorText="@error" />
+                    }
                     <div class="d-flex gap-1">
                         <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Save</MudButton>
                         <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => editing = false">Cancel</MudButton>
@@ -58,10 +72,21 @@
     private bool editing;
     private string? draft, error;
 
-    private void StartEdit()
+    private IReadOnlyList<WbWbs> wbsList = [];
+
+    private async Task StartEdit()
     {
         (draft, error, editing) = (Issue.WorkbenchWbs, null, true);
+        wbsList = [];
+        if (Workbench.IsConnected && Project.WorkbenchProjectCode is { } code)
+        {
+            var p = await Directory.FindProjectAsync(code);
+            if (p.Ok && (await Directory.ListWbsAsync(p.Value!.Id)) is { Ok: true } l) wbsList = l.Value!;
+        }
     }
+
+    private Task<IEnumerable<string>> SearchWbs(string? text, CancellationToken ct) =>
+        Task.FromResult(WorkbenchDirectory.SearchWbs(wbsList, text).Select(w => w.Code));
 
     private async Task Save()
     {

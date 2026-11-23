@@ -1,0 +1,124 @@
+@page "/admin/workbench"
+@using ByteBench.Services.Workbench
+@inject CurrentUser Me
+@inject WorkbenchConnectionService Connection
+@inject ISnackbar Snackbar
+
+<PageTitle>Workbench · ByteBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can configure the Workbench connection." />
+}
+else if (info != null)
+{
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">Workbench</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            Connects ByteBench to Workbench, the company ERP, through a scoped API key: project and WBS pickers, read-only task context, plan to epics and issues,
+            and pushing work state. ByteBench never writes time. Changes are recorded in the <MudLink Href="/admin/audit" Typo="Typo.body2">audit log</MudLink> as <code>workbench.*</code>.
+        </MudText>
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Connection</MudText>
+        <MudTextField T="string" @bind-Value="url" Label="Workbench address" Placeholder="https://workbench.example.com" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      HelperText="@UrlHelp" Immediate="true" data-testid="wb-url" />
+        <MudTextField T="string" @bind-Value="key" Label="@(info.HasKey ? "Replace API key" : "API key")" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Class="mt-3" Placeholder="wbk_…" Immediate="true" autocomplete="off"
+                      HelperText="@(info.HasKey ? $"A key ending …{info.KeyHint} is stored (encrypted). It is never shown again; leave blank to keep it." : "Create a key in Workbench (Admin › Integrations › API keys) with the scopes listed below. It is stored encrypted and never shown again.")" />
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@error</MudAlert> }
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="busy" OnClick="Save">Save</MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(busy || !info.HasKey || info.EffectiveUrl == null)" OnClick="Test" data-testid="wb-test">Test connection</MudButton>
+            @if (info.HasKey)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" Disabled="busy" OnClick="RemoveKey">Remove key</MudButton>
+            }
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+            Removing the key only forgets it here. To revoke it, revoke it in Workbench too.
+            Needed scopes: <code>projects:read</code>, <code>sheets:read</code>; add <code>sheets:write</code> only to push work state. Don't grant <code>time</code>.
+            @if (!info.AllowPrivateNetworks) { <span> Private and local addresses are blocked (<code>Workbench:AllowPrivateNetworks</code>).</span> }
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Status</MudText>
+        @if (info.LastTest is { } t)
+        {
+            <MudAlert Severity="@(t.Ok ? Severity.Success : Severity.Warning)" Dense="true" Class="mb-3" data-testid="wb-summary">@t.Summary <span class="mud-text-secondary">(@t.At.ToLocalTime().ToString("g"))</span></MudAlert>
+            @if (t.Probes.Count > 0)
+            {
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>Area</th><th>Used for</th><th>Read</th><th>Write</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var p in t.Probes)
+                    {
+                        <tr><td>@p.Label</td><td>@p.Purpose</td><td>@Tri(p.CanRead)</td><td>@(p.Area == "sheets" ? Tri(p.CanWrite) : "n/a")</td><td>@p.Note</td></tr>
+                    }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        }
+        else { <MudText Typo="Typo.body2" Class="mud-text-secondary">@(info.HasKey ? "Not tested yet." : "Not connected: set the address and key.")</MudText> }
+        @if (info.KeySetAt != null) { <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">Key stored @info.KeySetAt.Value.ToLocalTime().ToString("g")@(info.KeySetBy != null ? $" by {info.KeySetBy}" : "").</MudText> }
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Recent activity</MudText>
+        @if (events.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">Nothing yet.</MudText> }
+        else
+        {
+            <MudSimpleTable Dense="true" Elevation="0">
+                <thead><tr><th>When</th><th>Event</th><th>Who</th></tr></thead>
+                <tbody>
+                @foreach (var e in events) { <tr><td>@e.CreatedAt.ToLocalTime().ToString("g")</td><td><code>@e.Action</code></td><td>@(e.ActorName ?? "system")</td></tr> }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    private WorkbenchConnectionInfo? info;
+    private List<ByteBench.Data.AuditEvent> events = [];
+    private string? url, key, error;
+    private bool busy;
+
+    private string UrlHelp => info!.UrlFromSettings ? "Saved here (overrides Workbench:BaseUrl)." : info.ConfiguredUrl != null ? $"Using Workbench:BaseUrl ({info.ConfiguredUrl}); enter an address to override it." : "Not set.";
+
+    private static string Tri(bool? v) => v == true ? "yes" : v == false ? "no" : "unknown";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Me.User?.IsAdmin != true) return;
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        info = await Connection.GetAsync();
+        url = info.StoredUrl;
+        events = await Connection.RecentAuditAsync();
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        (busy, error) = (true, null);
+        try { await action(); await Reload(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private Task Save() => Run(async () =>
+    {
+        await Connection.SaveAsync(url, key);
+        key = null;
+        Snackbar.Add("Workbench connection saved.", Severity.Success);
+    });
+
+    private Task Test() => Run(async () => { var r = await Connection.TestAsync(); Snackbar.Add(r.Summary, r.Ok ? Severity.Success : Severity.Warning); });
+
+    private Task RemoveKey() => Run(async () => { await Connection.RemoveKeyAsync(); Snackbar.Add("Key removed.", Severity.Info); });
+}
