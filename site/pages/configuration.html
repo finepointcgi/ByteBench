@@ -412,6 +412,37 @@ Authentication__Oidc__Providers__0__Authority=https://sso.example.com/realms/acm
 Authentication__Oidc__Providers__0__ClientId=bytebench
 Authentication__Oidc__Providers__0__ClientSecret=...   # keep in a secret store</code></pre>
 
+<h2 id="saml">Saml and Scim</h2>
+<p>SAML single sign-on and SCIM provisioning; details in <a href="saml-scim.html">SAML and SCIM</a>. The SAML settings an admin saves on <code>/admin/authentication</code> replace all of <code>Saml:*</code> (except <code>AllowPrivateNetworks</code>) until reset there. None of these keys is a secret: the optional SP signing key is generated on the admin page and stored encrypted with Data Protection, and SCIM tokens are created there and stored as hashes.</p>
+<table>
+  <tr><th>Key (under <code>Saml</code>)</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Enabled</code></td><td><code>false</code></td><td>Show "Sign in with …" and accept responses</td></tr>
+  <tr><td><code>DisplayName</code></td><td><code>SAML</code></td><td>Button label</td></tr>
+  <tr><td><code>IdpEntityId</code>, <code>IdpSsoUrl</code>, <code>IdpSloUrl</code></td><td>none</td><td>The IdP's entity ID (issuer), single sign-on URL (HTTP-Redirect) and optional single logout URL</td></tr>
+  <tr><td><code>IdpCertificates</code></td><td>empty</td><td>List of the IdP's signing certificates (PEM or base64 DER); two during a rollover</td></tr>
+  <tr><td><code>IdpMetadataUrl</code></td><td>none</td><td>Used by "Fetch metadata" on the admin page</td></tr>
+  <tr><td><code>AllowPrivateNetworks</code></td><td><code>Webhooks:AllowPrivateNetworks</code></td><td>Allow a metadata URL on loopback or private addresses</td></tr>
+  <tr><td><code>SpEntityId</code></td><td><code>{site}/saml/metadata</code></td><td>ByteBench's entity ID (the audience)</td></tr>
+  <tr><td><code>BaseUrl</code></td><td>from the request</td><td>The site's public URL, for the ACS URL and entity ID behind an unconfigured proxy</td></tr>
+  <tr><td><code>NameIdFormat</code></td><td>unspecified</td><td>Requested NameID format (transient NameIDs are refused)</td></tr>
+  <tr><td><code>SignAuthnRequests</code></td><td><code>false</code></td><td>Sign requests with the SP key generated on the admin page</td></tr>
+  <tr><td><code>WantAssertionsSigned</code></td><td><code>true</code></td><td>Require the assertion itself to be signed</td></tr>
+  <tr><td><code>Attributes:Email</code>, <code>DisplayName</code>, <code>UserName</code>, <code>Groups</code></td><td><code>email</code>, <code>displayName</code>, <code>username</code>, <code>groups</code></td><td>Attribute names (Name or FriendlyName)</td></tr>
+  <tr><td><code>AutoCreateUsers</code>, <code>LinkByEmail</code>, <code>TrustEmail</code></td><td><code>true</code></td><td>Account rules, as for an OIDC provider</td></tr>
+  <tr><td><code>AllowedEmailDomains</code>, <code>AdminGroups</code>, <code>GroupMappings</code></td><td>empty</td><td>As for an OIDC provider</td></tr>
+  <tr><td><code>ClockSkewSeconds</code></td><td>120</td><td>Allowed clock difference (0 to 600)</td></tr>
+  <tr><td><code>MaxResponseKilobytes</code></td><td>256</td><td>Largest accepted response</td></tr>
+  <tr><td><code>AllowSha1</code></td><td><code>false</code></td><td>Accept SHA-1 signatures (old IdPs only)</td></tr>
+</table>
+<table>
+  <tr><th>Key (under <code>Scim</code>)</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>MaxBodyKilobytes</code></td><td>64</td><td>Largest request body (413 above)</td></tr>
+  <tr><td><code>MaxFailuresPerIp</code>, <code>FailureWindowMinutes</code></td><td>10, 15</td><td>Failed token attempts per client address before 429</td></tr>
+  <tr><td><code>ManageAdmins</code></td><td><code>false</code></td><td>Let SCIM change or deactivate site administrators</td></tr>
+  <tr><td><code>DefaultPageSize</code>, <code>MaxPageSize</code></td><td>100, 200</td><td>List paging</td></tr>
+</table>
+<p>The on/off switch and the tokens live on <code>/admin/authentication</code>, not in the configuration.</p>
+
 <h2 id="examples">A realistic production snippet</h2>
 <pre><code># docker-compose.yml, under services.bytebench.environment
 PublicBaseUrl: "https://bytebench.example.com"

@@ -1,0 +1,126 @@
+<h1>SAML single sign-on and SCIM provisioning</h1>
+<p class="lead">Let people sign in to ByteBench with your company's SAML 2.0 identity provider (Microsoft Entra ID, Okta and others), and let that provider create, update and deactivate ByteBench accounts automatically through SCIM 2.0.</p>
+
+<p>Both are set up by a site admin on <b>Admin, Authentication</b> (<code>/admin/authentication</code>). SAML sits next to the OpenID Connect providers and LDAP described in <a href="accounts.html">Accounts, sign-in and SSO</a> and follows the same account rules. SCIM works with any sign-in method; it only manages the accounts.</p>
+
+<h2 id="saml">SAML single sign-on</h2>
+<p>ByteBench is the <em>service provider</em> (SP) and trusts one SAML <em>identity provider</em> (IdP). Sign-in is <b>SP-initiated</b>: the person clicks <b>Sign in with &lt;name&gt;</b> on the ByteBench sign-in page, ByteBench sends an authentication request to the IdP (HTTP-Redirect binding), and the IdP posts a signed response back to ByteBench (HTTP-POST binding).</p>
+
+<h3 id="saml-endpoints">ByteBench's SAML addresses</h3>
+<table>
+  <tr><th>Address</th><th>What it is</th></tr>
+  <tr><td><code>/saml/metadata</code></td><td>SP metadata XML: the entity ID, the ACS URL, the logout URL, the NameID format and, when requests are signed, the SP signing certificate. Most IdPs can import it. It answers 404 while SAML is off.</td></tr>
+  <tr><td><code>/saml/acs</code></td><td>The assertion consumer service (reply URL), where the IdP posts its response.</td></tr>
+  <tr><td><code>/saml/login</code></td><td>Starts a sign-in (the button links here). Takes an optional <code>returnUrl</code> on this site.</td></tr>
+  <tr><td><code>/saml/logout</code></td><td>Single logout, see <a href="#saml-logout">signing out</a>.</td></tr>
+</table>
+<p>The <b>SP entity ID</b> (the audience the IdP must put in its assertions) is <code>{site}/saml/metadata</code> unless you set another one. The admin page shows all of these with your site's address filled in.</p>
+
+<h3 id="saml-setup">Turn it on</h3>
+<ol>
+  <li>Open <code>/admin/authentication</code>, section <b>SAML 2.0 single sign-on</b>, and copy the SP entity ID and ACS URL into your IdP (see the walkthroughs below).</li>
+  <li>From the IdP, take its <b>metadata URL</b> and press <b>Fetch metadata</b>: this fills in the IdP entity ID, the single sign-on URL (HTTP-Redirect binding), the logout URL and the signing certificates. Or type them in and paste the certificate as PEM.</li>
+  <li>Check the attribute names, the allowed email domains and the admin group, switch <b>Enable SAML sign-in</b> on and press <b>Save SAML settings</b>. The sign-in page shows the button at once.</li>
+</ol>
+<p>The settings saved on the page override <code>Saml:*</code> from the configuration (see <a href="configuration.html#saml">the keys</a>). <b>Use appsettings instead</b> forgets the saved copy. Metadata is fetched only when you press the button; when the IdP rotates its certificate, fetch again (or paste both certificates) and save. The fetch goes through the same outbound guard as mirrors and importers: only <code>http</code>/<code>https</code>, no credentials in the URL, no redirects, no loopback, private, link-local or cloud metadata addresses unless <code>Saml:AllowPrivateNetworks</code> (default: <code>Webhooks:AllowPrivateNetworks</code>) is on, at most 1 MiB, 10 seconds.</p>
+
+<h3 id="saml-accounts">Accounts and attributes</h3>
+<p>After the response is validated, ByteBench handles the account exactly as for an OpenID Connect provider:</p>
+<ul>
+  <li>The NameID is the stable key of the link between the IdP account and the ByteBench account (login provider <code>saml</code>). Use a persistent or email NameID; a <b>transient</b> NameID changes every time and is refused.</li>
+  <li>The email comes from the email attribute (default <code>email</code>), or the NameID when that is an email address. Attribute names match an attribute's <code>Name</code> or <code>FriendlyName</code>, ignoring case. Display name, username and groups come from their attributes (defaults <code>displayName</code>, <code>username</code>, <code>groups</code>).</li>
+  <li>SAML has no "email verified" flag, so <b>Trust the IdP's email as verified</b> is on by default (right for your own company IdP). With it off, accounts are neither created nor linked by email.</li>
+  <li><b>Allowed email domains</b>, <b>Create accounts on first sign-in</b>, <b>Link existing accounts by email</b> (only when the ByteBench account's email is confirmed or it has no password), the registration policy, the <b>site admin group values</b> (granted when the user is in a group, revoked again only if SAML granted it, never for the last admin) and group mappings (<code>Saml:GroupMappings</code>) behave as described in <a href="accounts.html#sso-flow">How sign-in works</a>.</li>
+  <li>Accounts created this way have no ByteBench password. ByteBench two-factor sign-in still applies to users who turned it on. A locked or deactivated account can't sign in.</li>
+</ul>
+
+<h3 id="saml-signing">Signed requests</h3>
+<p>Requests are unsigned by default (most IdPs don't need signatures on them). To sign authentication and logout requests, press <b>Generate signing key</b> and switch <b>Sign authentication requests</b> on. ByteBench creates an RSA-2048 key with a self-signed certificate, stores it encrypted with ASP.NET Core Data Protection (it is never shown or logged) and publishes the certificate in <code>/saml/metadata</code>. Re-import the metadata at the IdP after generating or replacing the key. Requests are signed with RSA-SHA256 as the HTTP-Redirect binding specifies.</p>
+
+<h3 id="saml-logout">Signing out</h3>
+<p>Signing out of ByteBench always ends the ByteBench session. When the IdP has a single logout URL and the person signed in with SAML, ByteBench then sends the browser to the IdP with a logout request (SP-initiated single logout), and the IdP's answer comes back to <code>/saml/logout</code>, which shows the sign-in page. Logout requests started by the IdP are not supported.</p>
+
+<h3 id="saml-security">What ByteBench validates</h3>
+<p>Every rule below has a test that sends a response breaking it and checks that nobody is signed in. A refused response sends the browser to the sign-in page with a generic error, and the audit log records <code>auth.sso_failed</code> with <code>provider: saml</code> and a reason code.</p>
+<ul>
+  <li><b>Signatures</b> are checked against the configured IdP certificates only (several are allowed, for rollover), never against a key inside the message. Only the Response's and the Assertion's own signatures count; each one present must be valid, at least one must be present, and with <b>Require signed assertions</b> (on by default) the assertion itself must be signed. SHA-256 or better is required (SHA-1 only with <code>Saml:AllowSha1</code>). Only the enveloped-signature and exclusive canonicalization transforms are allowed.</li>
+  <li><b>Signature wrapping:</b> the response must contain exactly one assertion, directly inside the Response; no two elements may share an XML ID; and a signature must reference the very element it sits in. So the element whose signature was checked is the element that is read. Encrypted assertions are refused.</li>
+  <li><b>Issuer</b> of the response (if present) and of the assertion must be the IdP entity ID. <b>Audience</b> must include the SP entity ID. <b>Destination</b> must be the ACS URL (and is required on a signed response). The bearer subject confirmation's <b>Recipient</b> must be the ACS URL.</li>
+  <li><b>Time:</b> NotBefore and NotOnOrAfter of the conditions and the subject confirmation, with a clock skew of 120 seconds by default (<code>Saml:ClockSkewSeconds</code>, at most 600).</li>
+  <li><b>InResponseTo</b> must name an authentication request this server sent in the last 10 minutes, from the same browser (an encrypted, short-lived cookie holds the request ID), and each request can be answered once. Unsolicited responses are refused.</li>
+  <li><b>Replay:</b> an assertion ID is accepted once; sending the same assertion again is refused until it expires.</li>
+  <li><b>Status</b> must be Success; an error response never signs anyone in.</li>
+  <li><b>XML parsing</b> refuses DTDs, so there are no entity expansions or external entities. Responses over <code>Saml:MaxResponseKilobytes</code> (256 KiB by default) are refused.</li>
+  <li><b>RelayState</b> is only used when it is a path on this site; anything else (an absolute URL, <code>//host</code>) is ignored and the browser goes to the return URL the sign-in started with.</li>
+</ul>
+<p><b>IdP-initiated sign-in is not supported</b> (starting from the IdP's app portal without visiting ByteBench first). Without a request to answer, nothing ties the response to a sign-in this browser started, which allows login CSRF, and there is no request to use only once. Point the IdP's app tile at <code>{site}/saml/login</code> instead, which starts an SP-initiated sign-in.</p>
+
+<h2 id="idp-entra">Setting up Microsoft Entra ID</h2>
+<ol>
+  <li>In the Entra admin center, create an <b>Enterprise application</b> (a non-gallery application) and choose <b>SAML</b> as the single sign-on method.</li>
+  <li>Under the basic SAML configuration set <b>Identifier (Entity ID)</b> to ByteBench's SP entity ID and <b>Reply URL (Assertion Consumer Service URL)</b> to <code>{site}/saml/acs</code>. Set <b>Sign on URL</b> to <code>{site}/saml/login</code> and <b>Logout URL</b> to <code>{site}/saml/logout</code>.</li>
+  <li>Under attributes and claims, keep the default NameID (user principal name or a persistent identifier). Entra names attributes with long URIs: either set ByteBench's email attribute to <code>http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress</code> and the display name attribute to <code>http://schemas.microsoft.com/identity/claims/displayname</code>, or add claims with the short names <code>email</code>, <code>displayName</code> and <code>username</code>. For the admin group, add a group claim; Entra sends group object IDs (GUIDs) unless configured otherwise, so put the group's object ID in <b>Site admin group values</b>, and set the groups attribute to <code>http://schemas.microsoft.com/ws/2008/06/identity/claims/groups</code>.</li>
+  <li>Copy the <b>App Federation Metadata Url</b> into ByteBench's metadata URL and press <b>Fetch metadata</b>. Make sure the token signing uses SHA-256 and that the assertion is signed (Entra's "Sign SAML assertion" or "Sign SAML response and assertion" options).</li>
+  <li>Assign users or groups to the application, then test with <b>Sign in with &lt;name&gt;</b> on ByteBench's sign-in page.</li>
+</ol>
+
+<h2 id="idp-okta">Setting up Okta</h2>
+<ol>
+  <li>In the Okta admin console, create an app integration with <b>SAML 2.0</b>.</li>
+  <li>Set <b>Single sign-on URL</b> to <code>{site}/saml/acs</code> (and keep "use this for Recipient and Destination URL"), and <b>Audience URI (SP Entity ID)</b> to ByteBench's SP entity ID. Choose <b>Name ID format</b> EmailAddress or Persistent and <b>Application username</b> Email.</li>
+  <li>Under advanced settings keep the response and the assertion signed with RSA-SHA256, and leave assertion encryption off.</li>
+  <li>Add attribute statements <code>email</code> (user.email), <code>displayName</code>, <code>username</code>, and a group attribute statement <code>groups</code> with a filter for the groups ByteBench should see.</li>
+  <li>Copy the app's <b>metadata URL</b> into ByteBench and press <b>Fetch metadata</b>, or paste the IdP's SSO URL, issuer and signing certificate.</li>
+  <li>Assign people to the app. For the Okta dashboard tile, use <code>{site}/saml/login</code> as the app's initiate-login URL (IdP-initiated responses are refused).</li>
+</ol>
+
+<h2 id="scim">SCIM provisioning</h2>
+<p>SCIM 2.0 (RFC 7643 and 7644) lets the IdP push its users to ByteBench: create accounts before the first sign-in, keep names and emails current, and deactivate people who leave. The server is at <code>{site}/scim/v2</code>. Responses use <code>application/scim+json</code>, and errors are SCIM error bodies with a <code>status</code>, a <code>detail</code> and, where it applies, a <code>scimType</code> such as <code>invalidFilter</code>, <code>uniqueness</code>, <code>invalidSyntax</code> or <code>mutability</code>.</p>
+
+<h3 id="scim-setup">Turn it on</h3>
+<ol>
+  <li>On <code>/admin/authentication</code>, section <b>SCIM provisioning</b>, switch <b>Enable SCIM provisioning</b> on.</li>
+  <li>Enter a name (for example the IdP's) and press <b>Create token</b>. The token (<code>bbscim_…</code>) is shown <b>once</b>: copy it into the IdP's provisioning settings as the bearer token, with the SCIM base URL <code>{site}/scim/v2</code>.</li>
+</ol>
+<p>SCIM answers 403 while the switch is off or no unrevoked token exists. Only the SHA-256 of a token is stored, and checking a token compares hashes in constant time. <b>Rotate</b> revokes a token and creates a replacement with the same name; <b>Revoke</b> stops it at once. A missing, wrong or revoked token gets 401. After 10 failed attempts from one client address within 15 minutes (<code>Scim:MaxFailuresPerIp</code>, <code>Scim:FailureWindowMinutes</code>), that address gets 429 until the old failures age out, even with a good token. Request bodies over 64 KiB (<code>Scim:MaxBodyKilobytes</code>) get 413.</p>
+
+<h3 id="scim-endpoints">Endpoints</h3>
+<table>
+  <tr><th>Endpoint</th><th>Supported</th></tr>
+  <tr><td><code>GET /ServiceProviderConfig</code>, <code>/Schemas</code>, <code>/ResourceTypes</code></td><td>Discovery. PATCH and filtering are supported; bulk, sorting, ETags and password changes are not.</td></tr>
+  <tr><td><code>GET /Users</code></td><td><code>filter</code> with <code>eq</code>, <code>ne</code>, <code>co</code>, <code>sw</code>, <code>ew</code>, <code>pr</code> joined by <code>and</code>, on <code>userName</code>, <code>emails.value</code>, <code>externalId</code>, <code>id</code>, <code>displayName</code>, <code>active</code>; <code>startIndex</code> (from 1) and <code>count</code> (default 100, at most 200). Strings compare ignoring case. Other filters (<code>or</code>, parentheses, value paths) are 400 <code>invalidFilter</code>.</td></tr>
+  <tr><td><code>GET /Users/{id}</code></td><td>One user. The id is ByteBench's user id.</td></tr>
+  <tr><td><code>POST /Users</code></td><td>Create (201 with a <code>Location</code>). Needs <code>userName</code> and an email (from <code>emails</code>, or a <code>userName</code> that is an email).</td></tr>
+  <tr><td><code>PUT /Users/{id}</code></td><td>Replace: <code>userName</code>, display name, email, <code>externalId</code> (cleared when missing) and <code>active</code> (true when missing).</td></tr>
+  <tr><td><code>PATCH /Users/{id}</code></td><td><code>add</code>, <code>replace</code> and <code>remove</code> operations with a path (<code>active</code>, <code>userName</code>, <code>displayName</code>, <code>externalId</code>, <code>name.givenName</code>, <code>name.familyName</code>, <code>name.formatted</code>, <code>emails</code>, <code>emails[type eq "work"].value</code>), or without a path and an object value, as Okta and Entra ID send. Operation names are case-insensitive and <code>active</code> also accepts Entra's <code>"True"</code>/<code>"False"</code> strings. Attributes ByteBench doesn't keep (title, phone numbers, addresses, extension schemas) are ignored.</td></tr>
+  <tr><td><code>DELETE /Users/{id}</code></td><td>Deactivates the account (204). Accounts are never deleted.</td></tr>
+  <tr><td><code>GET /Groups</code>, <code>/Groups/{id}</code></td><td>Read-only: each ByteBench group's full path as <code>displayName</code> and its direct members. Filter on <code>displayName</code> or <code>id</code>.</td></tr>
+  <tr><td><code>POST</code>, <code>PUT</code>, <code>PATCH</code>, <code>DELETE /Groups</code></td><td>501. ByteBench groups are project namespaces with roles, not directory groups, so the IdP can't create them or change their members. Give access with group membership in ByteBench, or with the SAML/OIDC group mappings.</td></tr>
+</table>
+
+<h3 id="scim-accounts">How SCIM users map to accounts</h3>
+<ul>
+  <li>A new SCIM user gets a ByteBench account with a valid username made from the SCIM <code>userName</code> (an email's local part, made unique), the email marked confirmed and no password: they sign in with SAML or OIDC. The SCIM <code>userName</code> and <code>externalId</code> are kept separately, so later renames at the IdP don't change ByteBench URLs.</li>
+  <li>Accounts SCIM hasn't touched answer a <code>userName eq</code> filter with their ByteBench username or their email, and a <code>POST</code> with the email of such an account adopts it instead of failing. This lets an IdP match existing people before creating new ones. Another account with the same SCIM <code>userName</code> or email is a 409 <code>uniqueness</code> error.</li>
+  <li><b>Site administrators are read-only to SCIM</b>: changing, deactivating or adopting one is refused with 403 unless <code>Scim:ManageAdmins</code> is on. SCIM can't grant site admin; use the SAML admin group or the user admin page. ByteBench's system bot accounts are not listed.</li>
+  <li><b>Deactivating</b> (<code>active: false</code> or DELETE) uses the same mechanism as the admin user page and LDAP sync: the account is locked, every browser session ends within a minute, every personal access token is revoked, and password, LDAP, OIDC and SAML sign-in, git over HTTP and SSH, packages and the API all refuse it. <code>active: true</code> reactivates it; revoked tokens stay revoked.</li>
+</ul>
+
+<h3 id="scim-idp">Connecting Entra ID and Okta</h3>
+<ul>
+  <li><b>Entra ID:</b> in the enterprise application, open <b>Provisioning</b>, set the mode to automatic, the <b>Tenant URL</b> to <code>{site}/scim/v2</code> and the <b>Secret Token</b> to the SCIM token, and test the connection. Map <code>userPrincipalName</code> or <code>mail</code> to <code>userName</code>, <code>mail</code> to <code>emails[type eq "work"].value</code>, and keep <code>Switch([IsSoftDeleted], …)</code> to <code>active</code>. Turn off group provisioning (groups are read-only).</li>
+  <li><b>Okta:</b> in the app's <b>Provisioning</b> tab, enable SCIM provisioning with the SCIM connector base URL <code>{site}/scim/v2</code>, unique identifier field <code>userName</code>, the actions "Push New Users", "Push Profile Updates" and "Import" as you need, authentication mode <b>HTTP Header</b> with the SCIM token as the bearer token. Then enable "Create Users", "Update User Attributes" and "Deactivate Users" for the app. Leave "Push Groups" off.</li>
+</ul>
+
+<h2 id="audit">Audit events</h2>
+<ul>
+  <li>SAML sign-in uses the SSO events: <code>auth.sso_sign_in</code>, <code>auth.sso_link</code>, <code>auth.sso_failed</code> (with <code>provider: saml</code> and the reason, for example <code>signature</code>, <code>audience</code>, <code>replay</code>, <code>unsolicited</code>, <code>status</code>), <code>auth.external_sync</code>, and <code>auth.saml_logout</code> for a single logout.</li>
+  <li>SAML settings: <code>admin.saml_settings_saved</code>, <code>admin.saml_settings_reset</code>, <code>admin.saml_signing_key_generated</code>.</li>
+  <li>SCIM writes, with the actor <b>SCIM</b>: <code>scim.user_created</code>, <code>scim.user_updated</code>, <code>scim.user_deactivated</code>, <code>scim.user_reactivated</code>. SCIM settings: <code>scim.enabled</code>, <code>scim.disabled</code>, <code>scim.token_created</code>, <code>scim.token_rotated</code>, <code>scim.token_revoked</code> (with the token's prefix, never the token).</li>
+</ul>
+
+<div class="cards">
+<a class="card" href="accounts.html"><b>Accounts, sign-in and SSO</b><span>OIDC, LDAP, two-factor and tokens</span></a>
+<a class="card" href="admin.html"><b>Administration</b><span>User admin and the audit log</span></a>
+<a class="card" href="configuration.html#saml"><b>Configuration</b><span>Saml:* and Scim:* keys</span></a>
+</div>

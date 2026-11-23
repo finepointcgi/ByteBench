@@ -58,6 +58,7 @@ SECTIONS = [
     ]),
     ("Administer", [
         ("accounts", "Accounts, sign-in and SSO", "Passwords, two-factor, OIDC, OAuth and LDAP"),
+        ("saml-scim", "SAML and SCIM", "SAML 2.0 single sign-on and SCIM 2.0 user provisioning"),
         ("permissions", "Roles, groups and permissions", "Who can do what, group inheritance, visibility"),
         ("admin", "Administration", "User admin, audit log, system page, rate limits"),
         ("production", "Production setup", "Docker, Postgres, reverse proxy, backups and upgrades"),

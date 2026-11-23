@@ -235,6 +235,17 @@ For LDAP, it shows the server, security, service account (its password only as "
 - `FakeLdapClient` is an in-memory directory that really evaluates RFC 4515 filters.
 - `LdapDockerTests` (`Category=Docker`) runs `NovellLdapClient` against an `osixia/openldap` container and removes it afterwards.
 
+## SAML single sign-on & SCIM provisioning
+
+ByteBench is also a SAML 2.0 service provider for one identity provider (Entra ID, Okta, …) and a SCIM 2.0 server, so the IdP can provision accounts. Code: `Services/Saml/` and `Services/Scim/`; settings: the **SAML** and **SCIM provisioning** sections of `/admin/authentication` (SAML falls back to `Saml:*` in appsettings; SCIM limits are `Scim:*`). Docs: `site/pages/saml-scim.html`.
+
+- **SAML:** SP-initiated Web Browser SSO (AuthnRequest over HTTP-Redirect, optionally RSA-SHA256 signed with an SP key stored encrypted with Data Protection; Response over HTTP-POST). Endpoints `/saml/metadata`, `/saml/login`, `/saml/acs`, `/saml/logout` (SP-initiated single logout). Accounts go through the same `SsoService` code as OIDC (domains, auto-create, link by email, admin group, group mappings, lockout, ByteBench 2FA), as login provider `saml`.
+- **Validated:** signatures against the pinned IdP certificate(s) only (several for rollover; SHA-256+), exactly one assertion in the Response, unique XML IDs and self-referencing signatures (no signature wrapping), signed assertions by default, Issuer, Audience, Destination, Recipient, NotBefore/NotOnOrAfter with clock skew, InResponseTo bound to a request this server made from this browser and answered once, assertion-ID replay, Success status, no DTDs, a response size cap, RelayState only as a same-site path. **IdP-initiated sign-in is refused** (it can't be bound to a browser or a request).
+- **SCIM:** `/scim/v2` with ServiceProviderConfig, Schemas, ResourceTypes, Users (filter, paging, create, replace, PATCH incl. Okta/Entra path-less objects, DELETE = deactivate, never a hard delete) and read-only Groups (ByteBench groups are project namespaces). Bearer token (`bbscim_…`, shown once, stored as SHA-256, constant-time compare, create/rotate/revoke), on/off switch, per-IP failure limit (429), body cap (413). Site admins are read-only to SCIM unless `Scim:ManageAdmins`.
+- **Deactivation** reuses the shared mechanism (`Services/Accounts/AccountDeactivation.cs`, also used by `/admin/users` and LDAP sync): locked, signed out everywhere, tokens revoked; password, LDAP, OIDC, SAML, git and API access are refused.
+- **Audit:** `auth.sso_*` with `provider: saml`, `auth.saml_logout`, `admin.saml_*`, `scim.token_*`, `scim.enabled|disabled`, and `scim.user_created|updated|deactivated|reactivated` with the actor `SCIM`.
+- **Tests:** `tests/ByteBench.Tests/Sso/MockSamlIdp.cs` (a SAML IdP on a real port that signs with a throw-away certificate; with no `NextUser` its `/sso` shows a form for manual testing), `SamlTests.cs`, `ScimTests.cs`.
+
 ## Roles & permissions
 
 Every project has members, each with one role. `Services/ProjectAccess.cs` makes every access decision. The services (`IssueService`, `RepositoryService`, `PullRequestService`, `MemberService`) check it at the start of each write and throw `ForbiddenException`. Reads only return projects the user can view. The UI hides or disables what you can't do, but the server enforces it either way.
