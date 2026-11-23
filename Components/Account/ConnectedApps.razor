@@ -1,0 +1,63 @@
+@* "Connected apps" on the profile page: MCP clients the user signed in with OAuth, with Revoke. Static SSR, own form. *@
+@using ByteBench.Services.Mcp.OAuth
+@inject McpOAuthService OAuth
+
+@if (apps.Count > 0 || revoked != null)
+{
+    <div class="gb-field" id="connected-apps">
+        <MudText Typo="Typo.subtitle2" HtmlTag="h3" Class="mt-4 mb-1">Connected apps</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+            Applications you approved with "Sign in" (OAuth) instead of a token. They act as you through the MCP server only, with the access shown. Revoke one to sign it out at once.
+        </MudText>
+        @if (revoked != null)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2">@revoked was disconnected. Its tokens no longer work.</MudAlert>
+        }
+        @if (apps.Count > 0)
+        {
+            <form method="post" @formname="revoke-oauth-grant" @onsubmit="Revoke">
+                <AntiforgeryToken />
+                <MudSimpleTable Dense="true" Outlined="true" Elevation="0">
+                    <thead><tr><th>Application</th><th>Returns to</th><th>Access</th><th>Approved</th><th>Last used</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var a in apps)
+                        {
+                            <tr>
+                                <td>@a.ClientName</td>
+                                <td class="mono">@a.RedirectHost</td>
+                                <td>@(a.Scopes.HasFlag(ByteBench.Data.TokenScopes.WriteApi) ? "Read and write" : "Read")</td>
+                                <td>@a.CreatedAt.ToLocalTime().ToString("d")</td>
+                                <td>@(a.LastUsedAt?.ToLocalTime().ToString("g") ?? "Never")</td>
+                                <td>
+                                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                               name="RevokeGrantId" value="@a.GrantId">Revoke</MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </form>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int UserId { get; set; }
+
+    [SupplyParameterFromForm(FormName = "revoke-oauth-grant")]
+    private int? RevokeGrantId { get; set; }
+
+    private List<ConnectedApp> apps = [];
+    private string? revoked;
+
+    protected override async Task OnInitializedAsync() => apps = await OAuth.ListConnectedAsync(UserId);
+
+    private async Task Revoke()
+    {
+        if (RevokeGrantId is not { } id) return;
+        var name = apps.FirstOrDefault(a => a.GrantId == id)?.ClientName;
+        // Only the signed-in user's own grants can be revoked (the service checks the owner).
+        if (await OAuth.RevokeGrantAsync(UserId, id)) revoked = name ?? "The application";
+        apps = await OAuth.ListConnectedAsync(UserId);
+    }
+}

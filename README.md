@@ -1241,6 +1241,12 @@ claude mcp add --transport http bytebench https://bytebench.example.com/mcp --he
 
 The profile page (`/account/profile`, "Use with AI tools / CLI") shows these snippets with your server's address; the token is never prefilled.
 
+**OAuth sign-in for MCP clients** (`Services/Mcp/OAuth/`, `Mcp:OAuth:Enabled`, default on). Clients that implement the MCP authorization spec (Claude Code, Claude Desktop) connect with only the URL and a browser sign-in. ByteBench serves protected resource metadata (RFC 9728, `/.well-known/oauth-protected-resource` and `.../mcp`), authorization server metadata (RFC 8414, `/.well-known/oauth-authorization-server`), dynamic client registration (RFC 7591, `POST /oauth/register`: public clients only; redirect URIs `https://`, loopback `http://127.0.0.1|localhost|[::1]` with any port, or a native custom scheme; capped by `Mcp:OAuth:MaxRegistrationsPerIpPerHour` and `Mcp:OAuth:MaxClients`), `/oauth/authorize` (needs a cookie session, else the login page with `returnUrl`; a consent page with the escaped client name, redirect host and scopes `read`/`write`, Approve/Deny with antiforgery, never auto-approved; `state` and S256 PKCE mandatory; codes single use, 60 s, bound to client, exact redirect URI, challenge and user), `POST /oauth/token` (authorization_code, refresh_token with rotation and reuse detection that revokes the grant; `resource` must name `/mcp`) and `POST /oauth/revoke` (RFC 7009). Access tokens `bbo_...` (1 h, `Mcp:OAuth:AccessTokenMinutes`) and refresh tokens `bbr_...` (30 days, `Mcp:OAuth:RefreshTokenDays`) are stored as SHA-256 in `OAuthTokens` (with `OAuthClients`, `OAuthGrants`, `OAuthCodes`), work only on `/mcp` (never the REST API), act as the approving user with the granted scope, and die when the grant is revoked or the user is deactivated or locked. `/mcp` 401s carry `WWW-Authenticate: Bearer resource_metadata="..."`. CORS only on metadata, register, token and revoke. The profile's "Use with AI tools / CLI" panel lists **Connected apps** with Revoke. Audit: `oauth.client_registered`, `oauth.consent_granted|denied`, `oauth.token_issued|refreshed`, `oauth.grant_revoked`, `oauth.refresh_reuse_detected`.
+
+```bash
+claude mcp add --transport http bytebench https://bytebench.example.com/mcp   # then /mcp in Claude Code to sign in
+```
+
 **CLI** (`cli/ByteBench.Cli`, .NET tool command `bytebench`, no dependencies, excluded from the app project by `DefaultItemExcludes`; tests in `tests/ByteBench.Tests/CliTests.cs` run it in-process against the test app). It uses the REST API only.
 
 ```bash

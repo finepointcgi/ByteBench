@@ -286,6 +286,7 @@
         <div class="gb-field">
             <label class="gb-field-label" for="mcp-url">MCP server address</label>
             <input id="mcp-url" class="gb-input mono" readonly value="@McpUrl" onfocus="this.select()" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Clients that support OAuth sign-in need only this address: they open a ByteBench page where you approve them, no token to paste.</MudText>
         </div>
         <div class="gb-field">
             <label class="gb-field-label" for="mcp-claude">Claude Code</label>
@@ -299,6 +300,10 @@
             <label class="gb-field-label" for="cli-login">Command-line tool</label>
             <textarea id="cli-login" class="gb-input mono" readonly rows="2" onfocus="this.select()">@CliSnippet</textarea>
         </div>
+        @if (user != null)
+        {
+            <ByteBench.Components.Account.ConnectedApps UserId="user.Id" />
+        }
     </section>
 
     <section class="profile-section" id="ssh-keys">

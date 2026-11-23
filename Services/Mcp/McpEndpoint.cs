@@ -20,8 +20,8 @@ public static class McpTools
 /// A Model Context Protocol server at <c>POST /mcp</c> (Streamable HTTP transport, stateless: every request is a single JSON-RPC
 /// message answered with a single JSON response; there are no sessions and no server-initiated streams, so GET and DELETE are 405).
 /// <para>
-/// Authentication is <c>Authorization: Bearer &lt;personal access token&gt;</c> only: cookies are never looked at, so the endpoint can't be
-/// driven by a cross-site request. Every tool runs as the token's user through the same services and <see cref="ProjectAccess"/> checks
+/// Authentication is <c>Authorization: Bearer &lt;personal access token or OAuth access token (bbo_…)&gt;</c> only: cookies are never looked
+/// at, so the endpoint can't be driven by a cross-site request. OAuth tokens come from <see cref="OAuth.McpOAuthEndpoints"/>. Every tool runs as the token's user through the same services and <see cref="ProjectAccess"/> checks
 /// as the REST API. A token needs read_api or write_api; tools that change data need write_api. Rate limiting is the REST API's
 /// per-token limiter (<c>RateLimiting:Api</c>).
 /// </para>
@@ -48,6 +48,7 @@ public static class McpEndpoint
             http.Response.Headers.Allow = "POST";
             return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
         }).DisableAntiforgery().ExcludeFromDescription();
+        OAuth.McpOAuthEndpoints.MapMcpOAuth(app); // OAuth sign-in for MCP clients (Mcp:OAuth:Enabled)
         return app;
     }
 
@@ -66,8 +67,16 @@ public static class McpEndpoint
         var header = http.Request.Headers.Authorization.ToString();
         if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return Unauthorized(http, "Send 'Authorization: Bearer <personal access token>'.", false);
-        var tokens = http.RequestServices.GetRequiredService<AccessTokenService>();
-        var token = await tokens.FindActiveAsync(header[7..].Trim());
+        var presented = header[7..].Trim();
+        McpCaller? token = null;
+        if (presented.StartsWith(OAuth.McpOAuthService.AccessPrefix, StringComparison.Ordinal))
+        {
+            // An OAuth access token from /oauth/token (only ever accepted here, never by the REST API).
+            if (await http.RequestServices.GetRequiredService<OAuth.McpOAuthService>().ValidateAccessTokenAsync(presented) is { } p)
+                token = new McpCaller(p.User, p.Scopes, null, p.GrantId);
+        }
+        else if (await http.RequestServices.GetRequiredService<AccessTokenService>().FindActiveAsync(presented) is { } pat)
+            token = new McpCaller(pat.User, pat.Scopes, pat.Id, null);
         var users = http.RequestServices.GetRequiredService<UserManager<User>>();
         if (token == null || await users.IsLockedOutAsync(token.User))
             return Unauthorized(http, "The access token is invalid, expired or revoked.", true);
@@ -136,7 +145,11 @@ public static class McpEndpoint
 
     private static IResult Unauthorized(HttpContext http, string detail, bool invalidToken)
     {
-        http.Response.Headers.WWWAuthenticate = invalidToken ? "Bearer realm=\"ByteBench\", error=\"invalid_token\"" : "Bearer realm=\"ByteBench\"";
+        var value = invalidToken ? "Bearer realm=\"ByteBench\", error=\"invalid_token\"" : "Bearer realm=\"ByteBench\"";
+        // MCP authorization: point OAuth-capable clients at the protected resource metadata (RFC 9728).
+        if (OAuth.McpOAuthEndpoints.IsEnabled(http.RequestServices))
+            value += $", resource_metadata=\"{OAuth.McpOAuthEndpoints.ResourceMetadataUrl(http)}\"";
+        http.Response.Headers.WWWAuthenticate = value;
         return Rpc(StatusCodes.Status401Unauthorized, null, InvalidRequest, detail);
     }
 
@@ -166,13 +179,16 @@ public static class McpEndpoint
         };
     }
 
-    private static bool Allowed(McpToolDef tool, PersonalAccessToken token) =>
+    /// <summary>Who the request acts as: a personal access token (<see cref="TokenId"/>) or an OAuth grant (<see cref="GrantId"/>).</summary>
+    private sealed record McpCaller(User User, TokenScopes Scopes, int? TokenId, int? GrantId);
+
+    private static bool Allowed(McpToolDef tool, McpCaller token) =>
         !tool.NeedsWrite || token.Scopes.HasFlag(TokenScopes.WriteApi);
 
-    private static JsonObject ListTools(PersonalAccessToken token) =>
+    private static JsonObject ListTools(McpCaller token) =>
         new() { ["tools"] = new JsonArray(McpTools.All.Where(t => Allowed(t, token)).Select(t => (JsonNode)t.ToJson()).ToArray()) };
 
-    private static async Task<IResult> CallToolAsync(HttpContext http, JsonNode? id, JsonObject? p, PersonalAccessToken token, User user)
+    private static async Task<IResult> CallToolAsync(HttpContext http, JsonNode? id, JsonObject? p, McpCaller token, User user)
     {
         if (p?["name"] is not JsonValue nv || !nv.TryGetValue<string>(out var name) || name.Length > 100)
             return Rpc(StatusCodes.Status200OK, id, InvalidParams, "params.name (the tool name) is required.");
@@ -202,7 +218,7 @@ public static class McpEndpoint
         }
 
         await audit.RecordAsync("mcp.tool_called", "mcp_tool", tool.Name, call.ProjectId,
-            new { tool = tool.Name, project = call.ProjectKey, tokenId = token.Id, isError = result.IsError }, actorId: user.Id);
+            new { tool = tool.Name, project = call.ProjectKey, tokenId = token.TokenId, oauthGrantId = token.GrantId, isError = result.IsError }, actorId: user.Id);
         return Ok(id, Render(result));
     }
 
