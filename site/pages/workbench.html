@@ -54,6 +54,80 @@ environment:
 <tr><td>Set <code>Workbench:BaseUrl</code></td><td>Whoever administers the server's configuration</td></tr>
 </table>
 
+<h2 id="integration">The Workbench integration</h2>
+<p>Beyond the link, ByteBench can talk to the Workbench REST API (<code>/api/v1</code>) with a scoped API key. It reads projects and WBS tasks for pickers and context, can create epics and issues from the plan, and can push work state back. It <b>never reads or writes timesheets or time entries</b>: time is the DCAA cost record and only the employee enters their own.</p>
+
+<h3 id="setup">Setup: address, key and scopes</h3>
+<ol>
+<li>In Workbench, an administrator opens <b>Admin &rsaquo; Integrations &rsaquo; API keys</b> and creates a key for ByteBench. The key is its own service user, so give it the narrowest roles that work (see <a href="#key-roles">key roles</a>).</li>
+<li>Scopes: <code>projects:read</code> and <code>sheets:read</code> are required. Add <code>sheets:write</code> only if you turn on pushing work state. <b>Do not</b> grant <code>time</code> or any other area; the connection test warns if the key can reach timesheets.</li>
+<li>In ByteBench a site administrator opens <b>Administration &rsaquo; Workbench</b> (<code>/admin/workbench</code>), enters the address (this overrides <code>Workbench:BaseUrl</code>; leave it blank to use the configured one) and the key, and saves. The key is stored encrypted with Data Protection, never shown again (only its last four characters), and can be replaced or removed. Removing it here does not revoke it in Workbench: revoke it there as well.</li>
+<li><b>Test connection</b> probes what the key can do without changing anything: reads of projects and sheets, the financials permission (planned vs charged hours), a scope-only check of the time area, and a deliberately invalid status update against ids that do not exist to learn whether <code>sheets:write</code> is present. The result and every change are in the audit log as <code>workbench.connection_changed</code>, <code>workbench.key_removed</code> and <code>workbench.connection_tested</code> and on the admin page.</li>
+</ol>
+<p>The address is guarded like other outbound integrations: http(s) only, no credentials in the URL, and no loopback, private, link-local or metadata addresses unless <code>Workbench:AllowPrivateNetworks</code> allows it (default: follows <code>Webhooks:AllowPrivateNetworks</code>, which Development turns on). Every connection re-checks the resolved address, redirects are not followed, and a call times out after <code>Workbench:TimeoutSeconds</code>.</p>
+
+<h3 id="key-roles">Key roles</h3>
+<p>The key sees only what its service user's roles allow. For planned vs charged hours (<code>/projects/{id}/financials/wbs</code>) the roles must include Finance or administrator; without them the hours are simply hidden. To push work state the key's user must be an Editor of the project's plan sheet (or be assigned the task).</p>
+
+<h3 id="pickers">Pickers and validation</h3>
+<p>With a connection, the project's Workbench card (Maintainer) offers searchable lists of Workbench projects and WBS tasks, and the issue-level override offers the project's WBS tasks. Saving checks that the project code and WBS element exist (a typo is refused). Lists are cached for <code>Workbench:CacheSeconds</code>. Not connected, or Workbench slow, down or refusing the key: the fields are free text as before.</p>
+
+<h3 id="context">Read-only context</h3>
+<p>On a mapped project (above the issue list), on the project's Workbench card and on a mapped issue, ByteBench shows the WBS task's title, status, % complete, dates, planned vs charged hours and a link to the project and plan in Workbench. It loads after the page renders, is cached, and degrades silently: a slow or down Workbench, or a key whose roles cannot read financials, hides the missing part and never slows or breaks the page. Anyone who can view the project sees it.</p>
+
+<h3 id="deep-links">Deep links</h3>
+<p>Workbench's timesheet page honours only <code>?date=yyyy-MM-dd</code>: it takes no project or charge code, so the button cannot preselect a row. For an issue that is closed, <b>Log time in Workbench</b> opens the timesheet period of the day it was closed; otherwise the current period. The charge code is shown next to the button. The context panel links to <code>/projects/{id}</code> and <code>/sheets/{id}</code> (the plan).</p>
+
+<h2 id="plan-sync">Plan to epics and issues</h2>
+<p>A Maintainer can create ByteBench epics and issues from a Workbench plan, the way Workbench's GitLab connector maps its plan. On the project's Workbench card, pick the Workbench project, optionally a WBS subtree, how many summary levels become epics, then <b>Preview</b> (writes nothing) and <b>Create epics and issues</b>. Later runs say <b>Sync now</b>. A project can also opt in to a periodic reconcile (<code>Workbench:ReconcileMinutes</code>, default 15; 0 turns it off).</p>
+<table>
+<tr><th>Workbench</th><th>ByteBench</th></tr>
+<tr><td>Summary task in the first N levels</td><td>Epic. Epics cannot nest, so nested summaries are flattened to top-level epics and the sync says so.</td></tr>
+<tr><td>Summary task below the epic levels</td><td>Task under its nearest epic</td></tr>
+<tr><td>Detail task</td><td>Task under its epic, or sub-task under a summary task. Always a task or sub-task: a story or bug is not derived.</td></tr>
+<tr><td>WBS code</td><td><code>Issue.WorkbenchWbs</code>, shown on the issue (the Workbench task id is stored as the idempotency key, so re-running never duplicates and a re-link finds the existing issues)</td></tr>
+<tr><td>Start and finish</td><td>Start date and due date</td></tr>
+<tr><td>Planned hours</td><td>Original and remaining estimate (from the WBS financials, else a Hours/Work/Estimate column)</td></tr>
+<tr><td>People staffed or assigned</td><td>Assignee by matching email (first match, only when unassigned). People without a ByteBench account are listed on the card and never created.</td></tr>
+<tr><td>Dependencies</td><td>"blocks" / "is blocked by" links (the link type and lag are not mapped)</td></tr>
+<tr><td>Notes column</td><td>A managed block in the issue description that the sync rewrites; the rest of the description is yours</td></tr>
+</table>
+
+<h3 id="ownership">Who owns what</h3>
+<table>
+<tr><th>Owner</th><th>Fields</th><th>What happens on a conflict</th></tr>
+<tr><td>Workbench (schedule and structure)</td><td>WBS code, nesting (parent), start/due dates, planned hours (estimate), dependencies, the managed block</td><td>A ByteBench edit is put back at the next sync, written to the issue's activity ("Workbench sync: put back the due date ...") and counted on the card.</td></tr>
+<tr><td>ByteBench (work state)</td><td>Status, progress, resolution, assignee once set</td><td>Never overwritten by the sync. Progress goes back to Workbench through the push (below).</td></tr>
+<tr><td>Shared</td><td>Title</td><td>The last change wins: a title changed in Workbench replaces the ByteBench title (noted); a title edited only in ByteBench is kept and noted on the card.</td></tr>
+</table>
+<p>A task added in Workbench appears as a new issue. A task removed or moved out of the synced part is <b>not</b> deleted: its issue gets an activity note and is listed on the card, and you decide. Nothing is dropped silently: every change is in issue activity (actor <b>Workbench sync</b>, a system account like the other bots) and in the sync report.</p>
+
+<h3 id="plan-limits">Limits, batching and notifications</h3>
+<ul>
+<li>Every create and update goes through the normal issue service as the Workbench sync account, so workflow, audit, automation and webhooks behave as usual. Maintainer or higher runs it.</li>
+<li><code>Workbench:MaxTasksPerSync</code> (default 2000): a bigger plan is refused with a message (choose a WBS subtree) rather than cut off.</li>
+<li>Issues are written one transaction each, in plan order, with progress shown on the card. The run is idempotent, so a run interrupted by a restart is taken up again by the worker (a run stuck as "running" for ten minutes is re-run).</li>
+<li>Notifications: issue creation notifies as usual, but staffing is applied without per-issue "assigned to you" notifications for a bulk creation.</li>
+<li><b>No inbound webhook.</b> Workbench's signed webhook outbox sends no plan or task events (its event types are timesheets, invoices, bills, purchase orders, projects created, employees, opportunities, periods, shipments, RFQs, NCRs and sheet form submissions), so the periodic reconcile and <b>Sync now</b> are the triggers. If Workbench adds plan events, a receiver for its <code>Workbench-Signature</code> scheme (<code>t=...,v1=</code> HMAC-SHA256 of <code>t.body</code>, 5 minute window) can be added without changing the rest.</li>
+</ul>
+
+<h2 id="push">Pushing work state</h2>
+<p>ByteBench owns work state, as Workbench's GitLab connector treats GitLab. Off by default; a Maintainer turns it on per project on the Workbench card. The Workbench API has a suitable write endpoint (<code>POST /api/v1/sheets/{sheet}/tasks/{item}/status</code> with <code>status</code> and <code>percentComplete</code>), so ByteBench uses it and nothing else: no dates, hours, WBS structure or time.</p>
+<ul>
+<li>For each WBS code on the project's issues (an issue's own code, else the project's), the % complete is done / total (weighted by story points when all have them; epics excluded). Status is set to "Done" at 100% and "In Progress" once work started, using the plan sheet's own Status options (matched case-insensitively; with no matching option only the percentage is sent). A status is never moved backwards.</li>
+<li>A background sweep (<code>Workbench:PushIntervalSeconds</code>) and <b>Sync now</b> queue a job when the desired state differs from the last push. Jobs live in a database outbox with retry and backoff (1 min, 5 min, 15 min, 1 h; five attempts) for timeouts and 5xx; refusals (403, unknown task or status option) fail at once with the reason. The same desired state is never queued twice, a queued job is superseded by a newer one, and a value Workbench already has is skipped.</li>
+<li>Conflict notes: if Workbench's value changed since the last push, ByteBench still writes its value (it owns work state) and the log row says what it replaced. The log (state, attempts, error, note) and a Retry button are on the card; pushes are audited as <code>workbench.push</code> and <code>workbench.push_failed</code>. A sprint completing changes no issue's status, so it needs no separate trigger: the sweep covers state changes however they happen.</li>
+</ul>
+
+<h2 id="integration-permissions">Integration permissions</h2>
+<table>
+<tr><th>Action</th><th>Role</th></tr>
+<tr><td>Set the address and key, test, remove the key, see the audit trail</td><td>Site administrator</td></tr>
+<tr><td>See Workbench context on a mapped project or issue</td><td>Anyone who can view the project</td></tr>
+<tr><td>Choose the mapping, turn the push on, run or configure the plan sync, retry pushes</td><td>Maintainer</td></tr>
+</table>
+<p>The key is never sent to the browser, logged or written to the audit log.</p>
+
 <h2 id="api-gql">API and GQL</h2>
 <table>
 <tr><th>Where</th><th>What</th></tr>

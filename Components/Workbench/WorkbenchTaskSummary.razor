@@ -1,0 +1,47 @@
+@* Read-only Workbench context for a mapped WBS task (title, status, % complete, dates, planned vs charged hours) with a deep link back.
+   Loaded after the first render so a slow or down Workbench never delays or breaks the page; renders nothing for a 403 or when not connected. *@
+@using ByteBench.Services.Workbench
+@inject WorkbenchContextService Context
+
+<div class="wb-summary" data-testid="wb-summary">
+    @if (loading) { <MudText Typo="Typo.caption" Class="mud-text-secondary">Loading Workbench…</MudText> }
+    else if (ctx is { Found: true })
+    {
+        <div>
+            <strong>@ctx.Title</strong> <code>@ctx.WbsCode</code>
+            @if (ctx.Status != null) { <MudChip T="string" Size="Size.Small" Class="ml-1">@ctx.Status</MudChip> }
+        </div>
+        <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">
+            @(ctx.Percent is { } pc ? $"{pc:0.##}% complete" : "no % complete")
+            @if (ctx.Start != null || ctx.Finish != null) { <span> · @(ctx.Start?.ToString("yyyy-MM-dd") ?? "?") to @(ctx.Finish?.ToString("yyyy-MM-dd") ?? "?")</span> }
+            @if (ctx.Hours is { } h) { <span> · @h.ActualHours.ToString("0.#") h charged of @h.PlannedHours.ToString("0.#") h planned</span> }
+        </MudText>
+        @if (ctx.ProjectUrl != null)
+        {
+            <a href="@ctx.ProjectUrl" target="_blank" rel="noopener noreferrer" class="mud-typography-caption">Open @ctx.ProjectCode in Workbench</a>
+            @if (ctx.PlanUrl != null) { <span> · <a href="@ctx.PlanUrl" target="_blank" rel="noopener noreferrer" class="mud-typography-caption">plan</a></span> }
+        }
+    }
+    else if (ctx != null && ctx.State != WbStatus.Forbidden)
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary" data-testid="wb-summary-note">@ctx.Message</MudText>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    /// <summary>The WBS code to show; null uses the project's own.</summary>
+    [Parameter] public string? Wbs { get; set; }
+
+    private WorkbenchTaskContext? ctx;
+    private bool loading = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { ctx = await Context.GetAsync(ProjectId, Wbs); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { ctx = null; }
+        loading = false;
+        StateHasChanged();
+    }
+}

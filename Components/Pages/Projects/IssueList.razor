@@ -39,6 +39,11 @@ else if (project != null)
         </div>
     </div>
 
+    @if (project.WorkbenchWbs != null && project.WorkbenchProjectCode != null)
+    {
+        <ByteBench.Components.Workbench.WorkbenchTaskSummary ProjectId="project.Id" Wbs="@project.WorkbenchWbs" @key="project.Id" />
+    }
+
     @if (Advanced)
     {
         <MudPaper Outlined="true" Class="il-filters il-advanced">

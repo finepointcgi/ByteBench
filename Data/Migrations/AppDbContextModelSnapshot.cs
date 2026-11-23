@@ -3000,6 +3000,9 @@ namespace ByteBench.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("WorkbenchPushEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("WorkbenchWbs")
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
@@ -5001,6 +5004,232 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("WikiPageIndex");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.WorkbenchConnection", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ApiKeyProtected")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeyHint")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("KeySetAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("KeySetById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastTestAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastTestJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("LastTestOk")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WorkbenchConnections");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchIssueLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastSyncedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Missing")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("MissingSince")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WbsCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "TaskId")
+                        .IsUnique();
+
+                    b.ToTable("WorkbenchIssueLinks");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchOutboxItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Percent")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WbsCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkbenchProjectCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.HasIndex("State", "NextAttemptAt");
+
+                    b.ToTable("WorkbenchOutbox");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchPlanSync", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EpicLevels")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Processed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ReconcileEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReportJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RootWbsCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("WorkbenchPlanSyncs");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchTaskSync", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("LastPercent")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastPushedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastStatus")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WbsCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "WbsCode")
+                        .IsUnique();
+
+                    b.ToTable("WorkbenchTaskSyncs");
+                });
+
             modelBuilder.Entity("ByteBench.Data.WorkflowStatus", b =>
                 {
                     b.Property<int>("Id")
@@ -6872,6 +7101,48 @@ namespace ByteBench.Data.Migrations
                 });
 
             modelBuilder.Entity("ByteBench.Data.WikiPageIndex", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchIssueLink", b =>
+                {
+                    b.HasOne("ByteBench.Data.Issue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchOutboxItem", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchPlanSync", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkbenchTaskSync", b =>
                 {
                     b.HasOne("ByteBench.Data.Project", null)
                         .WithMany()
