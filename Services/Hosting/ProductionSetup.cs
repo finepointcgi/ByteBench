@@ -365,7 +365,7 @@ public sealed class AppRateLimits(IOptions<RateLimitSettings> options)
         if (HttpMethods.IsPost(ctx.Request.Method) && path.StartsWithSegments("/account") && !path.StartsWithSegments("/account/logout"))
             return Limit("auth:" + ip, s.Auth);
 
-        if (path.StartsWithSegments("/api"))
+        if (path.StartsWithSegments("/api") || path.StartsWithSegments("/mcp")) // the MCP endpoint shares a token's API budget
         {
             var auth = ctx.Request.Headers.Authorization.ToString();
             var key = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
@@ -449,7 +449,7 @@ public sealed class AppRateLimits(IOptions<RateLimitSettings> options)
         http.Response.Headers.CacheControl = "no-store";
         http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ByteBench.RateLimiting")
             .LogWarning("Rate limit hit: {Method} {Path} from {Ip}", http.Request.Method, http.Request.Path, http.Connection.RemoteIpAddress);
-        if (http.Request.Path.StartsWithSegments("/api"))
+        if (http.Request.Path.StartsWithSegments("/api") || http.Request.Path.StartsWithSegments("/mcp"))
         {
             http.Response.ContentType = "application/problem+json";
             await http.Response.WriteAsync(JsonSerializer.Serialize(new

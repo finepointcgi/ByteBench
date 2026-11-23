@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The `bytebench` command-line client: a .NET tool (dotnet tool install -g ByteBench.Cli), no dependencies beyond the BCL. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ByteBench.Cli</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>bytebench</ToolCommandName>
+    <PackageId>ByteBench.Cli</PackageId>
+    <Description>Command-line client for ByteBench: issues, pull requests, repositories and pipelines from a terminal.</Description>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+</Project>

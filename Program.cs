@@ -196,6 +196,7 @@ app.MapCiEndpoints();
 ByteBench.Services.Security.SecurityServiceCollectionExtensions.MapSecurityDownloads(app); // triage.json export
 ByteBench.Services.Flags.FlagSdkEndpoints.MapFlagSdk(app); // /api/v1/flags/*: SDK-key authenticated evaluation (before the user API's catch-all)
 app.MapByteBenchApi();
+ByteBench.Services.Mcp.McpEndpoint.MapByteBenchMcp(app); // POST /mcp: Model Context Protocol server (Bearer personal access tokens), Mcp:Enabled
 ByteBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // /integrations/slack/{commands,interactivity,events}
 ByteBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 ByteBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
