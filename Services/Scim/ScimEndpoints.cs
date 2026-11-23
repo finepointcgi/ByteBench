@@ -8,7 +8,7 @@ namespace ByteBench.Services.Scim;
 
 /// <summary>
 /// The SCIM 2.0 server (RFC 7643/7644) at <c>/scim/v2</c>: ServiceProviderConfig, Schemas, ResourceTypes, Users (list with
-/// filter and paging, get, create, replace, patch, DELETE = deactivate) and read-only Groups. Responses are
+/// filter and paging, get, create, replace, patch, DELETE = deactivate) and Groups (see <see cref="ScimGroupService"/>). Responses are
 /// <c>application/scim+json</c>; errors are SCIM error bodies.
 /// <para>
 /// Every request goes through <see cref="ScimGate"/>: SCIM must be switched on with a token (else 403), the client IP must
@@ -28,6 +28,7 @@ public static class ScimEndpoints
         services.AddSingleton<ScimAuthLimiter>();
         services.AddScoped<ScimTokenService>();
         services.AddScoped<ScimUserService>();
+        services.AddScoped<ScimGroupService>();
         return services;
     }
 
@@ -88,20 +89,30 @@ public static class ScimEndpoints
             return Results.NoContent();
         });
 
-        // ----- Groups (read-only: ByteBench groups are project namespaces)
-        scim.MapGet("/Groups", async (HttpContext http, ScimUserService users, IOptionsMonitor<ScimOptions> o, string? filter, int? startIndex, int? count) =>
+        // ----- Groups (writes only on groups SCIM created or adopted: see ScimGroupService)
+        scim.MapGet("/Groups", async (HttpContext http, ScimGroupService groups, IOptionsMonitor<ScimOptions> o, string? filter, int? startIndex, int? count) =>
         {
             var (start, size) = Paging(o.CurrentValue, startIndex, count);
-            var (page, total) = await users.ListGroupsAsync(filter, start, size, BaseUrl(http));
+            var (page, total) = await groups.ListAsync(filter, start, size, BaseUrl(http));
             return Json(List(page.Cast<JsonNode>().ToList(), total, start));
         });
-        scim.MapGet("/Groups/{id}", async (HttpContext http, ScimUserService users, string id) =>
-            int.TryParse(id, out var gid) && await users.GetGroupAsync(gid, BaseUrl(http)) is { } g ? Json(g) : Error(404, $"Group {id} not found."));
-        static IResult ReadOnly() => Error(501, "Groups are read-only in ByteBench: they are project namespaces with roles. Manage membership in ByteBench (or with SAML/OIDC group mappings).");
-        scim.MapPost("/Groups", ReadOnly);
-        scim.MapPut("/Groups/{id}", (string id) => ReadOnly());
-        scim.MapPatch("/Groups/{id}", (string id) => ReadOnly());
-        scim.MapDelete("/Groups/{id}", (string id) => ReadOnly());
+        scim.MapGet("/Groups/{id}", async (HttpContext http, ScimGroupService groups, string id) =>
+            int.TryParse(id, out var gid) && await groups.GetAsync(gid, BaseUrl(http)) is { } g ? Json(g) : Error(404, $"Group {id} not found."));
+        scim.MapPost("/Groups", async (HttpContext http, ScimGroupService groups) =>
+        {
+            var json = await groups.CreateAsync(Body(http), BaseUrl(http));
+            http.Response.Headers.Location = json["meta"]!["location"]!.GetValue<string>();
+            return Json(json, 201);
+        });
+        scim.MapPut("/Groups/{id}", async (HttpContext http, ScimGroupService groups, string id) =>
+            Json(await groups.ReplaceAsync(Id(id, "Group"), Body(http), BaseUrl(http))));
+        scim.MapPatch("/Groups/{id}", async (HttpContext http, ScimGroupService groups, string id) =>
+            Json(await groups.PatchAsync(Id(id, "Group"), Body(http), BaseUrl(http))));
+        scim.MapDelete("/Groups/{id}", async (ScimGroupService groups, string id) =>
+        {
+            await groups.DeleteAsync(Id(id, "Group"));
+            return Results.NoContent();
+        });
         scim.MapPost("/Bulk", () => Error(501, "Bulk operations are not supported."));
 
         // Unknown SCIM paths: a SCIM 404, not the site's HTML page.
@@ -162,7 +173,7 @@ public static class ScimEndpoints
     private static JsonObject GroupResourceType(HttpContext http) => new()
     {
         ["schemas"] = new JsonArray("urn:ietf:params:scim:schemas:core:2.0:ResourceType"),
-        ["id"] = "Group", ["name"] = "Group", ["endpoint"] = "/Groups", ["description"] = "ByteBench groups (read-only)", ["schema"] = ScimUserService.GroupSchema,
+        ["id"] = "Group", ["name"] = "Group", ["endpoint"] = "/Groups", ["description"] = "ByteBench groups (writable when created by SCIM or mapped with Scim:GroupMappings)", ["schema"] = ScimUserService.GroupSchema,
         ["meta"] = new JsonObject { ["resourceType"] = "ResourceType", ["location"] = BaseUrl(http) + "/ResourceTypes/Group" },
     };
 
@@ -195,10 +206,11 @@ public static class ScimEndpoints
     private static JsonObject GroupSchemaDoc() => new()
     {
         ["schemas"] = new JsonArray("urn:ietf:params:scim:schemas:core:2.0:Schema"),
-        ["id"] = ScimUserService.GroupSchema, ["name"] = "Group", ["description"] = "ByteBench group (read-only)",
+        ["id"] = ScimUserService.GroupSchema, ["name"] = "Group", ["description"] = "ByteBench group",
         ["attributes"] = new JsonArray(
-            Attribute("displayName", "string", required: true, mutability: "readOnly"),
-            Attribute("members", "complex", mutability: "readOnly", multiValued: true, sub: new JsonArray(Attribute("value", "string", mutability: "readOnly"), Attribute("display", "string", mutability: "readOnly")))),
+            Attribute("displayName", "string", required: true),
+            Attribute("externalId", "string"),
+            Attribute("members", "complex", multiValued: true, sub: new JsonArray(Attribute("value", "string", mutability: "immutable"), Attribute("display", "string", mutability: "readOnly")))),
         ["meta"] = new JsonObject { ["resourceType"] = "Schema" },
     };
 }

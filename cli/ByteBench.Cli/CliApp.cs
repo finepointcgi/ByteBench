@@ -31,11 +31,13 @@ public sealed partial class CliApp(CliEnvironment env)
           pipelines list <KEY/slug> [--branch B] [--status S]
           pipelines logs <KEY/slug> <pipeline-id> [--step ID] [--tail CHARS]
           open <KEY-N>                 Print the issue's web address
+          completion bash|zsh|fish     Print a shell completion script
 
         Options:
           --json        Machine-readable output
           --insecure    Allow plain HTTP to a server that isn't on localhost (login)
           -h, --help    Show this help
+          --version     Show the version
 
         Environment: BYTEBENCH_TOKEN, BYTEBENCH_SERVER, NO_COLOR.
         Exit codes: 0 ok, 1 error, 2 usage, 3 authentication.
@@ -70,7 +72,7 @@ public sealed partial class CliApp(CliEnvironment env)
 
     private async Task<int> DispatchAsync(CancellationToken ct)
     {
-        if (args.Flag("version")) { env.Out.WriteLine("bytebench " + (typeof(CliApp).Assembly.GetName().Version?.ToString(3) ?? "1.0.0")); return 0; }
+        if (args.Flag("version")) { env.Out.WriteLine("bytebench " + VersionText); return 0; }
         if (args.Words.Count == 0)
         {
             (args.Flag("help") ? env.Out : env.Err).WriteLine(Usage);
@@ -87,6 +89,7 @@ public sealed partial class CliApp(CliEnvironment env)
             case ("whoami", _): return await WhoAmIAsync(ct);
             case ("projects", _): return await ProjectsAsync(ct);
             case ("open", _): return Open();
+            case ("completion", _): return Completion();
             case ("issues", "list"): return await IssuesListAsync(ct);
             case ("issues", "show"): return await IssuesShowAsync(ct);
             case ("issues", "create"): return await IssuesCreateAsync(ct);

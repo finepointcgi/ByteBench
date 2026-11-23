@@ -72,6 +72,7 @@ builder.Services.AddScoped<ProjectAccess>();
 builder.Services.AddScoped<MemberService>();
 builder.Services.AddScoped<GroupService>(); // groups: namespaces, inherited roles, group labels/milestones
 builder.Services.AddScoped<AccessTokenService>();
+ByteBench.Services.Mcp.OAuth.McpOAuthEndpoints.AddMcpOAuth(builder.Services, builder.Configuration); // OAuth sign-in for MCP clients (Mcp:OAuth:*)
 builder.Services.AddSingleton<RepoStorage>();
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection("Ai"));
 builder.Services.Configure<ByteBench.Services.Workbench.WorkbenchOptions>(builder.Configuration.GetSection("Workbench")); // optional link to Workbench timesheets

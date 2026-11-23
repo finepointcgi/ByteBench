@@ -440,8 +440,24 @@ Authentication__Oidc__Providers__0__ClientSecret=...   # keep in a secret store<
   <tr><td><code>MaxFailuresPerIp</code>, <code>FailureWindowMinutes</code></td><td>10, 15</td><td>Failed token attempts per client address before 429</td></tr>
   <tr><td><code>ManageAdmins</code></td><td><code>false</code></td><td>Let SCIM change or deactivate site administrators</td></tr>
   <tr><td><code>DefaultPageSize</code>, <code>MaxPageSize</code></td><td>100, 200</td><td>List paging</td></tr>
+  <tr><td><code>GroupVisibility</code></td><td><code>Private</code></td><td>Visibility of groups SCIM creates (<code>Private</code> or <code>Internal</code>)</td></tr>
+  <tr><td><code>GroupMemberRole</code></td><td><code>Developer</code></td><td>Role of members SCIM adds to groups; capped at <code>Maintainer</code> (SCIM never grants Owner)</td></tr>
+  <tr><td><code>GroupMappings</code></td><td>none</td><td>List of <code>{ "DisplayName": "…", "Group": "full/path" }</code>: a SCIM group with that displayName adopts the existing ByteBench group</td></tr>
 </table>
 <p>The on/off switch and the tokens live on <code>/admin/authentication</code>, not in the configuration.</p>
+
+<h2 id="mcp">Mcp</h2>
+<p>The MCP server at <code>/mcp</code> and its OAuth sign-in (see <a href="mcp-cli.html#mcp-oauth">Sign in with OAuth</a>).</p>
+<table>
+  <tr><th>Key (under <code>Mcp</code>)</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Enabled</code></td><td><code>true</code></td><td>Off: <code>/mcp</code> and the OAuth endpoints don't exist</td></tr>
+  <tr><td><code>OAuth:Enabled</code></td><td><code>true</code></td><td>OAuth sign-in for MCP clients (metadata, <code>/oauth/*</code>, <code>bbo_</code> tokens). Off: personal access tokens only</td></tr>
+  <tr><td><code>OAuth:AccessTokenMinutes</code></td><td>60</td><td>Access token lifetime (1 to 1440)</td></tr>
+  <tr><td><code>OAuth:RefreshTokenDays</code></td><td>30</td><td>Refresh token lifetime (1 to 365); each refresh issues a new one</td></tr>
+  <tr><td><code>OAuth:CodeSeconds</code></td><td>60</td><td>Authorization code lifetime (5 to 600)</td></tr>
+  <tr><td><code>OAuth:MaxRegistrationsPerIpPerHour</code></td><td>20</td><td>Dynamic client registrations from one address per hour (429 above; 0 no limit)</td></tr>
+  <tr><td><code>OAuth:MaxClients</code></td><td>1000</td><td>Registered clients in total (403 above)</td></tr>
+</table>
 
 <h2 id="examples">A realistic production snippet</h2>
 <pre><code># docker-compose.yml, under services.bytebench.environment

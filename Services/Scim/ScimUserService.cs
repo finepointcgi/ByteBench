@@ -13,15 +13,11 @@ public sealed record ScimUserView(int Id, string UserName, string LocalUserName,
     string? ExternalId, DateTime? Created, DateTime? Modified);
 
 /// <summary>
-/// SCIM 2.0 Users (read and write) and Groups (read-only) on ByteBench accounts. Users map to <see cref="User"/> plus a
+/// SCIM 2.0 Users (read and write) on ByteBench accounts (Groups: <see cref="ScimGroupService"/>). Users map to <see cref="User"/> plus a
 /// <see cref="ScimIdentity"/> row for the IdP's userName and externalId; <c>active=false</c> and DELETE deactivate the
 /// account with the shared mechanism (<see cref="AccountDeactivation"/>: signed out everywhere, tokens revoked, every
 /// sign-in refused). Accounts are never deleted. System bot accounts are invisible; site admins are read-only unless
 /// <c>Scim:ManageAdmins</c>. Every write is audited as <c>scim.user_*</c> with the actor "SCIM".
-/// <para>
-/// Groups in ByteBench are project namespaces with roles, not directory groups, so SCIM Groups are read-only: each group's
-/// full path and its direct members.
-/// </para>
 /// </summary>
 public sealed class ScimUserService(IDbContextFactory<AppDbContext> dbFactory, UserManager<User> users, Sso.SsoService sso,
     Audit.AuditLog audit, IOptionsMonitor<ScimOptions> options)
@@ -389,48 +385,5 @@ public sealed class ScimUserService(IDbContextFactory<AppDbContext> dbFactory, U
             if (jv.TryGetValue<string>(out var s) && bool.TryParse(s.Trim(), out var b)) return b;
         }
         throw new ScimError(400, "Expected a boolean.", "invalidValue");
-    }
-
-    // ------------------------------------------------------------------ groups (read-only)
-
-    public async Task<(List<JsonObject> Page, int Total)> ListGroupsAsync(string? filter, int startIndex, int count, string baseUrl)
-    {
-        var all = await LoadGroupsAsync(null, baseUrl);
-        if (!string.IsNullOrWhiteSpace(filter))
-        {
-            var comparisons = ScimFilter.Parse(filter, GroupFilterAttributes);
-            all = all.Where(g => comparisons.All(c => ScimFilter.Matches(c, c.Attribute switch
-            {
-                "displayName" => [g["displayName"]!.GetValue<string>()],
-                "id" => [g["id"]!.GetValue<string>()],
-                _ => Array.Empty<string?>(),
-            }))).ToList();
-        }
-        return (all.Skip(startIndex - 1).Take(count).ToList(), all.Count);
-    }
-
-    public async Task<JsonObject?> GetGroupAsync(int id, string baseUrl) => (await LoadGroupsAsync(id, baseUrl)).FirstOrDefault();
-
-    private async Task<List<JsonObject>> LoadGroupsAsync(int? id, string baseUrl)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var q = db.Groups.AsNoTracking().AsQueryable();
-        if (id != null) q = q.Where(g => g.Id == id);
-        var groups = await q.OrderBy(g => g.Id).Select(g => new
-        {
-            g.Id, g.FullPath, g.Name,
-            Members = g.Members.Select(m => new { m.UserId, m.User.UserName }).ToList(),
-        }).ToListAsync();
-        return groups.Select(g => new JsonObject
-        {
-            ["schemas"] = new JsonArray(GroupSchema),
-            ["id"] = g.Id.ToString(),
-            ["displayName"] = g.FullPath,
-            ["members"] = new JsonArray(g.Members.Where(m => !SystemAccounts.IsSystem(m.UserName)).Select(m => (JsonNode)new JsonObject
-            {
-                ["value"] = m.UserId.ToString(), ["display"] = m.UserName, ["$ref"] = $"{baseUrl}/Users/{m.UserId}", ["type"] = "User",
-            }).ToArray()),
-            ["meta"] = new JsonObject { ["resourceType"] = "Group", ["location"] = $"{baseUrl}/Groups/{g.Id}" },
-        }).ToList();
     }
 }

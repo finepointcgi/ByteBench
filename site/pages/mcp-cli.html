@@ -15,15 +15,46 @@
 <h2 id="mcp">The MCP server</h2>
 <p>The server is part of ByteBench, at <code>POST /mcp</code> (Streamable HTTP transport, protocol version 2025-06-18, older 2025-03-26 and 2024-11-05 clients are answered too). It is stateless: each request is one JSON-RPC message answered with one JSON response, so there are no sessions and <code>GET</code> and <code>DELETE</code> answer 405. JSON-RPC batches are not accepted. Request bodies are limited to 256 KB.</p>
 <ul>
-<li><b>Authentication:</b> <code>Authorization: Bearer gbp_…</code> only. Cookies are ignored, so a web page can never drive the endpoint with your browser session. Without a valid token the answer is 401 with a <code>WWW-Authenticate: Bearer</code> header. A request carrying an <code>Origin</code> header for a different host is refused (DNS-rebinding guard).</li>
+<li><b>Authentication:</b> <code>Authorization: Bearer gbp_…</code> (a personal access token) or <code>Bearer bbo_…</code> (an OAuth access token, see <a href="#mcp-oauth">Sign in with OAuth</a>) only. Cookies are ignored, so a web page can never drive the endpoint with your browser session. Without a valid token the answer is 401 with a <code>WWW-Authenticate: Bearer</code> header that, while OAuth is on, names the protected resource metadata (<code>resource_metadata="{site}/.well-known/oauth-protected-resource/mcp"</code>). A request carrying an <code>Origin</code> header for a different host is refused (DNS-rebinding guard).</li>
 <li><b>Rate limit:</b> the REST API's per-token limit (<code>RateLimiting:Api</code>, 300 requests a minute by default) covers <code>/mcp</code> too; over the limit the answer is 429 with <code>Retry-After</code>.</li>
-<li><b>Audit:</b> each tool call records <code>mcp.tool_called</code> in the <a href="admin.html">audit log</a> with the tool name, the project key and the token id. It never records arguments or any text you or the model wrote.</li>
+<li><b>Audit:</b> each tool call records <code>mcp.tool_called</code> in the <a href="admin.html">audit log</a> with the tool name, the project key and the token id (or, for OAuth, the grant id). It never records arguments or any text you or the model wrote.</li>
 <li><b>Switch off:</b> set <code>Mcp:Enabled</code> to <code>false</code> and <code>/mcp</code> does not exist.</li>
 </ul>
 
 <h3 id="mcp-claude">Claude Code</h3>
 <pre><code>claude mcp add --transport http bytebench https://bytebench.example.com/mcp \
   --header "Authorization: Bearer &lt;your-token&gt;"</code></pre>
+<p>Or leave out the header and let Claude Code sign in with OAuth: <code>claude mcp add --transport http bytebench https://bytebench.example.com/mcp</code>, then <code>/mcp</code> in Claude Code and choose to authenticate. Your browser opens ByteBench's consent page.</p>
+
+<h3 id="mcp-oauth">Sign in with OAuth</h3>
+<p>MCP clients that implement the MCP authorization spec (such as Claude Code and Claude Desktop) can connect with only the server address and a <b>Sign in</b> in your browser, instead of a pasted token. ByteBench is its own OAuth 2.1 authorization server for this:</p>
+<ol>
+  <li>The client calls <code>/mcp</code>, gets 401 and reads the protected resource metadata (RFC 9728) at <code>/.well-known/oauth-protected-resource</code> (also at <code>/.well-known/oauth-protected-resource/mcp</code>), then the authorization server metadata (RFC 8414) at <code>/.well-known/oauth-authorization-server</code>.</li>
+  <li>It registers itself at <code>POST /oauth/register</code> (dynamic client registration, RFC 7591). Only public clients are accepted (<code>token_endpoint_auth_method: none</code>, no secret). Redirect URIs must be <code>https://</code>, <code>http://</code> on a loopback host (<code>127.0.0.1</code>, <code>localhost</code> or <code>[::1]</code>, any port), or a custom scheme for a native app (<code>cursor://…</code>); <code>javascript:</code>, <code>data:</code>, <code>file:</code> and similar schemes, fragments and user information are refused. At most 10 per client.</li>
+  <li>Your browser opens <code>/oauth/authorize</code>. If you are not signed in to ByteBench you sign in first and come back. A consent page shows the application's name (chosen by the application and not verified, so check that you just started this), where you will be sent back to, and what it asks for. Nothing is approved without you pressing <b>Approve</b>; <b>Deny</b> sends the application an <code>access_denied</code> error.</li>
+  <li>The application exchanges the one-time code at <code>POST /oauth/token</code> and gets an access token (<code>bbo_…</code>, valid 1 hour) and a refresh token (<code>bbr_…</code>, valid 30 days).</li>
+</ol>
+<table>
+  <tr><th>Scope</th><th>Means</th></tr>
+  <tr><td><code>read</code> (the default)</td><td>Like a <code>read_api</code> token: the read tools only.</td></tr>
+  <tr><td><code>write</code></td><td>Like a <code>write_api</code> token: also creating and changing issues. The consent page says so.</td></tr>
+</table>
+<p>The rules ByteBench enforces:</p>
+<ul>
+  <li><b>PKCE is required</b> with <code>S256</code>; <code>plain</code> and requests without a challenge are refused. <code>state</code> is required: without it the request stops on an error page. The token request must send the matching <code>code_verifier</code>.</li>
+  <li><b>Codes</b> are single use, valid 60 seconds, and bound to the client, the exact redirect URI, the PKCE challenge and the user who approved. Using a code twice fails, and revokes the tokens it was already exchanged for.</li>
+  <li><b>Redirect URIs</b> are compared exactly (no prefix, case, port or trailing-slash leniency). An unknown client or an unregistered redirect URI gets an error page, never a redirect.</li>
+  <li><b>Refresh tokens rotate</b>: each refresh returns a new pair and retires the old refresh token. Presenting a retired refresh token again revokes the whole grant (every token of it) and records <code>oauth.refresh_reuse_detected</code>. A refresh can narrow the scope but never widen it.</li>
+  <li><b>Resource indicators</b> (RFC 8707): when the client sends <code>resource</code>, it must be this server's <code>/mcp</code> address, else <code>invalid_target</code>.</li>
+  <li><b>Where the tokens work:</b> only at <code>/mcp</code>. The REST API refuses them, and so does everything else that takes personal access tokens. They act as the user who approved, with the approved scope and the user's project permissions.</li>
+  <li><b>When they stop:</b> when the access token expires, when the grant is revoked (from the profile, by the client at <code>POST /oauth/revoke</code> (RFC 7009) with a refresh token, or by refresh-token reuse), or when the account is deactivated or locked.</li>
+  <li><b>Storage:</b> only SHA-256 hashes of codes and tokens are kept. Responses from the token endpoint are <code>Cache-Control: no-store</code>.</li>
+  <li><b>CORS:</b> the metadata, registration, token and revocation endpoints answer cross-origin requests (without credentials) so browser-based clients can use them; the authorization page never does, and it cannot be framed.</li>
+  <li><b>Registrations</b> are limited to 20 an hour from one address and 1,000 clients in total (<code>Mcp:OAuth:MaxRegistrationsPerIpPerHour</code>, <code>Mcp:OAuth:MaxClients</code>). Client names are escaped wherever they are shown.</li>
+</ul>
+<p><b>Connected apps:</b> the <b>Use with AI tools / CLI</b> panel on your profile lists the applications you approved, with their access and when they were last used, and a <b>Revoke</b> button that signs one out at once.</p>
+<p><b>Audit:</b> <code>oauth.client_registered</code>, <code>oauth.consent_granted</code>, <code>oauth.consent_denied</code>, <code>oauth.token_issued</code>, <code>oauth.token_refreshed</code>, <code>oauth.grant_revoked</code> (with the reason) and <code>oauth.refresh_reuse_detected</code>. Tokens and codes are never recorded.</p>
+<p><b>Switch off:</b> set <code>Mcp:OAuth:Enabled</code> to <code>false</code>: the OAuth endpoints and metadata disappear, the 401 no longer names the metadata, and <code>/mcp</code> accepts only personal access tokens. Lifetimes are in <a href="configuration.html#mcp">Configuration</a>.</p>
 
 <h3 id="mcp-other">Other MCP clients</h3>
 <p>Clients that read a JSON configuration take the same address and header:</p>
@@ -66,6 +97,20 @@
 <pre><code>dotnet pack cli/ByteBench.Cli -c Release -o ./nupkg
 dotnet tool install --global ByteBench.Cli --add-source ./nupkg</code></pre>
 
+<h3 id="cli-install">Installing a release</h3>
+<p>Released versions are published as the NuGet package <code>ByteBench.Cli</code> (when the project publishes to nuget.org) and as GitHub releases tagged <code>cli-v&lt;version&gt;</code>:</p>
+<pre><code>dotnet tool install -g ByteBench.Cli
+dotnet tool update -g ByteBench.Cli
+bytebench --version</code></pre>
+<p>Each GitHub release also carries self-contained single-file binaries that need no .NET installed (<code>bytebench-&lt;version&gt;-osx-arm64</code>, <code>osx-x64</code>, <code>linux-x64</code>, <code>linux-arm64</code>, <code>win-x64.exe</code>), a <code>.sha256</code> file for each and a combined <code>SHA256SUMS</code>. Check a download before you run it, for example <code>shasum -a 256 -c bytebench-1.2.3-linux-x64.sha256</code>, then make it executable and put it on your <code>PATH</code> as <code>bytebench</code>.</p>
+<p><code>bytebench --version</code> prints the package version. Shell completion for commands, subcommands and options:</p>
+<pre><code>source &lt;(bytebench completion bash)    # in ~/.bashrc
+source &lt;(bytebench completion zsh)     # in ~/.zshrc
+bytebench completion fish | source     # in ~/.config/fish/config.fish</code></pre>
+
+<h3 id="cli-releasing">Releasing the CLI (maintainers)</h3>
+<p>The workflow <code>.github/workflows/cli-release.yml</code> runs when a tag <code>cli-v&lt;semver&gt;</code> is pushed (for example <code>cli-v0.2.0</code>; a version with a suffix such as <code>-beta.1</code> becomes a pre-release). It builds the solution, runs the CLI tests, packs the tool with the tag's version, publishes the five self-contained binaries with their checksums, and creates the GitHub release with the binaries, the checksums and the <code>.nupkg</code>. It pushes the package to nuget.org only when the repository has a secret named <code>NUGET_API_KEY</code>: create a key on nuget.org with the <b>Push</b> scope limited to <code>ByteBench.Cli</code>, and add it under <b>Settings, Secrets and variables, Actions</b>. Without the secret that step is skipped. The package version defaults to <code>0.1.0</code> for local builds. Every pull request also checks that the tool still packs and installs (<code>cli-pack</code> in <code>ci.yml</code>).</p>
+
 <h3 id="cli-login">Logging in</h3>
 <p>Pipe the token on standard input (or set <code>BYTEBENCH_TOKEN</code>), so it never appears in your shell history or the process list:</p>
 <pre><code>echo "$TOKEN" | bytebench login --server https://bytebench.example.com
@@ -91,6 +136,7 @@ bytebench logout</code></pre>
   <tr><td><code>bytebench pipelines logs KEY/slug ID [--step ID] [--tail CHARS]</code></td><td>The end of a step's log (the first failed step unless you pick one).</td></tr>
   <tr><td><code>bytebench open KEY-N</code></td><td>Prints the issue's web address.</td></tr>
 </table>
+<p><code>bytebench completion bash|zsh|fish</code> prints a shell completion script (see <a href="#cli-install">Installing a release</a>).</p>
 <p>Every command takes <code>--json</code> for machine-readable output (the API's JSON, unchanged) and <code>--help</code>. Text output is plain. Colour is used only when standard output is a terminal and <code>NO_COLOR</code> is not set. Text that came from the server (titles, comments, logs) has terminal control characters replaced with <code>?</code>, so an issue cannot rewrite your screen.</p>
 
 <h3 id="cli-exit">Exit codes</h3>
