@@ -1,0 +1,29 @@
+@page "/account/confirm-email"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@inject ByteBench.Services.Accounts.EmailConfirmationService Confirmation
+@inject NavigationManager Nav
+
+<PageTitle>Confirm email · ByteBench</PageTitle>
+
+<MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Email confirmation</MudText>
+
+@if (ok)
+{
+    <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert mt-3" role="status">Your email address is confirmed.</MudAlert>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer"><a href="account/login">Sign in</a></MudText>
+}
+else
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="auth-alert mt-3" role="alert">This confirmation link is invalid or has expired.</MudAlert>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer"><a href="account/resend-confirmation">Send a new link</a> &middot; <a href="account/login">Back to sign in</a></MudText>
+}
+
+@code {
+    private bool ok;
+
+    [SupplyParameterFromQuery] private int Uid { get; set; }
+    [SupplyParameterFromQuery] private string? Token { get; set; }
+
+    protected override async Task OnInitializedAsync() => ok = await Confirmation.ConfirmAsync(Uid, Token);
+}

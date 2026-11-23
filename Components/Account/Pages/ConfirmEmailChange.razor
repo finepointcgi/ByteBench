@@ -1,0 +1,29 @@
+@page "/account/confirm-email-change"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@inject ByteBench.Services.Accounts.EmailConfirmationService Confirmation
+
+<PageTitle>Confirm new email · ByteBench</PageTitle>
+
+<MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">New email address</MudText>
+
+@if (ok)
+{
+    <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert mt-3" role="status">Your email address was changed. Other sessions of your account were signed out.</MudAlert>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer"><a href="account/profile">Your profile</a></MudText>
+}
+else
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="auth-alert mt-3" role="alert">This link is invalid, expired or was already used. Change your email again from your profile to get a new one.</MudAlert>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer"><a href="account/profile">Your profile</a></MudText>
+}
+
+@code {
+    private bool ok;
+
+    [SupplyParameterFromQuery] private int Uid { get; set; }
+    [SupplyParameterFromQuery] private string? Email { get; set; }
+    [SupplyParameterFromQuery] private string? Token { get; set; }
+
+    protected override async Task OnInitializedAsync() => ok = await Confirmation.ConfirmChangeAsync(Uid, Email, Token);
+}

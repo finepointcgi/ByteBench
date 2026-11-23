@@ -8,13 +8,25 @@
 @inject ByteBench.Services.Audit.AuditLog Audit
 @inject ByteBench.Services.Sso.SsoSettings Sso
 @inject ByteBench.Services.Sso.Ldap.LdapAuthService Ldap
+@inject Microsoft.Extensions.Options.IOptionsMonitor<ByteBench.Services.Accounts.AccountOptions> AccountConfig
+@inject ByteBench.Services.Accounts.RegistrationPolicy Registration
 
 <PageTitle>Sign in · ByteBench</PageTitle>
 
 <MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Sign in</MudText>
 <MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Welcome back. Sign in to continue to ByteBench.</MudText>
 
-@if (error != null)
+@if (!string.IsNullOrEmpty(Notice) && HttpMethods.IsGet(HttpContext.Request.Method))
+{
+    <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert" role="status">@NoticeText</MudAlert>
+}
+@if (unconfirmed)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="auth-alert" role="alert">
+        Confirm your email address before signing in. We sent a link when you registered. <a href="account/resend-confirmation">Send it again</a>.
+    </MudAlert>
+}
+else if (error != null)
 {
     <MudAlert Severity="Severity.Error" Dense="true" Class="auth-alert" role="alert">@error</MudAlert>
 }
@@ -38,6 +50,7 @@
         <InputText id="login-password" type="password" class="gb-input" @bind-Value="Input!.Password"
                    autocomplete="current-password" />
         <ValidationMessage For="() => Input!.Password" />
+        <div class="gb-help"><a href="account/forgot-password">Forgot password?</a></div>
     </div>
     <label class="gb-check gb-field" for="login-remember">
         <InputCheckbox id="login-remember" @bind-Value="Input!.RememberMe" />
@@ -58,19 +71,35 @@
     </div>
 }
 
-<MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">
-    New to ByteBench? <a href="@RegisterHref">Create an account</a>
-</MudText>
+@if (registrationOpen)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer">
+        New to ByteBench? <a href="@RegisterHref">Create an account</a>
+    </MudText>
+}
 
 @code {
     private string? error;
+    private bool unconfirmed, registrationOpen = true;
+
+    /// <summary>Set by the reset and confirmation pages: <c>reset</c>, <c>confirmed</c>, <c>changed</c>.</summary>
+    [SupplyParameterFromQuery(Name = "notice")]
+    private string? Notice { get; set; }
+
+    private string NoticeText => Notice switch
+    {
+        "reset" => "Your password was changed. Sign in with the new one.",
+        "confirmed" => "Your email address is confirmed. You can sign in now.",
+        _ => "",
+    };
 
     [SupplyParameterFromForm]
     private InputModel? Input { get; set; }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Input ??= new();
+        registrationOpen = (await Registration.GetStateAsync()).IsOpen;
         if (SsoError != null && HttpMethods.IsGet(HttpContext.Request.Method))
             error = ByteBench.Services.Sso.SsoErrors.Message(SsoError, Sso.Find(SsoProvider)?.Title ?? "the identity provider");
     }
@@ -114,7 +143,7 @@
 
         var result = await SignIn.PasswordSignInAsync(userName, Input!.Password, Input!.RememberMe, lockoutOnFailure: true);
         await Audit.SignInAttemptAsync(userName, result);
-        Finish(userName, result);
+        await Finish(userName, result);
     }
 
     private async Task LdapLogin(string login)
@@ -127,13 +156,16 @@
                 var result = await SignIn.ExternalLoginSignInAsync(ByteBench.Services.Sso.Ldap.LdapAuthService.LoginProvider, r.Key!, Input!.RememberMe, bypassTwoFactor: false);
                 if (result.Succeeded) await Audit.RecordAsync("auth.sign_in", "user", r.User!.Id, details: new { method = "ldap" }, actorId: r.User.Id);
                 else if (!result.RequiresTwoFactor) await Audit.SignInAttemptAsync(r.User!.UserName!, result);
-                Finish(r.User!.UserName!, result);
+                await Finish(r.User!.UserName!, result);
                 break;
             case ByteBench.Services.Sso.Ldap.LdapLoginStatus.Locked:
                 error = "This account is locked or deactivated.";
                 break;
             case ByteBench.Services.Sso.Ldap.LdapLoginStatus.Conflict:
                 error = "A ByteBench account with this username or email already exists, so the directory account can't sign in to it. Ask a site admin.";
+                break;
+            case ByteBench.Services.Sso.Ldap.LdapLoginStatus.RegistrationClosed:
+                error = "New accounts can't be created on this server right now: registration is closed, or limited to certain email domains. Ask a site admin.";
                 break;
             case ByteBench.Services.Sso.Ldap.LdapLoginStatus.NoAccount:
                 error = "Your directory account doesn't have a ByteBench account. Ask a site admin.";
@@ -147,7 +179,7 @@
         }
     }
 
-    private void Finish(string userName, SignInResult result)
+    private async Task Finish(string userName, SignInResult result)
     {
         if (result.Succeeded)
         {
@@ -166,7 +198,10 @@
         }
         else if (result.IsNotAllowed)
         {
-            error = "This account is not allowed to sign in.";
+            // Only reached after the password was right (ByteBenchSignInManager), so this doesn't reveal accounts to strangers.
+            var u = AccountConfig.CurrentValue.RequireEmailConfirmation ? await Users.FindByNameAsync(userName) : null;
+            if (u is { EmailConfirmed: false }) unconfirmed = true;
+            else error = "This account is not allowed to sign in.";
         }
         else
         {

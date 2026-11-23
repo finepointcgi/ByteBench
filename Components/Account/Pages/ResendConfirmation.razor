@@ -1,0 +1,58 @@
+@page "/account/resend-confirmation"
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@inject ByteBench.Services.Accounts.EmailConfirmationService Confirmation
+
+<PageTitle>Resend confirmation · ByteBench</PageTitle>
+
+<MudText Typo="Typo.h5" HtmlTag="h1" Class="auth-title">Confirm your email address</MudText>
+<MudText Typo="Typo.body2" Class="mud-text-secondary auth-sub">Enter the email address you registered with and we'll send the confirmation link again.</MudText>
+
+@if (done)
+{
+    <MudAlert Severity="Severity.Success" Dense="true" Class="auth-alert" role="status">
+        If that address belongs to an account that still needs confirming, a new link is on its way. Check your spam folder if it doesn't arrive.
+    </MudAlert>
+}
+else
+{
+    @if (throttled)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="auth-alert" role="alert">Too many requests from your network. Try again in a few minutes.</MudAlert>
+    }
+    <EditForm Model="Input" FormName="resend-confirmation" OnValidSubmit="Submit" method="post">
+        <DataAnnotationsValidator />
+        <div class="gb-field">
+            <label class="gb-field-label" for="rc-email">Email</label>
+            <InputText id="rc-email" type="email" class="gb-input" @bind-Value="Input!.Email" autocomplete="email" autofocus />
+            <ValidationMessage For="() => Input!.Email" />
+        </div>
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Send confirmation link</MudButton>
+    </EditForm>
+}
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary auth-footer"><a href="account/login">Back to sign in</a></MudText>
+
+@code {
+    private bool done, throttled;
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel? Input { get; set; }
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task Submit()
+    {
+        var ok = await Confirmation.RequestResendAsync(Input!.Email, HttpContext.Connection.RemoteIpAddress?.ToString());
+        done = ok;
+        throttled = !ok;
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Enter your email address."), EmailAddress(ErrorMessage = "Enter a valid email address."), StringLength(256)]
+        public string Email { get; set; } = "";
+    }
+}

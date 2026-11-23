@@ -55,7 +55,8 @@ The seed data creates four demo accounts. All of them use the password in `SeedD
 | `dan` | dan@example.com | Dan Kowalski |
 
 - **Sign in** at `/account/login` with a username or an email. Five failed attempts lock an account for five minutes.
-- **Register** at `/account/register`. New users get a random avatar color and are signed in right away.
+- **Register** at `/account/register`. New users get a random avatar color and are signed in right away (or must confirm their email first with `Account:RequireEmailConfirmation`). Admins can close registration, restrict it to email domains or hand out invitations (see [Passwords, email confirmation & registration control](#passwords-email-confirmation--registration-control)).
+- **Forgot password?** on the sign-in page emails a single-use reset link (`/account/forgot-password`, `/account/reset-password`).
 - **Profile** at `/account/profile` (click your avatar in the top bar): change display name, email, avatar color and password.
 - **Two-factor sign-in** at `/account/two-factor` (see [Two-factor sign-in](#two-factor-sign-in-totp)). Site admins manage accounts at `/admin/users` (see [User administration](#user-administration)).
 - **Sign out** with the button in the top bar.
@@ -1516,11 +1517,23 @@ Site admins manage accounts at `/admin/users` (sidebar **👥 Users**, next to t
   | Unlock / Reactivate | Clears the lockout, the failed sign-in counter and the deactivation | `admin.user_unlocked` |
   | Sign out | Rotates the security stamp: every browser session ends within a minute. Access tokens keep working | `admin.user_signed_out` |
   | Reset 2FA | For a user who lost their device: turns 2FA off, replaces the authenticator key and deletes the recovery codes | `admin.user_2fa_reset` |
+  | Send password reset email | Emails the same single-use, time-limited link as "Forgot password?" (needs `Email:Enabled`; accounts with a ByteBench password only) | `admin.user_reset_email_sent` |
+  | Set temporary password | Generated password shown once, all sessions end, the user must choose a new password at the next sign-in. Not for yourself or SSO/LDAP accounts | `admin.user_temp_password` |
+  | Mark email confirmed | Treats the address as confirmed | `admin.user_email_confirmed` |
+  | Create user | Username, name, email, optional admin; temporary password shown once; works while registration is closed | `admin.user_created` |
   | Deactivate | Locks the account indefinitely (`User.DeactivatedAt`), signs it out and revokes every personal access token. Reactivating doesn't bring the tokens back | `admin.user_deactivated` |
 
-- You can't lock or deactivate yourself. The ByteBench AI bot account is listed but can't be changed.
+- You can't lock or deactivate yourself. The system bot accounts (AI, automation, service desk, CI job token) are listed but none of these actions can be applied to them.
 - **Locked and deactivated accounts can't use tokens either:** `AccessTokenService` refuses tokens of locked or deactivated users (REST API Bearer and git), and git's Basic auth checks lockout before the password or token.
 - **How fast it applies:** the cookie's security stamp is re-checked every minute (`SecurityStampValidatorOptions.ValidationInterval`), and open Blazor circuits re-check it every minute too (`IdentityRevalidatingAuthenticationStateProvider`).
+
+### Passwords, email confirmation & registration control
+
+Code: `Services/Accounts/*`, pages `Components/Account/Pages/{ForgotPassword,ResetPassword,ConfirmEmail,ConfirmEmailChange,ResendConfirmation,ChangePassword}.razor`, admin panel `Components/Pages/Admin/RegistrationPanel.razor`. The full description is in the documentation site (`site/pages/accounts.html`, `admin.html`, `configuration.html#account`).
+
+- **Forgot password:** the request page always gives the same answer (and takes at least `Account:ResponseFloorMs`), emails a single-use link that expires after `Account:PasswordResetMinutes` (60), enforces the password policy, then signs other sessions out (security stamp), clears the lockout, audits `auth.password_reset` and emails the user. Two-factor still applies afterwards. SSO/LDAP accounts, deactivated or admin-locked accounts and system bots get no email. Limits: `Account:MaxRequestsPerIp` (10) and `Account:MaxRequestsPerAccount` (3) per `Account:ThrottleWindowMinutes` (15).
+- **Email confirmation** (`Account:RequireEmailConfirmation`, default false): password sign-in, new registrations and changed email addresses need a confirmed address; seeded, SSO/LDAP-created and system accounts count as confirmed, accounts without a local password are never blocked, other never-confirmed accounts are blocked until they confirm (`/account/resend-confirmation`) or an admin marks them confirmed.
+- **Registration control** (`/admin/users`, panel at the top): Open/Closed plus allowed email domains, stored in the database (`SiteSettings`), no restart. Precedence: `Registration:LockedByConfig` configuration, else the saved value, else `Registration:Mode` / `Registration:AllowedDomains`, else Open. Closed also stops SSO/LDAP creating new accounts unless `Registration:ApplyToSso=false`. Admins can create users and single-use invitation links (`RegistrationInvites`) at any time.
 
 ### Two-factor sign-in (TOTP)
 

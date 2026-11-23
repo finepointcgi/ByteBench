@@ -18,7 +18,12 @@ else
             <MudText Typo="Typo.h5" HtmlTag="h1">Users</MudText>
             <MudText Class="mud-text-secondary" Typo="Typo.body2">Every account on this ByteBench server. Actions are recorded in the <MudLink Href="/admin/audit" Typo="Typo.body2">audit log</MudLink> as <code>admin.user_*</code>.</MudText>
         </div>
+        <div>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="NewUser">Create user</MudButton>
+        </div>
     </div>
+
+    <RegistrationPanel />
 
     <form class="ua-filters" @onsubmit="Search" @onsubmit:preventDefault>
         <MudTextField T="string" @bind-Value="search" Placeholder="Search username, name or email" Variant="Variant.Outlined" Margin="Margin.Dense"
@@ -78,6 +83,14 @@ else
                                         <div class="ua-muted ua-small">@LockText(u)</div>
                                     }
                                     else { <span class="ua-muted">Active</span> }
+                                    @if (!u.EmailConfirmed)
+                                    {
+                                        <div><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0" title="The email address was never confirmed">Email unconfirmed</MudChip></div>
+                                    }
+                                    @if (u.MustChangePassword)
+                                    {
+                                        <div class="ua-muted ua-small">Must change password</div>
+                                    }
                                 </td>
                                 <td class="ua-small">@(u.TwoFactorEnabled ? "On" : "Off")</td>
                                 <td class="ua-small ua-nowrap" title="@(u.LastSignIn?.ToString("yyyy-MM-dd HH:mm") + " UTC")">@(u.LastSignIn is { } ls ? Display.Ago(ls) : "Never")</td>
@@ -103,6 +116,18 @@ else
                                                 <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Ask(u, ActionKind.Lock)">Lock</MudButton>
                                             }
                                             <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Ask(u, ActionKind.SignOut)">Sign out</MudButton>
+                                            @if (u.HasPassword)
+                                            {
+                                                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Ask(u, ActionKind.SendReset)">Send password reset email</MudButton>
+                                                @if (u.Id != Me.User.Id)
+                                                {
+                                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Ask(u, ActionKind.TempPassword)">Set temporary password</MudButton>
+                                                }
+                                            }
+                                            @if (!u.EmailConfirmed)
+                                            {
+                                                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Ask(u, ActionKind.ConfirmEmail)">Mark email confirmed</MudButton>
+                                            }
                                             @if (u.TwoFactorEnabled)
                                             {
                                                 <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Ask(u, ActionKind.ResetTwoFactor)">Reset 2FA</MudButton>
@@ -139,7 +164,7 @@ else
     private int Skip => (pageNumber - 1) * PageSize;
     private int PageCount => Math.Max(1, ((result?.Total ?? 0) + PageSize - 1) / PageSize);
 
-    private enum ActionKind { GrantAdmin, RevokeAdmin, Lock, Unlock, SignOut, ResetTwoFactor, Deactivate }
+    private enum ActionKind { GrantAdmin, RevokeAdmin, Lock, Unlock, SignOut, ResetTwoFactor, Deactivate, SendReset, TempPassword, ConfirmEmail }
 
     private sealed record Pending(AdminUserRow User, ActionKind Kind, string Title, string Body, string ConfirmLabel, bool Danger);
 
@@ -171,6 +196,9 @@ else
             ActionKind.Unlock => new(u, kind, u.IsDeactivated ? "Reactivate account?" : "Unlock account?", $"{who} will be able to sign in again." + (u.IsDeactivated ? " Their revoked access tokens stay revoked." : ""), u.IsDeactivated ? "Reactivate" : "Unlock", false),
             ActionKind.SignOut => new(u, kind, "Sign out everywhere?", $"Every browser session of {who} ends within a minute. Personal access tokens keep working.", "Sign out", false),
             ActionKind.ResetTwoFactor => new(u, kind, "Reset two-factor sign-in?", $"Two-factor sign-in is turned off for {who}, and their authenticator key and recovery codes stop working. They can set it up again from their profile.", "Reset 2FA", true),
+            ActionKind.SendReset => new(u, kind, "Send password reset email?", $"{who} gets an email at {u.Email} with a single-use link to choose a new password. Nothing changes until they use it.", "Send email", false),
+            ActionKind.TempPassword => new(u, kind, "Set a temporary password?", $"{who}'s current password stops working, every session ends, and a generated password is shown once. They must choose their own at the next sign-in.", "Set temporary password", true),
+            ActionKind.ConfirmEmail => new(u, kind, "Mark email as confirmed?", $"{who}'s address {u.Email} is treated as confirmed without them opening a link. Only do this if you know it is theirs.", "Mark confirmed", false),
             _ => new(u, kind, "Deactivate account?", $"{who} is locked indefinitely, signed out everywhere, and every personal access token they own is revoked. An admin can reactivate the account later, but the tokens stay revoked.", "Deactivate", true),
         };
 
@@ -206,6 +234,12 @@ else
                 case ActionKind.Unlock: await Admin.UnlockAsync(p.User.Id); message = $"{who} can sign in again."; break;
                 case ActionKind.SignOut: await Admin.ForceSignOutAsync(p.User.Id); message = $"{who} will be signed out of every browser session."; break;
                 case ActionKind.ResetTwoFactor: await Admin.ResetTwoFactorAsync(p.User.Id); message = $"Two-factor sign-in was reset for {who}."; break;
+                case ActionKind.SendReset: await Admin.SendPasswordResetAsync(p.User.Id); message = $"A password reset email is on its way to {who}."; break;
+                case ActionKind.TempPassword:
+                    var temp = await Admin.SetTemporaryPasswordAsync(p.User.Id);
+                    await ShowPasswordAsync("Temporary password", temp, $"Give this to {who} over a secure channel. It is shown only once and can't be recovered.");
+                    message = $"A temporary password was set for {who}."; break;
+                case ActionKind.ConfirmEmail: await Admin.MarkEmailConfirmedAsync(p.User.Id); message = $"{who}'s email address is marked as confirmed."; break;
                 case ActionKind.Deactivate: await Admin.DeactivateAsync(p.User.Id); message = $"{who} was deactivated and their access tokens revoked."; break;
             }
         }
@@ -218,6 +252,27 @@ else
             return;
         }
         await Load();
+    }
+
+    private async Task NewUser()
+    {
+        error = null;
+        var dialog = await Dialogs.ShowAsync<NewUserDialog>("Create user", new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        var answer = await dialog.Result;
+        if (answer is { Canceled: false, Data: ByteBench.Services.TemporaryPassword temp })
+        {
+            await ShowPasswordAsync("User created", temp, "Give these credentials to the new user over a secure channel. The password is shown only once; they must change it at first sign-in.");
+            await Load();
+        }
+    }
+
+    private async Task ShowPasswordAsync(string title, ByteBench.Services.TemporaryPassword temp, string note)
+    {
+        var dialog = await Dialogs.ShowAsync<TemporaryPasswordDialog>(title, new DialogParameters<TemporaryPasswordDialog>
+        {
+            { d => d.UserName, temp.UserName }, { d => d.Password, temp.Password }, { d => d.Note, note },
+        }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        await dialog.Result;
     }
 
     private static string LockText(AdminUserRow u) =>

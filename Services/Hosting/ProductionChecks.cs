@@ -40,6 +40,10 @@ public static class ProductionChecks
             Add(CheckSeverity.Problem, "Seed:DemoData", "On: the demo users share a published password. Turn it off in production.");
         if (prod && c["AllowedHosts"] is null or "*")
             Add(CheckSeverity.Info, "AllowedHosts", "Is '*': any Host header is accepted. Set it to your host name when the proxy doesn't filter it.");
+        if (c.GetValue("Account:RequireEmailConfirmation", false) && !c.GetValue("Email:Enabled", false))
+            Add(CheckSeverity.Problem, "Account:RequireEmailConfirmation", "On while Email:Enabled is false: confirmation and reset emails can't be sent, so unconfirmed users can't sign in. Enable email or turn this off.");
+        if (!c.GetValue("Email:Enabled", false))
+            Add(CheckSeverity.Info, "Email:Enabled", "Off: \"Forgot password\" emails and other account emails are not sent. Admins can still set a temporary password on /admin/users.");
         if (!c.GetValue("RateLimiting:Enabled", true))
             Add(CheckSeverity.Warning, "RateLimiting:Enabled", "Rate limiting is off.");
 

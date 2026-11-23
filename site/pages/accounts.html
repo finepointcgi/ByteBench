@@ -5,8 +5,8 @@
 
 <h2 id="sign-in">Registration and sign-in</h2>
 <ul>
-<li><strong>Register</strong> at <code>/account/register</code>. New users get a random avatar colour and are signed in right away. There is no setting to close registration or approve new users; to keep strangers out, restrict network access or use SSO or LDAP only (see <a href="production.html">production setup</a>).</li>
-<li><strong>Sign in</strong> at <code>/account/login</code> with a username or an email address.</li>
+<li><strong>Register</strong> at <code>/account/register</code>. New users get a random avatar colour and are signed in right away, unless <a href="#email-confirmation">email confirmation</a> is required. Site admins can <a href="#registration">close registration</a>, limit it to some email domains or hand out invitation links.</li>
+<li><strong>Sign in</strong> at <code>/account/login</code> with a username or an email address. <strong>Forgot password?</strong> on that page starts a <a href="#password-reset">reset by email</a>.</li>
 <li><strong>Lockout:</strong> five failed attempts lock an account for five minutes. This also applies to wrong two-factor codes and LDAP passwords. A site admin can unlock or deactivate accounts (see <a href="admin.html#users">user administration</a>).</li>
 <li><strong>Sign out</strong> with the button in the top bar.</li>
 <li>Account pages are plain server-rendered pages (not the live Blazor circuit), because sign-in has to write cookies.</li>
@@ -18,8 +18,45 @@
 <li>At least 8 characters. Symbols are not required.</li>
 <li>Change your password under <strong>Profile</strong> (<code>/account/profile</code>, click your avatar). You need the current password.</li>
 <li>Accounts created by SSO or LDAP have <strong>no ByteBench password</strong>, and the profile says so. They use personal access tokens for Git over HTTP.</li>
-<li>ByteBench has no "forgot password" email flow and site admins cannot set another user's password from the admin page. Someone who lost their password needs a different sign-in route (SSO or LDAP if configured) or an operator who can repair the account in the database; plan for this before going live.</li>
+<li>Lost your password? Use <strong>Forgot password?</strong> on the sign-in page (<a href="#password-reset">below</a>). A site admin can also send a reset email or set a temporary password (<a href="admin.html#users">user administration</a>). Accounts that only use SSO or LDAP have no ByteBench password to reset.</li>
 </ul>
+
+<h3 id="password-reset">Forgot password and reset links</h3>
+<p>On <code>/account/forgot-password</code> you enter the email address of your account. The page always shows the same message ("If that email address belongs to an account, a reset link is on its way"), whether or not the address exists, and takes about the same time to answer, so it cannot be used to find out who has an account.</p>
+<ul>
+<li>The email holds a <strong>single-use link</strong> to <code>/account/reset-password</code> that expires after <code>Account:PasswordResetMinutes</code> (default 60). Using it, changing the password another way or asking for a newer link and using that first all kill the older links.</li>
+<li>The new password must follow the <a href="#passwords">password rules</a>. A rejected password does not use up the link.</li>
+<li>On success every other session of the account is signed out (the security stamp changes), a lockout from failed attempts is cleared, the event is audited as <code>auth.password_reset</code> and the user gets an email that the password changed. Nobody is signed in by the reset itself.</li>
+<li><strong>Two-factor stays on.</strong> A reset never turns off or skips two-factor: after resetting, the user still needs an authenticator or recovery code to sign in. A user who lost the device needs an admin to reset 2FA.</li>
+<li>No reset is sent for accounts without a ByteBench password (SSO and LDAP), deactivated accounts, accounts an admin locked, or the system bot accounts. The page still gives the same neutral answer.</li>
+<li><strong>Rate limits:</strong> by default 10 requests per client IP and 3 emails per account in 15 minutes (<code>Account:MaxRequestsPerIp</code>, <code>Account:MaxRequestsPerAccount</code>, <code>Account:ThrottleWindowMinutes</code>). Over the IP limit the page says to try again later; over the account limit the answer looks the same but no further email is sent.</li>
+<li>It needs <code>Email:Enabled=true</code> and a working sender. Without email an admin sets a <a href="admin.html#users">temporary password</a>. If no email arrives see <a href="troubleshooting.html#email-not-arriving">email not arriving</a>.</li>
+</ul>
+
+<h3 id="email-confirmation">Email confirmation</h3>
+<p>With <code>Account:RequireEmailConfirmation=true</code> (default <code>false</code>, so existing installs keep working) ByteBench makes people prove they own their address. The exact rule:</p>
+<ul>
+<li><strong>Switch off:</strong> nothing changes. The confirmed flag is only used as before, when an SSO sign-in wants to link to an existing account.</li>
+<li><strong>Switch on, new registrations:</strong> the account is created but nobody is signed in. A confirmation email goes out (link valid <code>Account:EmailConfirmationHours</code>, default 48) and password sign-in is refused until the link is opened. The sign-in page then offers <code>/account/resend-confirmation</code>, which gives a neutral answer and is rate limited like password reset.</li>
+<li><strong>Switch on, password sign-in</strong> needs a confirmed address. Seeded demo users, accounts created by SSO or LDAP, system accounts and users who reset their password by email count as confirmed, and accounts without a local password are never blocked. Every other existing account that was registered but never confirmed is blocked until its owner confirms through the resend page or an admin chooses <strong>Mark email confirmed</strong> on <code>/admin/users</code>. The block is only revealed after the correct password was entered.</li>
+<li><strong>Changing the email address</strong> on the profile page then does not change it at once: a link goes to the <em>new</em> address, the old one stays in force until it is opened, and other sessions are signed out when the change happens. With the switch off the address changes immediately, as before.</li>
+<li>Users named in <code>Bootstrap:AdminUsers</code> are marked confirmed at start-up so the first admin is never locked out.</li>
+</ul>
+<div class="warn">Turning the switch on needs working email. Otherwise unconfirmed users cannot sign in; the system page warns about this combination. Confirm the users you care about first, or mark them confirmed from <code>/admin/users</code>.</div>
+
+<h2 id="registration">Registration control</h2>
+<p>Under <strong>Registration</strong> on <code>/admin/users</code> a site admin sets the mode and an optional list of allowed email domains. It is stored in the database and takes effect at once, without a restart.</p>
+<ul>
+<li><strong>Open</strong> (default): anyone can register. <strong>Closed</strong>: <code>/account/register</code> shows a message instead of the form (and a post is refused too), and the sign-in page hides the "Create an account" link.</li>
+<li><strong>Allowed domains</strong> (for example <code>example.com</code>): when set, only addresses at those domains can register. An empty list allows any domain.</li>
+<li><strong>Admins can always create users</strong> with <strong>Create user</strong> on <code>/admin/users</code>: a temporary password is shown once and must be changed at first sign-in. The mode, the domain list and invitations do not apply to that.</li>
+<li><strong>Invitations:</strong> an admin can create a single-use link (valid 1, 7 or 30 days, optionally tied to one email address) that lets one person register while registration is closed or limited by domain. Only a hash of the token is stored; the link is shown once.</li>
+<li><strong>Precedence:</strong> with <code>Registration:LockedByConfig=true</code> the configuration wins and the admin page is read-only. Otherwise a value an admin saved wins, then <code>Registration:Mode</code> and <code>Registration:AllowedDomains</code> from configuration (the initial defaults), then Open with no domain limit.</li>
+<li><strong>SSO and LDAP:</strong> creating a <em>new</em> account the first time someone signs in is "registration" too, so closed mode and the domain list apply (the person sees "registration is closed"). Existing and already linked accounts are not affected. Set <code>Registration:ApplyToSso=false</code> to let providers keep creating accounts while the form is closed (their own <code>AutoCreateUsers</code> and domain settings still apply).</li>
+<li>There is no API endpoint to register, so the REST API has nothing to close; personal access tokens only work for existing accounts.</li>
+<li>For the very first admin on a fresh install keep registration open, register, set <code>Bootstrap:AdminUsers</code>, restart, then close registration.</li>
+</ul>
+<p>Settings are in the <a href="configuration.html#account">Account and Registration</a> tables.</p>
 
 <h2 id="sessions">Sessions</h2>
 <p>A sign-in cookie lasts 14 days and slides forward while you use the site. The server checks every minute that the session is still valid (the account's security stamp), so changing a password, resetting two-factor, deactivating an account or an admin signing the user out ends other sessions within about a minute. "Remember this device" for two-factor is separate and lasts 14 days.</p>

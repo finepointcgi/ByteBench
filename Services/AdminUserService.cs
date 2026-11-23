@@ -6,7 +6,8 @@ namespace ByteBench.Services;
 
 /// <summary>One row of the user administration list.</summary>
 public sealed record AdminUserRow(int Id, string UserName, string DisplayName, string? Email, string Color, bool IsAdmin,
-    DateTimeOffset? LockoutEnd, DateTime? DeactivatedAt, bool TwoFactorEnabled, DateTime? LastSignIn, int ProjectCount, bool IsBot)
+    DateTimeOffset? LockoutEnd, DateTime? DeactivatedAt, bool TwoFactorEnabled, DateTime? LastSignIn, int ProjectCount, bool IsBot,
+    bool EmailConfirmed = true, bool HasPassword = true, bool MustChangePassword = false)
 {
     public bool IsLockedOut(DateTimeOffset now) => LockoutEnd is { } end && end > now;
     public bool IsDeactivated => DeactivatedAt != null;
@@ -20,8 +21,12 @@ public sealed record AdminUserPage(List<AdminUserRow> Users, int Total);
 /// <c>admin.user_*</c> audit event. Each action runs in its own DI scope so a long-lived circuit never writes through
 /// a stale, tracked <see cref="User"/>.
 /// </summary>
-public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServiceScopeFactory scopes, ProjectAccess access, Audit.AuditLog audit)
+public partial class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServiceScopeFactory scopes, ProjectAccess access, Audit.AuditLog audit)
 {
+    // Primary-constructor parameters aren't visible in the other part of this partial class (AdminUserService.Accounts.cs).
+    private IServiceScopeFactory Scopes => scopes;
+    private Audit.AuditLog AuditLog => audit;
+
     public async Task<AdminUserPage> SearchAsync(string? search, int page, int pageSize)
     {
         await RequireAdminAsync();
@@ -38,6 +43,7 @@ public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServic
             .Select(u => new
             {
                 u.Id, u.UserName, u.DisplayName, u.Email, u.Color, u.IsAdmin, u.LockoutEnd, u.DeactivatedAt, u.TwoFactorEnabled,
+                u.EmailConfirmed, HasPassword = u.PasswordHash != null, u.MustChangePassword,
                 Projects = db.ProjectMembers.Count(m => m.UserId == u.Id),
             }).ToListAsync();
         var ids = rows.Select(r => r.Id).ToList();
@@ -47,7 +53,7 @@ public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServic
             .ToDictionaryAsync(x => x.Id, x => x.At);
         return new(rows.Select(r => new AdminUserRow(r.Id, r.UserName ?? "", r.DisplayName, r.Email, r.Color, r.IsAdmin, r.LockoutEnd,
             r.DeactivatedAt, r.TwoFactorEnabled, lastSignIn.TryGetValue(r.Id, out var at) ? at : null, r.Projects,
-            r.UserName == Ai.AiBot.UserName)).ToList(), total);
+            Accounts.SystemAccounts.IsSystem(r.UserName), r.EmailConfirmed, r.HasPassword, r.MustChangePassword)).ToList(), total);
     }
 
     /// <summary>Grants or revokes site admin. The last remaining admin can't be revoked.</summary>
@@ -117,7 +123,7 @@ public class AdminUserService(IDbContextFactory<AppDbContext> dbFactory, IServic
         await using var scope = scopes.CreateAsyncScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var user = await users.FindByIdAsync(userId.ToString()) ?? throw new InvalidOperationException("That user no longer exists.");
-        if (Ai.AiBot.IsBot(user)) throw new InvalidOperationException("The ByteBench AI bot account can't be changed.");
+        if (Accounts.SystemAccounts.IsSystem(user)) throw new InvalidOperationException("ByteBench's system bot accounts can't be changed.");
         await using var db = await dbFactory.CreateDbContextAsync();
         var details = await op(users, user, db, me);
         await audit.RecordAsync(action, "user", user.Id, details: new { user = user.UserName, extra = details }, actorId: me);

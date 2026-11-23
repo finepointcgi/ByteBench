@@ -184,6 +184,29 @@ Email__Smtp__User=bytebench@example.com
 Email__Smtp__Password=...</code></pre>
 <p>See <a href="notifications.html">Notifications and email</a>.</p>
 
+<h2 id="account">Account and Registration</h2>
+<p>Password reset, email confirmation and who may register. Both need working <a href="#email">Email</a> to send anything. See <a href="accounts.html#password-reset">Accounts</a>.</p>
+<h3 id="account-keys">Account</h3>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Account:PasswordResetMinutes</code></td><td>60</td><td>How long a password reset link works (5 minutes to 7 days)</td></tr>
+  <tr><td><code>Account:RequireEmailConfirmation</code></td><td><code>false</code></td><td>Password sign-in, new registrations and email changes need a confirmed address. See the exact rule under <a href="accounts.html#email-confirmation">Email confirmation</a></td></tr>
+  <tr><td><code>Account:EmailConfirmationHours</code></td><td>48</td><td>How long confirmation links work</td></tr>
+  <tr><td><code>Account:MaxRequestsPerIp</code></td><td>10</td><td>Reset and confirmation-resend requests per client IP per window</td></tr>
+  <tr><td><code>Account:MaxRequestsPerAccount</code></td><td>3</td><td>Emails of one kind per account per window; extra requests get the usual answer but no email</td></tr>
+  <tr><td><code>Account:ThrottleWindowMinutes</code></td><td>15</td><td>The window for the two limits above (in memory: a restart forgets the counts)</td></tr>
+  <tr><td><code>Account:ResponseFloorMs</code></td><td>400</td><td>Reset and resend requests take at least this long, so timing does not tell whether an address has an account. <code>0</code> turns it off</td></tr>
+</table>
+<h3 id="registration-keys">Registration</h3>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Registration:Mode</code></td><td><code>Open</code></td><td><code>Open</code> or <code>Closed</code>. The initial default; a value an admin saves on <code>/admin/users</code> overrides it unless <code>LockedByConfig</code> is set</td></tr>
+  <tr><td><code>Registration:AllowedDomains</code></td><td>empty</td><td>List of email domains that may register (<code>Registration__AllowedDomains__0=example.com</code>). Empty allows any. Same precedence as the mode</td></tr>
+  <tr><td><code>Registration:LockedByConfig</code></td><td><code>false</code></td><td>When true the configuration always wins and the admin panel is read-only</td></tr>
+  <tr><td><code>Registration:ApplyToSso</code></td><td><code>true</code></td><td>Whether closed mode and the domain list also stop SSO and LDAP from creating new accounts</td></tr>
+</table>
+<p>Precedence: <code>LockedByConfig</code> configuration, else the admin's saved value, else configuration, else Open.</p>
+
 <h2 id="service-desk">ServiceDesk</h2>
 <table>
   <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>

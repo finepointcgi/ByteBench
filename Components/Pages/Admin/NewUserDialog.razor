@@ -1,0 +1,31 @@
+@inject AdminUserService Admin
+
+<MudDialog>
+    <TitleContent><MudText Typo="Typo.h6">Create user</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">Works even while registration is closed. A temporary password is generated and shown once; the user must change it at first sign-in. The email address counts as confirmed.</MudText>
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+        <MudTextField T="string" @bind-Value="userName" Label="Username" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField T="string" @bind-Value="displayName" Label="Display name" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudTextField T="string" @bind-Value="email" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+        <MudCheckBox T="bool" @bind-Value="isAdmin" Label="Site administrator" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Create">Create user</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    private string userName = "", displayName = "", email = "";
+    private bool isAdmin;
+    private string? error;
+
+    private async Task Create()
+    {
+        error = null;
+        try { MudDialog.Close(DialogResult.Ok(await Admin.CreateUserAsync(userName, displayName, email, isAdmin))); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}
