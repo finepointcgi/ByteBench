@@ -28,6 +28,7 @@ else
                 <MudText Typo="Typo.h5" HtmlTag="h1">Authentication</MudText>
                 <MudText Class="mud-text-secondary" Typo="Typo.body2">
                     Single sign-on and LDAP, as configured under <code>Authentication:*</code> (read-only: change the configuration and restart).
+                    SAML and SCIM provisioning can be changed here.
                     Secrets are never shown. Sign-ins are in the <MudLink Href="/admin/audit" Typo="Typo.body2">audit log</MudLink> as <code>auth.*</code>.
                 </MudText>
             </div>
@@ -86,6 +87,9 @@ else
                 </div>
             }
         </MudPaper>
+
+        <SamlAdminPanel />
+        <ScimAdminPanel />
 
         <MudPaper Outlined="true" Class="pa-4">
             <div class="d-flex align-center flex-wrap gap-2 mb-2">

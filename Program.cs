@@ -63,6 +63,8 @@ builder.Services.ConfigureApplicationCookie(o =>
     o.SlidingExpiration = true;
 });
 builder.AddByteBenchSso(); // SSO (OIDC providers, GitHub OAuth) and LDAP from Authentication:*
+ByteBench.Services.Saml.SamlEndpoints.AddSaml(builder.Services); // SAML 2.0 SSO (Saml:* or /admin/authentication)
+ByteBench.Services.Scim.ScimEndpoints.AddScim(builder.Services, builder.Configuration); // SCIM 2.0 provisioning (/scim/v2)
 
 builder.Services.AddScoped<IssueService>();
 builder.Services.AddScoped<CurrentUser>();
@@ -208,15 +210,19 @@ app.MapReleases();
 app.MapByteBenchHealth(); // /health/live, /health/ready
 ByteBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.MapBackupDownloads(app); // /admin/backups/download/{name}
 app.MapByteBenchSso(); // /account/sso/*: start, complete and link SSO sign-ins
+ByteBench.Services.Saml.SamlEndpoints.MapSaml(app); // /saml/metadata, /saml/login, /saml/acs, /saml/logout
+ByteBench.Services.Scim.ScimEndpoints.MapScim(app); // /scim/v2 (bearer token from /admin/authentication)
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 // Sign-out is a POST (with antiforgery token, enforced because of the [FromForm] binding).
-app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit, [FromForm] string? returnUrl) =>
+app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit, [FromForm] string? returnUrl,
+    HttpContext http, ByteBench.Services.Saml.SamlService saml) =>
 {
     await audit.RecordAsync("auth.sign_out");
     await signIn.SignOutAsync();
-    return TypedResults.LocalRedirect("/account/login");
+    // Signed in with SAML and the IdP has a logout URL: continue with SAML single logout.
+    return TypedResults.LocalRedirect(await saml.AfterLocalSignOutAsync(http) ?? "/account/login");
 });
 
 app.Run();

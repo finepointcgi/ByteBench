@@ -8,6 +8,7 @@
 @inject ByteBench.Services.Audit.AuditLog Audit
 @inject ByteBench.Services.Sso.SsoSettings Sso
 @inject ByteBench.Services.Sso.Ldap.LdapAuthService Ldap
+@inject ByteBench.Services.Saml.SamlService Saml
 @inject Microsoft.Extensions.Options.IOptionsMonitor<ByteBench.Services.Accounts.AccountOptions> AccountConfig
 @inject ByteBench.Services.Accounts.RegistrationPolicy Registration
 
@@ -59,7 +60,7 @@ else if (error != null)
     <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" DropShadow="false">Sign in</MudButton>
 </EditForm>
 
-@if (Sso.Providers.Count > 0)
+@if (Sso.Providers.Count > 0 || saml != null)
 {
     @* Plain links (GET), not form posts: the redirect to the provider then doesn't depend on the CSP's form-action. *@
     <div class="sso-divider" role="separator"><span>or</span></div>
@@ -67,6 +68,10 @@ else if (error != null)
         @foreach (var p in Sso.Providers)
         {
             <SsoProviderButton Provider="p" Href="@SsoHref(p)" Text="@($"Sign in with {p.Title}")" />
+        }
+        @if (saml != null)
+        {
+            <SsoProviderButton Provider="saml" Href="@SamlHref" Text="@($"Sign in with {saml.Title}")" />
         }
     </div>
 }
@@ -81,6 +86,8 @@ else if (error != null)
 @code {
     private string? error;
     private bool unconfirmed, registrationOpen = true;
+    /// <summary>The SAML identity provider, when SAML sign-in is on (Saml:* or /admin/authentication).</summary>
+    private ByteBench.Services.Sso.SsoProviderOptions? saml;
 
     /// <summary>Set by the reset and confirmation pages: <c>reset</c>, <c>confirmed</c>, <c>changed</c>.</summary>
     [SupplyParameterFromQuery(Name = "notice")]
@@ -100,8 +107,10 @@ else if (error != null)
     {
         Input ??= new();
         registrationOpen = (await Registration.GetStateAsync()).IsOpen;
+        saml = (await Saml.ActiveAsync())?.ToProvider();
         if (SsoError != null && HttpMethods.IsGet(HttpContext.Request.Method))
-            error = ByteBench.Services.Sso.SsoErrors.Message(SsoError, Sso.Find(SsoProvider)?.Title ?? "the identity provider");
+            error = ByteBench.Services.Sso.SsoErrors.Message(SsoError, Sso.Find(SsoProvider)?.Title
+                ?? (SsoProvider == ByteBench.Services.Saml.SamlOptions.ProviderName ? saml?.Title : null) ?? "the identity provider");
     }
 
     [CascadingParameter]
@@ -119,6 +128,8 @@ else if (error != null)
 
     private string SsoHref(ByteBench.Services.Sso.SsoProviderOptions p) =>
         $"account/sso/{p.Name}" + (AccountUrls.IsLocal(ReturnUrl) ? $"?returnUrl={Uri.EscapeDataString(ReturnUrl!)}" : "");
+
+    private string SamlHref => "saml/login" + (AccountUrls.IsLocal(ReturnUrl) ? $"?returnUrl={Uri.EscapeDataString(ReturnUrl!)}" : "");
 
     private string RegisterHref => AccountUrls.IsLocal(ReturnUrl)
         ? $"account/register?returnUrl={Uri.EscapeDataString(ReturnUrl!)}"

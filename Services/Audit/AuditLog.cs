@@ -80,7 +80,7 @@ public class AuditLog(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess a
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public async Task RecordAsync(string action, string? targetType = null, object? targetId = null, int? projectId = null,
-        object? details = null, int? actorId = null, bool anonymous = false)
+        object? details = null, int? actorId = null, bool anonymous = false, string? actorName = null)
     {
         try
         {
@@ -89,7 +89,7 @@ public class AuditLog(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess a
             var (ip, ua) = circuit.Captured ? (circuit.IpAddress, circuit.UserAgent) : http != null ? ClientOf(http) : (null, null);
 
             await using var db = await dbFactory.CreateDbContextAsync();
-            var name = uid == null ? null : await db.Users.Where(u => u.Id == uid).Select(u => u.UserName).FirstOrDefaultAsync();
+            var name = uid == null ? actorName : await db.Users.Where(u => u.Id == uid).Select(u => u.UserName).FirstOrDefaultAsync();
             db.AuditEvents.Add(new AuditEvent
             {
                 ActorId = uid, ActorName = name, IpAddress = ip, UserAgent = ua, Action = action,

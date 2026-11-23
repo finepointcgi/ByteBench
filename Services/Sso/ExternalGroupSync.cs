@@ -111,13 +111,8 @@ public class ExternalGroupSync(IDbContextFactory<AppDbContext> dbFactory, Audit.
     public async Task DeactivateAsync(UserManager<User> users, User user, string source, CancellationToken ct = default)
     {
         if (user.DeactivatedAt != null) return;
-        user.DeactivatedAt = DateTime.UtcNow;
-        await users.SetLockoutEnabledAsync(user, true);
-        await users.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
-        await users.UpdateSecurityStampAsync(user);
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var revoked = await db.PersonalAccessTokens.Where(t => t.UserId == user.Id && t.RevokedAt == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow), ct);
+        var revoked = await Accounts.AccountDeactivation.DeactivateAsync(users, db, user, ct);
         await audit.RecordAsync("auth.directory_user_deactivated", "user", user.Id, details: new { source, user = user.UserName, tokensRevoked = revoked }, anonymous: true);
     }
 }

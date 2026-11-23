@@ -153,8 +153,15 @@ public class SsoService(SsoSettings settings, UserManager<User> users, SignInMan
             return LoginError(SsoErrors.Failed, info?.LoginProvider);
         }
         await http.SignOutAsync(IdentityConstants.ExternalScheme);
+        return await SignInExternalAsync(p, Map(p, info.Principal, info.ProviderKey), returnUrl);
+    }
 
-        var id = Map(p, info.Principal, info.ProviderKey);
+    /// <summary>
+    /// Resolves the account for an identity a provider vouched for (OIDC callback, SAML assertion) and signs in through
+    /// Identity's external login, so lockout, deactivation and ByteBench two-factor apply. Returns the URL to redirect to.
+    /// </summary>
+    public async Task<string> SignInExternalAsync(SsoProviderOptions p, ExternalIdentity id, string? returnUrl)
+    {
         var (user, error, created) = await ResolveUserAsync(p, id);
         if (user == null) return LoginError(error, p.Name);
 

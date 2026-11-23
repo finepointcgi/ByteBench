@@ -1,0 +1,194 @@
+@using ByteBench.Services.Saml
+@using ByteBench.Components.Repositories
+@inject SamlAdminService Admin
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="pa-4 mb-4" id="saml">
+    <div class="d-flex align-center flex-wrap gap-2 mb-1">
+        <MudText Typo="Typo.h6" HtmlTag="h2" Class="flex-grow-1">SAML 2.0 single sign-on</MudText>
+        @if (o != null)
+        {
+            <MudChip T="string" Size="Size.Small" Class="ma-0" Color="@(o.Enabled ? (configErrors.Count == 0 ? Color.Success : Color.Warning) : Color.Default)">
+                @(o.Enabled ? (configErrors.Count == 0 ? "On" : "On, incomplete") : "Off")
+            </MudChip>
+            <MudChip T="string" Size="Size.Small" Class="ma-0" Variant="Variant.Outlined">@(saved ? "Saved on this page" : "From appsettings Saml:*")</MudChip>
+        }
+    </div>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        ByteBench as a SAML service provider for one identity provider (SP-initiated sign-in; HTTP-Redirect request, HTTP-POST response).
+        Accounts follow the same rules as OIDC providers. Saving here overrides <code>Saml:*</code> from the configuration; changes apply at once
+        and are recorded as <code>admin.saml_*</code>.
+    </MudText>
+
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+    @foreach (var e in errors) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@e</MudAlert> }
+
+    @if (o != null)
+    {
+        var b = BaseUrl;
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mb-1">Give these to your identity provider</MudText>
+        <MudSimpleTable Dense="true" Elevation="0" Outlined="true" Class="aa-table aa-kv mb-4">
+            <tbody>
+                <tr><th>SP entity ID (audience)</th><td class="mono">@(string.IsNullOrWhiteSpace(o.SpEntityId) ? b + "/saml/metadata" : o.SpEntityId)</td></tr>
+                <tr><th>ACS URL (reply URL)</th><td class="mono">@b/saml/acs</td></tr>
+                <tr><th>SP metadata</th><td class="mono"><a href="saml/metadata" target="_blank" rel="noopener" data-enhance-nav="false">@b/saml/metadata</a> <span class="mud-text-secondary">(when enabled)</span></td></tr>
+                <tr><th>Single logout URL</th><td class="mono">@b/saml/logout</td></tr>
+                <tr><th>Sign-in start URL</th><td class="mono">@b/saml/login</td></tr>
+            </tbody>
+        </MudSimpleTable>
+
+        <MudSwitch T="bool" @bind-Value="o.Enabled" Color="Color.Primary" Label="Enable SAML sign-in" />
+        <div class="saml-grid">
+            <MudTextField T="string" @bind-Value="o.DisplayName" Label="Button name" HelperText="&quot;Sign in with …&quot; on the sign-in page" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <div></div>
+            <MudTextField T="string" @bind-Value="o.IdpMetadataUrl" Label="IdP metadata URL (optional)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          HelperText="Fetch fills in the entity ID, URLs and certificates. Fetched through the outbound URL guard." />
+            <div class="d-flex align-center"><MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CloudDownload" OnClick="Fetch" Disabled="busy">Fetch metadata</MudButton></div>
+            <MudTextField T="string" @bind-Value="o.IdpEntityId" Label="IdP entity ID (issuer)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.IdpSsoUrl" Label="IdP single sign-on URL (HTTP-Redirect)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.IdpSloUrl" Label="IdP single logout URL (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.NameIdFormat" Label="NameID format" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          HelperText="Persistent, email or unspecified; transient NameIDs are refused" />
+        </div>
+        <MudTextField T="string" @bind-Value="certs" Label="IdP signing certificates" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="5" Class="mono mt-2"
+                      HelperText="PEM (one or more BEGIN/END CERTIFICATE blocks). List the old and the new certificate during a rollover." />
+        @foreach (var c in certInfo) { <div class="mud-text-secondary aa-small mono">@c</div> }
+
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mt-4 mb-1">Attribute mapping</MudText>
+        <div class="saml-grid">
+            <MudTextField T="string" @bind-Value="o.Attributes.Email" Label="Email attribute" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Name or FriendlyName; falls back to an email NameID" />
+            <MudTextField T="string" @bind-Value="o.Attributes.DisplayName" Label="Display name attribute" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.Attributes.UserName" Label="Username attribute" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.Attributes.Groups" Label="Groups attribute" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mt-4 mb-1">Accounts</MudText>
+        <div class="saml-grid">
+            <MudTextField T="string" @bind-Value="domains" Label="Allowed email domains" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Comma separated; empty allows any" />
+            <MudTextField T="string" @bind-Value="adminGroups" Label="Site admin group values" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="A user in one of these groups becomes a site admin" />
+        </div>
+        <div class="d-flex flex-wrap gap-4">
+            <MudSwitch T="bool" @bind-Value="o.AutoCreateUsers" Color="Color.Primary" Label="Create accounts on first sign-in" />
+            <MudSwitch T="bool" @bind-Value="o.LinkByEmail" Color="Color.Primary" Label="Link existing accounts by email" />
+            <MudSwitch T="bool" @bind-Value="o.TrustEmail" Color="Color.Primary" Label="Trust the IdP's email as verified" />
+        </div>
+
+        <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mt-4 mb-1">Security</MudText>
+        <div class="d-flex flex-wrap gap-4">
+            <MudSwitch T="bool" @bind-Value="o.WantAssertionsSigned" Color="Color.Primary" Label="Require signed assertions" />
+            <MudSwitch T="bool" @bind-Value="o.SignAuthnRequests" Color="Color.Primary" Label="Sign authentication requests" />
+        </div>
+        <div class="d-flex align-center flex-wrap gap-2 mb-2">
+            <span class="aa-small mud-text-secondary">SP signing key: @(signingCert == null ? "none" : SamlCertificates.Describe(signingCert))</span>
+            <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="GenerateKey" Disabled="busy">@(signingCert == null ? "Generate signing key" : "Replace signing key")</MudButton>
+        </div>
+        <div class="saml-grid">
+            <MudNumericField T="int" @bind-Value="o.ClockSkewSeconds" Label="Clock skew (seconds)" Min="0" Max="600" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="o.SpEntityId" Label="SP entity ID (optional)" Placeholder="@(BaseUrl + "/saml/metadata")" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+
+        <div class="d-flex gap-2 mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Save" Disabled="busy">Save SAML settings</MudButton>
+            @if (saved) { <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="Reset" Disabled="busy">Use appsettings instead</MudButton> }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private SamlOptions? o;
+    private bool saved, busy;
+    private string certs = "", domains = "", adminGroups = "";
+    private string? error;
+    private List<string> errors = [], configErrors = [], certInfo = [];
+    private System.Security.Cryptography.X509Certificates.X509Certificate2? signingCert;
+
+    private string BaseUrl => string.IsNullOrWhiteSpace(o?.BaseUrl) ? Nav.BaseUri.TrimEnd('/') : o!.BaseUrl!.TrimEnd('/');
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            (o, saved) = await Admin.GetAsync();
+            certs = string.Join("\n\n", o.IdpCertificates.Select(Pem));
+            domains = string.Join(", ", o.AllowedEmailDomains);
+            adminGroups = string.Join(", ", o.AdminGroups);
+            configErrors = o.Validate();
+            Describe();
+            signingCert = await Admin.SigningCertificateAsync();
+        }
+        catch (ForbiddenException ex) { error = ex.Message; }
+    }
+
+    /// <summary>Shows base64 DER (from metadata) as PEM.</summary>
+    private static string Pem(string c) => c.Contains("-----BEGIN", StringComparison.Ordinal) ? c.Trim()
+        : "-----BEGIN CERTIFICATE-----\n" + string.Join("\n", c.Chunk(64).Select(ch => new string(ch))) + "\n-----END CERTIFICATE-----";
+
+    private void Describe() => certInfo = SamlCertificates.ParseAll(SamlAdminService.SplitCertificates(certs)).Select(c => { using (c) return SamlCertificates.Describe(c); }).ToList();
+
+    private void Collect()
+    {
+        o!.IdpCertificates = SamlAdminService.SplitCertificates(certs);
+        o.AllowedEmailDomains = SamlAdminService.SplitList(domains);
+        o.AdminGroups = SamlAdminService.SplitList(adminGroups);
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            Collect();
+            errors = await Admin.SaveAsync(o!);
+            if (errors.Count == 0)
+            {
+                Snackbar.Add("SAML settings saved.", Severity.Success);
+                await Load();
+            }
+        }
+        catch (ForbiddenException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Reset()
+    {
+        if (!await Dialogs.ConfirmAsync("Use appsettings", "Forget the SAML settings saved here; Saml:* from the configuration applies again.", "Reset")) return;
+        try { await Admin.ResetAsync(); errors = []; await Load(); Snackbar.Add("Using Saml:* from the configuration.", Severity.Info); }
+        catch (ForbiddenException ex) { error = ex.Message; }
+    }
+
+    private async Task Fetch()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            Collect();
+            var md = await Admin.FetchMetadataAsync(o!);
+            certs = string.Join("\n\n", o!.IdpCertificates.Select(Pem));
+            Describe();
+            Snackbar.Add($"Read the metadata of {md.EntityId} ({md.Certificates.Count} signing certificate(s)). Save to apply.", Severity.Success);
+        }
+        catch (SamlException ex) { error = ex.Message; }
+        catch (ForbiddenException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task GenerateKey()
+    {
+        if (signingCert != null && !await Dialogs.ConfirmAsync("Replace signing key",
+                "Generate a new SP signing key? Update ByteBench's metadata at the identity provider afterwards, or signed requests will be rejected.", "Replace")) return;
+        busy = true;
+        try
+        {
+            signingCert = await Admin.GenerateSigningKeyAsync();
+            Snackbar.Add("Generated a new SP signing key (stored encrypted). Its certificate is in the SP metadata.", Severity.Success);
+        }
+        catch (ForbiddenException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

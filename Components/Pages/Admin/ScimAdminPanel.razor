@@ -1,0 +1,127 @@
+@using ByteBench.Services.Scim
+@using ByteBench.Components.Repositories
+@inject ScimTokenService Tokens
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="pa-4 mb-4" id="scim">
+    <div class="d-flex align-center flex-wrap gap-2 mb-1">
+        <MudText Typo="Typo.h6" HtmlTag="h2" Class="flex-grow-1">SCIM provisioning</MudText>
+        <MudChip T="string" Size="Size.Small" Class="ma-0" Color="@(active ? Color.Success : Color.Default)">@(active ? "Active" : enabled ? "On, no token" : "Off")</MudChip>
+    </div>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Lets your identity provider create, update and deactivate ByteBench accounts through SCIM 2.0. Deactivating a user signs them out
+        everywhere, revokes their access tokens and blocks every sign-in. Accounts are never deleted. Writes are recorded as <code>scim.*</code>.
+    </MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+    <MudSimpleTable Dense="true" Elevation="0" Outlined="true" Class="aa-table aa-kv mb-3">
+        <tbody>
+            <tr><th>SCIM base URL</th><td class="mono">@(Nav.BaseUri.TrimEnd('/'))/scim/v2</td></tr>
+            <tr><th>Authentication</th><td>HTTP header <code>Authorization: Bearer</code> with a token from below</td></tr>
+        </tbody>
+    </MudSimpleTable>
+
+    <MudSwitch T="bool" Value="enabled" ValueChanged="Toggle" Color="Color.Primary" Label="Enable SCIM provisioning" Disabled="busy" />
+    @if (enabled && !tokens.Any(t => t.RevokedAt == null))
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">SCIM stays closed (403) until you create a token.</MudAlert>
+    }
+
+    <div class="d-flex flex-wrap gap-3 align-center my-2">
+        <MudTextField T="string" @bind-Value="newName" Label="Token name" Placeholder="Okta / Entra ID" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:22rem" />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Key" OnClick="Create" Disabled="busy">Create token</MudButton>
+    </div>
+    @if (plaintext != null)
+    {
+        <MudAlert Severity="Severity.Success" Dense="true" Class="mb-2">
+            New SCIM token (shown once, copy it into your identity provider now):
+            <MudTextField T="string" Value="plaintext" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-1 mono" aria-label="SCIM token" />
+        </MudAlert>
+    }
+    @if (tokens.Count > 0)
+    {
+        <div class="aa-table-wrap">
+            <MudSimpleTable Dense="true" Elevation="0" Outlined="true" Class="aa-table">
+                <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var t in tokens)
+                    {
+                        <tr @key="t.Id">
+                            <td>@t.Name</td>
+                            <td class="mono">@t.Prefix…</td>
+                            <td>@t.CreatedAt.ToString("yyyy-MM-dd HH:mm") UTC</td>
+                            <td>@(t.LastUsedAt is { } u ? Display.Ago(u) : "Never")</td>
+                            <td>@(t.RevokedAt == null ? "Active" : "Revoked")</td>
+                            <td class="text-nowrap">
+                                @if (t.RevokedAt == null)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => Rotate(t)" Disabled="busy">Rotate</MudButton>
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => Revoke(t)" Disabled="busy">Revoke</MudButton>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    private bool enabled, active, busy;
+    private string? error, plaintext, newName;
+    private List<ByteBench.Data.ScimToken> tokens = [];
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            tokens = await Tokens.ListAsync();
+            enabled = await Tokens.IsSwitchedOnAsync();
+            active = await Tokens.IsActiveAsync();
+        }
+        catch (ForbiddenException ex) { error = ex.Message; }
+    }
+
+    private async Task Run(Func<Task> action)
+    {
+        error = null;
+        busy = true;
+        try { await action(); }
+        catch (Exception ex) when (ex is ForbiddenException or InvalidOperationException) { error = ex.Message; }
+        finally { busy = false; }
+        await Load();
+    }
+
+    private Task Toggle(bool on) => Run(async () =>
+    {
+        await Tokens.SetEnabledAsync(on);
+        Snackbar.Add(on ? "SCIM provisioning is on." : "SCIM provisioning is off.", Severity.Info);
+    });
+
+    private Task Create() => Run(async () =>
+    {
+        (_, plaintext) = await Tokens.CreateAsync(newName ?? "");
+        newName = null;
+    });
+
+    private async Task Rotate(ByteBench.Data.ScimToken t)
+    {
+        if (!await Dialogs.ConfirmAsync("Rotate token", $"Revoke \"{t.Name}\" ({t.Prefix}…) and create a replacement? Update the identity provider with the new token right away.", "Rotate")) return;
+        await Run(async () => (_, plaintext) = await Tokens.RotateAsync(t.Id));
+    }
+
+    private async Task Revoke(ByteBench.Data.ScimToken t)
+    {
+        if (!await Dialogs.ConfirmAsync("Revoke token", $"Revoke \"{t.Name}\" ({t.Prefix}…)? The identity provider can't provision with it any more.", "Revoke")) return;
+        await Run(async () =>
+        {
+            await Tokens.RevokeAsync(t.Id);
+            plaintext = null;
+        });
+    }
+}

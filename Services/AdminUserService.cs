@@ -82,13 +82,7 @@ public partial class AdminUserService(IDbContextFactory<AppDbContext> dbFactory,
 
     /// <summary>Clears the lockout (and deactivation) and the failed sign-in counter.</summary>
     public Task UnlockAsync(int userId) => ActAsync(userId, "admin.user_unlocked", async (users, user, _, _) =>
-    {
-        var wasDeactivated = user.DeactivatedAt != null;
-        user.DeactivatedAt = null;
-        Check(await users.SetLockoutEndDateAsync(user, null)); // also saves DeactivatedAt
-        Check(await users.ResetAccessFailedCountAsync(user));
-        return new { reactivated = wasDeactivated };
-    });
+        new { reactivated = await Accounts.AccountDeactivation.ReactivateAsync(users, user) });
 
     /// <summary>Signs the user out of every browser session by rotating the security stamp (tokens keep working).</summary>
     public Task ForceSignOutAsync(int userId) => ActAsync(userId, "admin.user_signed_out", async (users, user, _, _) =>
@@ -108,13 +102,7 @@ public partial class AdminUserService(IDbContextFactory<AppDbContext> dbFactory,
     public Task DeactivateAsync(int userId) => ActAsync(userId, "admin.user_deactivated", async (users, user, db, me) =>
     {
         if (user.Id == me) throw new InvalidOperationException("You can't deactivate your own account.");
-        user.DeactivatedAt = DateTime.UtcNow;
-        Check(await users.SetLockoutEnabledAsync(user, true));
-        Check(await users.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue));
-        Check(await users.UpdateSecurityStampAsync(user));
-        var revoked = await db.PersonalAccessTokens.Where(t => t.UserId == user.Id && t.RevokedAt == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
-        return new { tokensRevoked = revoked };
+        return new { tokensRevoked = await Accounts.AccountDeactivation.DeactivateAsync(users, db, user) };
     });
 
     private async Task ActAsync(int userId, string action, Func<UserManager<User>, User, AppDbContext, int, Task<object?>> op)

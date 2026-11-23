@@ -91,7 +91,9 @@ public sealed class SsoProviderOptions
     /// <summary>The ASP.NET Core authentication scheme.</summary>
     public string Scheme => "sso-" + Name;
     /// <summary>The source recorded on synced group memberships and admin grants.</summary>
-    public string Source => "oidc:" + Name;
+    public string Source => SourceOverride ?? "oidc:" + Name;
+    /// <summary>Set by non-OIDC providers that reuse the account logic (SAML: <c>saml</c>). Not configurable.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] internal string? SourceOverride { get; init; }
     /// <summary>Where the provider redirects back to (register <c>{site}{CallbackPath}</c> at the provider).</summary>
     public string CallbackPath => "/signin-sso/" + Name;
     public string Title => DisplayName is { Length: > 0 } d ? d : Name;
