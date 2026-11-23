@@ -1,0 +1,112 @@
+@page "/p/{Key}/repos/import/{Id:int}"
+@using ByteBench.Services.Importing
+@implements IDisposable
+@inject ImportService Imports
+@inject ImportRunner Runner
+@inject ISnackbar Snackbar
+
+<PageTitle>Importing @job?.Name</PageTitle>
+
+@if (loaded && job == null)
+{
+    <ProjectNotFound Message="This import does not exist, or you can't manage repositories in this project." />
+}
+else if (job != null)
+{
+    <div class="repo-page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Importing @job.Name</MudText>
+            <MudText Class="mud-text-secondary mono small">@job.SourceUrl</MudText>
+        </div>
+        <MudButton Href="@RepoUrls.List(job.Project.Key)" Variant="Variant.Outlined">Back to repositories</MudButton>
+    </div>
+
+    <div class="import-steps" aria-label="Import steps">
+        <span class="step">1 &middot; Source</span>
+        <span class="step">2 &middot; Details</span>
+        <span class="step active">3 &middot; Import</span>
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-5" Style="max-width: 720px" id="import-status">
+        @switch (job.Status)
+        {
+            case ImportStatus.Queued:
+                <MudText Typo="Typo.h6" Class="mb-2">Queued</MudText>
+                <MudProgressLinear Indeterminate="true" Class="mb-3" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Waiting for a free import slot.</MudText>
+                break;
+            case ImportStatus.Cloning:
+                <MudText Typo="Typo.h6" Class="mb-2">Cloning</MudText>
+                <MudProgressLinear Indeterminate="true" Class="mb-3" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    @ImportRunner.FormatSize(job.BytesReceived) received (limit @ImportRunner.FormatSize(Imports.Limits.MaxRepoBytes)) · running for @Elapsed
+                </MudText>
+                break;
+            case ImportStatus.Done:
+                <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                    Imported @job.BranchCount branch@(job.BranchCount == 1 ? "" : "es") and @job.TagCount tag@(job.TagCount == 1 ? "" : "s")
+                    (@ImportRunner.FormatSize(job.BytesReceived)).
+                </MudAlert>
+                @if (job.Error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@job.Error</MudAlert> }
+                @if (job.Repository != null)
+                {
+                    <MudButton Href="@RepoUrls.Base(job.Repository)" Variant="Variant.Filled" Color="Color.Primary">Open @job.Repository.Name</MudButton>
+                }
+                break;
+            case ImportStatus.Cancelled:
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">The import was cancelled and nothing was created.</MudAlert>
+                <MudButton Href="@RepoUrls.Import(job.Project.Key)" Variant="Variant.Outlined">Start over</MudButton>
+                break;
+            default:
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">The import failed: @job.Error</MudAlert>
+                <MudButton Href="@RepoUrls.Import(job.Project.Key)" Variant="Variant.Outlined">Start over</MudButton>
+                break;
+        }
+        @if (job.IsActive)
+        {
+            <div class="mt-3">
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="cancelling" OnClick="Cancel">Cancel import</MudButton>
+            </div>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int Id { get; set; }
+
+    private RepositoryImport? job;
+    private bool loaded, cancelling;
+    private Timer? timer;
+
+    private string Elapsed => job?.StartedAt is { } s ? $"{Math.Max(0, (int)(DateTime.UtcNow - s).TotalSeconds)}s" : "0s";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Refresh();
+        timer?.Dispose();
+        timer = new Timer(async _ =>
+        {
+            if (job is { IsActive: false }) { timer?.Dispose(); return; }
+            await InvokeAsync(async () => { await Refresh(); StateHasChanged(); });
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private async Task Refresh()
+    {
+        job = await Imports.GetAsync(Id);
+        if (job != null && !string.Equals(job.Project.Key, Key, StringComparison.OrdinalIgnoreCase)) job = null;
+        loaded = true;
+    }
+
+    private async Task Cancel()
+    {
+        cancelling = true;
+        try { await Imports.CancelAsync(Id); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { cancelling = false; }
+        await Refresh();
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

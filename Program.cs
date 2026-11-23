@@ -91,6 +91,7 @@ builder.Services.AddCiPipelines(builder.Configuration);
 ByteBench.Services.Security.SecurityServiceCollectionExtensions.AddSecurityScanning(builder.Services, builder.Configuration); // Night Owl reports, Security page, merge check
 builder.Services.AddScoped<RepositorySettingsService>(); // code tools: repo settings, rename, archive, delete
 builder.Services.AddScoped<ByteBench.Services.Code.CodeSearchService>();
+ByteBench.Services.Code.BlameServiceCollectionExtensions.AddBlame(builder.Services, builder.Configuration); // blame view + API
 builder.Services.AddWebhooks(builder.Configuration);
 ByteBench.Services.ChatIntegrations.ChatServiceCollectionExtensions.AddChatIntegrations(builder.Services, builder.Configuration); // Slack & Teams (on the webhook pipeline), Slack app
 builder.Services.AddScoped<LinkedWorkService>(); // linked work: sub-tasks, epics, issue links
@@ -125,6 +126,7 @@ builder.Services.AddSshGit(builder.Configuration); // SSH keys, deploy keys, git
 // ----- Mirroring, protected tags & Git LFS -----
 builder.Services.AddScoped<ProtectedTagService>();
 ByteBench.Services.Mirroring.MirroringServiceCollectionExtensions.AddMirroring(builder.Services, builder.Configuration);
+ByteBench.Services.Importing.ImportServiceCollectionExtensions.AddRepositoryImport(builder.Services, builder.Configuration); // repository import wizard
 ByteBench.Services.Lfs.LfsServiceCollectionExtensions.AddGitLfs(builder.Services);
 builder.Services.AddAutomation(builder.Configuration); // automation rules: triggers, conditions, actions, scheduler
 builder.Services.AddByteBenchQuery(builder.Configuration); // GQL advanced search, CSV export and import

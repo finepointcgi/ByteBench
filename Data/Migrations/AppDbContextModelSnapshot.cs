@@ -3725,6 +3725,82 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("RepositoryAiReviewSettings");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryImport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BranchCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("BytesReceived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DefaultBranch")
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("KeepAsMirror")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RequestedById")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagCount")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("RequestedById");
+
+                    b.HasIndex("ProjectId", "Status");
+
+                    b.ToTable("RepositoryImports");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>
                 {
                     b.Property<int>("Id")
@@ -6391,6 +6467,31 @@ namespace ByteBench.Data.Migrations
                         .HasForeignKey("RepositoryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.RepositoryImport", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ByteBench.Data.User", "RequestedBy")
+                        .WithMany()
+                        .HasForeignKey("RequestedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Repository");
+
+                    b.Navigation("RequestedBy");
                 });
 
             modelBuilder.Entity("ByteBench.Data.RepositoryMirror", b =>

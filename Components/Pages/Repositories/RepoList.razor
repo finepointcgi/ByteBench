@@ -22,6 +22,7 @@ else if (project != null)
             <MudButton Href="@RepoUrls.PullRequests(project.Key)" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.MergeType">Pull requests</MudButton>
             @if (canCreate)
             {
+                <MudButton Href="@RepoUrls.Import(project.Key)" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CloudDownload">Import repository</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
                            OnClick="() => { creating = !creating; error = null; }">Create repository</MudButton>
             }

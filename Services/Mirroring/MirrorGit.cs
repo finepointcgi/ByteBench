@@ -35,6 +35,9 @@ internal sealed class MirrorGit(string gitPath, MirrorOptions options, string co
 {
     public sealed record Output(int ExitCode, string StdOut, string StdErr);
 
+    /// <summary>The transports git may use (<c>GIT_ALLOW_PROTOCOL</c>). Only tests widen this (to read a local repository).</summary>
+    public string AllowedProtocols { get; init; } = "http:https:ssh";
+
     /// <summary>A prepared remote: the URL plus the environment that pins its address and supplies credentials.</summary>
     public sealed class Remote : IDisposable
     {
@@ -117,7 +120,7 @@ internal sealed class MirrorGit(string gitPath, MirrorOptions options, string co
         psi.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
         psi.Environment["GIT_CONFIG_GLOBAL"] = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
-        psi.Environment["GIT_ALLOW_PROTOCOL"] = "http:https:ssh";
+        psi.Environment["GIT_ALLOW_PROTOCOL"] = AllowedProtocols;
         psi.Environment["GIT_ASKPASS"] = "";
         psi.Environment["SSH_ASKPASS"] = "";
         psi.Environment["LC_ALL"] = "C";

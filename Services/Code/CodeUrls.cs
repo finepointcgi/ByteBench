@@ -13,6 +13,10 @@ public static class CodeUrls
     public static string ProjectSearch(string projectKey, string? q = null, bool caseSensitive = false, bool regex = false) =>
         $"/p/{projectKey}/code-search" + Query(("q", q), ("case", caseSensitive ? "1" : null), ("regex", regex ? "1" : null));
 
+    /// <summary>The blame view of a file at <paramref name="rev"/> (a branch, tag or sha; escaped as one segment because branch names contain '/').</summary>
+    public static string Blame(Repository r, string rev, string path) =>
+        $"{RepoUrls.Base(r)}/blame/{Uri.EscapeDataString(rev)}/" + string.Join("/", path.Trim('/').Split('/').Select(Uri.EscapeDataString));
+
     public static string Settings(Repository r) => RepoUrls.Base(r) + "/settings";
 
     /// <summary>A file at a ref, scrolled to <paramref name="line"/>.</summary>

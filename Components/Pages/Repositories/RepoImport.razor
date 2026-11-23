@@ -1,0 +1,190 @@
+@page "/p/{Key}/repos/import"
+@using ByteBench.Services.Importing
+@inject IssueService Issues
+@inject ImportService Imports
+@inject ProjectAccess Access
+@inject NavigationManager Nav
+
+<PageTitle>Import repository · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null && !canImport)
+{
+    <Forbidden Message="Only Maintainers and Owners can import repositories." BackHref="@RepoUrls.List(project.Key)" />
+}
+else if (project != null)
+{
+    <div class="repo-page-header">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1" Class="gb-bold">Import repository</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">@project.Name</MudText>
+        </div>
+        <MudButton Href="@RepoUrls.List(project.Key)" Variant="Variant.Outlined">Back to repositories</MudButton>
+    </div>
+
+    <div class="import-steps" aria-label="Import steps">
+        <span class="@StepClass(1)">1 &middot; Source</span>
+        <span class="@StepClass(2)">2 &middot; Details</span>
+        <span class="step">3 &middot; Import</span>
+    </div>
+
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3" Style="max-width: 720px">@error</MudAlert> }
+
+    @if (probe == null)
+    {
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 720px">
+            <MudText Typo="Typo.h6" Class="mb-1">Where is the repository?</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                All branches and tags are copied (not pull requests or issues). Use an <code>https://</code>, <code>http://</code> or <code>ssh://</code> URL@(guard.AllowPrivateNetworks ? "." : " on a public address: this server blocks private and local networks.")
+            </MudText>
+            <MudStack Spacing="3">
+                <MudTextField T="string" Label="Repository URL" @bind-Value="url" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                              Placeholder="https://git.example.com/team/project.git" MaxLength="2048" />
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string" Label="Username (optional)" @bind-Value="username" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField T="string" Label="Password or access token (optional)" @bind-Value="secret" InputType="InputType.Password"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" autocomplete="new-password" />
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Credentials are used once for this import and are not saved, unless you choose to keep the repository as a pull mirror below.
+                </MudText>
+                <div class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || string.IsNullOrWhiteSpace(url))" OnClick="Check">
+                        @(busy ? "Checking…" : "Continue")
+                    </MudButton>
+                </div>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 720px">
+            <MudText Typo="Typo.h6" Class="mb-1">Name the new repository</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                Found <b>@probe.Branches.Count</b> branch@(probe.Branches.Count == 1 ? "" : "es")@(probe.Branches.Count >= 200 ? "+" : "") and <b>@probe.TagCount</b> tag@(probe.TagCount == 1 ? "" : "s")
+                at <span class="mono">@probe.Url</span>.
+            </MudText>
+            <MudStack Spacing="3">
+                <MudTextField T="string" Label="Name" @bind-Value="name" @bind-Value:after="NameChanged" Immediate="true" MaxLength="100"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField T="string" Label="Slug" @bind-Value="slug" @bind-Value:after="() => slugEdited = true" Immediate="true" MaxLength="100"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input"
+                              Adornment="Adornment.Start" AdornmentText="@($"{project.Key} /")"
+                              HelperText="Lowercase letters, digits, '.', '_' and '-'. Used in URLs and the clone address (…/slug.git)." />
+                <MudTextField T="string" Label="Description (optional)" @bind-Value="description" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudSelect T="string" Label="Default branch" @bind-Value="defaultBranch" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           HelperText="Detected from the source. New pull requests target it.">
+                    @foreach (var b in probe.Branches)
+                    {
+                        <MudSelectItem T="string" Value="@b">@b</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    <b>Visibility:</b> repositories follow their project (@project.Visibility): everyone who can see @project.Key can see this one.
+                </MudText>
+                <MudCheckBox T="bool" @bind-Value="keepMirror" Label="Keep as a pull mirror of the source" Dense="true"
+                             Class="ma-0" />
+                @if (keepMirror)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        ByteBench will keep fetching the source and nobody can push here (see the mirroring settings). @if (!string.IsNullOrEmpty(secret)) { <text>The password or token you entered is then saved, encrypted.</text> }
+                    </MudText>
+                }
+                <div class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || string.IsNullOrWhiteSpace(name))" OnClick="Start">Start import</MudButton>
+                    <MudButton Variant="Variant.Outlined" Disabled="busy" OnClick="Back">Back</MudButton>
+                </div>
+            </MudStack>
+        </MudPaper>
+    }
+
+    @if (recent.Count > 0)
+    {
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Recent imports</MudText>
+        <div class="gb-rows" style="max-width: 720px">
+            @foreach (var i in recent)
+            {
+                <a class="gb-row" href="@RepoUrls.ImportProgress(project.Key, i.Id)" @key="i.Id">
+                    <div class="gb-row-main">
+                        <div class="gb-row-title">@i.Name <span class="muted mono small">@i.Slug</span></div>
+                        <div class="gb-row-meta">@i.Status@(i.Error != null ? " · " + i.Error : "") · @Display.Ago(i.CreatedAt)</div>
+                    </div>
+                </a>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Inject] private ByteBench.Services.Mirroring.MirrorUrlGuard guard { get; set; } = null!;
+
+    private Project? project;
+    private bool notFound, canImport, busy, slugEdited, keepMirror;
+    private string? url, username, secret, name, slug, description, defaultBranch, error;
+    private ImportProbe? probe;
+    private List<RepositoryImport> recent = [];
+
+    private string StepClass(int step) => "step" + ((probe == null ? 1 : 2) == step ? " active" : "");
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        canImport = await Access.CanAsync(project.Id, Permission.ManageRepositories);
+        if (canImport) recent = await Imports.ListAsync(project.Id, 5);
+    }
+
+    private void NameChanged()
+    {
+        if (!slugEdited || string.IsNullOrEmpty(slug)) { slug = RepositoryService.Slugify(name ?? ""); slugEdited = false; }
+    }
+
+    private async Task Check()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            probe = await Imports.ProbeAsync(project!.Id, url ?? "", username, secret);
+            name = probe.SuggestedName;
+            slug = RepositoryService.Slugify(name);
+            slugEdited = false;
+            defaultBranch = probe.DefaultBranch;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private void Back()
+    {
+        probe = null;
+        error = null;
+    }
+
+    private async Task Start()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var job = await Imports.StartAsync(project!.Id, new ImportInput
+            {
+                Url = probe!.Url, Username = username, Secret = secret, Name = name ?? "", Slug = slug, Description = description,
+                DefaultBranch = defaultBranch, KeepAsMirror = keepMirror,
+            });
+            secret = null; // the credentials now live only in the running import
+            Nav.NavigateTo(RepoUrls.ImportProgress(project.Key, job.Id));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}
