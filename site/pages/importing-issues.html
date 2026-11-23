@@ -40,9 +40,10 @@
   <tr><td>Parent or epic, sub-tasks</td><td>The issue's parent, when the parent was imported and the project's hierarchy rules allow it</td></tr>
   <tr><td>Links between issues</td><td>Issue links (blocks, relates to, duplicates, clones) between imported issues</td></tr>
   <tr><td>Comments</td><td>Comments with their dates, when <b>Include comments</b> is on</td></tr>
-  <tr><td>Attachments</td><td>Listed in the description with a link back to the source; the files are not copied</td></tr>
+  <tr><td>Sprints (Jira)</td><td>Real ByteBench sprints with their name, goal, dates and state, and each issue in its sprint, see <a href="#sprints">sprints</a></td></tr>
+  <tr><td>Attachments</td><td>Listed in the description with a link back to the source, or, with <b>Copy attachment files</b> on, copied into the issue as real attachments, see <a href="#attachments">attachments</a></td></tr>
 </table>
-<p><b>Not imported:</b> sprints, attachment files, pull-request branches and code, reactions, watchers, time tracking, and anything the source's API doesn't offer. If a reader could not carry something over for one issue (for example a comment list that was cut short), the import records a warning naming the issue.</p>
+<p><b>Not imported:</b> pull-request branches and code, reactions, watchers, time tracking, GitLab iterations, and anything the source's API doesn't offer. If a reader could not carry something over for one issue (for example a comment list that was cut short), the import records a warning naming the issue.</p>
 <p>Each imported issue ends its description with a footer, <em>Imported from GitHub #12</em> (linked to the original when the source gave an address) and the original author's name when no user matched. It also gets the activity entry <em>imported from GitHub #12</em>.</p>
 
 <h2 id="mapping">How things are matched</h2>
@@ -53,12 +54,34 @@
 <h3 id="labels-milestones">Labels and milestones</h3>
 <p>Labels are matched by name, ignoring case, against the project's labels and its groups' labels; missing ones are created (names are cut at 40 characters). Milestones are matched by title; missing ones are created.</p>
 
+<h2 id="sprints">Sprints</h2>
+<p>Jira sprints become ByteBench sprints (they used to become <code>sprint: ...</code> labels). Jira Cloud and Server both report sprints through the agile API (<code>/rest/agile/1.0/board/{id}/sprint</code>, which includes the goal); when that isn't available to the token, they are read from the issues' Sprint field instead.</p>
+<ul>
+  <li><b>Fields:</b> name (cut at 100 characters), goal (500), start and end date, and the state: future is Planned, active is Active, closed is Completed.</li>
+  <li><b>An issue in several sprints</b> (Jira carries unfinished work over) goes to the latest: the active one, otherwise the one that started last.</li>
+  <li><b>Only one sprint can be active.</b> If Jira has several active sprints, or the project already has an active sprint, the extra ones are imported as Completed when their end date has passed, otherwise as Planned, and the import adds a warning for each.</li>
+  <li><b>Completed sprints</b> keep their dates, get a completion time (Jira's complete date, else the end date) and the same committed and completed counts and points that completing a sprint here stores, worked out from the imported issues, so velocity and sprint reports aren't empty. An active sprint gets its committed counts, like starting one. No burndown history is made up.</li>
+  <li><b>Fallback:</b> if an issue's sprint can't be read or isn't one the token can list, the issue gets a <code>sprint: NAME</code> label and a warning instead.</li>
+  <li><b>Re-runs</b> add only sprints that are new in Jira and never change a sprint that was imported before, even if you renamed, started or completed it here. New issues of a re-run go into the sprints that already exist.</li>
+</ul>
+
+<h2 id="attachments">Attachment files</h2>
+<p>With <b>Copy attachment files</b> on (<code>IncludeAttachments</code>, off by default), the files are downloaded from the source and stored as ordinary issue attachments, uploaded by the person who runs the import, using the same storage, content-type checks, hashes and limits as an upload in the issue page (<code>Attachments:MaxBytes</code> per file, <code>Attachments:MaxPerIssue</code> per issue). With it off, nothing is downloaded and attachments are only listed in the description, as before.</p>
+<ul>
+  <li><b>Jira:</b> every file in the issue's attachment list is attached to the issue (downloads need the same credentials as the API). Jira's inline pictures stay as <em>[image: name]</em> placeholders in the text, since Jira refers to them by file name; the file is in the issue's attachments.</li>
+  <li><b>GitLab:</b> files linked in issue and comment text as <code>/uploads/HASH/NAME</code> are downloaded from the project.</li>
+  <li><b>GitHub:</b> files linked in issue and comment text from <code>https://github.com/user-attachments/...</code> and <code>https://user-images.githubusercontent.com/...</code>. The token is not sent to these hosts, so files of a private repository usually can't be fetched and are reported as warnings; keep their original link.</li>
+  <li><b>Links in the text:</b> for issues and comments created by this run, the link or image in the text is rewritten to the local copy (<code>/attachments/ID/NAME</code>), so pictures show inline. A file that could not be copied keeps its original link. Issues that already existed are never edited: their files are attached but their text stays as it is. Jira's attachments that could not be copied are listed at the end of the description.</li>
+  <li><b>Limits:</b> at most <code>TrackerImport:MaxAttachmentBytes</code> (default 500 MB) in total per import, files over <code>TrackerImport:MaxAttachmentFileBytes</code> (default: <code>Attachments:MaxBytes</code>, which is also the ceiling) are skipped, file types in <code>TrackerImport:BlockedAttachmentExtensions</code> (executables and scripts such as <code>.exe</code>, <code>.bat</code>, <code>.ps1</code>) are skipped, and an issue never gets more than <code>Attachments:MaxPerIssue</code> files. A file that is too big, blocked, deleted or forbidden is one warning naming the issue and file; it never fails the import. A second run retries those and does not copy a file twice (<code>ImportedItem</code> remembers each file per issue).</li>
+  <li><b>Safety:</b> downloads go through the same address guard as the API calls, and again for every redirect. Attachment hosts often redirect to a CDN (GitHub uploads, Jira media, GitLab uploads): up to 3 redirects are followed, each checked against the private-address rule, a redirect from https to http is refused, and the Authorization or <code>PRIVATE-TOKEN</code> header is sent only to the source's own address (same scheme, host and port), never to another host. The size is enforced while streaming, whatever the source claims. Files are only ever written to the attachment storage under a random name; the file name is cleaned like an upload's. Warnings and the audit event contain file names and counts, never addresses or tokens.</li>
+</ul>
+
 <h2 id="rerun">Running it again</h2>
-<p>ByteBench remembers which source issue, comment, label and milestone became which here, per source project. Running the same import again therefore:</p>
+<p>ByteBench remembers which source issue, comment, label, milestone, sprint and attachment file became which here, per source project. Running the same import again therefore:</p>
 <ul>
   <li>creates only issues it hasn't imported before (they show up as <em>already imported</em> in the counters for the others);</li>
   <li><b>never changes an existing issue</b>: edits you made here stay, and edits made in the source are not copied;</li>
-  <li>adds comments that are new in the source to the already imported issues;</li>
+  <li>adds comments, sprints and attachment files that are new (or that failed before) to what is already there;</li>
   <li>completes parents (only for issues that have no parent yet) and links that were missing.</li>
 </ul>
 <p>Re-running is also how you continue after a cancel, a failure or a restart, and how you import the issues past the per-import limit. The remembered source is identified by the kind, the address and the project name in lower case, so importing the same repository twice with a different address is treated as a different source.</p>
@@ -67,7 +90,7 @@
 <ul>
   <li><b>Issues per import:</b> at most <code>TrackerImport:MaxIssues</code> (default 20000) are read; the import then stops with a warning, and a second run continues with the rest.</li>
   <li><b>Concurrency:</b> <code>TrackerImport:MaxConcurrent</code> imports run at once on the server (default 2); a project can have <code>TrackerImport:MaxActivePerProject</code> (default 1) queued or running at a time.</li>
-  <li><b>Requests:</b> one request is abandoned after <code>TrackerImport:RequestTimeoutSeconds</code> (default 60). Answers larger than 16 MB are refused, and redirects are not followed (use the project's current address). A server error (5xx) is retried a couple of times.</li>
+  <li><b>Requests:</b> one request is abandoned after <code>TrackerImport:RequestTimeoutSeconds</code> (default 60). Answers larger than 16 MB are refused, and redirects of API calls are not followed (use the project's current address); attachment downloads follow at most 3, see <a href="#attachments">attachments</a>. A server error (5xx) is retried a couple of times.</li>
   <li><b>Rate limits:</b> when the source answers 429, or 403 with a used-up limit, the import waits for the time the source gives (<code>Retry-After</code> or the reset header) and then continues, as long as the wait is at most <code>TrackerImport:MaxRateLimitWaitSeconds</code> (default 120) and it has not happened more than four times in a row for the same request. Otherwise it fails with a message saying about how long to wait. Anonymous access to GitHub and GitLab has low limits, so use a token for large projects.</li>
 </ul>
 
@@ -104,7 +127,11 @@
   <tr><td><code>TrackerImport:AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>Allow sources on loopback, private, link-local and metadata addresses</td></tr>
   <tr><td><code>TrackerImport:RequestTimeoutSeconds</code></td><td><code>60</code></td><td>Abandon one API request after this long</td></tr>
   <tr><td><code>TrackerImport:MaxRateLimitWaitSeconds</code></td><td><code>120</code></td><td>Longest pause for a rate limit before failing</td></tr>
+  <tr><td><code>TrackerImport:MaxAttachmentBytes</code></td><td><code>524288000</code> (500 MB)</td><td>Most attachment bytes one import copies; files past it are skipped with a warning</td></tr>
+  <tr><td><code>TrackerImport:MaxAttachmentFileBytes</code></td><td><code>0</code> (follow <code>Attachments:MaxBytes</code>)</td><td>Largest single attachment an import copies (never above <code>Attachments:MaxBytes</code>)</td></tr>
+  <tr><td><code>TrackerImport:BlockedAttachmentExtensions</code></td><td><code>.exe .dll .bat .cmd .com .scr .msi .ps1 .vbs</code></td><td>File types imports never copy</td></tr>
 </table>
+<p>Attachments also obey <code>Attachments:MaxBytes</code> (default 25 MB) and <code>Attachments:MaxPerIssue</code> (default 50).</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <table>
@@ -115,6 +142,8 @@
   <tr><td>is rate limiting the import</td><td>Try again after the time in the message, or use a token for a higher limit. Raise <code>TrackerImport:MaxRateLimitWaitSeconds</code> to let a run wait longer.</td></tr>
   <tr><td>answered HTTP 5xx, didn't answer within N seconds, Couldn't reach</td><td>The source is down or slow, or the address is wrong or blocked by a firewall. Run the import again; it continues.</td></tr>
   <tr><td>redirected; redirects aren't followed</td><td>Use the project's current address (for example the new group path or the https address).</td></tr>
+  <tr><td>attachment "NAME" wasn't copied: ...</td><td>One file could not be fetched or stored: the source no longer has it or the token can't read it, it is over the size or per-issue limit, its type is blocked, or the import's attachment budget is used up. The rest of the import is unaffected; fix the cause (for example raise <code>TrackerImport:MaxAttachmentBytes</code>) and run it again.</td></tr>
+  <tr><td>Sprint "NAME" is active in Jira, but a ByteBench project can have only one active sprint</td><td>The sprint was imported as Completed (it ended) or Planned; start it here when its time comes.</td></tr>
   <tr><td>The source can't be on this server or another local address</td><td>The SSRF rule: set <code>TrackerImport:AllowPrivateNetworks</code>.</td></tr>
   <tr><td>This project already has an import in progress</td><td>Wait for it, or cancel it; the limit is <code>TrackerImport:MaxActivePerProject</code>.</td></tr>
   <tr><td>Issues are attributed to me, not to the original authors</td><td>Add those people as project members with the same email or user name as in the source, then run the import again; existing issues are not changed, so fix those by hand or import into a new project.</td></tr>

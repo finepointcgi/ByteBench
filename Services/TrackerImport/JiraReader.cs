@@ -12,7 +12,10 @@ namespace ByteBench.Services.TrackerImport;
 /// Reads one Jira project, from Jira Cloud (REST v3: Atlassian Document Format, token-paged enhanced search) or Jira Server / Data
 /// Center (REST v2: wiki markup, startAt paging). The flavour is detected once from <c>serverInfo</c>. Basic auth when there is a
 /// user name (Cloud: email + API token), else a bearer token (personal access token). Credentials only ever go into the
-/// <c>Authorization</c> header. Sprints can't be imported as ByteBench sprints; they become labels named <c>sprint: …</c>.
+/// <c>Authorization</c> header, and only on requests to the Jira address itself (attachment downloads included). Sprints become real
+/// sprints: listed through the agile API (<c>/rest/agile/1.0/board/{id}/sprint</c>, which carries goals), else collected from the issues'
+/// Sprint field (Cloud objects, Server's old <c>...Sprint@1[id=3,state=ACTIVE,name=...]</c> strings); an issue in several sprints names
+/// the latest. Only when a sprint can't be read does the issue get a <c>sprint: …</c> label instead.
 /// </summary>
 public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : ISourceReader
 {
@@ -27,6 +30,7 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
     private bool? cloud;
     private string? epicLinkField, pointsField, sprintField;
     private bool fieldsLoaded;
+    private HashSet<string>? knownSprints;
 
     internal SourceConnection Connection { get; } = connection;
     internal TrackerHttp Http { get; } = http;
@@ -125,7 +129,6 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
         var jql = Esc(Jql(options.IncludeClosed));
         var max = Math.Max(1, options.MaxIssues);
         var yielded = 0;
-        var sprintNoted = false;
         string? token = null;
         var startAt = 0;
         while (true)
@@ -141,9 +144,8 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
             {
                 count++;
                 if (yielded >= max) yield break;
-                var issue = await MapAsync(raw, options, !sprintNoted, ct);
+                var issue = await MapAsync(raw, options, ct);
                 if (issue == null) continue;
-                if (issue.Notes.Any(n => n.StartsWith("Jira sprints are imported as labels", StringComparison.Ordinal))) sprintNoted = true;
                 yielded++;
                 yield return issue;
             }
@@ -160,6 +162,122 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
             }
         }
     }
+
+    public Task<Stream> OpenAttachmentAsync(SourceAttachment attachment, CancellationToken ct, long maxBytes = TrackerHttp.DefaultAttachmentMaxBytes) =>
+        attachment.DownloadUrl is { Length: > 0 } url ? Http.GetStreamAsync(url, Auth, Root, maxBytes, ct, What) : throw new SourceException("Jira gave no download address for this file.");
+
+    /// <summary>The project's sprints: from the boards of the project (agile API, with goals), else from the Sprint field of its issues.</summary>
+    public async Task<IReadOnlyList<SourceSprint>> ReadSprintsAsync(CancellationToken ct)
+    {
+        await DetectAsync(ct);
+        await LoadFieldsAsync(ct);
+        var found = new Dictionary<string, SourceSprint>(StringComparer.Ordinal);
+        try
+        {
+            var boards = new List<string>();
+            for (var start = 0; start < 500;)
+            {
+                var page = await GetAsync($"{Root}/rest/agile/1.0/board?projectKeyOrId={Esc(Key)}&startAt={start}&maxResults=50", ct);
+                var values = Items(page.Body, "values").ToList();
+                boards.AddRange(values.Select(b => IdOf(b, "id")).Where(id => id != null).Select(id => id!));
+                start += values.Count;
+                if (values.Count == 0 || (page.Body.TryGetProperty("isLast", out var last) && last.ValueKind == JsonValueKind.True)) break;
+            }
+            foreach (var board in boards.Take(20))
+            {
+                try
+                {
+                    for (var start = 0; start < 5000;)
+                    {
+                        var page = await GetAsync($"{Root}/rest/agile/1.0/board/{Esc(board)}/sprint?startAt={start}&maxResults=50", ct);
+                        var values = Items(page.Body, "values").ToList();
+                        foreach (var v in values) if (SprintOf(v) is { } sp) found.TryAdd(sp.ExternalId, sp);
+                        start += values.Count;
+                        if (values.Count == 0 || (page.Body.TryGetProperty("isLast", out var last) && last.ValueKind == JsonValueKind.True)) break;
+                    }
+                }
+                catch (SourceException) { /* a kanban board has no sprints (400), or this board isn't visible: try the others */ }
+            }
+        }
+        catch (SourceException) { /* no Jira Software / agile API for this token: fall back to the issues' Sprint field */ }
+
+        if (found.Count == 0 && sprintField != null)
+        {
+            // The field on each issue carries id, name, state and dates (not always the goal).
+            string? token = null;
+            var startAt = 0;
+            for (var pages = 0; pages < 1000; pages++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var jql = Esc(Jql(true));
+                var url = cloud == true
+                    ? $"{Api}/search/jql?jql={jql}&fields={Esc(sprintField)}&maxResults={PageSize}" + (token != null ? "&nextPageToken=" + Esc(token) : "")
+                    : $"{Api}/search?jql={jql}&fields={Esc(sprintField)}&startAt={startAt}&maxResults={PageSize}";
+                var page = await GetAsync(url, ct);
+                var issues = Items(page.Body, "issues").ToList();
+                foreach (var issue in issues)
+                    if (Obj(issue, "fields").TryGetProperty(sprintField, out var value))
+                        foreach (var sp in ParseSprints(value)) found.TryAdd(sp.ExternalId, sp);
+                if (cloud == true)
+                {
+                    token = Str(page.Body, "nextPageToken");
+                    if (string.IsNullOrEmpty(token) || issues.Count == 0) break;
+                }
+                else
+                {
+                    startAt += issues.Count;
+                    if (issues.Count == 0 || (Int(page.Body, "total") is { } total && startAt >= total)) break;
+                }
+            }
+        }
+        knownSprints = [.. found.Keys];
+        return [.. found.Values.OrderBy(s => s.StartDate ?? DateTime.MaxValue).ThenBy(s => long.TryParse(s.ExternalId, out var n) ? n : long.MaxValue)];
+    }
+
+    /// <summary>One sprint from the agile API or a Cloud Sprint field (<c>id, state future|active|closed, name, startDate, endDate, completeDate, goal</c>).</summary>
+    private static SourceSprint? SprintOf(JsonElement v)
+    {
+        var id = IdOf(v, "id");
+        var name = NullIfBlank(Str(v, "name"));
+        if (id == null || name == null) return null;
+        var state = StateOf(Str(v, "state"));
+        var end = state == SprintState.Completed && Timestamp(Str(v, "completeDate")) is { } done ? done : Timestamp(Str(v, "endDate"));
+        return new SourceSprint(id, name, NullIfBlank(Str(v, "goal")), Timestamp(Str(v, "startDate")), end, state);
+    }
+
+    private static SprintState StateOf(string? s) => s?.Trim().ToLowerInvariant() switch
+    {
+        "active" => SprintState.Active,
+        "closed" or "completed" => SprintState.Completed,
+        _ => SprintState.Planned,
+    };
+
+    /// <summary>Sprints out of a Sprint field value: Cloud objects, or Server's strings like <c>...Sprint@1[id=3,rapidViewId=1,state=ACTIVE,name=Sprint 3,goal=..,startDate=..,endDate=..,completeDate=..]</c>.</summary>
+    internal static List<SourceSprint> ParseSprints(JsonElement value)
+    {
+        var list = new List<SourceSprint>();
+        if (value.ValueKind != JsonValueKind.Array) return list;
+        foreach (var s in value.EnumerateArray())
+        {
+            if (s.ValueKind == JsonValueKind.Object) { if (SprintOf(s) is { } o) list.Add(o); }
+            else if (s.ValueKind == JsonValueKind.String && s.GetString() is { } text && text.IndexOf('[') is var open and >= 0)
+            {
+                var pairs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (Match m in Regex.Matches(text[(open + 1)..], @"(?<k>\w+)=(?<v>[^,\]]*)")) pairs[m.Groups["k"].Value] = m.Groups["v"].Value.Trim();
+                if (!pairs.TryGetValue("id", out var id) || !pairs.TryGetValue("name", out var name) || id.Length == 0 || name.Length == 0) continue;
+                var state = StateOf(pairs.GetValueOrDefault("state"));
+                pairs.TryGetValue("goal", out var goal);
+                var end = state == SprintState.Completed && Timestamp(pairs.GetValueOrDefault("completeDate")) is { } done ? done : Timestamp(pairs.GetValueOrDefault("endDate"));
+                list.Add(new SourceSprint(id, name, string.IsNullOrWhiteSpace(goal) || goal == "<null>" ? null : goal, Timestamp(pairs.GetValueOrDefault("startDate")), end, state));
+            }
+        }
+        return list;
+    }
+
+    /// <summary>The active sprint if any, else the one that started last (ties: the higher id, i.e. the one created last).</summary>
+    private static SourceSprint? Latest(List<SourceSprint> sprints) =>
+        sprints.LastOrDefault(s => s.State == SprintState.Active)
+        ?? sprints.OrderBy(s => s.StartDate ?? DateTime.MinValue).ThenBy(s => long.TryParse(s.ExternalId, out var n) ? n : 0).LastOrDefault();
 
     private async Task LoadFieldsAsync(CancellationToken ct)
     {
@@ -185,7 +303,7 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
         catch (SourceException ex) when (!ex.AuthFailure) { /* no custom fields: no epic link, points or sprints */ }
     }
 
-    private async Task<SourceIssue?> MapAsync(JsonElement raw, SourceReadOptions options, bool noteSprints, CancellationToken ct)
+    private async Task<SourceIssue?> MapAsync(JsonElement raw, SourceReadOptions options, CancellationToken ct)
     {
         var key = Str(raw, "key");
         if (string.IsNullOrEmpty(key)) return null;
@@ -194,10 +312,13 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
         var labels = new List<string>();
         foreach (var l in Items(f, "labels")) if (l.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(l.GetString())) labels.Add(l.GetString()!.Trim());
         foreach (var c in Items(f, "components")) if (Str(c, "name") is { Length: > 0 } cn) labels.Add("component: " + cn);
-        if (sprintField != null && f.TryGetProperty(sprintField, out var sprints) && SprintName(sprints) is { } sprint)
+        string? sprintId = null;
+        if (sprintField != null && f.TryGetProperty(sprintField, out var sprints) && sprints.ValueKind == JsonValueKind.Array && sprints.GetArrayLength() > 0)
         {
-            labels.Add("sprint: " + sprint);
-            if (noteSprints) notes.Add("Jira sprints are imported as labels named 'sprint: …'.");
+            var latest = Latest(ParseSprints(sprints));
+            if (latest != null && (knownSprints == null || knownSprints.Contains(latest.ExternalId))) sprintId = latest.ExternalId;
+            else if (latest != null) { labels.Add("sprint: " + latest.Name); notes.Add($"its sprint \"{latest.Name}\" isn't one this token can list, so it was labelled 'sprint: {latest.Name}' instead."); }
+            else if (SprintName(sprints) is { } fallback) { labels.Add("sprint: " + fallback); notes.Add($"its sprint \"{fallback}\" couldn't be read, so it was labelled 'sprint: {fallback}' instead."); }
         }
 
         var prefix = Key + "-";
@@ -231,7 +352,8 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
         if (parent != null && !parent.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) { notes.Add($"Its parent {parent} is in another Jira project, so it was imported without a parent."); parent = null; }
 
         var attachments = Items(f, "attachment")
-            .Select(a => new SourceAttachment(Str(a, "filename") ?? "file", Str(a, "content")))
+            .Select(a => new SourceAttachment(Str(a, "filename") ?? "file", Str(a, "content"), Str(a, "content"), IdOf(a, "id"), null,
+                a.ValueKind == JsonValueKind.Object && a.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number && sz.TryGetInt64(out var szv) ? szv : null))
             .ToList();
 
         var comments = options.IncludeComments ? await ReadCommentsAsync(key, f, ct) : [];
@@ -257,6 +379,7 @@ public sealed class JiraReader(SourceConnection connection, TrackerHttp http) : 
             Author = UserOf(Obj(f, "reporter")),
             Assignee = UserOf(Obj(f, "assignee")),
             Labels = labels.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            SprintId = sprintId,
             MilestoneId = Items(f, "fixVersions").Select(v => IdOf(v, "id")).FirstOrDefault(id => id != null),
             ParentExternalId = parent,
             Links = links,

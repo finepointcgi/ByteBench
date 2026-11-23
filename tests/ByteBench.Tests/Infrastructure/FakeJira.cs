@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace ByteBench.Tests.Infrastructure;
 
@@ -12,7 +13,9 @@ public enum JiraFlavour { Cloud, Server }
 /// enhanced <c>search/jql</c> with page tokens, <c>search/approximate-count</c>; the old v2/v3 <c>search</c> is gone) or Server/Data
 /// Center (REST v2, wiki markup, <c>search</c> with startAt/total, sprints as the old greenhopper strings, Epic Link custom field).
 /// Project PROJ has an epic with children, a sub-task, links of several types (one to another project), versions, components, a
-/// sprint, story points, attachments and comments that need paging. Never talks to a real Jira.
+/// sprints (agile API boards and sprints, plus the Sprint field in each flavour's shape), story points, attachments (served with
+/// credentials, one redirecting to a second host, one too big, one lying about its size, a blocked type, a deleted one) and comments
+/// that need paging. Never talks to a real Jira.
 /// </summary>
 public sealed class FakeJira : IDisposable
 {
@@ -33,6 +36,33 @@ public sealed class FakeJira : IDisposable
     /// <summary>The next N requests answer 429 with <c>Retry-After: 1</c>.</summary>
     public int RateLimitNext { get; set; }
     public int PageSize { get; set; } = 2;
+    /// <summary>False: the agile API answers 404 (no Jira Software), so sprints must come from the issues' Sprint field.</summary>
+    public bool AgileAvailable { get; set; } = true;
+    /// <summary>Adds a second ACTIVE sprint ("Parallel sprint", id 4, ended in the past) to the board.</summary>
+    public bool ExtraActiveSprint { get; set; }
+    /// <summary>PROJ-5 sits in a sprint (id 9) the board doesn't list.</summary>
+    public bool OrphanSprint { get; set; }
+    /// <summary>When the active sprint ends (Jira timestamp).</summary>
+    public string ActiveSprintEnd { get; set; } = "2024-04-28T00:00:00.000Z";
+    /// <summary>Where redirected attachment downloads go (the second host); set by the test app.</summary>
+    public string CdnUrl { get; set; } = "http://127.0.0.1:1";
+    /// <summary>Attachment files by attachment id; served at <see cref="ContentUrl"/> after the Authorization check.</summary>
+    public Dictionary<string, FakeFile> Files { get; } = new()
+    {
+        ["10100"] = new(FakeFiles.Png),
+        ["10101"] = new(RedirectTo: "{cdn}/media/spec.pdf?token=signed123"),
+        ["10102"] = new(FakeFiles.Filler(10240)),
+        ["10103"] = new(FakeFiles.Filler(10240), Chunked: true),
+        ["10104"] = new(FakeFiles.Filler(10)),
+        ["10105"] = new(Status: 404),
+    };
+    public List<string> FileRequests { get; } = [];
+    private static readonly (string Id, string Name, long Size)[] Attachments =
+    [
+        ("10100", "screenshot.png", 24), ("10101", "spec.pdf", 23), ("10102", "huge.bin", 10240), ("10103", "liar.bin", 12), ("10104", "run.exe", 10), ("10105", "gone.txt", 5),
+    ];
+    /// <summary>Where an attachment's file is downloaded: Cloud's content endpoint, Server's secure/attachment path.</summary>
+    public string ContentUrl(string id, string name) => Cloud ? $"{Url}/rest/api/3/attachment/content/{id}" : $"{Url}/secure/attachment/{id}/{name}";
     public List<(string Method, string PathAndQuery, string? Auth, string? Body)> Requests { get; } = [];
 
     public FakeJira(JiraFlavour flavour, string contextPath = "")
@@ -80,6 +110,7 @@ public sealed class FakeJira : IDisposable
             var auth = ctx.Request.Headers["Authorization"];
             var pathAndQuery = ctx.Request.Url!.PathAndQuery;
             lock (Requests) Requests.Add((ctx.Request.HttpMethod, pathAndQuery, auth, body));
+            if (TryServeFile(ctx, auth, pathAndQuery)) return;
             var (status, json) = Route(ctx, auth, body);
             var bytes = Encoding.UTF8.GetBytes(json ?? "");
             ctx.Response.StatusCode = status;
@@ -88,6 +119,72 @@ public sealed class FakeJira : IDisposable
         }
         catch { /* the client went away */ }
         finally { try { ctx.Response.Close(); } catch { } }
+    }
+
+    private static readonly Regex FilePath = new(@"^(?:/rest/api/3/attachment/content/(?<id>\d+)|/secure/attachment/(?<id>\d+)/[^/]+)$", RegexOptions.Compiled);
+
+    private bool TryServeFile(HttpListenerContext ctx, string? auth, string pathAndQuery)
+    {
+        var path = ctx.Request.Url!.AbsolutePath;
+        if (ContextPath.Length > 0 && path.StartsWith(ContextPath + "/", StringComparison.Ordinal)) path = path[ContextPath.Length..];
+        var m = FilePath.Match(path);
+        if (!m.Success) return false;
+        lock (FileRequests) FileRequests.Add(m.Groups["id"].Value);
+        if (auth != ExpectedAuth) { ctx.Response.StatusCode = 401; return true; }
+        if (!Files.TryGetValue(m.Groups["id"].Value, out var file)) { ctx.Response.StatusCode = 404; return true; }
+        FakeFiles.Write(ctx.Response, file with { RedirectTo = file.RedirectTo?.Replace("{cdn}", CdnUrl) });
+        return true;
+    }
+
+    private (int, string?) AgileRoute(string[] segs, System.Collections.Specialized.NameValueCollection q)
+    {
+        if (!AgileAvailable) return (404, "{\"message\":\"agile is not available\"}");
+        // /rest/agile/1.0/board  and  /rest/agile/1.0/board/{id}/sprint
+        switch (segs[3..])
+        {
+            case ["board"]:
+                return (q["projectKeyOrId"] == Key
+                    ? (200, new JsonObject { ["maxResults"] = 50, ["startAt"] = 0, ["isLast"] = true, ["values"] = new JsonArray(new JsonObject { ["id"] = 1, ["name"] = "PROJ board", ["type"] = "scrum" }) }.ToJsonString())
+                    : (200, new JsonObject { ["isLast"] = true, ["values"] = new JsonArray() }.ToJsonString()));
+            case ["board", "1", "sprint"]:
+            {
+                var all = SprintDefs().Where(d => !d.Orphan).ToList();
+                var start = int.TryParse(q["startAt"], out var sa) ? sa : 0;
+                var page = all.Skip(start).Take(2).ToList(); // two per page, to exercise paging
+                var values = new JsonArray([.. page.Select(d => (JsonNode?)d.Cloud())]);
+                return (200, new JsonObject { ["maxResults"] = 2, ["startAt"] = start, ["isLast"] = start + 2 >= all.Count, ["values"] = values }.ToJsonString());
+            }
+        }
+        return (404, null);
+    }
+
+    private sealed record SprintDef(int Id, string Name, string State, string? Start, string? End, string? Complete, string? Goal, bool Orphan = false)
+    {
+        public JsonObject Cloud()
+        {
+            var o = new JsonObject { ["id"] = Id, ["self"] = "https://x/rest/agile/1.0/sprint/" + Id, ["state"] = State, ["name"] = Name, ["originBoardId"] = 1 };
+            if (Start != null) o["startDate"] = Start;
+            if (End != null) o["endDate"] = End;
+            if (Complete != null) o["completeDate"] = Complete;
+            if (Goal != null) o["goal"] = Goal;
+            return o;
+        }
+
+        public string Server() =>
+            $"com.atlassian.greenhopper.service.sprint.Sprint@{Id:x}[id={Id},rapidViewId=1,state={State.ToUpperInvariant()},name={Name},goal={Goal ?? "<null>"},startDate={Start ?? "<null>"},endDate={End ?? "<null>"},completeDate={Complete ?? "<null>"},sequence={Id}]";
+    }
+
+    private List<SprintDef> SprintDefs()
+    {
+        var list = new List<SprintDef>
+        {
+            new(1, "Sprint 1", "closed", "2024-04-01T00:00:00.000Z", "2024-04-14T00:00:00.000Z", "2024-04-14T10:00:00.000Z", "Ship the form"),
+            new(2, "Sprint 2", "active", "2024-04-15T00:00:00.000Z", ActiveSprintEnd, null, "Card payments"),
+            new(3, "Sprint 3", "future", null, null, null, null),
+        };
+        if (ExtraActiveSprint) list.Add(new(4, "Parallel sprint", "active", "2024-04-15T00:00:00.000Z", "2024-05-01T00:00:00.000Z", null, null));
+        if (OrphanSprint) list.Add(new(9, "Ghost sprint", "active", "2024-04-20T00:00:00.000Z", "2024-05-02T00:00:00.000Z", null, null, Orphan: true));
+        return list;
     }
 
     private (int, string?) Route(HttpListenerContext ctx, string? auth, string? body)
@@ -109,6 +206,7 @@ public sealed class FakeJira : IDisposable
         if (auth != ExpectedAuth) return (401, "{\"errorMessages\":[\"You are not authenticated.\"]}");
         var q = ctx.Request.QueryString;
         var segs = path.Trim('/').Split('/');
+        if (segs.Length >= 4 && segs[0] == "rest" && segs[1] == "agile" && segs[2] == "1.0") return AgileRoute(segs, q);
         if (path == "/rest/api/2/serverInfo")
             return (200, new JsonObject { ["baseUrl"] = Url, ["version"] = Cloud ? "1001.0.0-SNAPSHOT" : "9.12.4", ["deploymentType"] = Cloud ? "Cloud" : "Server", ["serverTitle"] = "Fake Jira" }.ToJsonString());
         if (segs.Length < 4 || segs[0] != "rest" || segs[1] != "api" || segs[2] != V) return (404, null); // Cloud: v3 only; Server: v2 only
@@ -179,7 +277,7 @@ public sealed class FakeJira : IDisposable
     [
         new("PROJ-1", "10101", "Epic", false, "Checkout revamp", "In Progress", "indeterminate", "High", "2024-05-01T12:00:00.000+0200", null, ["frontend"], ["Backend"], "10001", null, null, "2024-09-30", false, 0, false, "bob", "bob"),
         new("PROJ-2", "10102", "Story", false, "Payment form", "In Review", "indeterminate", "Medium", "2024-05-02T09:30:00.000+0000", null, ["payments"], ["Frontend", "Backend"], "10001", "PROJ-1", 4.6, null, true, 3, true, "bob", null),
-        new("PROJ-3", "10103", "Bug", false, "Card declined crash", "Done", "done", "Critical", "2024-05-03T08:00:00.000+0000", "2024-05-10T16:45:00.000-0500", ["crash"], [], "10002", null, null, null, false, 1, false, null, "bob"),
+        new("PROJ-3", "10103", "Bug", false, "Card declined crash", "Done", "done", "Critical", "2024-05-03T08:00:00.000+0000", "2024-05-10T16:45:00.000-0500", ["crash"], [], "10002", null, 3, null, false, 1, false, null, "bob"),
         new("PROJ-4", "10104", "Sub-task", true, "Validate card number", "To Do", "new", "Minor", "2024-05-04T08:00:00.000+0000", null, [], [], null, "PROJ-2", 2, null, false, 0, false, "bob", null),
         new("PROJ-5", "10105", "Task", false, "Write the docs", "To Do", "new", "Lowest", "2024-05-05T08:00:00.000+0000", null, [], [], null, null, 0, "2024-07-01", false, 0, false, null, null),
     ];
@@ -247,7 +345,7 @@ public sealed class FakeJira : IDisposable
             ["issuelinks"] = Links(r),
             ["subtasks"] = new JsonArray(),
             ["attachment"] = r.Attach
-                ? new JsonArray(new JsonObject { ["id"] = "10100", ["filename"] = "screenshot.png", ["size"] = 1234, ["content"] = $"{Url}/secure/attachment/10100/screenshot.png" })
+                ? new JsonArray([.. Attachments.Select(a => (JsonNode?)new JsonObject { ["id"] = a.Id, ["filename"] = a.Name, ["size"] = a.Size, ["content"] = ContentUrl(a.Id, a.Name) })])
                 : new JsonArray(),
         };
         if (r.Parent != null)
@@ -257,15 +355,12 @@ public sealed class FakeJira : IDisposable
         }
         else if (!Cloud) f["customfield_10014"] = null;
         f[Cloud ? "customfield_10016" : "customfield_10002"] = r.Points == null ? null : JsonValue.Create(r.Points.Value);
-        if (r.Sprint)
-            f[Cloud ? "customfield_10020" : "customfield_10004"] = Cloud
-                ? new JsonArray(
-                    new JsonObject { ["id"] = 1, ["name"] = "Sprint 1", ["state"] = "closed" },
-                    new JsonObject { ["id"] = 2, ["name"] = "Sprint 2", ["state"] = "active" })
-                : new JsonArray(
-                    "com.atlassian.greenhopper.service.sprint.Sprint@1a2b[id=1,rapidViewId=1,state=CLOSED,name=Sprint 1,startDate=2024-04-01T00:00:00.000Z]",
-                    "com.atlassian.greenhopper.service.sprint.Sprint@3c4d[id=2,rapidViewId=1,state=ACTIVE,name=Sprint 2,startDate=2024-04-15T00:00:00.000Z]");
-        else f[Cloud ? "customfield_10020" : "customfield_10004"] = null;
+        // PROJ-2 was in sprints 1 and 2 (latest: 2), PROJ-3 in 1, PROJ-4 in 3 (not started); PROJ-5 in the unlisted sprint when asked.
+        int[] inSprints = r.Key switch { "PROJ-2" => [1, 2], "PROJ-3" => [1], "PROJ-4" => [3], "PROJ-5" when OrphanSprint => [9], _ => [] };
+        var defs = SprintDefs();
+        f[Cloud ? "customfield_10020" : "customfield_10004"] = inSprints.Length == 0 ? null
+            : Cloud ? new JsonArray([.. inSprints.Select(id => (JsonNode?)defs.First(d => d.Id == id).Cloud())])
+            : new JsonArray([.. inSprints.Select(id => (JsonNode?)JsonValue.Create(defs.First(d => d.Id == id).Server()))]);
         var comments = CommentsOf(r.Key);
         f["comment"] = new JsonObject
         {

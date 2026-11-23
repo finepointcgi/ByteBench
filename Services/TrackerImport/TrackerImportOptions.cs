@@ -17,10 +17,18 @@ public sealed class TrackerImportOptions
     public int RequestTimeoutSeconds { get; set; } = 60;
     /// <summary>When the source says "rate limited, retry in N seconds", wait up to this long (else the import fails with the reset time).</summary>
     public int MaxRateLimitWaitSeconds { get; set; } = 120;
+    /// <summary>The most attachment bytes one import copies (default 500 MB); files past it are skipped with a warning.</summary>
+    public long MaxAttachmentBytes { get; set; } = 500L * 1024 * 1024;
+    /// <summary>The largest single attachment an import copies. 0 (default) follows <c>Attachments:MaxBytes</c>; a larger value is capped by it.</summary>
+    public long MaxAttachmentFileBytes { get; set; }
+    /// <summary>File extensions an import never copies (they are skipped with a warning).</summary>
+    public string[] BlockedAttachmentExtensions { get; set; } = [".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi", ".ps1", ".vbs"];
 }
 
 /// <summary>Test-only: replaces the pause while rate limited, so a test needn't sleep. A registered object, not configuration.</summary>
 public sealed class TrackerImportTestHooks
 {
     public Func<TimeSpan, CancellationToken, Task>? Delay { get; set; }
+    /// <summary>Rewrites an attachment address before it is fetched (every hop), e.g. to point github.com at a local fake. The credential rule uses the original address.</summary>
+    public Func<Uri, Uri>? MapUrl { get; set; }
 }

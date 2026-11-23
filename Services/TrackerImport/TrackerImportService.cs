@@ -21,7 +21,7 @@ public sealed class TrackerImportInput
 }
 
 /// <summary>Step 1's answer: what the source has, the statuses to map, and the project's own workflow to map them to.</summary>
-public sealed record TrackerImportCheck(SourceProbe Probe, IReadOnlyList<SourceStatus> SourceStatuses, int LabelCount, int MilestoneCount);
+public sealed record TrackerImportCheck(SourceProbe Probe, IReadOnlyList<SourceStatus> SourceStatuses, int LabelCount, int MilestoneCount, int SprintCount = 0);
 
 /// <summary>
 /// The tracker importers' backend (scoped): check a connection, start an import, watch it, cancel it. Everything needs Maintainer on the
@@ -49,7 +49,8 @@ public sealed class TrackerImportService(IDbContextFactory<AppDbContext> dbFacto
             var statuses = await reader.ReadStatusesAsync(ct);
             var labels = await reader.ReadLabelsAsync(ct);
             var milestones = await reader.ReadMilestonesAsync(ct);
-            return new TrackerImportCheck(probe, statuses, labels.Count, milestones.Count);
+            var sprints = await reader.ReadSprintsAsync(ct);
+            return new TrackerImportCheck(probe, statuses, labels.Count, milestones.Count, sprints.Count);
         }
         catch (SourceException ex) { throw new InvalidOperationException(ex.Message); }
     }

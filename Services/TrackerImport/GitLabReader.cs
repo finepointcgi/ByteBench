@@ -11,7 +11,8 @@ namespace ByteBench.Services.TrackerImport;
 /// Reads one GitLab project through the REST API v4 (gitlab.com, self-managed, with or without a relative URL root). The token goes
 /// out only as the <c>PRIVATE-TOKEN</c> header (personal, project and group access tokens all work there). Imported: issues (with
 /// the epic they belong to when the payload names one), labels, project milestones, notes and issue links. Not imported: time
-/// tracking, iterations, boards, merge requests and uploaded files (relative <c>/uploads/</c> links are made absolute so they still resolve).
+/// tracking, iterations, boards and merge requests. Uploaded files (relative <c>/uploads/</c> links) are made absolute so they still resolve, and
+/// can be copied (<see cref="SourceAttachment"/>); the token only goes to the GitLab address itself.
 /// </summary>
 public sealed partial class GitLabReader(SourceConnection connection, TrackerHttp http) : ISourceReader
 {
@@ -43,6 +44,32 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
     }
 
     private Task<TrackerResponse> GetAsync(string url, CancellationToken ct) => http.GetJsonAsync(url, Auth, ct, What);
+
+    public Task<Stream> OpenAttachmentAsync(SourceAttachment attachment, CancellationToken ct, long maxBytes = TrackerHttp.DefaultAttachmentMaxBytes) =>
+        attachment.DownloadUrl is { Length: > 0 } url ? http.GetStreamAsync(url, Auth, site, maxBytes, ct, What) : throw new SourceException("GitLab gave no download address for this file.");
+
+    /// <summary>The project's uploaded files (<c>/uploads/{hash}/{name}</c> links in markdown) linked in the given texts, each once.</summary>
+    internal static List<SourceAttachment> FindUploads(IEnumerable<string?> texts, string? webUrl)
+    {
+        var found = new List<SourceAttachment>();
+        if (webUrl == null) return found;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var text in texts)
+        {
+            if (string.IsNullOrEmpty(text)) continue;
+            foreach (Match m in UploadLink().Matches(text))
+            {
+                var path = m.Groups["path"].Value;
+                if (!seen.Add(path)) continue;
+                var name = HttpUtility.UrlDecode(m.Groups["name"].Value);
+                found.Add(new SourceAttachment(name.Length == 0 ? "file" : name, webUrl + path, webUrl + path, path.TrimStart('/'), webUrl + path));
+            }
+        }
+        return found;
+    }
+
+    [GeneratedRegex(@"(?<=\]\()(?<path>/uploads/(?<hash>[0-9A-Fa-f]+)/(?<name>[^)\s]+))(?=[)\s])")]
+    private static partial Regex UploadLink();
 
     // --- project -------------------------------------------------------------------------------------------------------
 
@@ -150,6 +177,7 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
 
             var closed = Str(i, "state") == "closed";
             var comments = new List<SourceComment>();
+            var rawTexts = new List<string?> { Str(i, "description") };
             var links = new List<SourceLink>();
             if (options.IncludeComments)
             {
@@ -159,6 +187,7 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
                         if (n.TryGetProperty("system", out var sys) && sys.ValueKind == JsonValueKind.True) continue;
                         var body = Str(n, "body");
                         if (Id(n, "id") is not { } noteId || string.IsNullOrWhiteSpace(body)) continue;
+                        rawTexts.Add(body);
                         comments.Add(new SourceComment(noteId, User(n, "author"), FixUploads(body, webUrl)!, DateTimeOf(n, "created_at") ?? DateTime.UtcNow));
                     }
                 // Links: only "blocks" (this -> other) and "relates_to" are recorded here. "is_blocked_by" is skipped on purpose: the other
@@ -191,6 +220,7 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
                 ClosedAt = closed ? DateTimeOf(i, "closed_at") : null,
                 Author = User(i, "author"), Assignee = assignee, Labels = labels, MilestoneId = milestone, ParentExternalId = parent,
                 Links = links, Comments = comments, Notes = notes,
+                Attachments = options.IncludeAttachments ? FindUploads(rawTexts, webUrl) : [],
             };
             if (++count >= options.MaxIssues) yield break;
         }

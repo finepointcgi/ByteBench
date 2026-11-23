@@ -25,6 +25,9 @@ public sealed class GitHubReader(SourceConnection connection, TrackerHttp http) 
 {
     private const string What = "GitHub";
     private const string DefaultApi = "https://api.github.com";
+    // Files people drop into issues and comments: github.com/user-attachments/{assets,files}/... and the older user-images host.
+    private static readonly Regex UploadLink = new(
+        @"https://(?:github\.com/user-attachments/(?:assets|files)/|user-images\.githubusercontent\.com/)[^\s)""'<>\[\]]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex IssueNumberAtEnd = new(@"/issues/(\d+)/?$", RegexOptions.Compiled);
     private static readonly Regex PriorityLabel = new(@"^\s*priority\s*[:/]\s*(.+?)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -50,6 +53,39 @@ public sealed class GitHubReader(SourceConnection connection, TrackerHttp http) 
     }
 
     private Task<TrackerResponse> GetAsync(string url, CancellationToken ct) => Http.GetJsonAsync(url, Configure, ct, What);
+
+    private void Authorize(HttpRequestMessage request)
+    {
+        if (!string.IsNullOrWhiteSpace(Connection.Secret)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Connection.Secret.Trim());
+    }
+
+    /// <summary>
+    /// Downloads a file linked from an issue or comment. These live on github.com / the user-images host, not on the API address, so the
+    /// token is not sent to them (public repositories' files download without it; a private repository's files answer 404 and are reported).
+    /// </summary>
+    public Task<Stream> OpenAttachmentAsync(SourceAttachment attachment, CancellationToken ct, long maxBytes = TrackerHttp.DefaultAttachmentMaxBytes) =>
+        attachment.DownloadUrl is { Length: > 0 } url ? Http.GetStreamAsync(url, Authorize, Api, maxBytes, ct, What) : throw new SourceException("GitHub gave no download address for this file.");
+
+    /// <summary>The uploaded files linked in the given texts (issue body, comment bodies), each once, in order of appearance.</summary>
+    internal static List<SourceAttachment> FindUploads(IEnumerable<string?> texts)
+    {
+        var found = new List<SourceAttachment>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var text in texts)
+        {
+            if (string.IsNullOrEmpty(text)) continue;
+            foreach (Match m in UploadLink.Matches(text))
+            {
+                var link = m.Value.TrimEnd('.', ',', ';', ':', '!');
+                var uri = new Uri(link);
+                var path = uri.AbsolutePath.Trim('/');
+                if (!seen.Add(uri.Host + "/" + path)) continue;
+                var name = Uri.UnescapeDataString(path[(path.LastIndexOf('/') + 1)..]);
+                found.Add(new SourceAttachment(name.Length == 0 ? "file" : name, link, link, uri.Host + "/" + path, link));
+            }
+        }
+        return found;
+    }
 
     /// <summary>Yields every element of every page of a list endpoint.</summary>
     private async IAsyncEnumerable<JsonElement> ListAsync(string firstUrl, [EnumeratorCancellation] CancellationToken ct)
@@ -158,8 +194,11 @@ public sealed class GitHubReader(SourceConnection connection, TrackerHttp http) 
             var assignee = i.TryGetProperty("assignee", out var a) && a.ValueKind == JsonValueKind.Object ? a
                 : i.TryGetProperty("assignees", out var aa) && aa.ValueKind == JsonValueKind.Array && aa.GetArrayLength() > 0 ? aa[0] : (JsonElement?)null;
 
+            var uploads = options.IncludeAttachments ? FindUploads(comments.Select(c => c.Body).Prepend(Str(i, "body"))) : [];
+
             yield return new SourceIssue
             {
+                Attachments = uploads,
                 ExternalId = id, DisplayKey = "#" + number, Url = Str(i, "html_url"), Title = Str(i, "title") ?? "(untitled)", Body = Str(i, "body"),
                 Type = TypeOf(labels), Category = closed ? IssueStatus.Done : IssueStatus.Todo, Priority = PriorityOf(labels),
                 CreatedAt = Date(i, "created_at") ?? DateTime.UtcNow, UpdatedAt = Date(i, "updated_at"), ClosedAt = Date(i, "closed_at"),

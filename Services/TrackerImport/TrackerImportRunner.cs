@@ -12,7 +12,7 @@ namespace ByteBench.Services.TrackerImport;
 /// a restart stops the run; what was already written stays (and a new run continues where it stopped, see <see cref="TrackerImportWriter"/>).
 /// </summary>
 public sealed class TrackerImportRunner(IDbContextFactory<AppDbContext> dbFactory, ISourceReaderFactory readers, IServiceScopeFactory scopes,
-    IOptionsMonitor<TrackerImportOptions> options, ILogger<TrackerImportRunner> log)
+    IOptionsMonitor<TrackerImportOptions> options, Attachments.AttachmentStorage attachmentStorage, ILogger<TrackerImportRunner> log)
 {
     public const string InterruptedMessage = "The server restarted before this import finished. Issues already imported are kept; start the import again to continue.";
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -77,10 +77,10 @@ public sealed class TrackerImportRunner(IDbContextFactory<AppDbContext> dbFactor
             await using (var pdb = await dbFactory.CreateDbContextAsync(cts.Token))
                 await pdb.TrackerImportJobs.Where(i => i.Id == importId).ExecuteUpdateAsync(s => s.SetProperty(i => i.IssuesExpected, probe.IssueCount), cts.Token);
 
-            writer = new TrackerImportWriter(dbFactory, access, job, settings, SourceKeyOf(connection), sourceName, actorId);
+            writer = new TrackerImportWriter(dbFactory, access, job, settings, SourceKeyOf(connection), sourceName, actorId, attachmentStorage, options.CurrentValue);
             await writer.PrepareAsync(reader, cts.Token);
             var max = Math.Clamp(options.CurrentValue.MaxIssues, 1, 1_000_000);
-            var read = new SourceReadOptions(settings.IncludeClosed, settings.IncludeComments, settings.IncludePullRequests, max + 1); // one more than allowed, so hitting the limit is noticed
+            var read = new SourceReadOptions(settings.IncludeClosed, settings.IncludeComments, settings.IncludePullRequests, max + 1, settings.IncludeAttachments); // one more than allowed, so hitting the limit is noticed
             var n = 0;
             await foreach (var issue in reader.ReadIssuesAsync(read, cts.Token))
             {
@@ -116,7 +116,7 @@ public sealed class TrackerImportRunner(IDbContextFactory<AppDbContext> dbFactor
             await using var db = await dbFactory.CreateDbContextAsync();
             var done = await db.TrackerImportJobs.AsNoTracking().FirstAsync(i => i.Id == job.Id);
             await audit.RecordAsync("project.tracker_imported", "tracker_import", job.Id, job.ProjectId,
-                new { source = job.Source.ToString(), project = job.SourceProject, created = done.IssuesCreated, skipped = done.IssuesSkipped, comments = done.CommentsCreated, warnings = done.WarningCount }, actorId);
+                new { source = job.Source.ToString(), project = job.SourceProject, created = done.IssuesCreated, skipped = done.IssuesSkipped, comments = done.CommentsCreated, sprints = writer.SprintsCreated, attachments = writer.AttachmentsCopied, attachmentBytes = writer.AttachmentBytesCopied, warnings = done.WarningCount }, actorId);
         }
         catch (Exception ex) { log.LogWarning(ex, "Tracker import {Id}: after-steps failed", job.Id); }
     }

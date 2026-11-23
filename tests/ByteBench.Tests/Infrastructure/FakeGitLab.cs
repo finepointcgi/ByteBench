@@ -28,6 +28,11 @@ public sealed class FakeGitLab : IDisposable
     public string RootPath { get; set; } = "";
     public string ExpectedToken { get; set; } = Token;
     public bool Public { get; set; }
+    /// <summary>The project's <c>web_url</c>; point it at this fake's own address to make uploaded files downloadable from it.</summary>
+    public string WebUrl { get; set; } = "https://gitlab.example.com/acme/team/widgets";
+    /// <summary>Uploaded files by absolute path (e.g. <c>/acme/team/widgets/uploads/ab12/shot.png</c>); they need the PRIVATE-TOKEN. A <c>{cdn}</c> in a redirect is replaced by <see cref="CdnUrl"/>.</summary>
+    public Dictionary<string, FakeFile> Files { get; } = [];
+    public string CdnUrl { get; set; } = "http://127.0.0.1:1";
     public bool IssuesEnabled { get; set; } = true;
     public bool RateLimitOnce { get; set; }
     public int PageSize { get; set; } = 2;
@@ -147,6 +152,13 @@ public sealed class FakeGitLab : IDisposable
             var query = q < 0 ? "" : raw[(q + 1)..];
             var token = ctx.Request.Headers["PRIVATE-TOKEN"];
             lock (Requests) Requests.Add(new Request(Uri.UnescapeDataString(rawPath), query, token));
+            var unescaped = Uri.UnescapeDataString(rawPath);
+            if (Files.TryGetValue(unescaped, out var file))
+            {
+                if (!Public && token != ExpectedToken) ctx.Response.StatusCode = 401;
+                else FakeFiles.Write(ctx.Response, file with { RedirectTo = file.RedirectTo?.Replace("{cdn}", CdnUrl) });
+                return;
+            }
             var (status, json, headers) = Route(rawPath, query, token);
             ctx.Response.StatusCode = status;
             foreach (var (k, v) in headers) ctx.Response.AddHeader(k, v);
@@ -177,7 +189,7 @@ public sealed class FakeGitLab : IDisposable
             return (200, new JsonObject
             {
                 ["id"] = ProjectId, ["name"] = "Widgets", ["name_with_namespace"] = "Acme / Team / Widgets", ["path_with_namespace"] = ProjectPath,
-                ["description"] = "The widget factory", ["issues_enabled"] = IssuesEnabled, ["web_url"] = "https://gitlab.example.com/acme/team/widgets",
+                ["description"] = "The widget factory", ["issues_enabled"] = IssuesEnabled, ["web_url"] = WebUrl,
             }.ToJsonString(), none);
         if (rest is ["issues_statistics"])
             return (200, new JsonObject { ["statistics"] = new JsonObject { ["counts"] = new JsonObject { ["all"] = Issues.Count, ["closed"] = Issues.Count(i => (string?)i!["state"] == "closed"), ["opened"] = Issues.Count(i => (string?)i!["state"] == "opened") } } }.ToJsonString(), none);

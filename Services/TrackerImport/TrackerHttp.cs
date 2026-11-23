@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using ByteBench.Services.Attachments;
 using ByteBench.Services.Webhooks;
 using Microsoft.Extensions.Options;
 
@@ -75,6 +76,9 @@ public sealed record TrackerResponse(JsonElement Body, HttpResponseHeaders Heade
 public sealed class TrackerHttp : IDisposable
 {
     public const int MaxResponseBytes = 16 * 1024 * 1024;
+    public const long DefaultAttachmentMaxBytes = 25L * 1024 * 1024;
+    /// <summary>Redirects <see cref="GetStreamAsync"/> follows by hand (each hop is checked again).</summary>
+    public const int MaxRedirects = 3;
     private readonly HttpClient http;
     private readonly TrackerUrlGuard guard;
     private readonly IOptionsMonitor<TrackerImportOptions> options;
@@ -147,6 +151,107 @@ public sealed class TrackerHttp : IDisposable
             {
                 throw new SourceException($"Couldn't reach {what}: " + Truncate(ex.InnerException?.Message ?? ex.Message, 200));
             }
+        }
+    }
+
+    /// <summary>
+    /// Downloads a file as a stream (attachments). Same protections as the JSON calls, and more because attachment hosts redirect to a CDN:
+    /// every hop (the first address and each of at most <see cref="MaxRedirects"/> redirects, followed by hand) goes through the SSRF guard
+    /// and the guarded connection; <paramref name="configure"/> (the credentials) is applied ONLY to hops with the same scheme, host and
+    /// port as <paramref name="trustedOrigin"/>, so a token is never sent to a CDN or another host; a redirect from https to http is
+    /// refused; the stream throws <see cref="AttachmentTooLargeException"/> past <paramref name="maxBytes"/> (a larger Content-Length fails
+    /// before any byte is read). Messages never contain the address (CDN links carry signed tokens) or the credentials.
+    /// The caller disposes the returned stream, which also releases the connection.
+    /// </summary>
+    public async Task<Stream> GetStreamAsync(string url, Action<HttpRequestMessage> configure, string trustedOrigin, long maxBytes, CancellationToken ct, string what = "the source")
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var current)) throw new SourceException("The file's address isn't valid.");
+        if (!Uri.TryCreate(trustedOrigin, UriKind.Absolute, out var origin)) throw new SourceException("The source's address isn't valid.");
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(options.CurrentValue.RequestTimeoutSeconds, 1, 300)));
+        HttpResponseMessage? response = null;
+        var handedOver = false;
+        try
+        {
+            for (var hop = 0; ; hop++)
+            {
+                var target = hooks.MapUrl?.Invoke(current) ?? current;
+                if (guard.Validate(target.GetLeftPart(UriPartial.Path)) is { } invalid) throw new SourceException(invalid);
+                using var request = new HttpRequestMessage(HttpMethod.Get, target);
+                request.Headers.Accept.ParseAdd("*/*");
+                if (SameOrigin(current, origin)) configure(request);
+                response?.Dispose();
+                response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                var status = (int)response.StatusCode;
+                if (status is >= 300 and < 400 && response.Headers.Location is { } location)
+                {
+                    if (hop >= MaxRedirects) throw new SourceException($"{Cap(what)} redirected the file too many times.");
+                    var next = location.IsAbsoluteUri ? location : new Uri(current, location);
+                    if (next.Scheme is not ("http" or "https")) throw new SourceException($"{Cap(what)} redirected the file to an address that isn't http(s).");
+                    if (target.Scheme == "https" && (hooks.MapUrl?.Invoke(next) ?? next).Scheme == "http") throw new SourceException($"{Cap(what)} redirected the file from https to http, which isn't followed.");
+                    current = next;
+                    continue;
+                }
+                if (status == 401 || status == 403) throw new SourceException($"{Cap(what)} refused to hand out the file (the token may lack access to attachments).");
+                if (status == 404 || status == 410) throw new SourceException($"{Cap(what)} no longer has the file (deleted or not visible to the token).");
+                if (status == 429) throw new SourceException($"{Cap(what)} is rate limiting the download.");
+                if (status < 200 || status >= 300) throw new SourceException($"{Cap(what)} answered HTTP {status} for the file.");
+                if (response.Content.Headers.ContentLength is { } length && length > maxBytes) throw new AttachmentTooLargeException(maxBytes);
+                var inner = await response.Content.ReadAsStreamAsync(cts.Token);
+                cts.CancelAfter(TimeSpan.FromMinutes(10)); // headers arrived; the body gets its own, longer budget
+                var bounded = new BoundedStream(inner, response, cts, maxBytes);
+                handedOver = true;
+                return bounded;
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new SourceException($"{Cap(what)} didn't hand out the file in time.");
+        }
+        catch (HttpRequestException ex) when (Find<SourceException>(ex) is { } blocked) { throw blocked; }
+        catch (HttpRequestException ex) { throw new SourceException($"Couldn't reach {what} for the file: " + Truncate(ex.InnerException?.Message ?? ex.Message, 120)); }
+        finally { if (!handedOver) { response?.Dispose(); cts.Dispose(); } }
+    }
+
+    private static bool SameOrigin(Uri a, Uri b) =>
+        string.Equals(a.Scheme, b.Scheme, StringComparison.OrdinalIgnoreCase) && string.Equals(a.IdnHost, b.IdnHost, StringComparison.OrdinalIgnoreCase) && a.Port == b.Port;
+
+    /// <summary>Counts what is read and fails past the limit; disposing releases the response and its timeout.</summary>
+    private sealed class BoundedStream(Stream inner, HttpResponseMessage response, CancellationTokenSource cts, long max) : Stream
+    {
+        private long read;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => read; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count) => Count(inner.Read(buffer, offset, count));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, ct);
+            try { return Count(await inner.ReadAsync(buffer, linked.Token)); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new SourceException("The source stopped sending the file."); }
+            catch (HttpRequestException) { throw new SourceException("The connection to the source dropped while the file was sent."); }
+            catch (IOException) { throw new SourceException("The connection to the source dropped while the file was sent."); }
+        }
+
+        private int Count(int n)
+        {
+            read += n;
+            if (read > max) throw new AttachmentTooLargeException(max);
+            return n;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { inner.Dispose(); response.Dispose(); cts.Dispose(); }
+            base.Dispose(disposing);
         }
     }
 

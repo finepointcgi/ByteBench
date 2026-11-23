@@ -11,17 +11,20 @@ namespace ByteBench.Tests;
 public abstract class JiraApp(JiraFlavour flavour) : TestApp
 {
     public FakeJira Fake { get; } = new(flavour);
+    /// <summary>The second host attachment downloads are redirected to (a CDN): it must never see the Jira credentials.</summary>
+    public FakeFileHost Cdn { get; } = new();
 
     protected override void AddSettings(IDictionary<string, string?> settings)
     {
         settings["TrackerImport:AllowPrivateNetworks"] = "true";
         settings["TrackerImport:Enabled"] = "false";
+        settings["Attachments:MaxBytes"] = "4096";
     }
 
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing) Fake.Dispose();
+        if (disposing) { Fake.Dispose(); Cdn.Dispose(); }
     }
 }
 
@@ -39,6 +42,11 @@ public abstract class JiraImportScenarios<TApp> : IClassFixture<TApp> where TApp
     {
         App = app;
         Fake.AuthMode = "Basic"; Fake.Forbidden = false; Fake.RateLimitNext = 0; Fake.PageSize = 2;
+        Fake.AgileAvailable = true; Fake.ExtraActiveSprint = false; Fake.OrphanSprint = false; Fake.ActiveSprintEnd = "2024-04-28T00:00:00.000Z";
+        Fake.CdnUrl = app.Cdn.Url;
+        lock (app.Cdn.Files) app.Cdn.Files["/media/spec.pdf"] = new FakeFile(FakeFiles.Pdf);
+        lock (app.Cdn.Requests) app.Cdn.Requests.Clear();
+        lock (Fake.FileRequests) Fake.FileRequests.Clear();
         lock (Fake.Requests) Fake.Requests.Clear();
         app.Services.GetRequiredService<TrackerImportTestHooks>().Delay = (d, _) => { Delays.Add(d); return Task.CompletedTask; };
     }
@@ -142,7 +150,7 @@ public abstract class JiraImportScenarios<TApp> : IClassFixture<TApp> where TApp
         Assert.Null(epic.ClosedAt);
 
         // labels, components, sprint
-        Assert.Equal(["component: Backend", "component: Frontend", "payments", "sprint: Sprint 2"], story.Labels.Select(l => l.Name).Order(StringComparer.Ordinal).ToList());
+        Assert.Equal(["component: Backend", "component: Frontend", "payments"], story.Labels.Select(l => l.Name).Order(StringComparer.Ordinal).ToList());
         Assert.Equal(["component: Backend", "frontend"], epic.Labels.Select(l => l.Name).Order(StringComparer.Ordinal).ToList());
 
         // versions -> milestones
@@ -183,13 +191,16 @@ public abstract class JiraImportScenarios<TApp> : IClassFixture<TApp> where TApp
         Assert.Contains("```js", story.Description);
         Assert.Contains("pay(card);", story.Description);
         Assert.Contains($"Imported from [Jira PROJ-2]({Fake.Url}/browse/PROJ-2)", story.Description);
-        Assert.Contains($"[screenshot.png]({Fake.Url}/secure/attachment/10100/screenshot.png)", story.Description);
+        Assert.Contains($"[screenshot.png]({Fake.ContentUrl("10100", "screenshot.png")})", story.Description);
         Assert.Contains("Rebuild the checkout **flow**.", epic.Description);
 
-        // warnings: the dropped cross-project link, the sprint note once
+        // warnings: the dropped cross-project link; sprints are real sprints now, not labels
         var warnings = TrackerImportService.WarningsOf(job);
         Assert.Contains(warnings, w => w.Contains("PROJ-2") && w.Contains("OTHER-9") && w.Contains("other Jira projects"));
-        Assert.Single(warnings, w => w.Contains("sprints are imported as labels named 'sprint:"));
+        Assert.DoesNotContain(warnings, w => w.Contains("sprint"));
+        Assert.DoesNotContain(await db.Labels.Where(l => l.ProjectId == p.Id).Select(l => l.Name).ToListAsync(), n => n.StartsWith("sprint:"));
+        Assert.Equal(3, await db.Sprints.CountAsync(x => x.ProjectId == p.Id));
+        Assert.Equal(await db.Sprints.Where(x => x.ProjectId == p.Id && x.Name == "Sprint 2").Select(x => x.Id).SingleAsync(), story.SprintId);
     }
 
     [Fact]
@@ -339,6 +350,286 @@ public abstract class JiraImportScenarios<TApp> : IClassFixture<TApp> where TApp
         Assert.Equal(["PROJ-1", "PROJ-2", "PROJ-3"], keys);
     }
 
+
+    // ------------------------------------------------------------ sprints
+
+    private async Task<Dictionary<string, Sprint>> SprintsAsync(Project p)
+    {
+        await using var db = App.Db();
+        return (await db.Sprints.AsNoTracking().Where(x => x.ProjectId == p.Id).ToListAsync()).ToDictionary(x => x.Name);
+    }
+
+    [Fact]
+    public async Task Sprints_become_real_sprints_with_goals_dates_states_and_report_counts()
+    {
+        var (p, carol) = await NewProjectAsync();
+        var job = await RunAsync(p, carol);
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(["Sprint 1", "Sprint 2", "Sprint 3"], sprints.Keys.Order().ToList());
+        var one = sprints["Sprint 1"];
+        Assert.Equal(SprintState.Completed, one.State);
+        Assert.Equal("Ship the form", one.Goal);
+        Assert.Equal(new DateTime(2024, 4, 1), one.StartDate);
+        Assert.Equal(new DateTime(2024, 4, 14), one.EndDate);
+        Assert.Equal(new DateTime(2024, 4, 14, 10, 0, 0, DateTimeKind.Utc), one.CompletedAt);
+        Assert.NotNull(one.StartedAt);
+        // The bug (3 points, Done) is the only issue left in the closed sprint: committed and completed come from the imported issues.
+        Assert.Equal((1, 3, 1, 3), (one.CommittedCount, one.CommittedPoints, one.CompletedCount, one.CompletedPoints));
+        var two = sprints["Sprint 2"];
+        Assert.Equal(SprintState.Active, two.State);
+        Assert.Equal("Card payments", two.Goal);
+        Assert.Null(two.CompletedAt);
+        Assert.Equal((1, 5), (two.CommittedCount, two.CommittedPoints));   // the story, 4.6 points rounds to 5
+        Assert.Equal(SprintState.Planned, sprints["Sprint 3"].State);
+        Assert.Null(sprints["Sprint 3"].StartedAt);
+
+        var issues = await IssuesAsync(p);
+        Assert.Equal(two.Id, issues["Payment form"].SprintId);              // in sprints 1 and 2: the latest
+        Assert.Equal(one.Id, issues["Card declined crash"].SprintId);
+        Assert.Equal(sprints["Sprint 3"].Id, issues["Validate card number"].SprintId);
+        Assert.Null(issues["Checkout revamp"].SprintId);
+        await using var db = App.Db();
+        Assert.Equal(1, await db.Sprints.CountAsync(x => x.ProjectId == p.Id && x.State == SprintState.Active));
+        Assert.Equal(3, await db.ImportedItems.CountAsync(i => i.ProjectId == p.Id && i.Kind == ImportedKind.Sprint));
+        Assert.Contains(Fake.Requests.ToList(), r => r.PathAndQuery.StartsWith("/rest/agile/1.0/board/1/sprint?startAt=2"));   // the second page of sprints
+    }
+
+    [Fact]
+    public async Task A_second_active_sprint_is_imported_as_completed_when_it_ended_or_planned_when_it_didnt()
+    {
+        Fake.ExtraActiveSprint = true;
+        var (p, carol) = await NewProjectAsync();
+        var job = await RunAsync(p, carol);
+
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(SprintState.Active, sprints["Sprint 2"].State);          // ordered by start date, then id: the first active one keeps it
+        Assert.Equal(SprintState.Completed, sprints["Parallel sprint"].State); // its end date is in the past
+        Assert.NotNull(sprints["Parallel sprint"].CompletedAt);
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("Parallel sprint") && w.Contains("only one active sprint") && w.Contains("completed"));
+
+        Fake.ActiveSprintEnd = "2099-01-01T00:00:00.000Z";
+        Fake.ExtraActiveSprint = true;
+        var (p2, _) = await NewProjectAsync();
+        await RunAsync(p2, carol);
+        var second = await SprintsAsync(p2);
+        Assert.Equal(1, second.Values.Count(x => x.State == SprintState.Active));
+    }
+
+    [Fact]
+    public async Task An_active_sprint_the_project_already_has_keeps_the_only_active_slot()
+    {
+        var (p, carol) = await NewProjectAsync();
+        await using (var db = App.Db())
+        {
+            db.Sprints.Add(new Sprint { ProjectId = p.Id, Name = "Ours", State = SprintState.Active, StartDate = DateTime.UtcNow.Date, StartedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        Fake.ActiveSprintEnd = "2099-01-01T00:00:00.000Z";
+        var job = await RunAsync(p, carol);
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(SprintState.Active, sprints["Ours"].State);
+        Assert.Equal(SprintState.Planned, sprints["Sprint 2"].State);          // still running in Jira, so planned here
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("Sprint 2") && w.Contains("only one active sprint") && w.Contains("planned"));
+        await using var db2 = App.Db();
+        Assert.Equal(1, await db2.Sprints.CountAsync(x => x.ProjectId == p.Id && x.State == SprintState.Active));
+    }
+
+    [Fact]
+    public async Task Running_again_adds_no_sprints_and_leaves_changed_ones_alone()
+    {
+        var (p, carol) = await NewProjectAsync();
+        await RunAsync(p, carol);
+        await using (var db = App.Db())
+        {
+            var s2 = await db.Sprints.SingleAsync(x => x.ProjectId == p.Id && x.Name == "Sprint 2");
+            s2.Goal = "Edited here";
+            s2.State = SprintState.Completed; s2.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        var again = await RunAsync(p, carol);
+
+        Assert.Equal(TrackerImportStatus.Done, again.Status);
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(3, sprints.Count);
+        Assert.Equal("Edited here", sprints["Sprint 2"].Goal);
+        Assert.Equal(SprintState.Completed, sprints["Sprint 2"].State);
+        await using var db2 = App.Db();
+        Assert.Equal(3, await db2.ImportedItems.CountAsync(i => i.ProjectId == p.Id && i.Kind == ImportedKind.Sprint));
+    }
+
+    [Fact]
+    public async Task Without_the_agile_api_sprints_come_from_the_issue_field()
+    {
+        Fake.AgileAvailable = false;
+        var (p, carol) = await NewProjectAsync();
+        var job = await RunAsync(p, carol);
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(SprintState.Completed, sprints["Sprint 1"].State);
+        Assert.Equal(new DateTime(2024, 4, 14), sprints["Sprint 1"].EndDate);
+        Assert.Equal(SprintState.Active, sprints["Sprint 2"].State);
+        Assert.Equal(SprintState.Planned, sprints["Sprint 3"].State);
+        var issues = await IssuesAsync(p);
+        Assert.Equal(sprints["Sprint 2"].Id, issues["Payment form"].SprintId);
+        await using var db = App.Db();
+        Assert.DoesNotContain(await db.Labels.Where(l => l.ProjectId == p.Id).Select(l => l.Name).ToListAsync(), n => n.StartsWith("sprint:"));
+    }
+
+    [Fact]
+    public async Task A_sprint_that_cannot_be_listed_falls_back_to_a_label_with_a_note()
+    {
+        Fake.OrphanSprint = true;
+        var (p, carol) = await NewProjectAsync();
+        var job = await RunAsync(p, carol);
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        var task = (await IssuesAsync(p))["Write the docs"];
+        Assert.Null(task.SprintId);
+        Assert.Contains("sprint: Ghost sprint", task.Labels.Select(l => l.Name));
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("PROJ-5") && w.Contains("Ghost sprint"));
+        Assert.Equal(3, (await SprintsAsync(p)).Count);
+    }
+
+    // ------------------------------------------------------------ attachment files
+
+    private async Task<Dictionary<string, Attachment>> AttachmentsOfAsync(Project p, string title)
+    {
+        await using var db = App.Db();
+        var issue = await db.Issues.AsNoTracking().SingleAsync(i => i.ProjectId == p.Id && i.Title == title);
+        return (await db.Attachments.AsNoTracking().Where(a => a.IssueId == issue.Id).ToListAsync()).ToDictionary(a => a.FileName);
+    }
+
+    [Fact]
+    public async Task Without_the_option_no_attachment_file_is_requested()
+    {
+        var (p, carol) = await NewProjectAsync();
+        var job = await RunAsync(p, carol);
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        lock (Fake.FileRequests) Assert.Empty(Fake.FileRequests);
+        Assert.Empty(await AttachmentsOfAsync(p, "Payment form"));
+    }
+
+    [Fact]
+    public async Task Attachment_files_are_copied_with_credentials_redirects_limits_and_a_warning_per_failure()
+    {
+        var (p, carol) = await NewProjectAsync();
+        var job = await RunAsync(p, carol, settings: new TrackerImportSettings { IncludeAttachments = true });
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        Assert.Null(job.Error);
+        var files = await AttachmentsOfAsync(p, "Payment form");
+        Assert.Equal(["screenshot.png", "spec.pdf"], files.Keys.Order().ToList());
+
+        var png = files["screenshot.png"];
+        Assert.Equal("image/png", png.ContentType);                      // sniffed from the bytes
+        Assert.Equal(FakeFiles.Png.Length, png.Size);
+        Assert.Equal(FakeFiles.Sha256(FakeFiles.Png), png.Sha256);
+        Assert.Equal(carol, png.UploaderId);
+        Assert.False(png.FromComment);
+        Assert.Equal(FakeFiles.Png, await File.ReadAllBytesAsync(Path.Combine(App.AttachmentRoot, png.StoredName)));
+        var pdf = files["spec.pdf"];                                       // came through a redirect to the CDN
+        Assert.Equal(FakeFiles.Sha256(FakeFiles.Pdf), pdf.Sha256);
+        Assert.Equal(FakeFiles.Pdf, await File.ReadAllBytesAsync(Path.Combine(App.AttachmentRoot, pdf.StoredName)));
+
+        // the credentials went to Jira, and never to the second host
+        lock (App.Cdn.Requests)
+        {
+            Assert.Contains(App.Cdn.Requests, r => r.PathAndQuery == "/media/spec.pdf?token=signed123");
+            Assert.All(App.Cdn.Requests, r => { Assert.Null(r.Authorization); Assert.Null(r.PrivateToken); });
+        }
+        lock (Fake.Requests) Assert.All(Fake.Requests, r => Assert.Equal(Fake.ExpectedAuth, r.Auth));
+
+        // each failure is one warning that names the file and the reason
+        var warnings = TrackerImportService.WarningsOf(job);
+        Assert.Contains(warnings, w => w.Contains("PROJ-2") && w.Contains("huge.bin") && w.Contains("over the limit of 4 KB"));
+        Assert.Contains(warnings, w => w.Contains("liar.bin") && w.Contains("over the limit"));       // its declared size was a lie; the stream stopped at the limit
+        Assert.Contains(warnings, w => w.Contains("run.exe") && w.Contains("BlockedAttachmentExtensions"));
+        Assert.Contains(warnings, w => w.Contains("gone.txt") && w.Contains("no longer has the file"));
+        Assert.DoesNotContain(warnings, w => w.Contains("screenshot.png") || w.Contains("spec.pdf"));
+        lock (Fake.FileRequests) { Assert.DoesNotContain("10102", Fake.FileRequests); Assert.DoesNotContain("10104", Fake.FileRequests); }   // known too big / blocked: never downloaded
+
+        // the issue lists only what could not be copied
+        var story = (await IssuesAsync(p))["Payment form"];
+        Assert.DoesNotContain("[screenshot.png]", story.Description);
+        Assert.Contains("(not copied)", story.Description);
+        Assert.Contains("[huge.bin]", story.Description);
+
+        // nothing leaked: not into warnings, the job, nor the audit trail
+        await AssertNoSecretsStoredAsync(p, job, "signed123");
+        await using var db = App.Db();
+        var audit = await db.AuditEvents.Where(a => a.ProjectId == p.Id && a.Action == "project.tracker_imported").Select(a => a.Details).SingleAsync();
+        Assert.Contains("\"attachments\":2", audit);
+        Assert.DoesNotContain(App.Cdn.Url, string.Join("|", warnings));
+        Assert.Equal(2, await db.ImportedItems.CountAsync(i => i.ProjectId == p.Id && i.Kind == ImportedKind.Attachment));
+    }
+
+    [Fact]
+    public async Task Running_again_does_not_copy_a_file_twice()
+    {
+        var (p, carol) = await NewProjectAsync();
+        var settings = new TrackerImportSettings { IncludeAttachments = true };
+        await RunAsync(p, carol, settings: settings);
+        var again = await RunAsync(p, carol, settings: settings);
+
+        Assert.Equal(TrackerImportStatus.Done, again.Status);
+        Assert.Equal(2, (await AttachmentsOfAsync(p, "Payment form")).Count);
+        lock (Fake.FileRequests)
+        {
+            // the two copied files aren't fetched again; the failed ones are tried again (the 404 and the liar)
+            Assert.Equal(1, Fake.FileRequests.Count(id => id == "10100"));
+            Assert.Equal(1, Fake.FileRequests.Count(id => id == "10101"));
+            Assert.Equal(2, Fake.FileRequests.Count(id => id == "10105"));
+        }
+    }
+
+    [Fact]
+    public async Task The_whole_import_stops_copying_at_its_attachment_budget()
+    {
+        var options = App.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<TrackerImportOptions>>().CurrentValue;
+        var before = options.MaxAttachmentBytes;
+        options.MaxAttachmentBytes = 30;   // the png (24 bytes) fits; the pdf (23 more) doesn't
+        try
+        {
+            var (p, carol) = await NewProjectAsync();
+            var job = await RunAsync(p, carol, settings: new TrackerImportSettings { IncludeAttachments = true });
+
+            Assert.Equal(TrackerImportStatus.Done, job.Status);
+            Assert.Equal(["screenshot.png"], (await AttachmentsOfAsync(p, "Payment form")).Keys.ToList());
+            Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("spec.pdf") && w.Contains("MaxAttachmentBytes"));
+        }
+        finally { options.MaxAttachmentBytes = before; }
+    }
+
+    [Fact]
+    public async Task An_issue_that_is_full_gets_a_warning_and_existing_issues_are_never_edited()
+    {
+        var (p, carol) = await NewProjectAsync();
+        await RunAsync(p, carol);                                   // the issues exist, without files
+        int storyId;
+        string description;
+        await using (var db = App.Db())
+        {
+            var story = await db.Issues.AsNoTracking().SingleAsync(i => i.ProjectId == p.Id && i.Title == "Payment form");
+            (storyId, description) = (story.Id, story.Description!);
+            for (var i = 0; i < 49; i++)
+                db.Attachments.Add(new Attachment { IssueId = storyId, StoredName = Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)), FileName = $"old{i}.txt", Size = 1, Sha256 = "x", UploaderId = carol });
+            await db.SaveChangesAsync();
+        }
+        var job = await RunAsync(p, carol, settings: new TrackerImportSettings { IncludeAttachments = true });
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        await using var db2 = App.Db();
+        Assert.Equal(50, await db2.Attachments.CountAsync(a => a.IssueId == storyId));   // one real copy filled it up
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("at most 50 attachments"));
+        Assert.Equal(description, (await db2.Issues.AsNoTracking().SingleAsync(i => i.Id == storyId)).Description);
+    }
+
     private async Task AssertNoSecretsStoredAsync(Project p, TrackerImportJob job, params string[] extra)
     {
         var secrets = Fake.Secrets.Concat(extra).ToArray();
@@ -450,7 +741,7 @@ public class JiraServerImportTests(JiraServerApp app) : JiraImportScenarios<Jira
 
         Assert.Equal(TrackerImportStatus.Done, job.Status);
         Assert.Equal(5, job.IssuesCreated);
-        lock (fake.Requests) Assert.All(fake.Requests, r => Assert.StartsWith("/jira/rest/api/2/", r.PathAndQuery));
+        lock (fake.Requests) Assert.All(fake.Requests, r => Assert.StartsWith("/jira/rest/", r.PathAndQuery));
         await using var db = App.Db();
         Assert.Contains(await db.Issues.AsNoTracking().Where(i => i.ProjectId == p.Id).Select(i => i.Description).ToListAsync(), d => d != null && d.Contains(fake.Url + "/browse/PROJ-1"));
     }

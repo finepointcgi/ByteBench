@@ -20,8 +20,18 @@ public sealed record SourceComment(string ExternalId, SourceUser? Author, string
 /// <summary>A link to another issue of the same source project, by its <see cref="SourceIssue.ExternalId"/>.</summary>
 public sealed record SourceLink(string TargetExternalId, IssueLinkType Type);
 
-/// <summary>A file attached in the source. Files aren't copied; they are listed in the issue so they can be fetched from the source.</summary>
-public sealed record SourceAttachment(string FileName, string? Url);
+/// <summary>
+/// A file attached in the source. <see cref="Url"/> is a link a person can open; <see cref="DownloadUrl"/> is what the importer fetches
+/// (with the source's credentials only when it is on the source's own address) when "include attachments" is on. <see cref="ExternalId"/>
+/// is stable and unique within the issue (Jira's attachment id, GitHub's upload path, GitLab's upload hash and name) so re-runs don't
+/// copy a file twice. <see cref="BodyRef"/> is the exact link text as it appears in the issue's or a comment's markdown: when the file
+/// was copied, that text is replaced by the local attachment's address. Attachments without a <see cref="BodyRef"/> (Jira's) are only
+/// attached to the issue.
+/// </summary>
+public sealed record SourceAttachment(string FileName, string? Url, string? DownloadUrl = null, string? ExternalId = null, string? BodyRef = null, long? Size = null);
+
+/// <summary>A sprint of the source (Jira). <see cref="ExternalId"/> is the source's sprint id; <see cref="SourceIssue.SprintId"/> refers to it.</summary>
+public sealed record SourceSprint(string ExternalId, string Name, string? Goal, DateTime? StartDate, DateTime? EndDate, SprintState State);
 
 /// <summary>
 /// One issue in neutral form. Readers fill what the source has and leave the rest null/empty; the writer maps it into a project.
@@ -51,6 +61,8 @@ public sealed class SourceIssue
     public IReadOnlyList<string> Labels { get; init; } = [];
     /// <summary>A <see cref="SourceMilestone.ExternalId"/> (Jira: the fix version or sprint chosen by the reader).</summary>
     public string? MilestoneId { get; init; }
+    /// <summary>A <see cref="SourceSprint.ExternalId"/>: the sprint the issue sits in (an issue that was in several sprints names the latest).</summary>
+    public string? SprintId { get; init; }
     /// <summary>The parent issue's <see cref="ExternalId"/> (an epic; for sub-tasks the issue they belong to).</summary>
     public string? ParentExternalId { get; init; }
     public IReadOnlyList<SourceLink> Links { get; init; } = [];
@@ -64,7 +76,8 @@ public sealed class SourceIssue
 public sealed record SourceProbe(string ProjectName, string? Description, int IssueCount, IReadOnlyList<string> SampleTitles, string? Warning = null);
 
 /// <summary>What to read. Readers must honour <see cref="MaxIssues"/> and stop there.</summary>
-public sealed record SourceReadOptions(bool IncludeClosed, bool IncludeComments, bool IncludePullRequests, int MaxIssues);
+/// <param name="IncludeAttachments">Also report files linked from issue and comment text (GitHub, GitLab); Jira always reports its attachment list.</param>
+public sealed record SourceReadOptions(bool IncludeClosed, bool IncludeComments, bool IncludePullRequests, int MaxIssues, bool IncludeAttachments = false);
 
 /// <summary>A source problem with a message that is safe to show (never contains a credential).</summary>
 public sealed class SourceException(string message, bool authFailure = false) : Exception(message)
@@ -86,4 +99,15 @@ public interface ISourceReader : IDisposable
     Task<IReadOnlyList<SourceMilestone>> ReadMilestonesAsync(CancellationToken ct);
     /// <summary>Issues oldest first, comments and links included when asked. Streams: don't buffer the whole project.</summary>
     IAsyncEnumerable<SourceIssue> ReadIssuesAsync(SourceReadOptions options, CancellationToken ct);
+
+    /// <summary>The source's sprints (called before the issues). Sources without sprints keep this default.</summary>
+    Task<IReadOnlyList<SourceSprint>> ReadSprintsAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<SourceSprint>>([]);
+
+    /// <summary>
+    /// Opens the file of an attachment (its <see cref="SourceAttachment.DownloadUrl"/>) for reading, with the source's credentials applied by
+    /// <see cref="TrackerHttp.GetStreamAsync"/>. The stream stops (throws <see cref="Attachments.AttachmentTooLargeException"/>) past
+    /// <paramref name="maxBytes"/>; the caller disposes it. Throw <see cref="SourceException"/> for a file that can't be fetched.
+    /// </summary>
+    Task<Stream> OpenAttachmentAsync(SourceAttachment attachment, CancellationToken ct, long maxBytes = TrackerHttp.DefaultAttachmentMaxBytes) =>
+        throw new SourceException("This source can't hand out attachment files.");
 }

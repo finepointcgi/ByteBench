@@ -52,7 +52,7 @@ public class TrackerImportJob
     public bool IsActive => Status is TrackerImportStatus.Queued or TrackerImportStatus.Running;
 }
 
-public enum ImportedKind { Issue, Comment, Label, Milestone }
+public enum ImportedKind { Issue, Comment, Label, Milestone, Sprint, Attachment }
 
 /// <summary>
 /// Remembers that something in the source became something here, so a second import of the same source adds only what is new

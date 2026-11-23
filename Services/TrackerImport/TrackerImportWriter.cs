@@ -1,6 +1,9 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ByteBench.Data;
+using ByteBench.Services.Attachments;
 using Microsoft.EntityFrameworkCore;
 
 namespace ByteBench.Services.TrackerImport;
@@ -12,6 +15,8 @@ public sealed class TrackerImportSettings
     public bool IncludeComments { get; set; } = true;
     /// <summary>GitHub: also import pull requests as issues (labelled "pull-request"). Off by default: pull requests need their branches.</summary>
     public bool IncludePullRequests { get; set; }
+    /// <summary>Copy the files attached in the source (Jira attachments, files linked from GitHub and GitLab issues and comments) into the issues. Off by default.</summary>
+    public bool IncludeAttachments { get; set; }
     /// <summary>Source status name (any case) → workflow status id here. Names not listed are matched by name, then by category.</summary>
     public Dictionary<string, int> StatusMap { get; set; } = [];
     /// <summary>Source username (any case) → user id here. Users not listed are matched by email, then by user name.</summary>
@@ -21,8 +26,14 @@ public sealed class TrackerImportSettings
 /// <summary>
 /// Turns the neutral <see cref="SourceIssue"/>s of a reader into issues, comments, labels and milestones of one project (one instance
 /// per run). Nothing here sends notifications or webhooks. Safe to run again: <see cref="ImportedItem"/> remembers what exists, so a
-/// second run adds only new issues and new comments and never changes what is already here (except giving an issue its epic/parent
-/// when it has none yet, and adding a link that is missing).
+/// second run adds only new issues, comments, sprints and attachments and never changes what is already here (except giving an issue its
+/// epic/parent when it has none yet, and adding a link that is missing).
+/// <para>
+/// Sprints become ByteBench sprints (at most one active; an extra "active" one is imported as planned, or completed when it already ended,
+/// with a warning). Attachment files are copied through <see cref="AttachmentStorage"/> (its size, count and type handling) as ordinary issue
+/// attachments uploaded by the person running the import; text links to them (GitHub, GitLab) are rewritten to the local copy in issues
+/// created by this run, never in existing ones. Every file that can't be copied is a warning, never a failure.
+/// </para>
 /// </summary>
 public sealed class TrackerImportWriter
 {
@@ -35,6 +46,14 @@ public sealed class TrackerImportWriter
     private readonly TrackerImportSettings settings;
     private readonly string sourceKey, sourceName;
     private readonly int actorId;
+    private readonly AttachmentStorage? storage;
+    private readonly TrackerImportOptions limits;
+    private ISourceReader? reader;
+    private readonly Dictionary<string, int> sprintIds = new(StringComparer.Ordinal);
+    private readonly List<(int Id, SprintState State)> createdSprints = [];
+    private readonly HashSet<string> attachmentKeys = new(StringComparer.Ordinal);
+    private long attachmentBytes;
+    private bool attachmentBudgetWarned;
 
     private Project project = null!;
     private List<WorkflowStatus> statuses = [];
@@ -52,8 +71,16 @@ public sealed class TrackerImportWriter
 
     public int WarningCount { get; private set; }
 
-    public TrackerImportWriter(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, TrackerImportJob job, TrackerImportSettings settings, string sourceKey, string sourceName, int actorId)
-        => (this.dbFactory, this.access, this.job, this.settings, this.sourceKey, this.sourceName, this.actorId) = (dbFactory, access, job, settings, sourceKey, sourceName, actorId);
+    public TrackerImportWriter(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, TrackerImportJob job, TrackerImportSettings settings, string sourceKey, string sourceName, int actorId,
+        AttachmentStorage? storage = null, TrackerImportOptions? limits = null)
+    {
+        (this.dbFactory, this.access, this.job, this.settings, this.sourceKey, this.sourceName, this.actorId) = (dbFactory, access, job, settings, sourceKey, sourceName, actorId);
+        (this.storage, this.limits) = (storage, limits ?? new());
+    }
+
+    public int SprintsCreated { get; private set; }
+    public int AttachmentsCopied { get; private set; }
+    public long AttachmentBytesCopied => attachmentBytes;
 
     public IReadOnlyList<int> TouchedIssueIds => touched;
     public string WarningsJson => JsonSerializer.Serialize(warnings);
@@ -73,8 +100,12 @@ public sealed class TrackerImportWriter
         if (statuses.Count == 0) throw new SourceException("The project's workflow has no statuses.");
         sort = await db.Issues.Where(i => i.ProjectId == job.ProjectId).MaxAsync(i => (double?)i.SortOrder, ct) ?? 0;
 
+        this.reader = reader;
         foreach (var m in await db.ImportedItems.AsNoTracking().Where(m => m.ProjectId == job.ProjectId && m.SourceKey == sourceKey && m.Kind != ImportedKind.Comment).ToListAsync(ct))
-            (m.Kind switch { ImportedKind.Issue => issueIds, ImportedKind.Milestone => milestoneIds, _ => (Dictionary<string, int>)[] })[m.ExternalId] = m.LocalId;
+        {
+            if (m.Kind == ImportedKind.Attachment) attachmentKeys.Add(m.ExternalId);
+            else (m.Kind switch { ImportedKind.Issue => issueIds, ImportedKind.Milestone => milestoneIds, ImportedKind.Sprint => sprintIds, _ => (Dictionary<string, int>)[] })[m.ExternalId] = m.LocalId;
+        }
 
         var chain = project.GroupId is { } gid ? await ProjectAccess.GroupChainAsync(db, gid) : [];
         foreach (var l in await db.Labels.AsNoTracking().Where(l => l.ProjectId == job.ProjectId || (l.GroupId != null && chain.Contains(l.GroupId.Value))).ToListAsync(ct))
@@ -100,6 +131,82 @@ public sealed class TrackerImportWriter
             await mdb.SaveChangesAsync(ct);
             milestoneIds[m.ExternalId] = existing.Id;
         }
+        await ImportSprintsAsync(reader, ct);
+    }
+
+    // ---------------------------------------------------------------- sprints
+
+    private async Task ImportSprintsAsync(ISourceReader source, CancellationToken ct)
+    {
+        IReadOnlyList<SourceSprint> sources;
+        try { sources = await source.ReadSprintsAsync(ct); }
+        catch (SourceException ex) when (!ex.AuthFailure) { Warn("Sprints weren't imported: " + ex.Message); return; }
+        var fresh = sources.Where(x => !sprintIds.ContainsKey(x.ExternalId)).ToList();
+        if (fresh.Count == 0) return;
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var hasActive = await db.Sprints.AnyAsync(x => x.ProjectId == job.ProjectId && x.State == SprintState.Active, ct);
+        var now = DateTime.UtcNow;
+        foreach (var src in fresh.OrderBy(x => x.StartDate ?? DateTime.MaxValue).ThenBy(x => x.ExternalId, StringComparer.Ordinal))
+        {
+            var name = Clip(src.Name.Trim().Length == 0 ? "Sprint " + src.ExternalId : src.Name.Trim(), 100);
+            var state = src.State;
+            if (state == SprintState.Active)
+            {
+                if (!hasActive) hasActive = true;
+                else
+                {
+                    state = Day(src.EndDate) is { } e && e < now.Date ? SprintState.Completed : SprintState.Planned;
+                    Warn($"Sprint \"{name}\" is active in {sourceName}, but a ByteBench project can have only one active sprint, so it was imported as {(state == SprintState.Completed ? "completed" : "planned")}.");
+                }
+            }
+            var start = Day(src.StartDate);
+            var end = Day(src.EndDate);
+            if (start != null && end != null && end < start) { Warn($"Sprint \"{name}\" ends before it starts; its end date was left empty."); end = null; }
+            var sprint = new Sprint
+            {
+                ProjectId = job.ProjectId, Name = name, Goal = string.IsNullOrWhiteSpace(src.Goal) ? null : Clip(src.Goal.Trim(), 500),
+                StartDate = start, EndDate = end, State = state, CreatedAt = Utc(src.StartDate) ?? now,
+                StartedAt = state == SprintState.Planned ? null : Utc(src.StartDate) ?? now,
+                CompletedAt = state == SprintState.Completed ? Utc(src.EndDate) ?? Utc(src.StartDate) ?? now : null,
+            };
+            db.Sprints.Add(sprint);
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException)
+            {
+                // Someone started a sprint while the import ran: the one-active-sprint rule held, so keep this one planned.
+                db.Entry(sprint).State = EntityState.Detached;
+                sprint.State = SprintState.Planned; sprint.StartedAt = null; sprint.CompletedAt = null;
+                db.Sprints.Add(sprint);
+                await db.SaveChangesAsync(ct);
+                Warn($"Sprint \"{name}\" was imported as planned because the project already has an active sprint.");
+            }
+            db.ImportedItems.Add(new ImportedItem { ProjectId = job.ProjectId, SourceKey = sourceKey, Kind = ImportedKind.Sprint, ExternalId = src.ExternalId, LocalId = sprint.Id, ImportId = job.Id });
+            await db.SaveChangesAsync(ct);
+            sprintIds[src.ExternalId] = sprint.Id;
+            createdSprints.Add((sprint.Id, sprint.State));
+            SprintsCreated++;
+        }
+    }
+
+    /// <summary>Gives the sprints this run created the counts the sprint reports show (what ByteBench stores when a sprint starts / completes), from the imported issues.</summary>
+    private async Task SnapshotSprintsAsync(CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        foreach (var (id, state) in createdSprints.Where(x => x.State != SprintState.Planned))
+        {
+            var issues = await db.Issues.AsNoTracking().Where(i => i.SprintId == id).Select(i => new { i.Status, i.StoryPoints }).ToListAsync(ct);
+            var sprint = await db.Sprints.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (sprint == null) continue;
+            sprint.CommittedCount = issues.Count;
+            sprint.CommittedPoints = issues.Sum(i => i.StoryPoints ?? 0);
+            if (state == SprintState.Completed)
+            {
+                sprint.CompletedCount = issues.Count(i => i.Status == IssueStatus.Done);
+                sprint.CompletedPoints = issues.Where(i => i.Status == IssueStatus.Done).Sum(i => i.StoryPoints ?? 0);
+            }
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task<int> EnsureLabelAsync(string rawName, string? color, CancellationToken ct)
@@ -142,6 +249,7 @@ public sealed class TrackerImportWriter
             .Where(m => m.ProjectId == job.ProjectId && m.SourceKey == sourceKey && m.Kind == ImportedKind.Comment)
             .Select(m => m.ExternalId).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
         var created = new List<(SourceIssue Source, Issue Issue, List<(SourceComment C, Comment Row)> Comments)>();
+        var existing = new List<(SourceIssue Source, int IssueId)>();
         var usedLabelIds = items.SelectMany(i => i.Labels).Select(l => Clip(l.Trim(), 40)).Where(l => l.Length > 0).Select(l => labelIds[l]).Distinct().ToList();
         var labelRows = await db.Labels.Where(l => usedLabelIds.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
 
@@ -150,6 +258,7 @@ public sealed class TrackerImportWriter
             if (issueIds.TryGetValue(src.ExternalId, out var existingId))
             {
                 job.IssuesSkipped++;
+                existing.Add((src, existingId));
                 if (settings.IncludeComments && src.Comments.Any(c => !existingComments.Contains(CommentKey(src, c))))
                     await AddMissingCommentsAsync(db, existingId, src, existingComments, ct);
                 continue;
@@ -175,6 +284,7 @@ public sealed class TrackerImportWriter
                 AssigneeId = assignee?.Id,
                 ReporterId = author?.Id ?? actorId,
                 MilestoneId = src.MilestoneId != null && milestoneIds.TryGetValue(src.MilestoneId, out var mid) ? mid : null,
+                SprintId = src.SprintId != null && sprintIds.TryGetValue(src.SprintId, out var spid) ? spid : null,
                 CreatedAt = createdAt,
                 UpdatedAt = Utc(src.UpdatedAt) ?? createdAt,
                 ClosedAt = status.Category.IsClosed() ? Utc(src.ClosedAt) ?? Utc(src.UpdatedAt) ?? createdAt : null,
@@ -209,7 +319,133 @@ public sealed class TrackerImportWriter
         job.IssuesCreated += created.Count;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        if (settings.IncludeAttachments && reader != null && storage != null)
+        {
+            foreach (var (src, issue, comments) in created) await CopyAttachmentsAsync(src, issue.Id, issue, comments.Select(c => c.Row).ToList(), ct);
+            foreach (var (src, issueId) in existing) await CopyAttachmentsAsync(src, issueId, null, null, ct);
+        }
         await SaveProgressAsync(ct);
+    }
+
+    // ---------------------------------------------------------------- attachments
+
+    private static string AttachmentKey(SourceIssue issue, SourceAttachment a)
+    {
+        var key = issue.ExternalId + ":" + (a.ExternalId ?? a.DownloadUrl ?? a.FileName);
+        return key.Length <= 190 ? key : issue.ExternalId + ":" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+    }
+
+    /// <summary>
+    /// Copies the files of one issue. <paramref name="created"/>/<paramref name="comments"/> are set for an issue this run just created: the
+    /// links in its text are then rewritten to the local files (existing issues are never edited; their originals stay as they are). A file
+    /// that fails (gone, forbidden, too big, a blocked type, over a limit) is one warning and the import goes on.
+    /// </summary>
+    private async Task CopyAttachmentsAsync(SourceIssue src, int issueId, Issue? created, List<Comment>? comments, CancellationToken ct)
+    {
+        var files = src.Attachments.Where(a => !string.IsNullOrWhiteSpace(a.FileName) && a.DownloadUrl != null).ToList();
+        if (files.Count == 0) return;
+        var perFile = Math.Min(storage!.MaxBytes, limits.MaxAttachmentFileBytes > 0 ? limits.MaxAttachmentFileBytes : long.MaxValue);
+        var copied = new List<(SourceAttachment File, int Id, string Name, string Type)>();
+        var failed = new List<SourceAttachment>();
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var onIssue = await db.Attachments.CountAsync(a => a.IssueId == issueId, ct);
+        foreach (var file in files)
+        {
+            var key = AttachmentKey(src, file);
+            if (attachmentKeys.Contains(key)) continue;
+            var label = $"{src.DisplayKey}: attachment \"{AttachmentStorage.SanitizeFileName(file.FileName)}\"";
+            if (onIssue >= storage.MaxPerIssue) { Warn($"{label} wasn't copied: an issue can have at most {storage.MaxPerIssue} attachments (Attachments:MaxPerIssue)."); failed.Add(file); continue; }
+            var safeName = AttachmentStorage.SanitizeFileName(file.FileName);
+            if (limits.BlockedAttachmentExtensions.Any(x => x.Length > 0 && safeName.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+            { Warn($"{label} wasn't copied: this file type isn't copied by imports (TrackerImport:BlockedAttachmentExtensions)."); failed.Add(file); continue; }
+            if (file.Size is { } known && known > perFile)
+            { Warn($"{label} wasn't copied: it is {AttachmentFormat.Size(known)}, over the limit of {AttachmentFormat.Size(perFile)}."); failed.Add(file); continue; }
+            var remaining = limits.MaxAttachmentBytes - attachmentBytes;
+            if (remaining <= 0)
+            {
+                if (!attachmentBudgetWarned) { attachmentBudgetWarned = true; Warn($"The import's attachment budget of {AttachmentFormat.Size(limits.MaxAttachmentBytes)} (TrackerImport:MaxAttachmentBytes) is used up; the remaining files weren't copied. Run the import again after raising it to copy them."); }
+                failed.Add(file);
+                continue;
+            }
+            var cap = Math.Min(perFile, remaining);
+            StoredFile? stored = null;
+            try
+            {
+                await using var stream = await reader!.OpenAttachmentAsync(file, ct, cap);
+                stored = await storage.SaveAsync(stream, safeName, ct, cap);
+                var name = WithImageExtension(safeName, stored.ContentType);
+                var row = new Attachment
+                {
+                    IssueId = issueId, StoredName = stored.StoredName, FileName = name, ContentType = stored.ContentType, Size = stored.Size,
+                    Sha256 = stored.Sha256, UploaderId = actorId, FromComment = false, CreatedAt = DateTime.UtcNow,
+                };
+                db.Attachments.Add(row);
+                await db.SaveChangesAsync(ct);
+                db.ImportedItems.Add(new ImportedItem { ProjectId = job.ProjectId, SourceKey = sourceKey, Kind = ImportedKind.Attachment, ExternalId = key, LocalId = row.Id, ImportId = job.Id });
+                await db.SaveChangesAsync(ct);
+                stored = null;
+                attachmentKeys.Add(key);
+                attachmentBytes += row.Size;
+                onIssue++;
+                AttachmentsCopied++;
+                copied.Add((file, row.Id, name, row.ContentType));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { if (stored != null) storage.Delete([stored.StoredName]); throw; }
+            catch (AttachmentTooLargeException)
+            {
+                Warn(cap < perFile ? $"{label} wasn't copied: it would pass the import's attachment budget (TrackerImport:MaxAttachmentBytes)."
+                    : $"{label} wasn't copied: it is over the limit of {AttachmentFormat.Size(perFile)}.");
+                failed.Add(file);
+            }
+            catch (SourceException ex) { Warn($"{label} wasn't copied: {ex.Message}"); failed.Add(file); }
+            catch (Exception ex) when (ex is IOException or HttpRequestException or DbUpdateException or UnauthorizedAccessException)
+            {
+                if (stored != null) storage.Delete([stored.StoredName]);
+                db.ChangeTracker.Clear();
+                Warn($"{label} wasn't copied (the file couldn't be stored or the transfer failed).");
+                failed.Add(file);
+            }
+        }
+
+        if (created == null || (copied.Count == 0 && failed.Count == 0)) return;
+        // New issue: point text links at the local files, and list what could not be copied.
+        var description = created.Description ?? "";
+        var bodies = (comments ?? []).Select(c => c.Body).ToList();
+        foreach (var (file, id, name, type) in copied.Where(c => c.File.BodyRef != null))
+        {
+            var local = AttachmentFormat.Url(id, name);
+            description = ReplaceLink(description, file.BodyRef!, local);
+            for (var i = 0; i < bodies.Count; i++) bodies[i] = ReplaceLink(bodies[i], file.BodyRef!, local);
+        }
+        var notCopied = failed.Where(f => f.BodyRef == null).ToList();
+        if (notCopied.Count > 0)
+        {
+            var sb = new StringBuilder(description.TrimEnd()).Append("\n\n**Attachments in ").Append(sourceName).Append(" (not copied):**\n");
+            foreach (var f in notCopied) sb.Append("- ").Append(f.Url != null ? $"[{f.FileName}]({f.Url})" : f.FileName).Append('\n');
+            description = sb.ToString().TrimEnd();
+        }
+        await using var udb = await dbFactory.CreateDbContextAsync(ct);
+        if (description != created.Description)
+            await udb.Issues.Where(i => i.Id == issueId).ExecuteUpdateAsync(s => s.SetProperty(i => i.Description, description), ct);
+        for (var i = 0; i < bodies.Count; i++)
+            if (comments![i].Body != bodies[i])
+            {
+                var cid = comments[i].Id;
+                var body = bodies[i];
+                await udb.Comments.Where(c => c.Id == cid).ExecuteUpdateAsync(s => s.SetProperty(c => c.Body, body), ct);
+            }
+    }
+
+    /// <summary>Replaces the link text <paramref name="from"/> wherever it is a whole link (not the start of a longer address).</summary>
+    internal static string ReplaceLink(string text, string from, string to) =>
+        Regex.Replace(text, Regex.Escape(from) + @"(?![\w%/~\-]|\.\w)", to.Replace("$", "$$"));
+
+    private static string WithImageExtension(string name, string contentType)
+    {
+        if (Path.HasExtension(name)) return name;
+        var ext = contentType switch { "image/png" => ".png", "image/jpeg" => ".jpg", "image/gif" => ".gif", "image/webp" => ".webp", _ => "" };
+        return name.Length + ext.Length <= 255 ? name + ext : name;
     }
 
     private async Task AddMissingCommentsAsync(AppDbContext db, int issueId, SourceIssue src, HashSet<string> known, CancellationToken ct)
@@ -231,6 +467,7 @@ public sealed class TrackerImportWriter
     public async Task FinishAsync(CancellationToken ct)
     {
         await FlushAsync(ct);
+        await SnapshotSprintsAsync(ct);
         if (unmatched.Count > 0)
             Warn($"{unmatched.Count} {(unmatched.Count == 1 ? "person has" : "people have")} no account that can see this project, so their issues and comments are attributed to the person who ran the import (with their name in the text): " +
                  string.Join(", ", unmatched.Take(15)) + (unmatched.Count > 15 ? ", ..." : "") + ". Add them as members (matched by email or user name) and run the import again to see how it looks - existing issues are not changed.");
@@ -334,7 +571,8 @@ public sealed class TrackerImportWriter
         if (author == null && Name(src.Author) is { } n) sb.Append(". Opened by ").Append(n);
         sb.Append(" on ").Append(src.CreatedAt.ToString("yyyy-MM-dd")).Append("._");
         if (assignee == null && Name(src.Assignee) is { } a) sb.Append("\n\n_Assigned in ").Append(sourceName).Append(" to ").Append(a).Append(" (no matching user here)._");
-        var files = src.Attachments.Where(f => !string.IsNullOrWhiteSpace(f.FileName)).ToList();
+        // Files linked from the text (BodyRef) are already there; with copying on, the issue's attachments panel shows the rest.
+        var files = settings.IncludeAttachments ? [] : src.Attachments.Where(f => !string.IsNullOrWhiteSpace(f.FileName) && f.BodyRef == null).ToList();
         if (files.Count > 0)
         {
             sb.Append("\n\n**Attachments in ").Append(sourceName).Append(" (not copied):**\n");
