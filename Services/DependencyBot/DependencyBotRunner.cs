@@ -18,7 +18,7 @@ namespace ByteBench.Services.DependencyBot;
 /// (<see cref="GitOps.CommitFileBytesOnNewBranch"/>) touching only the manifest files. One check or run per repository at a time.
 /// </summary>
 public sealed partial class DependencyBotRunner(IDbContextFactory<AppDbContext> dbFactory, IServiceScopeFactory scopes, RepoStorage storage,
-    RegistryClient registries, IOptionsMonitor<DependencyBotOptions> options, ILogger<DependencyBotRunner> log)
+    RegistryClient registries, RegistryCredentialProtector protector, IOptionsMonitor<DependencyBotOptions> options, ILogger<DependencyBotRunner> log)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> SkippedDirectories = new(StringComparer.OrdinalIgnoreCase)
@@ -140,6 +140,7 @@ public sealed partial class DependencyBotRunner(IDbContextFactory<AppDbContext> 
         report.ManifestsRead = manifests;
 
         // Registry lookups: one per distinct package, sequential, throttled; a registry that fails hard is skipped for the rest of the run.
+        var registrySet = await RegistrySet.LoadAsync(db, repositoryId, protector, ct);
         var infos = new Dictionary<string, PackageInfo>(StringComparer.Ordinal);
         var down = new HashSet<string>();
         var distinct = dependencies.Select(d => (d.Ecosystem, d.Name)).Distinct().ToList();
@@ -152,11 +153,14 @@ public sealed partial class DependencyBotRunner(IDbContextFactory<AppDbContext> 
         {
             if (ct.IsCancellationRequested) ct.ThrowIfCancellationRequested();
             if (down.Contains(eco)) continue;
-            try { infos[Key(eco, name)] = await registries.GetAsync(eco, name, ct); report.PackagesChecked++; }
+            try { infos[Key(eco, name)] = await registries.GetAsync(eco, name, registrySet, ct); report.PackagesChecked++; }
             catch (RegistryException ex)
             {
                 report.Warnings.Add($"{Ecosystems.Label(eco)} {name}: {ex.Message}");
-                if (ex.FatalForRegistry && down.Add(eco)) report.Warnings.Add($"The {Ecosystems.Label(eco)} registry isn't answering; its remaining packages were skipped.");
+                if (ex.FatalForRegistry && down.Add(eco))
+                    report.Warnings.Add(ex.Message.Contains("rejected the credential", StringComparison.Ordinal)
+                        ? $"The {Ecosystems.Label(eco)} registry rejected the credential; its remaining packages were skipped (check or replace the credential under Private registries)."
+                        : $"The {Ecosystems.Label(eco)} registry isn't answering; its remaining packages were skipped.");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

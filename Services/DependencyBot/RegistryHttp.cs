@@ -28,7 +28,7 @@ public sealed class DependencyBotOptions
     public int MaxManifests { get; set; } = 100;
     /// <summary>A manifest larger than this is skipped.</summary>
     public int MaxManifestBytes { get; set; } = 1024 * 1024;
-    /// <summary>Public registry base URLs. Private registries (and tokens for them) are not supported.</summary>
+    /// <summary>Public registry base URLs. A repository's private registries (address and credential, set on its Dependencies settings page) replace them for that repository.</summary>
     public DependencyRegistries Registries { get; set; } = new();
 }
 
@@ -45,8 +45,10 @@ public sealed class DependencyRegistries
 }
 
 /// <summary>A registry call failed in a way worth showing next to the package (never carries a request secret).</summary>
-public sealed class RegistryException(string message, bool fatalForRegistry = false) : Exception(message)
+public sealed class RegistryException(string message, bool fatalForRegistry = false, bool notFound = false) : Exception(message)
 {
+    /// <summary>The registry answered "no such package" (a multi-source NuGet lookup then asks the next source).</summary>
+    public bool NotFound { get; } = notFound;
     /// <summary>The registry itself is unreachable or refusing us: stop asking it for the rest of this run.</summary>
     public bool FatalForRegistry { get; } = fatalForRegistry;
 }
@@ -68,13 +70,13 @@ public sealed class RegistryUrlGuard(IOptionsMonitor<DependencyBotOptions> optio
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || string.IsNullOrEmpty(uri.Host))
             return "The registry address must be an absolute http:// or https:// URL.";
         if (url.Any(c => char.IsControl(c) || char.IsWhiteSpace(c))) return "The registry address can't contain spaces or control characters.";
-        if (!string.IsNullOrEmpty(uri.UserInfo)) return "Registry addresses can't carry credentials (private registries are not supported).";
+        if (!string.IsNullOrEmpty(uri.UserInfo)) return "Registry addresses can't carry credentials in the URL; enter the credential in its own field.";
         if (!string.IsNullOrEmpty(uri.Fragment)) return "The registry address can't have a fragment.";
         if (AllowPrivateNetworks) return null;
         if (uri.IsLoopback || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
             return "The registry is on this server or another local address (set DependencyBot:AllowPrivateNetworks to allow it).";
         if (IPAddress.TryParse(uri.Host.Trim('[', ']'), out var ip) && WebhookSender.IsBlocked(ip))
-            return $"The registry is on a private, loopback, link-local or metadata address ({ip}).";
+            return $"The registry is on a private, loopback, link-local or metadata address ({ip}); an internal registry needs DependencyBot:AllowPrivateNetworks=true.";
         return null;
     }
 
@@ -119,24 +121,37 @@ public sealed class RegistryHttp : IDisposable
     /// <summary>Requests made since start (tests assert "no network when disabled").</summary>
     public int RequestCount;
 
-    public async Task<string> GetStringAsync(string url, string accept, CancellationToken ct)
+    /// <param name="auth">Sent as the Authorization header, and only when <paramref name="url"/> has exactly the origin the credential was configured for (never over plain http, except loopback while private networks are allowed).</param>
+    public async Task<string> GetStringAsync(string url, string accept, CancellationToken ct, RegistryAuth? auth = null)
     {
         if (guard.Validate(url) is { } invalid) throw new RegistryException(invalid, fatalForRegistry: true);
+        if (auth != null)
+        {
+            var target = new Uri(url);
+            if (!string.Equals(RegistryOrigin.Of(target), auth.Origin, StringComparison.Ordinal))
+                throw new RegistryException("Refused to send a credential to an address other than the one it was configured for.", fatalForRegistry: true);
+            if (target.Scheme != Uri.UriSchemeHttps && !(RegistryOrigin.IsLoopback(target) && guard.AllowPrivateNetworks))
+                throw new RegistryException("Credentials are never sent over plain http (use an https registry address).", fatalForRegistry: true);
+        }
         await ThrottleAsync(ct);
         var o = options.CurrentValue;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(o.RequestTimeoutSeconds, 1, 300)));
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Accept.ParseAdd(accept);
+        if (auth != null) request.Headers.TryAddWithoutValidation("Authorization", auth.HeaderValue);
         Interlocked.Increment(ref RequestCount);
         try
         {
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             var status = (int)response.StatusCode;
-            if (status == 404 || status == 410) throw new RegistryException("The registry doesn't know this package.");
+            if (status == 404 || status == 410) throw new RegistryException("The registry doesn't know this package.", notFound: true);
             if (status == 429) throw new RegistryException("The registry is rate limiting requests; try again later.", fatalForRegistry: true);
-            if (status is 401 or 403) throw new RegistryException($"The registry refused the request (HTTP {status}); private registries are not supported.");
-            if (status is >= 300 and < 400) throw new RegistryException($"The registry redirected ({status}); redirects aren't followed.");
+            if (status is 401 or 403)
+                throw auth != null
+                    ? new RegistryException("The registry rejected the credential.", fatalForRegistry: true)
+                    : new RegistryException($"The registry refused the request (HTTP {status}). If it is a private registry, add its address and credential under \"Private registries\" on the Dependencies settings page.");
+            if (status is >= 300 and < 400) throw new RegistryException($"The registry redirected ({status}); redirects aren't followed" + (auth != null ? " and the credential was not sent anywhere else." : "."));
             if (status >= 500) throw new RegistryException($"The registry answered HTTP {status}.");
             if (status < 200 || status >= 300) throw new RegistryException($"The registry answered HTTP {status}.");
             if (response.Content.Headers.ContentLength > o.MaxResponseBytes) throw new RegistryException("The registry's answer is too large.");

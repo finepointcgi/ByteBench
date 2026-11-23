@@ -2,6 +2,7 @@
 @inherits RepoPageBase
 @using ByteBench.Services.DependencyBot
 @inject DependencyBotService Bot
+@inject DependencyRegistryService Registries
 @inject ProjectAccess Access
 @inject ISnackbar Snackbar
 
@@ -29,7 +30,7 @@ else if (Repo != null && input != null)
                     The <b>ByteBench dependency bot</b> reads your manifests (<code>package.json</code>, <code>*.csproj</code> and <code>Directory.Packages.props</code>,
                     <code>requirements*.txt</code> and <code>pyproject.toml</code> pins, <code>go.mod</code>), asks the public registries for newer versions and opens pull requests that change only the manifest text.
                     It never runs a package manager, so lockfiles (<code>package-lock.json</code>, <code>go.sum</code>) are not regenerated; each pull request says so.
-                    Registries are public only: private registries and their tokens are not supported. The registry addresses are server settings (<code>DependencyBot:Registries:*</code>).
+                    By default it asks the public registries (server settings <code>DependencyBot:Registries:*</code>); private registries and their credentials are set per repository under <b>Private registries</b> below.
                     @if (!Bot.WorkerEnabled) { <span> The schedule is switched off on this server (<code>DependencyBot:Enabled=false</code>): use <b>Check now</b>.</span> }
                 </MudText>
             </div>
@@ -103,6 +104,139 @@ else if (Repo != null && input != null)
                     {
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">Next run after @next.ToLocalTime().ToString("MMM d, HH:mm").</MudText>
                     }
+                </div>
+            </MudPaper>
+
+            <MudPaper Outlined="true" Class="pa-5 mb-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="gb-bold mb-1">Private registries</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    Use your own npm, NuGet, PyPI or Go proxy registry instead of the public one for this repository. Addresses must use <code>https://</code>.
+                    Credentials are encrypted on the server, sent only to the exact registry address you enter (never to a redirect target or to another host named in a registry's answer) and never shown again:
+                    you can only replace or clear them.
+                    @if (Registries.AllowPrivateNetworks) { <span> This server allows registries on internal addresses.</span> }
+                    else { <span> A registry on an internal or loopback address needs <code>DependencyBot:AllowPrivateNetworks=true</code> on the server.</span> }
+                </MudText>
+
+                @if (detected.Count > 0)
+                {
+                    <div class="mb-3">
+                        <MudText Typo="Typo.body2" Class="gb-bold">Detected in your repository</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-1">Addresses from <code>.npmrc</code>, <code>nuget.config</code>, <code>pip.conf</code>, <code>pyproject.toml</code> and <code>requirements*.txt</code>. Accepting adds only the address; you enter the credential yourself.</MudText>
+                        <ul class="dep-warnings">
+                            @foreach (var d in detected)
+                            {
+                                var item = d;
+                                <li class="d-flex align-center gap-2 flex-wrap">
+                                    <span class="dep-eco">@Ecosystems.Label(item.Ecosystem)</span>
+                                    @if (item.Scope.Length > 0) { <code>@item.Scope</code> }
+                                    <code>@item.Url</code>
+                                    <span class="mud-text-secondary">(@item.Source)</span>
+                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="() => AcceptDetected(item)" aria-label="@($"Use {item.Url}")">Use this registry</MudButton>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+
+                @if (registryRows.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">No private registries: the public registries are used.</MudText>
+                }
+                else
+                {
+                    <div class="dep-table-wrap mb-3">
+                        <table class="dep-table">
+                            <thead><tr><th scope="col">Ecosystem</th><th scope="col">Scope / order</th><th scope="col">Address</th><th scope="col">Credential</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                            <tbody>
+                                @foreach (var r in registryRows)
+                                {
+                                    var row = r;
+                                    <tr @key="row.Id">
+                                        <td><span class="dep-eco">@Ecosystems.Label(row.Ecosystem)</span></td>
+                                        <td>@(row.Ecosystem == Ecosystems.NuGet ? "#" + (registryRows.Where(x => x.Ecosystem == Ecosystems.NuGet).ToList().FindIndex(x => x.Id == row.Id) + 1) : row.Scope.Length > 0 ? row.Scope : "default")</td>
+                                        <td><code>@row.Url</code>@if (!string.IsNullOrEmpty(row.ExtraOrigins)) { <div class="mud-text-secondary">also trusts: @row.ExtraOrigins</div> }</td>
+                                        <td>@(row.HasCredential ? (row.AuthKind == DependencyRegistryAuth.Bearer ? "Bearer token set" : "User name and password/token set") : "No credential")</td>
+                                        <td>
+                                            <div class="d-flex gap-1 flex-wrap">
+                                                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="() => TestRegistry(row)" aria-label="@($"Test connection to {row.Url}")">Test connection</MudButton>
+                                                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="() => EditRegistry(row)" aria-label="@($"Edit {row.Url}")">@(row.HasCredential ? "Replace / edit" : "Edit")</MudButton>
+                                                @if (row.HasCredential)
+                                                {
+                                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="() => ClearCredential(row)" aria-label="@($"Clear the credential of {row.Url}")">Clear credential</MudButton>
+                                                }
+                                                @if (row.Ecosystem == Ecosystems.NuGet)
+                                                {
+                                                    <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="@busy" OnClick="() => MoveRegistry(row, true)" aria-label="Move up">Up</MudButton>
+                                                    <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="@busy" OnClick="() => MoveRegistry(row, false)" aria-label="Move down">Down</MudButton>
+                                                }
+                                                <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" Disabled="@busy" OnClick="() => RemoveRegistry(row)" aria-label="@($"Remove {row.Url}")">Remove</MudButton>
+                                            </div>
+                                            @if (testResults.TryGetValue(row.Id, out var result))
+                                            {
+                                                <MudAlert Severity="@(result.Ok ? Severity.Success : Severity.Warning)" Dense="true" Class="mt-1" role="status">@result.Message</MudAlert>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (registryRows.Any(x => x.Ecosystem == Ecosystems.NuGet))
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">NuGet sources are asked in this order; the first one that knows a package wins. An address ending in <code>.json</code> is a v3 service index; any other address is used as the flat container directly.</MudText>
+                    }
+                }
+
+                <MudText Typo="Typo.body2" Class="gb-bold mb-1">@(form.Id == null ? "Add a registry" : "Edit registry")</MudText>
+                @if (registryError != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@registryError</MudAlert> }
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="string" Label="Ecosystem" @bind-Value="form.Ecosystem" Disabled="@(form.Id != null)" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var eco in Ecosystems.All) { <MudSelectItem T="string" Value="@eco">@Ecosystems.Label(eco)</MudSelectItem> }
+                        </MudSelect>
+                    </MudItem>
+                    @if (form.Ecosystem == Ecosystems.Npm && form.Id == null)
+                    {
+                        <MudItem xs="12" sm="4">
+                            <MudTextField T="string" Label="npm scope (optional)" @bind-Value="form.Scope" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="@@acme" MaxLength="100"
+                                          HelperText="Empty: the default registry for unscoped packages. Or @@scope for packages like @@scope/name." />
+                        </MudItem>
+                    }
+                    <MudItem xs="12" sm="8">
+                        <MudTextField T="string" Label="Registry address" @bind-Value="form.Url" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" Placeholder="https://registry.example.com/"
+                                      HelperText="@UrlHelp" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="DependencyRegistryAuth" Label="Authentication" @bind-Value="form.AuthKind" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem T="DependencyRegistryAuth" Value="DependencyRegistryAuth.None">None</MudSelectItem>
+                            <MudSelectItem T="DependencyRegistryAuth" Value="DependencyRegistryAuth.Bearer">Bearer token</MudSelectItem>
+                            <MudSelectItem T="DependencyRegistryAuth" Value="DependencyRegistryAuth.Basic">User name and password / token</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    @if (form.AuthKind == DependencyRegistryAuth.Basic)
+                    {
+                        <MudItem xs="12" sm="4">
+                            <MudTextField T="string" Label="User name" @bind-Value="form.Username" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="500" autocomplete="off" />
+                        </MudItem>
+                    }
+                    @if (form.AuthKind != DependencyRegistryAuth.None)
+                    {
+                        <MudItem xs="12" sm="4">
+                            <MudTextField T="string" Label="@(form.AuthKind == DependencyRegistryAuth.Bearer ? "Token" : "Password or token")" @bind-Value="form.Secret" InputType="InputType.Password" Variant="Variant.Outlined"
+                                          Margin="Margin.Dense" MaxLength="2000" autocomplete="new-password" HelperText="@(form.Id != null ? "Leave empty to keep the stored credential." : "Stored encrypted; never shown again.")" />
+                        </MudItem>
+                    }
+                    @if (form.Ecosystem == Ecosystems.NuGet)
+                    {
+                        <MudItem xs="12">
+                            <MudTextField T="string" Label="Additional trusted origins (optional)" @bind-Value="form.ExtraOrigins" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="1000"
+                                          Placeholder="https://packages.example.com" HelperText="A service index may name package addresses on its own origin only; list another origin here to let it receive the credential too." />
+                        </MudItem>
+                    }
+                </MudGrid>
+                <div class="d-flex gap-2 mt-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy" OnClick="SaveRegistry">@(form.Id == null ? "Add registry" : "Save registry")</MudButton>
+                    @if (form.Id != null) { <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="ResetForm">Cancel</MudButton> }
                 </div>
             </MudPaper>
 
@@ -199,6 +333,18 @@ else if (Repo != null && input != null)
     private DependencyReport? report;
     private List<string> applyWarnings = [];
     private bool busy;
+    private List<RegistryView> registryRows = [];
+    private List<DetectedRegistry> detected = [];
+    private readonly Dictionary<int, RegistryTestResult> testResults = [];
+    private RegistryInput form = new();
+    private string? registryError;
+    private string UrlHelp => form.Ecosystem switch
+    {
+        Ecosystems.Npm => "e.g. https://npm.example.com/ (the package is fetched at {address}/{name}).",
+        Ecosystems.NuGet => "A v3 service index (https://nuget.example.com/v3/index.json) or a flat container address.",
+        Ecosystems.Pip => "A PEP 691 simple index ending in /simple, or a PyPI JSON API address ending in /pypi/.",
+        _ => "A GOPROXY address, e.g. https://goproxy.example.com/.",
+    };
     private const string IgnorePlaceholder = "left-pad@>=2\n@types/*\nlodash@4.17.x";
 
     private string StrategyHelp => input?.Strategy switch
@@ -227,6 +373,62 @@ else if (Repo != null && input != null)
             MaxOpenPullRequests = settings.MaxOpenPullRequests, IgnoreList = settings.IgnoreList, TargetBranch = settings.TargetBranch,
             Labels = settings.Labels, Reviewers = settings.Reviewers,
         };
+        await LoadRegistries();
+    }
+
+    private async Task LoadRegistries()
+    {
+        registryRows = await Registries.ListAsync(Repo!);
+        try { detected = await Registries.DetectAsync(Repo!); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException) { detected = []; }
+    }
+
+    private void ResetForm() { form = new RegistryInput(); registryError = null; }
+
+    private void EditRegistry(RegistryView row)
+    {
+        registryError = null;
+        form = new RegistryInput { Id = row.Id, Ecosystem = row.Ecosystem, Scope = row.Scope, Url = row.Url, AuthKind = row.AuthKind, ExtraOrigins = row.ExtraOrigins };
+    }
+
+    /// <summary>Runs a registry action; the credential fields are always wiped afterwards.</summary>
+    private async Task RegistryAction(Func<Task> action, string? done = null)
+    {
+        registryError = null; Error = null;
+        busy = true;
+        try
+        {
+            await Me.EnsureLoadedAsync();
+            await action();
+            await LoadRegistries();
+            if (done != null) Snackbar.Add(done, Severity.Success);
+        }
+        catch (InvalidOperationException ex) { registryError = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task SaveRegistry()
+    {
+        await RegistryAction(async () =>
+        {
+            try { await Registries.SaveAsync(Repo!, form, Me.Id); }
+            finally { form.Secret = null; form.Username = null; }
+            ResetForm();
+        }, "Registry saved.");
+    }
+
+    private Task AcceptDetected(DetectedRegistry d) => RegistryAction(async () => await Registries.AcceptDetectedAsync(Repo!, d, Me.Id), "Registry added. Edit it to add a credential.");
+    private Task ClearCredential(RegistryView r) => RegistryAction(async () => { await Registries.ClearCredentialAsync(Repo!, r.Id, Me.Id); testResults.Remove(r.Id); }, "Credential cleared.");
+    private Task RemoveRegistry(RegistryView r) => RegistryAction(async () => { await Registries.RemoveAsync(Repo!, r.Id, Me.Id); testResults.Remove(r.Id); if (form.Id == r.Id) ResetForm(); }, "Registry removed.");
+    private Task MoveRegistry(RegistryView r, bool up) => RegistryAction(() => Registries.MoveAsync(Repo!, r.Id, up));
+
+    private async Task TestRegistry(RegistryView r)
+    {
+        registryError = null;
+        busy = true;
+        try { testResults[r.Id] = await Registries.TestAsync(Repo!, r.Id); }
+        catch (InvalidOperationException ex) { registryError = ex.Message; }
+        finally { busy = false; }
     }
 
     private void ToggleEcosystem(string eco, bool on)

@@ -32,11 +32,13 @@ public static class DependencyBotServiceCollectionExtensions
         services.Configure<DependencyBotOptions>(config.GetSection("DependencyBot"));
         services.AddSingleton<RegistryUrlGuard>();
         services.AddSingleton<RegistryHttp>();
+        services.AddSingleton<RegistryCredentialProtector>();
         services.AddSingleton<RegistryClient>();
         services.AddSingleton<DependencyBotRunner>();
         services.AddSingleton<DependencyBotWorker>();
         services.AddHostedService(sp => sp.GetRequiredService<DependencyBotWorker>());
         services.AddScoped<DependencyBotService>();
+        services.AddScoped<DependencyRegistryService>();
         return services;
     }
 }

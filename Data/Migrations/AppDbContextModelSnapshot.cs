@@ -1174,6 +1174,59 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("DependencyBotPullRequests");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.DependencyBotRegistry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AuthKind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ecosystem")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EncryptedCredential")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EncryptedUsername")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExtraOrigins")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Ecosystem", "Scope")
+                        .IsUnique();
+
+                    b.ToTable("DependencyBotRegistries");
+                });
+
             modelBuilder.Entity("ByteBench.Data.DependencyBotSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -6319,6 +6372,15 @@ namespace ByteBench.Data.Migrations
                 });
 
             modelBuilder.Entity("ByteBench.Data.DependencyBotPullRequest", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DependencyBotRegistry", b =>
                 {
                     b.HasOne("ByteBench.Data.Repository", null)
                         .WithMany()
