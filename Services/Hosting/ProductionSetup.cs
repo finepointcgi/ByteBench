@@ -150,7 +150,7 @@ public static class ProductionSetup
             var warned = 0;
             app.Use((ctx, next) =>
             {
-                if (!ctx.Request.IsHttps && !ctx.Request.Path.StartsWithSegments("/health") && Interlocked.Exchange(ref warned, 1) == 0)
+                if (!ctx.Request.IsHttps && !Operations.HealthEndpoints.IsProbePath(ctx.Request.Path) && Interlocked.Exchange(ref warned, 1) == 0)
                     app.Logger.LogWarning("Plain-HTTP request to {Host} while Security:SecureCookies is on: sign-in only works over HTTPS. " +
                         "Put ByteBench behind a TLS proxy (with ReverseProxy:Enabled), or set Security:SecureCookies=false for a trial.", ctx.Request.Host);
                 return next(ctx);
@@ -163,8 +163,13 @@ public static class ProductionSetup
     public static WebApplication UseByteBenchHttps(this WebApplication app)
     {
         if (app.Environment.IsDevelopment()) return app;
-        app.UseHsts();
-        if (app.Configuration.GetValue("Security:HttpsRedirection", true)) app.UseHttpsRedirection();
+        // Probes (/healthz, /readyz, /health/*) arrive over plain http from inside the network: never redirected, no HSTS.
+        var redirect = app.Configuration.GetValue("Security:HttpsRedirection", true);
+        app.UseWhen(ctx => !Operations.HealthEndpoints.IsProbePath(ctx.Request.Path), b =>
+        {
+            b.UseHsts();
+            if (redirect) b.UseHttpsRedirection();
+        });
         return app;
     }
 

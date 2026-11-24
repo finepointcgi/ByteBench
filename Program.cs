@@ -153,8 +153,11 @@ ByteBench.Services.Pages.PagesServiceCollectionExtensions.AddPages(builder.Servi
 
 ByteBench.Services.Flags.FlagsServiceCollectionExtensions.AddFeatureFlags(builder.Services); // feature flags per project, SDK keys, live updates
 
+ByteBench.Services.Hosting.Operations.OperationsServiceCollectionExtensions.AddByteBenchOperations(builder.Services, builder.Configuration); // /healthz, /readyz, /metrics, worker registry
+
 var app = builder.Build();
 app.UseByteBenchForwardedHeaders(); // first: everything after sees the client's IP and scheme
+ByteBench.Services.Hosting.Operations.OperationsServiceCollectionExtensions.UseByteBenchMetrics(app); // request counts by route group (Metrics:Enabled)
 ProductionChecks.LogAtStartup(app.Configuration, app.Environment, app.Logger); // hosting review: warnings in the log
 
 using (var scope = app.Services.CreateScope())
@@ -214,6 +217,7 @@ ByteBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
 ByteBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.MapServiceDesk(app); // POST /service-desk/inbound (signed raw MIME)
 app.MapReleases();
 app.MapByteBenchHealth(); // /health/live, /health/ready
+ByteBench.Services.Hosting.Operations.OperationsServiceCollectionExtensions.MapByteBenchOperations(app); // /healthz, /readyz, /metrics
 ByteBench.Services.Hosting.Backup.BackupServiceCollectionExtensions.MapBackupDownloads(app); // /admin/backups/download/{name}
 app.MapByteBenchSso(); // /account/sso/*: start, complete and link SSO sign-ins
 ByteBench.Services.Saml.SamlEndpoints.MapSaml(app); // /saml/metadata, /saml/login, /saml/acs, /saml/logout
