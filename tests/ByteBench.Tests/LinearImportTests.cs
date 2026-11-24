@@ -1,6 +1,7 @@
 using ByteBench.Data;
 using ByteBench.Services.TrackerImport;
 using ByteBench.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteBench.Tests;
@@ -67,7 +68,7 @@ public class LinearImportTests(SaasImportApp app, SaasImportStrictApp strict) : 
         Assert.Equal(app.UserId("bob"), login.AssigneeId); // matched by the email Linear shows
         Assert.Equal(carol, login.ReporterId); // creator isn't a user here
         Assert.NotNull(login.MilestoneId);
-        Assert.Equal(["Area/UI", "bug", "cycle: 4"], login.Labels.Select(l => l.Name).Order(StringComparer.Ordinal).ToList());
+        Assert.Equal(["Area/UI", "bug"], login.Labels.Select(l => l.Name).Order(StringComparer.Ordinal).ToList());
         Assert.Contains("Body of Login fails", login.Description);
         Assert.Contains("[Spec](https://example.com/spec.pdf)", login.Description);
         Assert.Contains("[Linear ENG-1](https://linear.app/acme/issue/ENG-1)", login.Description);
@@ -86,6 +87,7 @@ public class LinearImportTests(SaasImportApp app, SaasImportStrictApp strict) : 
         Assert.Equal(IssueType.Epic, epic.Type);
         Assert.Equal(IssueType.Feature, child.Type); // under an epic it keeps its own type
         Assert.Equal(epic.Id, child.ParentId);
+        Assert.Equal(["cycle: Ghost"], epic.Labels.Select(l => l.Name).Where(n => n.StartsWith("cycle")).ToList()); // its cycle isn't in the list: label fallback
 
         var warnings = job.WarningsJson ?? "";
         Assert.Contains("was canceled in Linear", warnings);
@@ -101,6 +103,111 @@ public class LinearImportTests(SaasImportApp app, SaasImportStrictApp strict) : 
         var links = db.IssueLinks.Where(l => l.SourceIssue.ProjectId == p.Id).ToList();
         Assert.Contains(links, l => l.SourceIssueId == login.Id && l.TargetIssueId == crash.Id && l.Type == IssueLinkType.Blocks);
         Assert.Contains(links, l => l.SourceIssueId == login.Id && l.TargetIssueId == dropped.Id && l.Type == IssueLinkType.RelatesTo);
+    }
+
+    private async Task<Dictionary<string, Sprint>> SprintsAsync(Project p)
+    {
+        await using var db = app.Db();
+        return (await db.Sprints.AsNoTracking().Where(x => x.ProjectId == p.Id).ToListAsync()).ToDictionary(x => x.Name);
+    }
+
+    [Fact]
+    public async Task Cycles_become_sprints_with_dates_goals_states_and_report_counts()
+    {
+        using var fake = new FakeLinear();
+        var (p, carol) = await kit.NewProjectAsync();
+        var job = await kit.RunAsync(p, carol, Input(fake));
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(["Cycle 1", "Cycle 3", "Next up", "Polish"], sprints.Keys.Order(StringComparer.Ordinal).ToList());
+        var one = sprints["Cycle 1"];
+        Assert.Equal(SprintState.Completed, one.State);
+        Assert.Equal(new DateTime(2024, 4, 1), one.StartDate);
+        Assert.Equal(new DateTime(2024, 4, 14), one.EndDate);
+        Assert.Equal(new DateTime(2024, 4, 14, 10, 0, 0, DateTimeKind.Utc), one.CompletedAt);
+        Assert.Null(one.Goal);
+        Assert.Equal((2, 2), (one.CommittedCount, one.CompletedCount)); // "Crash on save" and the canceled "Dropped idea", both done
+        var polish = sprints["Polish"];
+        Assert.Equal((SprintState.Completed, "Make it shine"), (polish.State, polish.Goal));
+        Assert.Equal((1, 1), (polish.CommittedCount, polish.CompletedCount)); // the archived issue
+        var active = sprints["Cycle 3"];
+        Assert.Equal((SprintState.Active, "Ship it"), (active.State, active.Goal));
+        Assert.NotNull(active.StartedAt);
+        Assert.Null(active.CompletedAt);
+        Assert.Equal(1, active.CommittedCount);
+        var planned = sprints["Next up"];
+        Assert.Equal(SprintState.Planned, planned.State);
+        Assert.Null(planned.StartedAt);
+        Assert.Equal(1, sprints.Values.Count(x => x.State == SprintState.Active));
+
+        var issues = (await kit.IssuesAsync(p.Id)).ToDictionary(i => i.Title);
+        Assert.Equal(active.Id, issues["Login fails"].SprintId);
+        Assert.Equal(one.Id, issues["Crash on save"].SprintId);
+        Assert.Equal(one.Id, issues["Dropped idea"].SprintId);
+        Assert.Equal(planned.Id, issues["Child of epic"].SprintId);
+        Assert.Equal(polish.Id, issues["Archived thing"].SprintId);
+        Assert.Null(issues["Big epic"].SprintId);
+        Assert.Equal(["cycle: Ghost"], issues["Big epic"].Labels.Select(l => l.Name).Where(n => n.StartsWith("cycle")).ToList()); // only the unlisted cycle is a label
+        Assert.DoesNotContain(issues.Values.Where(i => i.Title != "Big epic"), i => i.Labels.Any(l => l.Name.StartsWith("cycle")));
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("ENG-4") && w.Contains("isn't one of the cycles"));
+        Assert.Equal(2, fake.CycleQueries); // two pages, one run
+        await using var db = app.Db();
+        Assert.Equal(4, await db.ImportedItems.CountAsync(i => i.ProjectId == p.Id && i.Kind == ImportedKind.Sprint));
+    }
+
+    [Fact]
+    public async Task Running_again_adds_no_cycles_and_leaves_changed_sprints_alone()
+    {
+        using var fake = new FakeLinear();
+        var (p, carol) = await kit.NewProjectAsync();
+        await kit.RunAsync(p, carol, Input(fake));
+        await using (var db = app.Db())
+        {
+            var s = await db.Sprints.SingleAsync(x => x.ProjectId == p.Id && x.Name == "Polish");
+            s.Goal = "Edited here";
+            await db.SaveChangesAsync();
+        }
+        var again = await kit.RunAsync(p, carol, Input(fake));
+        Assert.Equal(TrackerImportStatus.Done, again.Status);
+        var sprints = await SprintsAsync(p);
+        Assert.Equal(4, sprints.Count);
+        Assert.Equal("Edited here", sprints["Polish"].Goal);
+        Assert.Equal(6, (await kit.IssuesAsync(p.Id)).Count);
+        await using var db2 = app.Db();
+        Assert.Equal(4, await db2.ImportedItems.CountAsync(i => i.ProjectId == p.Id && i.Kind == ImportedKind.Sprint));
+    }
+
+    [Fact]
+    public async Task A_failing_cycles_query_degrades_to_labels_with_a_warning()
+    {
+        using var fake = new FakeLinear { FailCycles = true };
+        var (p, carol) = await kit.NewProjectAsync();
+        var job = await kit.RunAsync(p, carol, Input(fake));
+
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        Assert.Equal(6, job.IssuesCreated);
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("Sprints weren't imported") && w.Contains("cycles couldn't be read"));
+        Assert.Empty(await SprintsAsync(p));
+        var issues = (await kit.IssuesAsync(p.Id)).ToDictionary(i => i.Title);
+        Assert.Equal(["cycle: 3"], issues["Login fails"].Labels.Where(l => l.Name.StartsWith("cycle")).Select(l => l.Name).ToList());
+        Assert.Contains("cycle: Polish", issues["Archived thing"].Labels.Select(l => l.Name));
+        Assert.Equal(1, fake.CycleQueries); // not asked again for the issues
+        Assert.All(issues.Values, i => Assert.Null(i.SprintId));
+    }
+
+    [Fact]
+    public async Task The_reader_maps_cycles_and_caches_them()
+    {
+        using var fake = new FakeLinear();
+        using var reader = NewReader(fake);
+        var sprints = await reader.ReadSprintsAsync(CancellationToken.None);
+        Assert.Equal(["cy-1", "cy-2", "cy-3", "cy-4"], sprints.Select(x => x.ExternalId));
+        Assert.Equal(["Cycle 1", "Polish", "Cycle 3", "Next up"], sprints.Select(x => x.Name));
+        Assert.Equal([SprintState.Completed, SprintState.Completed, SprintState.Active, SprintState.Planned], sprints.Select(x => x.State));
+        await foreach (var _ in reader.ReadIssuesAsync(new SourceReadOptions(true, false, false, 100), CancellationToken.None)) { }
+        await reader.ReadSprintsAsync(CancellationToken.None);
+        Assert.Equal(2, fake.CycleQueries); // two pages, once
     }
 
     [Fact]

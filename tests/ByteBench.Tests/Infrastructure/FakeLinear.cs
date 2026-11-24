@@ -23,6 +23,17 @@ public sealed class FakeLinear : FakeSaasServer
     /// <summary>The next issues query with a page size above 5 is refused with HTTP 400 (as Linear does for a query that is too complex).</summary>
     public bool ComplexityOnce { get; set; }
     public List<int> IssuePageSizes { get; } = [];
+    /// <summary>The cycles query answers a GraphQL error (everything else works).</summary>
+    public bool FailCycles { get; set; }
+    public int CycleQueries { get; private set; }
+    /// <summary>The team's cycles, served two per page: two completed, one running now, one planned.</summary>
+    public JsonNode[] Cycles { get; set; } =
+    [
+        new JsonObject { ["id"] = "cy-1", ["number"] = 1, ["name"] = null, ["description"] = null, ["startsAt"] = "2024-04-01T00:00:00.000Z", ["endsAt"] = "2024-04-14T00:00:00.000Z", ["completedAt"] = "2024-04-14T10:00:00.000Z" },
+        new JsonObject { ["id"] = "cy-2", ["number"] = 2, ["name"] = "Polish", ["description"] = "Make it shine", ["startsAt"] = "2024-04-15T00:00:00.000Z", ["endsAt"] = "2024-04-28T00:00:00.000Z", ["completedAt"] = "2024-04-28T09:00:00.000Z" },
+        new JsonObject { ["id"] = "cy-3", ["number"] = 3, ["name"] = null, ["description"] = "Ship it", ["startsAt"] = DateTime.UtcNow.AddDays(-3).ToString("o"), ["endsAt"] = DateTime.UtcNow.AddDays(11).ToString("o"), ["completedAt"] = null },
+        new JsonObject { ["id"] = "cy-4", ["number"] = 4, ["name"] = "Next up", ["description"] = null, ["startsAt"] = DateTime.UtcNow.AddDays(11).ToString("o"), ["endsAt"] = DateTime.UtcNow.AddDays(25).ToString("o"), ["completedAt"] = null },
+    ];
 
     private static JsonObject User(string name, string display, string email) => new() { ["name"] = name, ["displayName"] = display, ["email"] = email };
     private static string Iid(int n) => $"a0000000-0000-0000-0000-{n:D12}";
@@ -50,21 +61,28 @@ public sealed class FakeLinear : FakeSaasServer
     {
         Issues =
         [
-            Issue(6, "Archived thing", o => { o["archivedAt"] = "2024-06-01T00:00:00.000Z"; o["state"] = State("Done", "completed"); o["completedAt"] = "2024-05-30T00:00:00.000Z"; }),
+            Issue(6, "Archived thing", o => { o["cycle"] = new JsonObject { ["id"] = "cy-2", ["number"] = 2, ["name"] = "Polish" }; o["archivedAt"] = "2024-06-01T00:00:00.000Z"; o["state"] = State("Done", "completed"); o["completedAt"] = "2024-05-30T00:00:00.000Z"; }),
             Issue(5, "Child of epic", o =>
             {
                 o["parent"] = new JsonObject { ["id"] = Iid(4), ["parent"] = null, ["labels"] = Nodes(Lbl("epic")) };
                 o["labels"] = Nodes(Lbl("feature"));
+                o["cycle"] = new JsonObject { ["id"] = "cy-4", ["number"] = 4, ["name"] = "Next up" };
             }),
-            Issue(4, "Big epic", o => o["labels"] = Nodes(Lbl("epic"))),
+            Issue(4, "Big epic", o =>
+            {
+                o["labels"] = Nodes(Lbl("epic"));
+                o["cycle"] = new JsonObject { ["id"] = "cy-gone", ["number"] = 9, ["name"] = "Ghost" }; // a cycle that isn't in the list
+            }),
             Issue(3, "Dropped idea", o =>
             {
                 o["state"] = State("Canceled", "canceled"); o["canceledAt"] = "2024-05-20T09:00:00.000Z";
+                o["cycle"] = new JsonObject { ["id"] = "cy-1", ["number"] = 1, ["name"] = null };
                 o["relations"] = Nodes(new JsonObject { ["type"] = "duplicate", ["relatedIssue"] = new JsonObject { ["id"] = Iid(1) } });
             }),
             Issue(2, "Crash on save", o =>
             {
                 o["state"] = State("Done", "completed"); o["completedAt"] = "2024-06-01T08:30:00.000Z"; o["dueDate"] = "2024-05-30"; o["priority"] = 1;
+                o["cycle"] = new JsonObject { ["id"] = "cy-1", ["number"] = 1, ["name"] = null };
                 o["parent"] = new JsonObject { ["id"] = Iid(1), ["parent"] = null, ["labels"] = Nodes() };
                 o["project"] = new JsonObject { ["id"] = "p-other", ["name"] = "Other team's project" };
             }),
@@ -76,7 +94,7 @@ public sealed class FakeLinear : FakeSaasServer
                 o["creator"] = User("Some Stranger", "stranger", "stranger@elsewhere.example");
                 o["labels"] = Nodes(Lbl("bug"), Lbl("UI", "Area"));
                 o["project"] = new JsonObject { ["id"] = "p1", ["name"] = "Release 1" };
-                o["cycle"] = new JsonObject { ["number"] = 4, ["name"] = null };
+                o["cycle"] = new JsonObject { ["id"] = "cy-3", ["number"] = 3, ["name"] = null };
                 o["attachments"] = Nodes(new JsonObject { ["title"] = "Spec", ["url"] = "https://example.com/spec.pdf" });
                 o["relations"] = Nodes(new JsonObject { ["type"] = "blocks", ["relatedIssue"] = new JsonObject { ["id"] = Iid(2) } },
                     new JsonObject { ["type"] = "related", ["relatedIssue"] = new JsonObject { ["id"] = Iid(3) } });
@@ -129,6 +147,11 @@ public sealed class FakeLinear : FakeSaasServer
                 new JsonObject { ["name"] = "Canceled", ["type"] = "canceled", ["position"] = 5 }) } });
         if (q.Contains("labels(first:100"))
             return Forward("labels", [Lbl("bug"), Lbl("UI", "Area"), Lbl("epic")], (string?)v["after"]);
+        if (q.Contains("cycles(first:50"))
+        {
+            CycleQueries++;
+            return FailCycles ? Error("Cycles are not available for this team", "INVALID") : Forward("cycles", Cycles, (string?)v["after"]);
+        }
         if (q.Contains("projects(first:50"))
             return Forward("projects",
             [
