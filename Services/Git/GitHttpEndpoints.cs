@@ -220,7 +220,9 @@ public static class GitHttpEndpoints
             if (user is null && login.Contains('@')) user = await users.FindByEmailAsync(login);
             if (user is null)
             {
-                logger.LogInformation("Git auth failed: unknown user {Login} from {Ip}", login, ctx.Connection.RemoteIpAddress);
+                // A token typed as the user name (https://<token>@host/... as on other forges) must not end up in the log.
+                var shown = login.StartsWith(ByteBench.Services.AccessTokenService.TokenPrefix, StringComparison.Ordinal) ? "(an access token: it belongs in the password)" : login;
+                logger.LogInformation("Git auth failed: unknown user {Login} from {Ip}", shown, ctx.Connection.RemoteIpAddress);
                 return (null, null, null);
             }
             if (await users.IsLockedOutAsync(user) || user.DeactivatedAt != null)
