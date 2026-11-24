@@ -326,8 +326,12 @@ public class SsoService(SsoSettings settings, UserManager<User> users, SignInMan
 
     private static string Truncate(string s, int max) => s.Length > max ? s[..max] : s;
 
+    /// <summary>
+    /// A same-site path, else "/". Control characters are refused too: browsers drop tab/CR/LF from URLs, so
+    /// <c>/&lt;TAB&gt;/evil.example</c> would become <c>//evil.example</c>.
+    /// </summary>
     public static string SafeReturnUrl(string? url) =>
-        !string.IsNullOrEmpty(url) && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\')) ? url : "/";
+        !string.IsNullOrEmpty(url) && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\')) && !url.Any(char.IsControl) ? url : "/";
 
     public static string LoginError(string? code, string? provider) =>
         $"/account/login?sso_error={Uri.EscapeDataString(code ?? SsoErrors.Failed)}" + (provider == null ? "" : "&provider=" + Uri.EscapeDataString(provider));
