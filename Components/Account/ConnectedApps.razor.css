@@ -1,0 +1,10 @@
+/* On a phone the six columns would hide Revoke off to the right: show each app as a small card instead. */
+@media (max-width: 600px) {
+    #connected-apps ::deep thead { display: none; }
+    #connected-apps ::deep tr { display: block; padding: 8px 12px; border-bottom: 1px solid var(--mud-palette-lines-default); }
+    #connected-apps ::deep tr:last-child { border-bottom: none; }
+    #connected-apps ::deep td { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border: none; text-align: right; overflow-wrap: anywhere; }
+    #connected-apps ::deep td::before { content: attr(data-label); color: var(--mud-palette-text-secondary); text-align: left; flex: none; }
+    #connected-apps ::deep td:last-child { justify-content: flex-end; padding-top: 8px; }
+    #connected-apps ::deep td:last-child::before { content: none; }
+}

@@ -23,11 +23,11 @@
                         @foreach (var a in apps)
                         {
                             <tr>
-                                <td>@a.ClientName</td>
-                                <td class="mono">@a.RedirectHost</td>
-                                <td>@(a.Scopes.HasFlag(ByteBench.Data.TokenScopes.WriteApi) ? "Read and write" : "Read")</td>
-                                <td>@a.CreatedAt.ToLocalTime().ToString("d")</td>
-                                <td>@(a.LastUsedAt?.ToLocalTime().ToString("g") ?? "Never")</td>
+                                <td data-label="Application">@a.ClientName</td>
+                                <td class="mono" data-label="Returns to">@a.RedirectHost</td>
+                                <td data-label="Access">@(a.Scopes.HasFlag(ByteBench.Data.TokenScopes.WriteApi) ? "Read and write" : "Read")</td>
+                                <td data-label="Approved">@a.CreatedAt.ToLocalTime().ToString("d")</td>
+                                <td data-label="Last used">@(a.LastUsedAt?.ToLocalTime().ToString("g") ?? "Never")</td>
                                 <td>
                                     <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
                                                name="RevokeGrantId" value="@a.GrantId">Revoke</MudButton>
