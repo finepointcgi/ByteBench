@@ -11,8 +11,10 @@ namespace ByteBench.Services.TrackerImport;
 /// token (<c>lin_oauth_...</c>) as <c>Bearer</c>. Imported: issues (identifier as the key, markdown description, priority, estimate as
 /// story points, due date, labels with their group, sub-issue parent, the Linear project as a milestone, relations blocks / duplicate /
 /// related, comments and attachment links). Linear gives people's email to the key's owner, so assignees and authors are matched by it.
-/// The cycle an issue belongs to becomes a <c>cycle: ...</c> label. Not imported: cycles as sprints, initiatives, roadmaps, SLAs,
-/// reactions, customer requests and attachment files.
+/// Cycles become real sprints (<see cref="ReadSprintsAsync"/>: the team's cycles, 50 per request, at most 500, read once per run and
+/// cached; a cycle with <c>completedAt</c> is completed, one running now is active, any other is planned, and the writer keeps only one
+/// active) and each issue is put in its cycle. Only an issue whose cycle isn't in that list (or when the cycles query failed) gets a
+/// <c>cycle: ...</c> label and a note instead. Not imported: initiatives, roadmaps, SLAs, reactions, customer requests and attachment files.
 /// Issues are read 50 per request, oldest first (backward cursor paging on a newest-first list), with a smaller page if Linear
 /// refuses a query as too complex. Errors, including <c>RATELIMITED</c>, are turned into readable messages.
 /// </summary>
@@ -26,6 +28,9 @@ public sealed class LinearReader(SourceConnection connection, TrackerHttp http) 
     private string? teamKey;
     private JsonElement team;
     private HashSet<string>? projectIds;
+    private const int MaxCycles = 500;
+    private IReadOnlyList<SourceSprint>? cycles;
+    private HashSet<string> knownCycles = [];
 
     private static string NormalizeEndpoint(string? baseUrl)
     {
@@ -151,6 +156,51 @@ public sealed class LinearReader(SourceConnection connection, TrackerHttp http) 
         return list;
     }
 
+    // --- cycles --------------------------------------------------------------------------------------------------------
+
+    /// <summary>The team's cycles as sprints. Read once per run: a second call returns the same list (or the same failure's empty result).</summary>
+    public async Task<IReadOnlyList<SourceSprint>> ReadSprintsAsync(CancellationToken ct)
+    {
+        if (cycles != null) return cycles;
+        await EnsureTeamAsync(ct);
+        var list = new List<SourceSprint>();
+        string? after = null;
+        try
+        {
+            for (var guard = 0; guard < MaxCycles / PageSize && list.Count < MaxCycles; guard++)
+            {
+                var d = await QueryAsync("query($id:String!,$after:String){ team(id:$id){ cycles(first:50, after:$after){ nodes{ id number name description startsAt endsAt completedAt } pageInfo{ hasNextPage endCursor } } } }",
+                    new { id = teamId, after }, ct);
+                foreach (var c in Items(d, "team.cycles.nodes"))
+                    if (SprintOf(c) is { } sp && list.All(x => x.ExternalId != sp.ExternalId)) list.Add(sp);
+                if (!Bool(d, "team.cycles.pageInfo.hasNextPage") || Str(d, "team.cycles.pageInfo.endCursor") is not { } next) break;
+                after = next;
+            }
+        }
+        catch (SourceException ex) when (!ex.AuthFailure)
+        {
+            // Issues then fall back to the cycle label; the importer shows this as a warning.
+            cycles = [];
+            knownCycles = [];
+            throw new SourceException("the cycles couldn't be read (" + ex.Message.TrimEnd('.') + "), so issues get a 'cycle: ...' label instead.");
+        }
+        cycles = list;
+        knownCycles = list.Select(x => x.ExternalId).ToHashSet(StringComparer.Ordinal);
+        return list;
+    }
+
+    private static SourceSprint? SprintOf(JsonElement c)
+    {
+        if (Str(c, "id") is not { } id) return null;
+        var number = Num(c, "number") is { } n ? ((long)n).ToString(CultureInfo.InvariantCulture) : id;
+        var name = Str(c, "name") is { } nm && !string.IsNullOrWhiteSpace(nm) ? nm.Trim() : "Cycle " + number;
+        var goal = Str(c, "description") is { } g && !string.IsNullOrWhiteSpace(g) ? Clip(g.Trim(), 500) : null;
+        var (start, end, done) = (DateTimeOf(c, "startsAt"), DateTimeOf(c, "endsAt"), DateTimeOf(c, "completedAt"));
+        var now = DateTime.UtcNow;
+        var state = done != null ? SprintState.Completed : start != null && start <= now && (end == null || now < end) ? SprintState.Active : SprintState.Planned;
+        return new SourceSprint(id, name, goal, start, done ?? end, state);
+    }
+
     // --- issues --------------------------------------------------------------------------------------------------------
 
     private const string UserFields = "name displayName email";
@@ -165,7 +215,7 @@ public sealed class LinearReader(SourceConnection connection, TrackerHttp http) 
               labels(first:15){ nodes{ name parent{ name } } }
               parent{ id parent{ id } labels(first:10){ nodes{ name } } }
               project{ id name }
-              cycle{ number name }
+              cycle{ id number name }
               attachments(first:20){ nodes{ title url } }
               relations(first:20){ nodes{ type relatedIssue{ id } } }
               {{(comments ? "comments(first:10){ nodes{ id body createdAt user{ " + UserFields + " } } pageInfo{ hasNextPage endCursor } }" : "")}}
@@ -179,6 +229,7 @@ public sealed class LinearReader(SourceConnection connection, TrackerHttp http) 
     {
         await EnsureTeamAsync(ct);
         if (projectIds == null) await ReadMilestonesAsync(ct);
+        if (cycles == null) { try { await ReadSprintsAsync(ct); } catch (SourceException ex) when (!ex.AuthFailure) { /* labels instead */ } }
         var query = IssueQuery(options.IncludeComments);
         object? filter = options.IncludeClosed ? null : new { state = new { type = new { nin = new[] { "completed", "canceled" } } } };
         var size = PageSize;
@@ -208,8 +259,20 @@ public sealed class LinearReader(SourceConnection connection, TrackerHttp http) 
         if (Str(i, "id") is not { } id) return null;
         var notes = new List<string>();
         var labels = Items(i, "labels.nodes").Select(LabelName).OfType<string>().ToList();
-        if (Str(i, "cycle.name") is { Length: > 0 } cycleName) labels.Add("cycle: " + cycleName);
-        else if (Num(i, "cycle.number") is { } cycleNo) labels.Add("cycle: " + ((long)cycleNo).ToString(CultureInfo.InvariantCulture));
+        string? sprintId = null;
+        if (Prop(i, "cycle").ValueKind == JsonValueKind.Object)
+        {
+            if (Str(i, "cycle.id") is { } cid && knownCycles.Contains(cid)) sprintId = cid;
+            else
+            {
+                var cycleName = Str(i, "cycle.name") is { Length: > 0 } cn ? cn : Num(i, "cycle.number") is { } cycleNo ? ((long)cycleNo).ToString(CultureInfo.InvariantCulture) : null;
+                if (cycleName != null)
+                {
+                    labels.Add("cycle: " + cycleName);
+                    notes.Add($"its cycle \"{cycleName}\" isn't one of the cycles that could be imported as sprints, so it was labelled 'cycle: {cycleName}' instead.");
+                }
+            }
+        }
 
         var type = TypeFromLabels(labels.Where(l => !l.StartsWith("cycle: ", StringComparison.Ordinal)));
         string? parent = Str(i, "parent.id");
@@ -270,7 +333,7 @@ public sealed class LinearReader(SourceConnection connection, TrackerHttp http) 
             CreatedAt = DateTimeOf(i, "createdAt") ?? DateTime.UtcNow, UpdatedAt = DateTimeOf(i, "updatedAt"),
             ClosedAt = done ? DateTimeOf(i, "completedAt") ?? DateTimeOf(i, "canceledAt") : null,
             Author = ToUser(Prop(i, "creator")), Assignee = ToUser(Prop(i, "assignee")), Labels = labels,
-            MilestoneId = milestone, ParentExternalId = parent, Links = links, Comments = comments, Notes = notes,
+            MilestoneId = milestone, SprintId = sprintId, ParentExternalId = parent, Links = links, Comments = comments, Notes = notes,
             Attachments = Items(i, "attachments.nodes").Where(a => Str(a, "url") != null || Str(a, "title") != null)
                 .Select(a => new SourceAttachment(Str(a, "title") ?? Str(a, "url")!, Str(a, "url"))).ToList(),
         };
