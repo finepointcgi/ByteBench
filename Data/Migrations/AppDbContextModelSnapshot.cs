@@ -1446,6 +1446,51 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("DeploymentApprovals");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.DigestLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DueCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Failed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MentionCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MyPullRequestCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Preview")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ReviewCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Sent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UnreadCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("DigestLogs");
+                });
+
             modelBuilder.Entity("ByteBench.Data.DirectorySyncRun", b =>
                 {
                     b.Property<int>("Id")
@@ -2559,6 +2604,9 @@ namespace ByteBench.Data.Migrations
                     b.Property<int>("ProjectId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("PushPending")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2580,6 +2628,8 @@ namespace ByteBench.Data.Migrations
                         .HasFilter("\"EmailPending\" = 1");
 
                     b.HasIndex("ProjectId");
+
+                    b.HasIndex("PushPending");
 
                     b.HasIndex("UserId", "IsRead", "CreatedAt");
 
@@ -5618,16 +5668,46 @@ namespace ByteBench.Data.Migrations
                     b.Property<int>("UserId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("DigestFailures")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DigestFrequency")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("DigestHour")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("DigestWeekday")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EmailEnabled")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastDigestAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("LastEmailAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("NextDigestAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("PushEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PushGroups")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("SlackDmEnabled")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("UserId");
+
+                    b.HasIndex("NextDigestAt");
 
                     b.ToTable("UserNotificationSettings");
                 });
@@ -5669,6 +5749,61 @@ namespace ByteBench.Data.Migrations
                         {
                             t.HasCheckConstraint("CK_Watch_OneTarget", "(IssueId IS NULL) <> (PullRequestId IS NULL)");
                         });
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WebPushSubscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EncryptedAuth")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EncryptedP256dh")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndpointHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RetryAfterUntil")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EndpointHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("WebPushSubscriptions");
                 });
 
             modelBuilder.Entity("ByteBench.Data.Webhook", b =>
@@ -6695,6 +6830,15 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Job");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DigestLog", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ByteBench.Data.EditorWorkspace", b =>
@@ -8061,6 +8205,15 @@ namespace ByteBench.Data.Migrations
                         .HasForeignKey("PullRequestId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WebPushSubscription", b =>
+                {
                     b.HasOne("ByteBench.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")

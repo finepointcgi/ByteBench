@@ -371,6 +371,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureScimGroups(b);
         ConfigureMcpOAuth(b);
         ConfigureDependencyRegistries(b);
+        ConfigureNotificationDelivery(b);
     }
 
     // ----- Forks -----
