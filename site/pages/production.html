@@ -218,7 +218,39 @@ docker compose start bytebench</code></pre>
   <li><code>GET /health/live</code> returns 200 while the process runs.</li>
   <li><code>GET /health/ready</code> checks that the database answers and the repository and attachment folders are writable (otherwise <code>Unhealthy</code>, HTTP 503), and, with CI on, that Docker is reachable (otherwise <code>Degraded</code>, still 200).</li>
 </ul>
-<p>The image's <code>HEALTHCHECK</code> and the compose file both call <code>/health/ready</code> every 30 seconds with <code>curl</code>.</p>
+<p>Two simpler probes are meant for load balancers and orchestrators (see <a href="#probes">Probes and metrics</a>). The image's <code>HEALTHCHECK</code> and the compose file both call <code>/readyz</code> every 30 seconds with <code>curl</code>.</p>
+
+<h2 id="probes">Probes and metrics</h2>
+<h3 id="probe-endpoints">/healthz and /readyz</h3>
+<p>Both are anonymous, never set cookies, send <code>Cache-Control: no-store</code>, are not rate limited, and are exempt from HTTPS redirection, so a probe over plain <code>http</code> inside the network works even with <code>Security:HttpsRedirection</code> on.</p>
+<ul>
+  <li><code>GET /healthz</code> (liveness) returns 200 and <code>ok</code>. It checks nothing else.</li>
+  <li><code>GET /readyz</code> (readiness) returns 200 with <code>{"status":"ok","checks":[{"name":"database","status":"ok"},...]}</code>, or 503 with the same shape and <code>"status":"unavailable"</code>. The checks are <code>database</code> (a trivial query), <code>migrations</code> (none pending), <code>storage</code> (repository root exists and is writable), <code>disk</code> (free space at least <code>Health:MinFreeDiskMb</code>, default 200) and <code>keys</code> (data protection keys load). A failure is reported by check name only: never exception text, paths or connection strings. The probe gives up after 4 seconds.</li>
+</ul>
+<h3 id="metrics">/metrics (Prometheus)</h3>
+<p>Off by default (<code>Metrics:Enabled=false</code>: the endpoint answers 404). When on, a request is admitted with <code>Authorization: Bearer &lt;Metrics:Token&gt;</code> (compared in constant time; set the token through an environment variable or user-secrets) or from an address in <code>Metrics:AllowedNetworks</code> (CIDR list, default loopback). Anything else gets 401. The network rule is skipped for a request that still carries <code>X-Forwarded-For</code> after the forwarded-headers handling (<code>ReverseProxy:*</code>), because the remote address is then a proxy: behind a proxy, scrape with the token or from the proxy-trusted network. Responses use the text exposition format 0.0.4 and <code>Cache-Control: no-store</code>.</p>
+<p>All names start with <code>bytebench_</code>; labels are fixed sets (no paths, project keys, user names or ids):</p>
+<ul>
+  <li><code>http_requests_total{method_class,route_group,status_class}</code> and <code>http_request_duration_seconds</code> (histogram, by <code>route_group</code>). Groups: <code>web, api, git, lfs, registry, pages, mcp, scim, saml, oauth, other</code>.</li>
+  <li><code>build_info{version}</code>, <code>process_uptime_seconds</code>, <code>process_working_set_bytes</code>, <code>process_gc_*</code>, <code>process_threads</code>.</li>
+  <li><code>db_up</code>, <code>db_size_bytes</code>, <code>db_pending_migrations</code>, <code>db_query_failures_total</code>.</li>
+  <li><code>queue_depth{queue,state}</code>: CI pipelines, tracker and repository imports, mirror syncs due, webhook deliveries (queued and failed in 24 h), merge queue, armed auto-merges, e-mail and chat notifications, dependency bot runs due, AI reviews and triage. Queries are cached for 15 seconds.</li>
+  <li><code>worker_enabled</code>, <code>worker_last_run_timestamp_seconds</code> and <code>worker_errors_total</code>, all with a <code>worker</code> label.</li>
+  <li><code>users</code>, <code>projects</code>, <code>issues</code>, <code>repositories</code> (cached 60 seconds), <code>repository_storage_bytes</code> (measured in the background at most every 5 minutes) and <code>disk_free_bytes</code>.</li>
+  <li><code>scrape_collector_errors_total{collector}</code>: a collector that fails is skipped for that scrape and counted here.</li>
+</ul>
+<pre><code># prometheus.yml
+scrape_configs:
+  - job_name: bytebench
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/bytebench.token
+    static_configs:
+      - targets: ["bytebench.internal:8080"]</code></pre>
+<p>Suggested alerts: <code>bytebench_db_up == 0</code> for 2 minutes; <code>bytebench_disk_free_bytes</code> below 2 GB; a growing <code>bytebench_queue_depth{queue="ci_pipelines",state="queued"}</code> or <code>webhook_deliveries</code> over 15 minutes; <code>time() - bytebench_worker_last_run_timestamp_seconds{worker="mirror"} &gt; 600</code> for workers that tick often (mirror, merge-queue, auto-merge, notification-email); <code>increase(bytebench_worker_errors_total[15m]) &gt; 5</code>; <code>bytebench_scrape_collector_errors_total &gt; 0</code>; and the 5xx share of <code>bytebench_http_requests_total</code>.</p>
+<h3 id="workers-page">Workers and queues page</h3>
+<p><code>/admin/system/workers</code> (site admins; linked from <code>/admin/system</code>) lists every background worker with whether it is enabled, its last tick and last success, the last error (exception type and a short scrubbed message) and its queue depth, plus cards for version, uptime, database provider and size, pending migrations, repository storage and free disk. It refreshes every 10 seconds. Workers that wait for work (queues) show the last item handled as their last tick.</p>
 
 <h2 id="system-page">The /admin/system page</h2>
 <p>Site admins get an operator's overview at <code>/admin/system</code>:</p>

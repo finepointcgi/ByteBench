@@ -92,7 +92,7 @@ public class HealthEndpointTests(OpsDefaultApp app) : IClassFixture<OpsDefaultAp
         Assert.False(r.Headers.Contains("Set-Cookie"));
         using var doc = JsonDocument.Parse(await r.Content.ReadAsStringAsync());
         Assert.Equal("ok", doc.RootElement.GetProperty("status").GetString());
-        var names = doc.RootElement.GetProperty("checks").EnumerateArray().Select(c => c.GetProperty("name").GetString()).ToArray();
+        var names = doc.RootElement.GetProperty("checks").EnumerateArray().Select(c => c.GetProperty("name").GetString()!).ToArray();
         Assert.Equal(["database", "migrations", "storage", "disk", "keys"], names);
         Assert.All(doc.RootElement.GetProperty("checks").EnumerateArray(), c => Assert.Equal("ok", c.GetProperty("status").GetString()));
     }
@@ -129,7 +129,7 @@ public class HealthLowDiskTests(OpsLowDiskApp app) : IClassFixture<OpsLowDiskApp
         using var doc = JsonDocument.Parse(body);
         Assert.Equal("unavailable", doc.RootElement.GetProperty("status").GetString());
         var failed = doc.RootElement.GetProperty("checks").EnumerateArray().Where(c => c.GetProperty("status").GetString() == "failed")
-            .Select(c => c.GetProperty("name").GetString()).ToArray();
+            .Select(c => c.GetProperty("name").GetString()!).ToArray();
         Assert.Equal(["disk"], failed);
         Assert.DoesNotContain(app.DataRoot, body);
         Assert.DoesNotContain("Exception", body);

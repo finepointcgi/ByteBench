@@ -60,7 +60,7 @@ services:
       # - /var/run/docker.sock:/var/run/docker.sock
       # - /data/ci:/data/ci
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/readyz"]
       interval: 30s
       timeout: 5s
       start_period: 30s

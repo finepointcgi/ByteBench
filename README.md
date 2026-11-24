@@ -1884,7 +1884,7 @@ docker compose logs -f bytebench     # JSON logs
   - `Security__HttpsRedirection=false`, because TLS ends at the proxy
 - **First admin.** Register your account in the UI, then restart once with `Bootstrap__AdminUsers=<your username>`; separate several usernames with commas. The setting only ever promotes users, so it's fine to leave it set.
 - **TLS.** Production cookies are `Secure`, so serve ByteBench over HTTPS. `docker-compose.yml` has a commented-out Caddy service that gets certificates automatically: uncomment it, set the domain, and remove the `ports:` mapping of `bytebench`. For a quick trial over plain HTTP, set `Security__SecureCookies=false` instead. ByteBench logs a warning when it sees plain HTTP with Secure cookies on.
-- **Health checks.** The image's `HEALTHCHECK` and compose call `/health/ready` (database, storage folders and, with CI on, Docker).
+- **Health checks.** The image's `HEALTHCHECK` and compose call `/readyz` (database, migrations, storage folder, free disk, data protection keys).
 - **Git over SSH.** The image turns the SSH server on (`Ssh__Enabled=true`) on port 2222 (`EXPOSE 2222`); its host key lives in the `/data/keys` volume, so it survives upgrades. `docker-compose.yml` publishes it as `2222:2222`. To offer the usual `git@host:KEY/slug.git` URLs, map the host's port 22 instead (`"22:2222"`, after moving the host's own sshd to another port) and set `Ssh__PublicPort=22`; set `Ssh__PublicHost` if the SSH host name differs from the web one. The TLS proxy doesn't carry SSH: publish the port directly or use a TCP (layer 4) proxy.
 
 **CI in the container.** Pipelines need a Docker daemon, so they're off by default. There are three options:
@@ -1993,6 +1993,8 @@ Settings come from these sources; later ones override earlier ones:
 - `GET /health/ready` checks that:
   - the database answers, and the repository and attachment folders are writable. If not, it reports `Unhealthy` (503).
   - Docker is reachable when CI is on. If not, it reports `Degraded` but still returns 200.
+
+**Probes and metrics.** `GET /healthz` (liveness, always `ok`) and `GET /readyz` (readiness: database and migrations, repository folder writable, free disk above `Health:MinFreeDiskMb` (200), data protection keys) are anonymous, uncached and exempt from HTTPS redirection; `/readyz` returns 503 listing only the failed check names. The image's `HEALTHCHECK` calls `/readyz`. `GET /metrics` serves Prometheus text format and is off by default (`Metrics:Enabled`); it needs `Authorization: Bearer <Metrics:Token>` or a client in `Metrics:AllowedNetworks` (default loopback). Metrics are low-cardinality (route groups, never paths or keys) and cover HTTP, process, database, queues and workers. `/admin/system/workers` shows every background worker, its last tick, last error and queue depth. Details: the documentation site, Production → Probes and metrics.
 
 ### Reverse proxy
 
@@ -2128,7 +2130,7 @@ The same review runs at start-up (warnings and problems go to the log) and is li
 - **Backups on**, restore tested (see above).
 - **Logs.** Production logs are JSON on stdout (`appsettings.Production.json`). ByteBench doesn't rotate them: the Docker json-file driver does (`max-size` and `max-file` in `docker-compose.yml`), journald and Kubernetes have their own limits. Keep `Logging:LogLevel:Default` at `Information`. Data that grows inside the database has retention settings: `Audit:RetentionDays` (default 365) and `Retention:WebhookDeliveryDays` (default 30, `0` keeps them forever).
 - **Rate limits on**, `AllowedHosts` set to your host name, and a single instance of the app.
-- **Docker image.** Multi-stage build, non-root user (uid 1654), `git` and `openssh-client` (ssh mirrors), `postgresql-client` (backups on Postgres) and `curl`, with the health check on `/health/ready`.
+- **Docker image.** Multi-stage build, non-root user (uid 1654), `git` and `openssh-client` (ssh mirrors), `postgresql-client` (backups on Postgres) and `curl`, with the health check on `/readyz`.
 
 ### Upgrades
 

@@ -90,6 +90,10 @@ ANTHROPIC_API_KEY: "${BYTEBENCH_AI_API_KEY}"</code></pre>
 <h2 id="hosting-security">Hosting, proxy and security headers</h2>
 <table>
   <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Health:MinFreeDiskMb</code></td><td>200</td><td>Free disk space (MB) on the repository volume below which <code>/readyz</code> fails its <code>disk</code> check; <code>0</code> turns the check off</td></tr>
+  <tr><td><code>Metrics:Enabled</code></td><td><code>false</code></td><td>Serve Prometheus metrics at <code>/metrics</code> (404 when off)</td></tr>
+  <tr><td><code>Metrics:Token</code></td><td>(none)</td><td>Bearer token that admits a scraper; keep it in an environment variable or user-secrets</td></tr>
+  <tr><td><code>Metrics:AllowedNetworks</code></td><td>loopback</td><td>CIDR ranges admitted without a token (not honoured for requests that still carry <code>X-Forwarded-For</code>)</td></tr>
   <tr><td><code>ReverseProxy:Enabled</code></td><td><code>false</code></td><td>Honour <code>X-Forwarded-For</code> and <code>X-Forwarded-Proto</code> from trusted proxies</td></tr>
   <tr><td><code>ReverseProxy:KnownProxies</code></td><td>loopback only</td><td>List of trusted proxy IP addresses</td></tr>
   <tr><td><code>ReverseProxy:KnownNetworks</code></td><td>loopback only</td><td>List of trusted CIDR ranges, e.g. <code>172.16.0.0/12</code> for compose networks</td></tr>

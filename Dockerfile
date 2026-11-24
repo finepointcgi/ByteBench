@@ -66,6 +66,6 @@ EXPOSE 8080 2222
 VOLUME ["/data/db", "/data/repos", "/data/attachments", "/data/packages", "/data/lfs", "/data/pages", "/data/keys", "/data/backups"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://localhost:8080/health/ready || exit 1
+    CMD curl -fsS http://localhost:8080/readyz || exit 1
 
 ENTRYPOINT ["dotnet", "ByteBench.dll"]
