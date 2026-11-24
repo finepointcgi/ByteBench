@@ -115,6 +115,8 @@ builder.Services.AddAuditLog(builder.Configuration); // audit log + retention
 builder.Services.AddScoped<WorkflowService>();
 builder.Services.AddScoped<ByteBench.Services.Boards.BoardService>(); // multiple configurable boards per project
 ByteBench.Services.Email.EmailServiceCollectionExtensions.AddEmail(builder.Services, builder.Configuration, builder.Environment); // email, preferences, autocomplete
+ByteBench.Services.Digests.DigestServiceCollectionExtensions.AddDigests(builder.Services, builder.Configuration); // daily/weekly digest emails (Digest:*)
+ByteBench.Services.Push.PushServiceCollectionExtensions.AddWebPush(builder.Services, builder.Configuration); // browser push notifications (Push:*)
 // ----- Admin, 2FA & CI secrets -----
 builder.Services.AddScoped<AdminUserService>(); // /admin/users
 builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Protection)
@@ -214,6 +216,8 @@ app.MapAuditExport();
 app.MapIssueCsvExport(); // /p/{key}/issues/export.csv, /issues/export.csv
 ByteBench.Services.Reports.ReportsServiceCollectionExtensions.MapReportDownloads(app); // /p/{key}/reports/{report}.csv
 ByteBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);
+ByteBench.Services.Digests.DigestServiceCollectionExtensions.MapDigestUnsubscribe(app); // /account/digest/unsubscribe
+ByteBench.Services.Push.PushServiceCollectionExtensions.MapWebPush(app); // /push/vapid-public-key, /push/subscriptions
 ByteBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.MapServiceDesk(app); // POST /service-desk/inbound (signed raw MIME)
 app.MapReleases();
 app.MapByteBenchHealth(); // /health/live, /health/ready

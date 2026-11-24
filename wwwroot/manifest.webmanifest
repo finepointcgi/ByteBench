@@ -1,0 +1,10 @@
+{
+  "name": "ByteBench",
+  "short_name": "ByteBench",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "icons": [ { "src": "/favicon.png", "type": "image/png", "sizes": "any" } ]
+}

@@ -1,0 +1,163 @@
+@* The digest section of /account/notifications: off / daily / weekly, local hour, weekday, IANA time zone, and a preview. *@
+@using ByteBench.Services.Digests
+@using Microsoft.Extensions.Options
+@inject DigestService Digests
+@inject IOptionsMonitor<DigestOptions> DigestOptions
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@implements IAsyncDisposable
+
+<div class="dg-root">
+<MudPaper Outlined="true" Class="pa-4 dg-panel mt-4">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="dg-title">Digest email</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3 dg-help">
+        A summary at a time that suits you: unread notifications by project, your issues that are overdue or due within 7 days,
+        pull requests waiting for your review, your pull requests that are ready to merge or have failing checks, and mentions.
+        Nothing to report means no email. It doesn't replace the emails chosen above.
+    </MudText>
+
+    @if (settings == null)
+    {
+        <MudText Class="mud-text-secondary">Loading…</MudText>
+    }
+    else
+    {
+        <div class="dg-fields">
+            <MudSelect T="DigestFrequency" @bind-Value="frequency" Label="Digest" Dense="true" Variant="Variant.Outlined" Class="dg-field" AnchorOrigin="Origin.BottomLeft">
+                <MudSelectItem Value="DigestFrequency.Off">Off</MudSelectItem>
+                <MudSelectItem Value="DigestFrequency.Daily">Daily</MudSelectItem>
+                <MudSelectItem Value="DigestFrequency.Weekly">Weekly</MudSelectItem>
+            </MudSelect>
+            @if (frequency == DigestFrequency.Weekly)
+            {
+                <MudSelect T="DayOfWeek" @bind-Value="weekday" Label="On" Dense="true" Variant="Variant.Outlined" Class="dg-field" AnchorOrigin="Origin.BottomLeft">
+                    @foreach (var d in Weekdays)
+                    {
+                        <MudSelectItem Value="d">@d</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudSelect T="int" @bind-Value="hour" Label="At" Dense="true" Variant="Variant.Outlined" Class="dg-field" Disabled="@(frequency == DigestFrequency.Off)" AnchorOrigin="Origin.BottomLeft">
+                @for (var h = 0; h < 24; h++)
+                {
+                    var value = h;
+                    <MudSelectItem Value="value">@($"{value:00}:00")</MudSelectItem>
+                }
+            </MudSelect>
+            <MudAutocomplete T="string" @bind-Value="zone" Label="Time zone (IANA)" Dense="true" Variant="Variant.Outlined" Class="dg-field dg-zone"
+                             SearchFunc="SearchZones" MaxItems="50" CoerceText="false" CoerceValue="true" ResetValueOnEmptyText="false"
+                             Disabled="@(frequency == DigestFrequency.Off)" HelperText="For example Europe/Berlin" />
+        </div>
+
+        <div class="dg-actions">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveAsync" Disabled="busy">Save digest settings</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="PreviewAsync" Disabled="busy"
+                       StartIcon="@Icons.Material.Outlined.Send">Send me a preview now</MudButton>
+        </div>
+
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2 dg-help" role="status">
+            @if (settings.Frequency != DigestFrequency.Off && settings.NextDigestAt is { } next)
+            {
+                <span>Next digest: <b>@NextLocal(next)</b>. </span>
+            }
+            @if (!Digests.EmailEnabled) { <span>Email delivery is turned off on this server, so no digest is sent for now. </span> }
+            else if (!DigestOptions.CurrentValue.Enabled) { <span>Scheduled digests are turned off on this server; previews still work. </span> }
+            @if (!EmailOn) { <span>Digests also stop while "Send me notification emails" is off. </span> }
+            <span>Previews: at most @DigestOptions.CurrentValue.PreviewsPerHour an hour.</span>
+        </MudText>
+    }
+</MudPaper>
+</div>
+
+@code {
+    /// <summary>The master "Send me notification emails" switch of the page (digests need it on).</summary>
+    [Parameter] public bool EmailOn { get; set; } = true;
+    [Parameter, EditorRequired] public int UserId { get; set; }
+
+    private static readonly DayOfWeek[] Weekdays =
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
+
+    private DigestSettings? settings;
+    private DigestFrequency frequency;
+    private int hour = 8;
+    private DayOfWeek weekday = DayOfWeek.Monday;
+    private string? zone;
+    private bool busy;
+    private IJSObjectReference? module;
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await Digests.GetSettingsAsync(UserId);
+        frequency = settings.Frequency;
+        hour = settings.Hour;
+        weekday = settings.Weekday;
+        zone = settings.TimeZoneId ?? DigestSchedule.DefaultZone;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // No zone chosen yet: suggest the browser's.
+        if (!firstRender || settings?.TimeZoneId != null) return;
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/push.js");
+            var browser = await module.InvokeAsync<string?>("browserTimeZone");
+            if (DigestSchedule.FindZone(browser) != null) { zone = browser; StateHasChanged(); }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    private Task<IEnumerable<string>> SearchZones(string? text, CancellationToken ct)
+    {
+        IEnumerable<string> all = DigestSchedule.KnownZones;
+        if (!string.IsNullOrWhiteSpace(text)) all = all.Where(z => z.Contains(text.Trim().Replace(' ', '_'), StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(all);
+    }
+
+    private string NextLocal(DateTime nextUtc)
+    {
+        var tz = DigestSchedule.FindZone(settings?.TimeZoneId) ?? TimeZoneInfo.Utc;
+        var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(nextUtc, DateTimeKind.Utc), tz);
+        return $"{local:ddd d MMM, HH:mm} ({settings?.TimeZoneId ?? DigestSchedule.DefaultZone})";
+    }
+
+    private async Task SaveAsync()
+    {
+        busy = true;
+        try
+        {
+            var error = await Digests.SaveSettingsAsync(UserId, frequency, hour, weekday, zone);
+            if (error != null) { Snackbar.Add(error, Severity.Error); return; }
+            settings = await Digests.GetSettingsAsync(UserId);
+            Snackbar.Add(frequency == DigestFrequency.Off ? "Digest turned off." : "Digest settings saved.", Severity.Success);
+        }
+        finally { busy = false; }
+    }
+
+    private async Task PreviewAsync()
+    {
+        busy = true;
+        try
+        {
+            var result = await Digests.SendPreviewAsync(UserId);
+            var (message, severity) = result switch
+            {
+                DigestPreviewResult.Sent => ("Preview sent. Check your inbox.", Severity.Success),
+                DigestPreviewResult.NothingToReport => ("Nothing to report right now, so no email was sent.", Severity.Info),
+                DigestPreviewResult.RateLimited => ("You've asked for several previews this hour. Try again later.", Severity.Warning),
+                DigestPreviewResult.EmailDisabled => ("Email delivery is turned off on this server.", Severity.Warning),
+                DigestPreviewResult.NoEmailAddress => ("Your account has no email address.", Severity.Warning),
+                _ => ("Sending the preview failed. Try again later.", Severity.Error),
+            };
+            Snackbar.Add(message, severity);
+        }
+        finally { busy = false; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (module != null) await module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

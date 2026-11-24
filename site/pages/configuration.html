@@ -188,6 +188,21 @@ Email__Smtp__User=bytebench@example.com
 Email__Smtp__Password=...</code></pre>
 <p>See <a href="notifications.html">Notifications and email</a>.</p>
 
+<h2 id="digest-push">Digest and Push</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Digest:Enabled</code></td><td><code>true</code></td><td>Send users' scheduled daily or weekly digests (previews work either way; needs <code>Email:Enabled</code>)</td></tr>
+  <tr><td><code>Digest:PollMinutes</code></td><td>5</td><td>How often the digest worker looks for due digests</td></tr>
+  <tr><td><code>Digest:MaxPerRun</code></td><td>200</td><td>Most digests per poll</td></tr>
+  <tr><td><code>Digest:PreviewsPerHour</code></td><td>3</td><td>"Send me a preview now" emails per user per hour</td></tr>
+  <tr><td><code>Push:Enabled</code></td><td><code>true</code></td><td>Browser push notifications. When off, the preferences section is hidden and pending pushes are dropped</td></tr>
+  <tr><td><code>Push:Subject</code></td><td><code>PublicBaseUrl</code> if https, else <code>mailto:</code> the first admin's email</td><td>VAPID contact URL sent to push services</td></tr>
+  <tr><td><code>Push:AllowedHostSuffixes</code></td><td>empty</td><td>Accept subscriptions only for these push service hosts (empty: any public https host)</td></tr>
+  <tr><td><code>Push:AllowPrivateNetworks</code></td><td><code>Webhooks:AllowPrivateNetworks</code></td><td>Allow push endpoints on private and loopback addresses (local testing only)</td></tr>
+  <tr><td><code>Push:TtlSeconds</code></td><td>86400</td><td>The <code>TTL</code> of each push message</td></tr>
+</table>
+<p>See <a href="notifications.html#digests">Digest emails</a> and <a href="notifications.html#web-push">Browser push notifications</a>.</p>
+
 <h2 id="account">Account and Registration</h2>
 <p>Password reset, email confirmation and who may register. Both need working <a href="#email">Email</a> to send anything. See <a href="accounts.html#password-reset">Accounts</a>.</p>
 <h3 id="account-keys">Account</h3>

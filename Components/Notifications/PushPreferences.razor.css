@@ -1,0 +1,18 @@
+.bp-root ::deep .bp-panel { max-width: 760px; }
+.bp-root ::deep .bp-title { font-weight: 600; margin-bottom: 6px; }
+.bp-root ::deep .bp-help { font-size: 12px; }
+.bp-groups { display: flex; flex-wrap: wrap; gap: 0 8px; margin: 4px 0 12px -8px; }
+.bp-browser, .bp-devices { border-top: 1px solid var(--mud-palette-lines-default); padding-top: 10px; margin-top: 10px; }
+.bp-browser-title { font-weight: 600; color: var(--mud-palette-text-primary); margin-bottom: 4px; }
+.bp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.bp-device {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px;
+    padding: 8px 0; border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+.bp-device-text { flex: 1 1 220px; min-width: 0; }
+.bp-device-name { font-weight: 600; color: var(--mud-palette-text-primary); }
+.bp-device-desc { font-size: 12px; color: var(--mud-palette-text-secondary); overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+    .bp-groups { flex-direction: column; }
+}

@@ -68,6 +68,9 @@ else
         </MudText>
     </MudPaper>
 
+    <ByteBench.Components.Notifications.DigestPreferences UserId="Me.Id" EmailOn="emailEnabled" />
+    <ByteBench.Components.Notifications.PushPreferences UserId="Me.Id" />
+
     @if (SlackOptions.CurrentValue.IsConfigured || slackLinks.Count > 0)
     {
         <MudPaper Outlined="true" Class="pa-4 np-panel mt-4">

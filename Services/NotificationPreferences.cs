@@ -5,9 +5,12 @@ namespace ByteBench.Services;
 
 /// <summary>One user's resolved preferences: every group has a channel (stored or default).</summary>
 public sealed record UserNotificationPreferences(bool EmailEnabled, IReadOnlyDictionary<NotificationGroup, NotificationChannel> Channels,
-    bool SlackDmEnabled = false)
+    bool SlackDmEnabled = false, IReadOnlySet<NotificationGroup>? PushGroups = null)
 {
     public NotificationChannel ChannelFor(NotificationKind kind) => Channels[NotificationPreferences.GroupOf(kind)];
+
+    /// <summary>Browser push is on and <paramref name="kind"/>'s group is one the user wants pushed (see <c>Services/Push</c>).</summary>
+    public bool PushFor(NotificationKind kind) => PushGroups?.Contains(NotificationPreferences.GroupOf(kind)) == true;
 
     public static readonly UserNotificationPreferences Defaults = new(true,
         NotificationPreferences.Groups.ToDictionary(g => g.Group, g => g.Default));
@@ -120,13 +123,19 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
         var slackOn = (await db.UserNotificationSettings.AsNoTracking()
             .Where(s => userIds.Contains(s.UserId) && s.SlackDmEnabled).Select(s => s.UserId).ToListAsync()).ToHashSet();
 
+        // Browser push (Services/Push): users who turned it on, with their group mask (null: the default groups).
+        var pushOn = (await db.UserNotificationSettings.AsNoTracking()
+            .Where(s => userIds.Contains(s.UserId) && s.PushEnabled).Select(s => new { s.UserId, s.PushGroups }).ToListAsync())
+            .ToDictionary(s => s.UserId, s => Push.PushGroupMask.ToSet(s.PushGroups));
+
         var result = new Dictionary<int, UserNotificationPreferences>();
         foreach (var id in userIds.Distinct())
         {
             var mine = rows[id].ToDictionary(p => p.Group, p => p.Channel);
-            if (mine.Count == 0 && !emailOff.Contains(id) && !slackOn.Contains(id)) { result[id] = UserNotificationPreferences.Defaults; continue; }
+            if (mine.Count == 0 && !emailOff.Contains(id) && !slackOn.Contains(id) && !pushOn.ContainsKey(id)) { result[id] = UserNotificationPreferences.Defaults; continue; }
             result[id] = new(!emailOff.Contains(id),
-                Groups.ToDictionary(g => g.Group, g => mine.TryGetValue(g.Group, out var c) ? c : g.Default), slackOn.Contains(id));
+                Groups.ToDictionary(g => g.Group, g => mine.TryGetValue(g.Group, out var c) ? c : g.Default), slackOn.Contains(id),
+                pushOn.GetValueOrDefault(id));
         }
         return result;
     }
