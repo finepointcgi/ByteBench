@@ -425,6 +425,34 @@ namespace ByteBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "DigestLogs",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserId = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Preview = table.Column<bool>(type: "boolean", nullable: false),
+                    Sent = table.Column<bool>(type: "boolean", nullable: false),
+                    Failed = table.Column<bool>(type: "boolean", nullable: false),
+                    UnreadCount = table.Column<int>(type: "integer", nullable: false),
+                    MentionCount = table.Column<int>(type: "integer", nullable: false),
+                    DueCount = table.Column<int>(type: "integer", nullable: false),
+                    ReviewCount = table.Column<int>(type: "integer", nullable: false),
+                    MyPullRequestCount = table.Column<int>(type: "integer", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_DigestLogs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_DigestLogs_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "GpgKeys",
                 columns: table => new
                 {
@@ -529,13 +557,50 @@ namespace ByteBench.Data.MigrationsPostgres
                     UserId = table.Column<int>(type: "integer", nullable: false),
                     EmailEnabled = table.Column<bool>(type: "boolean", nullable: false),
                     LastEmailAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    SlackDmEnabled = table.Column<bool>(type: "boolean", nullable: false)
+                    SlackDmEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    DigestFrequency = table.Column<int>(type: "integer", nullable: false),
+                    DigestHour = table.Column<int>(type: "integer", nullable: true),
+                    DigestWeekday = table.Column<int>(type: "integer", nullable: true),
+                    TimeZoneId = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    NextDigestAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastDigestAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DigestFailures = table.Column<int>(type: "integer", nullable: false),
+                    PushEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    PushGroups = table.Column<int>(type: "integer", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_UserNotificationSettings", x => x.UserId);
                     table.ForeignKey(
                         name: "FK_UserNotificationSettings_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "WebPushSubscriptions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserId = table.Column<int>(type: "integer", nullable: false),
+                    Endpoint = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
+                    EndpointHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    EncryptedP256dh = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
+                    EncryptedAuth = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
+                    UserAgent = table.Column<string>(type: "character varying(60)", maxLength: 60, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    LastUsedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    FailureCount = table.Column<int>(type: "integer", nullable: false),
+                    RetryAfterUntil = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WebPushSubscriptions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WebPushSubscriptions_AspNetUsers_UserId",
                         column: x => x.UserId,
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
@@ -1092,7 +1157,8 @@ namespace ByteBench.Data.MigrationsPostgres
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     EmailPending = table.Column<bool>(type: "boolean", nullable: false),
                     Excerpt = table.Column<string>(type: "character varying(1200)", maxLength: 1200, nullable: true),
-                    ChatPending = table.Column<bool>(type: "boolean", nullable: false)
+                    ChatPending = table.Column<bool>(type: "boolean", nullable: false),
+                    PushPending = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -4636,6 +4702,16 @@ namespace ByteBench.Data.MigrationsPostgres
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_DigestLogs_CreatedAt",
+                table: "DigestLogs",
+                column: "CreatedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DigestLogs_UserId",
+                table: "DigestLogs",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_DirectorySyncRuns_Source_StartedAt",
                 table: "DirectorySyncRuns",
                 columns: new[] { "Source", "StartedAt" });
@@ -4944,6 +5020,11 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "IX_Notifications_ProjectId",
                 table: "Notifications",
                 column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Notifications_PushPending",
+                table: "Notifications",
+                column: "PushPending");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Notifications_UserId_IsRead_CreatedAt",
@@ -5686,6 +5767,11 @@ namespace ByteBench.Data.MigrationsPostgres
                 column: "RequestedById");
 
             migrationBuilder.CreateIndex(
+                name: "IX_UserNotificationSettings_NextDigestAt",
+                table: "UserNotificationSettings",
+                column: "NextDigestAt");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Watches_IssueId",
                 table: "Watches",
                 column: "IssueId");
@@ -5726,6 +5812,17 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "IX_Webhooks_ProjectId",
                 table: "Webhooks",
                 column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WebPushSubscriptions_EndpointHash",
+                table: "WebPushSubscriptions",
+                column: "EndpointHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WebPushSubscriptions_UserId",
+                table: "WebPushSubscriptions",
+                column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_WikiPageIndex_ProjectId_Path",
@@ -5881,6 +5978,9 @@ namespace ByteBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "DeploymentApprovals");
+
+            migrationBuilder.DropTable(
+                name: "DigestLogs");
 
             migrationBuilder.DropTable(
                 name: "DirectorySyncRuns");
@@ -6076,6 +6176,9 @@ namespace ByteBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "WebhookDeliveries");
+
+            migrationBuilder.DropTable(
+                name: "WebPushSubscriptions");
 
             migrationBuilder.DropTable(
                 name: "WikiPageIndex");

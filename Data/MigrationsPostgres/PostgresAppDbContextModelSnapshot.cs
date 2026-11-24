@@ -1512,6 +1512,53 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("DeploymentApprovals");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.DigestLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DueCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Failed")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MentionCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MyPullRequestCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Preview")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ReviewCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Sent")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("UnreadCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("DigestLogs");
+                });
+
             modelBuilder.Entity("ByteBench.Data.DirectorySyncRun", b =>
                 {
                     b.Property<int>("Id")
@@ -2675,6 +2722,9 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Property<int>("ProjectId")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("PushPending")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2696,6 +2746,8 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasFilter("\"EmailPending\" = TRUE");
 
                     b.HasIndex("ProjectId");
+
+                    b.HasIndex("PushPending");
 
                     b.HasIndex("UserId", "IsRead", "CreatedAt");
 
@@ -5848,16 +5900,46 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Property<int>("UserId")
                         .HasColumnType("integer");
 
+                    b.Property<int>("DigestFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DigestFrequency")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("DigestHour")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("DigestWeekday")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("EmailEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastDigestAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("LastEmailAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("NextDigestAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("PushEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("PushGroups")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("SlackDmEnabled")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("TimeZoneId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasKey("UserId");
+
+                    b.HasIndex("NextDigestAt");
 
                     b.ToTable("UserNotificationSettings");
                 });
@@ -5901,6 +5983,63 @@ namespace ByteBench.Data.MigrationsPostgres
                         {
                             t.HasCheckConstraint("CK_Watch_OneTarget", "(\"IssueId\" IS NULL) <> (\"PullRequestId\" IS NULL)");
                         });
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WebPushSubscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedAuth")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("EncryptedP256dh")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("EndpointHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RetryAfterUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EndpointHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("WebPushSubscriptions");
                 });
 
             modelBuilder.Entity("ByteBench.Data.Webhook", b =>
@@ -6951,6 +7090,15 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Job");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.DigestLog", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ByteBench.Data.EditorWorkspace", b =>
@@ -8317,6 +8465,15 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasForeignKey("PullRequestId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WebPushSubscription", b =>
+                {
                     b.HasOne("ByteBench.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
