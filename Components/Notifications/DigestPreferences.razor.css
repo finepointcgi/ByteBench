@@ -1,0 +1,11 @@
+.dg-root ::deep .dg-panel { max-width: 760px; }
+.dg-root ::deep .dg-title { font-weight: 600; margin-bottom: 6px; }
+.dg-root ::deep .dg-help { font-size: 12px; }
+.dg-fields { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-start; }
+.dg-fields ::deep .dg-field { flex: 0 1 150px; min-width: 120px; }
+.dg-fields ::deep .dg-zone { flex: 1 1 240px; }
+.dg-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+@media (max-width: 600px) {
+    .dg-fields ::deep .dg-field { flex: 1 1 100%; }
+}

@@ -1,0 +1,191 @@
+@* The browser push section of /account/notifications. The Enable/Disable buttons are handled by wwwroot/js/push.js in the
+   browser (the permission prompt needs a real click); the rest goes through the circuit. *@
+@using ByteBench.Services.Push
+@using Microsoft.Extensions.Options
+@inject PushSubscriptions Subscriptions
+@inject IOptionsMonitor<PushOptions> PushOptions
+@inject AntiforgeryStateProvider Antiforgery
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@implements IAsyncDisposable
+
+@if (PushOptions.CurrentValue.Enabled)
+{
+    <div class="bp-root">
+    <MudPaper Outlined="true" Class="pa-4 bp-panel mt-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="bp-title">Browser push</MudText>
+        <MudSwitch T="bool" Value="enabled" ValueChanged="OnEnabledChanged" Color="Color.Primary" Label="Send notifications to my subscribed browsers" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2 bp-help">
+            A push shows the item's title, one short line ("Alice Chen commented on") and opens the item when clicked. Comment
+            and description text is never sent. Groups set to Off above and muted items are never pushed.
+        </MudText>
+
+        <div class="bp-groups" role="group" aria-label="Groups sent as browser push">
+            @foreach (var g in NotificationPreferences.Groups)
+            {
+                var group = g.Group;
+                <MudCheckBox T="bool" @key="group" Value="groups.Contains(group)" ValueChanged="v => OnGroupChanged(group, v)" Disabled="!enabled"
+                             Color="Color.Primary" Dense="true" Label="@g.Title" />
+            }
+        </div>
+
+        <div class="bp-browser" @ref="root">
+            <div class="bp-browser-title">This browser</div>
+            @if (browser == null)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary bp-help">Checking this browser…</MudText>
+            }
+            else if (!browser.Supported)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary bp-help" role="status">
+                    @if (browser.Ios && !browser.Standalone)
+                    {
+                        <span>On iPhone and iPad, push works only from the installed app: tap <b>Share</b>, then <b>Add to Home Screen</b>, open ByteBench from the Home Screen and enable it there (iOS 16.4 or later).</span>
+                    }
+                    else if (!browser.SecureContext)
+                    {
+                        <span>Browser push needs the site to be opened over HTTPS.</span>
+                    }
+                    else
+                    {
+                        <span>This browser doesn't support web push notifications.</span>
+                    }
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="bp-help" role="status">
+                    @if (browser.Subscribed) { <span>Browser notifications are on for this browser.</span> }
+                    else if (browser.Permission == "denied") { <span>Notifications are blocked for this site. Allow them in your browser's site settings, then enable them here.</span> }
+                    else { <span>Browser notifications are off for this browser.</span> }
+                </MudText>
+                <div class="bp-actions">
+                    @if (browser.Subscribed)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" data-push-action="disable"
+                                   StartIcon="@Icons.Material.Outlined.NotificationsOff">Turn off for this browser</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" data-push-action="enable"
+                                   StartIcon="@Icons.Material.Outlined.NotificationsActive">Enable browser notifications</MudButton>
+                    }
+                </div>
+            }
+            @if (browser?.Error is { } error)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@error</MudAlert>
+            }
+        </div>
+
+        @if (devices.Count > 0)
+        {
+            <div class="bp-devices">
+                <div class="bp-browser-title">Subscribed browsers (@devices.Count of @PushSubscriptions.MaxPerUser)</div>
+                @foreach (var d in devices)
+                {
+                    <div class="bp-device" @key="d.Id">
+                        <div class="bp-device-text">
+                            <div class="bp-device-name">@(d.UserAgent ?? "Browser")</div>
+                            <div class="bp-device-desc">
+                                via @d.Host · added @d.CreatedAt.ToString("yyyy-MM-dd")
+                                @if (d.LastUsedAt is { } used) { <span> · last push @used.ToString("yyyy-MM-dd HH:mm") UTC</span> }
+                                @if (d.FailureCount > 0) { <span> · @d.FailureCount failed</span> }
+                            </div>
+                        </div>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Error" OnClick="() => RemoveAsync(d.Id)"
+                                   aria-label="@($"Remove {d.UserAgent ?? "browser"}")">Remove</MudButton>
+                    </div>
+                }
+            </div>
+        }
+    </MudPaper>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int UserId { get; set; }
+
+    /// <summary>What wwwroot/js/push.js reports about this browser.</summary>
+    public sealed class BrowserState
+    {
+        public bool Supported { get; set; }
+        public bool SecureContext { get; set; }
+        public string Permission { get; set; } = "default";
+        public bool Subscribed { get; set; }
+        public bool Ios { get; set; }
+        public bool Standalone { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private bool enabled;
+    private HashSet<NotificationGroup> groups = [];
+    private List<PushDevice> devices = [];
+    private BrowserState? browser;
+    private ElementReference root;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<PushPreferences>? self;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!PushOptions.CurrentValue.Enabled) return;
+        var (on, g) = await Subscriptions.GetSettingsAsync(UserId);
+        enabled = on;
+        groups = g.ToHashSet();
+        devices = await Subscriptions.ListAsync(UserId);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !PushOptions.CurrentValue.Enabled) return;
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/push.js");
+            self = DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("init", root, self, Antiforgery.GetAntiforgeryToken()?.Value ?? "");
+            browser = await module.InvokeAsync<BrowserState>("state");
+        }
+        catch (JSDisconnectedException) { return; }
+        catch (JSException) { browser = new BrowserState { Supported = false }; }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnPushState(BrowserState state)
+    {
+        browser = state;
+        var (on, _) = await Subscriptions.GetSettingsAsync(UserId);
+        enabled = on;
+        devices = await Subscriptions.ListAsync(UserId);
+        if (state.Error == null) Snackbar.Add(state.Subscribed ? "Browser notifications enabled." : "Browser notifications turned off for this browser.", Severity.Success);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnEnabledChanged(bool value)
+    {
+        enabled = value;
+        await Subscriptions.SaveSettingsAsync(UserId, enabled, groups);
+        Snackbar.Add(value ? "Browser push on." : "Browser push off.", Severity.Success);
+    }
+
+    private async Task OnGroupChanged(NotificationGroup group, bool on)
+    {
+        if (on) groups.Add(group); else groups.Remove(group);
+        await Subscriptions.SaveSettingsAsync(UserId, enabled, groups);
+        Snackbar.Add("Preferences saved.", Severity.Success);
+    }
+
+    private async Task RemoveAsync(int id)
+    {
+        await Subscriptions.RemoveByIdAsync(UserId, id);
+        devices = await Subscriptions.ListAsync(UserId);
+        Snackbar.Add("Browser removed. It gets no more pushes.", Severity.Success);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { if (module != null) await module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+        self?.Dispose();
+    }
+}
