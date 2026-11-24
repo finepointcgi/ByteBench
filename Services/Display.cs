@@ -1,5 +1,6 @@
 using ByteBench.Data;
 using Markdig;
+using Markdig.Syntax;
 using Microsoft.AspNetCore.Components;
 
 namespace ByteBench.Services;
@@ -75,6 +76,36 @@ public static class Display
         .DisableHtml() // raw HTML in user content is escaped, preventing XSS
         .Build();
 
-    public static MarkupString Markdown(string? text) =>
-        new(string.IsNullOrWhiteSpace(text) ? "" : Markdig.Markdown.ToHtml(text, Pipeline));
+    public static MarkupString Markdown(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return new("");
+        var doc = Markdig.Markdown.Parse(text, Pipeline);
+        NeutralizeUnsafeUrls(doc);
+        return new(Markdig.Markdown.ToHtml(doc, Pipeline));
+    }
+
+    /// <summary>
+    /// Link and image destinations (including reference links and &lt;scheme:…&gt; autolinks) that name a scheme other than
+    /// http, https or mailto become "#": DisableHtml stops raw HTML, but not <c>[x](javascript:…)</c>, which runs on click
+    /// wherever there is no CSP (notification emails, or the CSP switched off).
+    /// </summary>
+    public static void NeutralizeUnsafeUrls(Markdig.Syntax.MarkdownDocument doc)
+    {
+        foreach (var link in doc.Descendants<Markdig.Syntax.Inlines.LinkInline>())
+            if (!IsSafeUrl(link.Url)) link.Url = "#";
+        foreach (var auto in doc.Descendants<Markdig.Syntax.Inlines.AutolinkInline>())
+            if (!auto.IsEmail && !IsSafeUrl(auto.Url)) auto.Url = "#";
+    }
+
+    /// <summary>Relative, or http/https/mailto, judged as a browser reads it (ASCII whitespace and control characters removed).</summary>
+    public static bool IsSafeUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return true;
+        var s = new string(url.Where(c => c > ' ').ToArray());
+        var colon = s.IndexOf(':');
+        if (colon < 0) return true;
+        var end = s.IndexOfAny(['/', '?', '#']);
+        if (end >= 0 && end < colon) return true; // the ':' is in the path, query or fragment: a relative URL
+        return s[..colon].ToLowerInvariant() is "http" or "https" or "mailto";
+    }
 }

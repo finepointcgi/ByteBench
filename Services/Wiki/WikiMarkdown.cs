@@ -50,6 +50,7 @@ public static partial class WikiMarkdown
             else if (!link.IsAutoLink) link.Url = RewriteUrl(link.Url, link.IsImage, ctx.ProjectKey, dir);
         }
         LinkIssueKeys(doc, ctx.ProjectKey);
+        Display.NeutralizeUnsafeUrls(doc); // also <javascript:…> autolinks, which aren't LinkInlines
 
         using var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
