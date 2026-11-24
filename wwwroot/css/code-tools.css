@@ -125,6 +125,7 @@ a.issue-key-chip:hover { text-decoration: none; background: rgba(var(--mud-palet
 
 /* Small helpers */
 .gb-min0 { min-width: 0; }
+.gb-wrap-anywhere { overflow-wrap: anywhere; }
 .gb-bold { font-weight: 600; }
 .gb-nowrap { white-space: nowrap; }
 .gb-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -137,7 +138,7 @@ a.issue-key-chip:hover { text-decoration: none; background: rgba(var(--mud-palet
 .gb-side-field { padding: 12px 0; border-bottom: 1px solid var(--border); }
 .gb-side-field:last-child { border-bottom: none; }
 @media (max-width: 960px) {
-    .gb-detail-grid { grid-template-columns: 1fr; }
+    .gb-detail-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Repository settings layout (RepoSettings, RepoBranchProtection) */

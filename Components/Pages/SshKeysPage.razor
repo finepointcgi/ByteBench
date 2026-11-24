@@ -79,7 +79,7 @@
                         @if (k.IsExpired(now)) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Expired</MudChip> }
                     </div>
                     <div class="gb-row-meta">
-                        <span class="mono">@k.Fingerprint</span><br />
+                        <span class="mono gb-wrap-anywhere">@k.Fingerprint</span><br />
                         Added @k.CreatedAt.ToLocalTime().ToString("d") ·
                         Last used @(k.LastUsedAt?.ToLocalTime().ToString("g") ?? "never") ·
                         @(k.ExpiresAt is { } e ? $"expires {e.ToLocalTime():d}" : "never expires")
@@ -141,7 +141,7 @@
                             else if (k.IsExpired(now)) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text" Class="ma-0">Expired</MudChip> }
                         </div>
                         <div class="gb-row-meta">
-                            <span class="mono gpg-fpr">@FormatFingerprint(k.Fingerprint)</span><br />
+                            <span class="mono gpg-fpr gb-wrap-anywhere">@FormatFingerprint(k.Fingerprint)</span><br />
                             Emails: @(k.Emails.Length == 0 ? "none" : k.Emails.Replace(" ", ", ")) ·
                             Added @k.CreatedAt.ToLocalTime().ToString("d") ·
                             @(k.ExpiresAt is { } e ? $"expires {e.ToLocalTime():d}" : "never expires")
@@ -170,7 +170,7 @@
 {
     <MudText Typo="Typo.body2" Class="mud-text-secondary">
         Clone with <code>git clone ssh://git@@@Host:@SshOptions.Value.EffectivePublicPort/KEY/repository.git</code>.
-        The first time, check that ssh shows this server's host key fingerprint: <span class="mono">@hostKey</span> (RSA).
+        The first time, check that ssh shows this server's host key fingerprint: <span class="mono gb-wrap-anywhere">@hostKey</span> (RSA).
     </MudText>
 }
 

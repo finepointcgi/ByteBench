@@ -88,6 +88,7 @@ else if (Repo != null && loaded)
                             AI draft: check it against the changes and edit it. It is only in the editor; nothing is saved until you publish or save the release. Use the Preview tab to see how it reads.
                         </MudAlert>
                     }
+                    @if (!aiAvailable && aiReason != null) { <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-1" id="ai-unavailable-reason">@aiReason</MudText> }
                     @if (generatedInfo != null) { <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-1">@generatedInfo</MudText> }
                     <MarkdownEditor @bind-Value="input.Notes" Rows="14" Placeholder="Describe this release (Markdown)" />
                 </MudItem>

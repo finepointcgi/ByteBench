@@ -240,7 +240,7 @@ else if (project != null)
         }
 
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-            Jira sprints become sprints here; attachment files are copied only if you tick the box above. Pull-request branches, time tracking and reactions aren't copied. People are matched by email or user name. Run it again later to pick up new issues; existing issues are never changed.
+            @(source == TrackerSourceKind.Jira ? "Jira sprints become sprints here; " : "")@(source == TrackerSourceKind.Jira ? "a" : "A")ttachment files are copied only if you tick the box above. Pull-request branches, time tracking and reactions aren't copied. People are matched by email or user name. Run it again later to pick up new issues; existing issues are never changed.
         </MudAlert>
 
         <div class="d-flex gap-2">
