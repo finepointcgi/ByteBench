@@ -1,5 +1,5 @@
 <h1>Notifications and email</h1>
-<p class="lead">ByteBench tells you about the things that involve you through a live bell in the top bar, optional emails and, if you use Slack, direct messages, and every kind can be tuned from one preferences page.</p>
+<p class="lead">ByteBench tells you about the things that involve you through a live bell in the top bar, optional emails and digests, browser push notifications and, if you use Slack, direct messages, and every kind can be tuned from one preferences page.</p>
 
 <h2 id="in-app">In-app notifications</h2>
 <p>The bell in the top bar shows a live unread count and a dropdown with the latest 10 notifications. Click one to mark it read and open the item, or use <strong>Mark all read</strong>. The full list is at <code>/notifications</code>, with <strong>All</strong> and <strong>Unread</strong> tabs and paging.</p>
@@ -57,6 +57,55 @@
 </tbody></table>
 <p>If one event qualifies for several kinds (say, you are mentioned in a comment on an issue you watch) and you turned the first off, you get the next one. There are no sprint notifications.</p>
 <p>When your Slack account is linked and the server has a Slack bot token, a switch <strong>Also send my notifications as Slack direct messages</strong> appears here. See <a href="chat.html#dms">Slack direct messages</a>.</p>
+
+<h2 id="digests">Digest emails</h2>
+<p>A digest is a summary email at a time that suits you. On <code>/account/notifications</code>, under <strong>Digest email</strong>, choose <strong>Off</strong> (the default), <strong>Daily</strong> or <strong>Weekly</strong>, the hour, the weekday for weekly digests and your time zone (an IANA name such as <code>Europe/Berlin</code>; the page suggests your browser's zone if you have not picked one), then <strong>Save digest settings</strong>. The page shows when the next digest goes out.</p>
+<p>A digest contains, for projects you can still view when it is sent:</p>
+<ul>
+<li>Unread notifications grouped by project: the count and the newest five, with links.</li>
+<li>Unread mentions.</li>
+<li>Issues assigned to you that are overdue or due within 7 days.</li>
+<li>Open pull requests where you are a requested reviewer and have not reviewed yet.</li>
+<li>Your own open pull requests that are ready to merge (approved, nothing blocking, no pending or failed check) or have a failing check.</li>
+</ul>
+<p>If there is nothing to report, no email is sent. The digest comes on top of your other emails and replaces none of them. It follows your preferences: groups set to <strong>Off</strong> are left out, watcher notifications about muted issues and pull requests are left out, and turning off <strong>Send me notification emails</strong> (or the all-emails unsubscribe link) stops digests too.</p>
+<ul>
+<li>Times follow your zone across daylight saving changes. An hour that does not exist that day (clocks go forward) moves to the first valid time after it; an hour that happens twice (clocks go back) uses the first one.</li>
+<li><strong>Send me a preview now</strong> builds and sends the digest right away, at most three times an hour. It does not change the schedule.</li>
+<li>Every digest has a one-click unsubscribe link (also as <code>List-Unsubscribe</code> and <code>List-Unsubscribe-Post</code> headers) to <code>/account/digest/unsubscribe</code>. It is signed for your account, valid 90 days and needs no sign-in; it turns off digests only.</li>
+<li>A failed send is retried on the next few polls (up to three times), then skipped until the next period. The server keeps a small log of digest runs with counts only, for 30 days.</li>
+</ul>
+
+<h2 id="web-push">Browser push notifications</h2>
+<p>ByteBench can show notifications from your browser even when no ByteBench tab is open. Under <strong>Browser push</strong> on <code>/account/notifications</code>, click <strong>Enable browser notifications</strong>. Your browser asks for permission only after that click. Each browser (or phone) you enable appears in the list of subscribed browsers, at most 10, and you can remove any of them. <strong>Turn off for this browser</strong> unsubscribes the browser you are using.</p>
+<p>The switch <strong>Send notifications to my subscribed browsers</strong> and the group checkboxes choose what is pushed. By default: assigned to me, mentions and review requests. Groups set to <strong>Off</strong> above and muted items are never pushed. Clicking a notification opens the item, focusing an open ByteBench tab when there is one.</p>
+<ul>
+<li>Pushes are sent in the background, so a slow push service never slows down the page that caused the notification.</li>
+<li>If a browser's subscription has expired, or delivery fails five times in a row, it is removed. If a push service asks ByteBench to slow down, that browser is skipped for the time it asks.</li>
+<li>When the browser does not support push, you blocked notifications for the site, or the site is not served over HTTPS, the page says so instead of showing the button.</li>
+<li><strong>iPhone and iPad:</strong> push works only from the installed web app (iOS 16.4 or later). In Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>, open ByteBench from the Home Screen and enable notifications there.</li>
+</ul>
+
+<h3 id="push-privacy">What a push contains</h3>
+<p>A push message is end-to-end encrypted for your browser (Web Push with <code>aes128gcm</code> and VAPID), but it still passes through your browser vendor's push service, and lock screens show it. So it carries only the item's title, one short line of at most 120 characters (for example <em>Alice Chen commented on</em>) and a link to the item on this site. Comment text and issue or pull request descriptions are never included. The link is always a path on this ByteBench site.</p>
+
+<h3 id="push-setup">Browser push setup (administrators)</h3>
+<p>Browser push is on by default and needs no keys: ByteBench creates its VAPID key pair the first time it is needed and stores the private key encrypted with Data Protection (back up the Data Protection key ring as for other secrets). Browsers only allow push on HTTPS sites (and <code>localhost</code>). The server must be able to reach the browser vendors' push services over HTTPS.</p>
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>Push:Enabled</code></td><td><code>true</code></td><td>Master switch. When off, the section is hidden and pending pushes are dropped</td></tr>
+<tr><td><code>Push:Subject</code></td><td><code>PublicBaseUrl</code> if it is https, else <code>mailto:</code> the first site admin's email</td><td>The VAPID contact (a <code>mailto:</code> or <code>https:</code> URL) push services can use to reach you</td></tr>
+<tr><td><code>Push:AllowedHostSuffixes</code></td><td>empty (any public https host)</td><td>Only accept subscriptions for these push service hosts, for example <code>push.services.mozilla.com</code>, <code>fcm.googleapis.com</code>, <code>push.apple.com</code>, <code>notify.windows.com</code></td></tr>
+<tr><td><code>Push:AllowPrivateNetworks</code></td><td><code>Webhooks:AllowPrivateNetworks</code></td><td>Allow push endpoints on private, loopback and link-local addresses (and plain http on loopback). For local testing only</td></tr>
+<tr><td><code>Push:TtlSeconds</code></td><td><code>86400</code></td><td>How long a push service keeps an undelivered message</td></tr>
+<tr><td><code>Digest:Enabled</code></td><td><code>true</code></td><td>Send scheduled digests (previews work either way). Digests also need <code>Email:Enabled</code></td></tr>
+<tr><td><code>Digest:PollMinutes</code></td><td><code>5</code></td><td>How often the digest worker looks for due digests</td></tr>
+<tr><td><code>Digest:MaxPerRun</code></td><td><code>200</code></td><td>Most digests per poll; the rest go out on the next one</td></tr>
+<tr><td><code>Digest:PreviewsPerHour</code></td><td><code>3</code></td><td>Preview emails per user per hour</td></tr>
+</tbody></table>
+<p>Subscription addresses come from browsers, so ByteBench treats them like webhook URLs: only <code>https</code>, no credentials or fragment, never a loopback, private, link-local or cloud metadata address (checked again when connecting, so DNS changes cannot get around it), no redirects, and a 10 second timeout.</p>
+<div class="note">A real push needs a browser and its vendor's push service, so the automated tests use a local fake push service that decrypts each message the way a browser does.</div>
 
 <h2 id="email-setup">Email setup (administrators)</h2>
 <p>Email is <strong>off by default</strong>. While <code>Email:Enabled</code> is false nothing is queued and pending notification emails are dropped, so switching it on does not send a backlog.</p>
