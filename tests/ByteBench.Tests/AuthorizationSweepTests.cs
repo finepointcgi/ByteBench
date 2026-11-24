@@ -59,21 +59,32 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
     };
 
     /// <summary>Routes a signed-in user who is not a member of the private project may get a 2xx from (pattern → reason).</summary>
+    /// <summary>
+    /// GET routes in this list are also checked by <see cref="Listings_hide_the_private_project"/>: their 2xx body must not mention it.
+    /// </summary>
     private static readonly Dictionary<string, string> NotProjectScoped = new()
     {
         ["GET /api/v1/user"] = "the caller's own account",
-        ["GET /api/v1/projects"] = "lists only visible projects (asserted separately below)",
-        ["GET /api/v1/search"] = "global search, filtered by visibility (asserted separately below)",
-        ["GET /api/v1/explore/projects"] = "explore lists only visible projects (asserted separately below)",
-        ["GET /api/v1/users/{username}"] = "public profile of another user",
-        ["GET /api/v1/users/{username}/activity"] = "activity filtered by the viewer's visibility (asserted separately below)",
         ["GET /api/v1/user/starred"] = "the caller's own stars",
-        ["GET /api/v1/groups"] = "lists only visible groups",
-        ["GET /api/v1/groups/{**group}"] = "an internal group (the seed's Acme/Platform)",
-        ["GET /api/v1/groups/{group}"] = "an internal group (the seed's Acme/Platform)",
-        ["GET /api/v1/snippets"] = "the caller's own and public snippets",
-        ["GET /api/v1/issues/search"] = "GQL search filtered by visibility (asserted separately below)",
+        ["GET /api/v1/projects"] = "lists only visible projects",
+        ["GET /api/v1/search"] = "global search, filtered by visibility",
+        ["GET /api/v1/search/issues"] = "GQL search, filtered by visibility",
+        ["GET /api/v1/users/{username}"] = "public profile of another user, filtered by visibility",
+        ["GET /api/v1/groups/"] = "lists only visible groups",
+        ["GET /api/v1/groups/{group}"] = "an internal group (the seed's Acme)",
+        ["GET /api/v1/groups/{group}/issues"] = "an internal group's issues, filtered by project visibility",
+        ["GET /api/v1/groups/{group}/projects"] = "an internal group's projects, filtered by visibility",
+        ["GET /api/v1/groups/{group}/roadmap"] = "an internal group's roadmap, filtered by project visibility",
+        ["GET /api/v1/groups/{group}/subgroups"] = "an internal group's subgroups",
+        ["GET /api/v1/dashboards"] = "the caller's own and shared dashboards",
+        ["GET /api/v1/snippets/"] = "the caller's own and visible snippets",
+        ["POST /api/v1/snippets/"] = "creates a personal snippet (the empty test body is refused with 422)",
+        ["POST /api/v1/projects/{key}/repos/{slug}/pull-requests/{number:int}/apply-suggestions"] =
+            "validates the body (422) before looking anything up, so nothing about the project is revealed",
     };
+
+    /// <summary>Query parameters every swept request carries, so required-parameter checks (400) do not hide what follows them.</summary>
+    private const string Query = "?q=deploy&rev=main&ref=main&path=README.md&base=main&head=main&from=2020-01-01&to=2030-01-01";
 
     private static readonly Regex Parameter = new(@"\{\**(?<name>[A-Za-z_][A-Za-z0-9_]*)[^}]*\}", RegexOptions.Compiled);
 
@@ -150,11 +161,11 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
                 "sha" => v.Sha,
                 "documentName" => "v1",
                 "username" => "alice",
-                "group" => "acme/platform",
+                "group" => "acme",
                 "path" or "file" or "fileName" or "tag" => "README.md",
                 "rest" => "nothing-here",
                 _ => "x",
-            });
+            }) + Query;
         }
     }
 
@@ -228,6 +239,26 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
         }
         foreach (var f in failures) output.WriteLine(f);
         Assert.True(failures.Count == 0, "Write routes that a read-only token was not refused on:\n" + string.Join("\n", failures));
+    }
+
+    [Fact]
+    public async Task Listings_hide_the_private_project()
+    {
+        await app.EnsureReadyAsync();
+        var values = await TargetValuesAsync();
+        // Search terms that match the seeded private project's issues and repository.
+        var client = Client(await app.CreateTokenAsync("sweep-outsider", TokenScopes.ReadApi));
+        var failures = new List<string>();
+        foreach (var route in ApiRoutes().Where(r => r.Method == "GET" && NotProjectScoped.ContainsKey(r.Name)))
+            foreach (var q in new[] { "deploy", "WEB", "project = WEB", "web-app" })
+            {
+                var url = Urls(route, values).First().Replace("q=deploy", "q=" + Uri.EscapeDataString(q));
+                using var response = await client.GetAsync(url);
+                var body = await response.Content.ReadAsStringAsync();
+                if (response.IsSuccessStatusCode && (body.Contains("\"WEB\"") || body.Contains("WEB-") || body.Contains("/WEB/") || body.Contains("web-app")))
+                    failures.Add($"{route.Name} ({url}) mentions the private project: {body[..Math.Min(body.Length, 1500)]}");
+            }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
 
     [Fact]

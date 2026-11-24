@@ -1,0 +1,151 @@
+@page "/admin/system/workers"
+@using ByteBench.Services.Attachments
+@using ByteBench.Services.Hosting
+@using ByteBench.Services.Hosting.Operations
+@using ByteBench.Services.Hosting.Backup
+@implements IDisposable
+@inject CurrentUser Me
+@inject OperationsStats Stats
+@inject WorkerRegistry Registry
+@inject IConfiguration Config
+
+@* Site administrators: every hosted worker with its last tick, last success, last error and queue depth; refreshes every 10 s. *@
+
+<PageTitle>Workers and queues · ByteBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can see the workers." />
+}
+else
+{
+    <div class="page-header mb-4 d-flex align-center">
+        <div>
+            <MudText Typo="Typo.h5" HtmlTag="h1">Workers and queues</MudText>
+            <MudText Class="mud-text-secondary" Typo="Typo.body2">
+                Background workers of this ByteBench and how far behind they are. Refreshes every 10 seconds. <MudLink Href="/admin/system">System</MudLink>
+            </MudText>
+        </div>
+    </div>
+
+    <div class="wk-cards mb-4" data-testid="wk-cards">
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Version</div><div class="wk-value">@BackupManifest.CurrentAppVersion()</div></MudPaper>
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Uptime</div><div class="wk-value">@Uptime()</div></MudPaper>
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Database</div><div class="wk-value">@Provider @(db is { Up: true } ? "" : "(unreachable)")</div></MudPaper>
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Database size</div><div class="wk-value">@(db?.SizeBytes is { } s ? AttachmentFormat.Size(s) : "unknown")</div></MudPaper>
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Pending migrations</div><div class="wk-value">@(db == null ? "?" : db.PendingMigrations == 0 ? "none" : db.PendingMigrations.ToString())</div></MudPaper>
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Repository storage</div><div class="wk-value">@(Stats.RepositoryBytes() is { } r ? AttachmentFormat.Size(r) : "measuring...")</div></MudPaper>
+        <MudPaper Outlined="true" Class="pa-3"><div class="wk-label">Disk free</div><div class="wk-value">@(Stats.DiskFreeBytes() is { } f ? AttachmentFormat.Size(f) : "unknown")</div></MudPaper>
+    </div>
+
+    @if (rows == null)
+    {
+        <MudProgressLinear Indeterminate="true" />
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="pa-3 mb-4">
+            <div class="wk-table-wrap">
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>Worker</th><th>State</th><th>Last tick</th><th>Last success</th><th>Queue</th><th>Last error</th></tr></thead>
+                    <tbody>
+                        @foreach (var w in rows)
+                        {
+                            <tr data-testid="wk-row-@w.Id">
+                                <td>@w.Title<div class="mud-text-secondary wk-small">@w.Description</div></td>
+                                <td>
+                                    @if (!w.Reported)
+                                    {
+                                        <MudChip T="string" Size="Size.Small">not started</MudChip>
+                                    }
+                                    else if (!w.Enabled)
+                                    {
+                                        <MudChip T="string" Size="Size.Small">disabled</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="@(w.LastErrorUtc != null && (w.LastSuccessUtc == null || w.LastErrorUtc > w.LastSuccessUtc) ? Color.Error : Color.Success)">@(w.LastErrorUtc != null && (w.LastSuccessUtc == null || w.LastErrorUtc > w.LastSuccessUtc) ? "failing" : "enabled")</MudChip>
+                                    }
+                                </td>
+                                <td>@Ago(w.LastTickUtc)</td>
+                                <td>@Ago(w.LastSuccessUtc)</td>
+                                <td>@(w.Queue ?? "")</td>
+                                <td>
+                                    @if (w.LastError != null)
+                                    {
+                                        <span class="mud-error-text wk-small">@Ago(w.LastErrorUtc): @w.LastError</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">"Last tick" is the last loop iteration or handled item; workers that only wake for queued work show the last item. Error text is the exception type and a short, scrubbed message.</MudText>
+        </MudPaper>
+    }
+}
+
+<style>
+    .wk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; max-width: 980px; }
+    .wk-label { font-size: .75rem; color: var(--mud-palette-text-secondary); }
+    .wk-value { font-size: 1.05rem; font-weight: 600; overflow-wrap: anywhere; }
+    .wk-table-wrap { overflow-x: auto; }
+    .wk-small { font-size: .75rem; }
+</style>
+
+@code {
+    private IReadOnlyList<WorkerRow>? rows;
+    private DatabaseStatus? db;
+    private readonly CancellationTokenSource cts = new();
+    private static readonly DateTime Started = System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+
+    private string Provider => DatabaseSetup.GetProvider(Config).ToString();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin != true) return;
+        await LoadAsync();
+        _ = RefreshLoopAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        QueueDepths queues;
+        try { queues = await Stats.QueuesAsync(cts.Token); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { queues = QueueDepths.Empty; }
+        try { db = await Stats.DatabaseAsync(cts.Token); } catch (Exception ex) when (ex is not OperationCanceledException) { }
+        rows = WorkersOverview.Build(Registry.Snapshot(), queues);
+    }
+
+    private async Task RefreshLoopAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cts.Token))
+            {
+                await InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private static string Ago(DateTime? utc)
+    {
+        if (utc is not { } t) return "never";
+        var d = DateTime.UtcNow - t;
+        if (d < TimeSpan.Zero) d = TimeSpan.Zero;
+        return d.TotalSeconds < 90 ? $"{(int)d.TotalSeconds} s ago" : d.TotalMinutes < 90 ? $"{(int)d.TotalMinutes} min ago" : d.TotalHours < 48 ? $"{(int)d.TotalHours} h ago" : $"{(int)d.TotalDays} d ago";
+    }
+
+    private static string Uptime()
+    {
+        var t = DateTime.UtcNow - Started;
+        return t.TotalDays >= 1 ? $"{(int)t.TotalDays} d {t.Hours} h" : t.TotalHours >= 1 ? $"{(int)t.TotalHours} h {t.Minutes} min" : $"{(int)t.TotalMinutes} min";
+    }
+
+    public void Dispose() { cts.Cancel(); cts.Dispose(); }
+}

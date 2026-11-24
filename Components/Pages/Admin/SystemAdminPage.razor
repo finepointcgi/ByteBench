@@ -22,6 +22,7 @@ else
             </MudText>
         </div>
         <span class="flex-grow-1"></span>
+        <MudButton Href="/admin/system/workers" Variant="Variant.Outlined" Size="Size.Small" Class="mr-2" data-testid="sys-workers-link">Workers and queues</MudButton>
         <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Refresh" Disabled="@busy" OnClick="() => LoadAsync(true)">Refresh</MudButton>
     </div>
 
