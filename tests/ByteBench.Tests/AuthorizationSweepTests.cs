@@ -110,10 +110,12 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
 
     private sealed record Values(string Key, string Slug, string Sha, List<int> Ids, List<int> Numbers);
 
-    private async Task<Values> TargetValuesAsync()
+    private Task<Values> TargetValuesAsync() => ValuesForAsync(AuthorizationSweepApp.TargetKey);
+
+    private async Task<Values> ValuesForAsync(string key)
     {
         await using var db = app.Db();
-        var project = await db.Projects.AsNoTracking().FirstAsync(p => p.Key == AuthorizationSweepApp.TargetKey);
+        var project = await db.Projects.AsNoTracking().FirstAsync(p => p.Key == key);
         var repo = await db.Repositories.AsNoTracking().Where(r => r.ProjectId == project.Id).OrderBy(r => r.Id).FirstAsync();
         var repoIds = await db.Repositories.Where(r => r.ProjectId == project.Id).Select(r => r.Id).ToListAsync();
         var path = app.Services.GetRequiredService<ByteBench.Services.RepoStorage>().PathFor(project.Key, repo.Slug);
@@ -282,6 +284,42 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
         }
         output.WriteLine($"{hits.Count}/{routes.Count} project GET routes answered the owner. Misses:\n" + string.Join("\n", misses));
         Assert.True(hits.Count * 100 / routes.Count >= 60, $"Only {hits.Count} of {routes.Count} project GET routes answered the owner; the sweep's sample values no longer reach real data.");
+    }
+
+    /// <summary>
+    /// IDOR: a member of the target project calls its routes with ids taken from another private project they can't see
+    /// (OPS), and nothing of that project may come back. Judged by content, not status: ids are per table, so an id can
+    /// legitimately exist in both projects.
+    /// </summary>
+    [Fact]
+    public async Task Ids_from_another_project_return_nothing_of_it()
+    {
+        await app.EnsureReadyAsync();
+        var target = await TargetValuesAsync();
+        var other = await ValuesForAsync("OPS");
+        string[] markers;
+        await using (var db = app.Db())
+        {
+            var ops = await db.Projects.FirstAsync(p => p.Key == "OPS");
+            markers = ["OPS-", "\"OPS\"", "/OPS/", "infra.git", // not the project name: WEB has a component called "Infrastructure"
+                .. await db.Issues.Where(i => i.ProjectId == ops.Id).Select(i => i.Title).ToListAsync()];
+        }
+        var outsider = Client(await app.CreateTokenAsync("bob", TokenScopes.ReadApi)); // WEB developer, not in OPS
+        var mixed = target with { Ids = other.Ids };
+        var failures = new List<string>();
+        foreach (var route in ApiRoutes().Where(r => r.Method == "GET" && r.Pattern.StartsWith("/api/v1/projects/{key}", StringComparison.Ordinal)))
+            foreach (var url in Urls(route, mixed))
+            {
+                using var response = await outsider.GetAsync(url);
+                if (!response.IsSuccessStatusCode) continue;
+                var body = await response.Content.ReadAsStringAsync();
+                if (markers.FirstOrDefault(m => body.Contains(m, StringComparison.Ordinal)) is { } hit)
+                {
+                    failures.Add($"{route.Name} ({url}) returned OPS data ({hit})");
+                    break;
+                }
+            }
+        Assert.True(failures.Count == 0, string.Join("\n", failures));
     }
 
     [Fact]
