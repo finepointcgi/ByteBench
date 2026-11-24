@@ -9,6 +9,7 @@ public sealed class TrackerImportWorker(TrackerImportRunner runner, IOptionsMoni
     {
         try { await runner.RecoverInterruptedAsync(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Cleaning up interrupted tracker imports failed"); }
+        WorkerPulse.Report("tracker-import", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled) { log.LogInformation("Background tracker imports are turned off (TrackerImport:Enabled=false)"); return; }
 
         using var slots = new SemaphoreSlim(Math.Max(1, options.CurrentValue.MaxConcurrent));
@@ -21,8 +22,8 @@ public sealed class TrackerImportWorker(TrackerImportRunner runner, IOptionsMoni
                 running.RemoveAll(t => t.IsCompleted);
                 running.Add(Task.Run(async () =>
                 {
-                    try { await runner.RunAsync(id, stoppingToken); }
-                    catch (Exception ex) { log.LogError(ex, "Tracker import {Id} crashed", id); }
+                    try { WorkerPulse.Tick("tracker-import"); await runner.RunAsync(id, stoppingToken); WorkerPulse.Ok("tracker-import"); }
+                    catch (Exception ex) { WorkerPulse.Fail("tracker-import", ex); log.LogError(ex, "Tracker import {Id} crashed", id); }
                     finally { slots.Release(); }
                 }, CancellationToken.None));
             }

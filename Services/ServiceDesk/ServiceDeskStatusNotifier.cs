@@ -28,8 +28,8 @@ public sealed class ServiceDeskStatusWorker(ServiceDeskStatusQueue queue, IServi
         {
             await foreach (var (issueId, statusId) in queue.Reader.ReadAllAsync(stoppingToken))
             {
-                try { await NotifyAsync(issueId, statusId, stoppingToken); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Service desk status email for issue {IssueId} failed", issueId); }
+                try { WorkerPulse.Tick("service-desk-status"); await NotifyAsync(issueId, statusId, stoppingToken); WorkerPulse.Ok("service-desk-status"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("service-desk-status", ex); log.LogError(ex, "Service desk status email for issue {IssueId} failed", issueId); }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }

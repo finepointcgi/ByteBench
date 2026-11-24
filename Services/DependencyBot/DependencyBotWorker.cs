@@ -11,13 +11,14 @@ public sealed class DependencyBotWorker(DependencyBotRunner runner, IOptionsMoni
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        WorkerPulse.Report("dependency-bot", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled) { log.LogInformation("The dependency bot's schedule is turned off (DependencyBot:Enabled=false)"); return; }
         try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); } catch (OperationCanceledException) { return; }
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await TickAsync(DateTime.UtcNow, stoppingToken); }
+            try { WorkerPulse.Tick("dependency-bot"); await TickAsync(DateTime.UtcNow, stoppingToken); WorkerPulse.Ok("dependency-bot"); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { log.LogError(ex, "Dependency bot poll failed"); }
+            catch (Exception ex) { WorkerPulse.Fail("dependency-bot", ex); log.LogError(ex, "Dependency bot poll failed"); }
             try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, options.CurrentValue.PollSeconds)), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }

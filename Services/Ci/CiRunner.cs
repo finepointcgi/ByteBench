@@ -45,6 +45,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+        WorkerPulse.Report("ci-runner", Options.Enabled);
         jobSlots = new SemaphoreSlim(Math.Max(1, Options.MaxConcurrentJobs));
         try { await RecoverAsync(stoppingToken); }
         catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "CI startup recovery failed"); }
@@ -53,6 +54,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         {
             await foreach (var id in queue.Reader.ReadAllAsync(stoppingToken))
             {
+                WorkerPulse.Tick("ci-runner");
                 var task = Task.Run(() => RunPipelineSafeAsync(id, stoppingToken), CancellationToken.None);
                 lock (activeGate)
                 {
@@ -121,9 +123,10 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
 
     private async Task RunPipelineSafeAsync(int id, CancellationToken stoppingToken)
     {
-        try { await RunPipelineAsync(id, stoppingToken); }
+        try { await RunPipelineAsync(id, stoppingToken); WorkerPulse.Ok("ci-runner"); }
         catch (Exception ex)
         {
+            WorkerPulse.Fail("ci-runner", ex);
             log.LogError(ex, "Pipeline {Id} crashed", id);
             try { await FinishPipelineAsync(id, PipelineStatus.Error, "Internal error: " + ex.Message); }
             catch (Exception ex2) { log.LogError(ex2, "Could not record failure of pipeline {Id}", id); }

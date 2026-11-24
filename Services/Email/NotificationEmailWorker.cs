@@ -29,9 +29,9 @@ public sealed class NotificationEmailWorker(IDbContextFactory<AppDbContext> dbFa
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await ProcessAsync(stoppingToken); }
+            try { WorkerPulse.Tick("notification-email"); await ProcessAsync(stoppingToken); WorkerPulse.Ok("notification-email"); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { log.LogError(ex, "Notification email pass failed"); }
+            catch (Exception ex) { WorkerPulse.Fail("notification-email", ex); log.LogError(ex, "Notification email pass failed"); }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             timeout.CancelAfter(PollInterval);

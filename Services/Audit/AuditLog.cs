@@ -257,6 +257,8 @@ public sealed class AuditRetentionService(IDbContextFactory<AppDbContext> dbFact
         {
             try
             {
+                WorkerPulse.Report("audit-retention", options.Value.RetentionDays > 0);
+                WorkerPulse.Tick("audit-retention");
                 var days = options.Value.RetentionDays;
                 if (days > 0)
                 {
@@ -265,9 +267,11 @@ public sealed class AuditRetentionService(IDbContextFactory<AppDbContext> dbFact
                     var n = await db.AuditEvents.Where(e => e.CreatedAt < cutoff).ExecuteDeleteAsync(stoppingToken);
                     if (n > 0) log.LogInformation("Audit retention: deleted {Count} events older than {Days} days", n, days);
                 }
+                WorkerPulse.Ok("audit-retention");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                WorkerPulse.Fail("audit-retention", ex);
                 log.LogError(ex, "Audit retention cleanup failed");
             }
             try { await Task.Delay(TimeSpan.FromDays(1), stoppingToken); }

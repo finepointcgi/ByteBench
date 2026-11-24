@@ -53,6 +53,8 @@ public sealed class WebhookDeliveryRetentionService(IDbContextFactory<AppDbConte
         {
             try
             {
+                WorkerPulse.Report("webhook-retention", options.Value.WebhookDeliveryDays > 0);
+                WorkerPulse.Tick("webhook-retention");
                 var days = options.Value.WebhookDeliveryDays;
                 if (days > 0)
                 {
@@ -61,8 +63,9 @@ public sealed class WebhookDeliveryRetentionService(IDbContextFactory<AppDbConte
                     var n = await db.WebhookDeliveries.Where(d => d.CreatedAt < cutoff).ExecuteDeleteAsync(ct);
                     if (n > 0) log.LogInformation("Retention: deleted {Count} webhook deliveries older than {Days} days", n, days);
                 }
+                WorkerPulse.Ok("webhook-retention");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Webhook delivery retention failed"); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("webhook-retention", ex); log.LogError(ex, "Webhook delivery retention failed"); }
             try { await Task.Delay(TimeSpan.FromHours(6), ct); }
             catch (OperationCanceledException) { break; }
         }

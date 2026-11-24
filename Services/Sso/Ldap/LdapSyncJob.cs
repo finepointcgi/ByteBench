@@ -32,14 +32,17 @@ public sealed class LdapSyncJob(IServiceScopeFactory scopes, IOptionsMonitor<Lda
         {
             var o = options.CurrentValue;
             var minutes = o.Enabled ? o.Sync.IntervalMinutes : 0;
+            WorkerPulse.Report("ldap-sync", minutes > 0);
+            WorkerPulse.Tick("ldap-sync");
             try
             {
                 await Task.Delay(TimeSpan.FromMinutes(minutes > 0 ? minutes : 5), stoppingToken);
-                if (minutes > 0 && options.CurrentValue.Enabled) await RunNowAsync("scheduled", ct: stoppingToken);
+                if (minutes > 0 && options.CurrentValue.Enabled) { await RunNowAsync("scheduled", ct: stoppingToken); WorkerPulse.Ok("ldap-sync"); }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception ex)
             {
+                WorkerPulse.Fail("ldap-sync", ex);
                 log.LogError(ex, "LDAP sync job failed");
             }
         }

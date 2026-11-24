@@ -26,12 +26,13 @@ public sealed class PagesCleanupService(PagesDeployer deployer, ILogger<PagesCle
     {
         try
         {
+            WorkerPulse.Report("pages-cleanup", true);
             await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
             using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
             do
             {
-                try { await deployer.CleanupAsync(stoppingToken); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Pages cleanup failed"); }
+                try { WorkerPulse.Tick("pages-cleanup"); await deployer.CleanupAsync(stoppingToken); WorkerPulse.Ok("pages-cleanup"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("pages-cleanup", ex); log.LogError(ex, "Pages cleanup failed"); }
             } while (await timer.WaitForNextTickAsync(stoppingToken));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }

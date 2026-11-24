@@ -311,6 +311,8 @@ public sealed class WorkbenchPlanWorker(IServiceScopeFactory scopes, WorkbenchPl
         {
             try
             {
+                WorkerPulse.Report("workbench-plan", options.CurrentValue.PushWorkerEnabled);
+                WorkerPulse.Tick("workbench-plan");
                 if (options.CurrentValue.PushWorkerEnabled)
                 {
                     var reconcile = options.CurrentValue.ReconcileMinutes > 0 && DateTime.UtcNow - lastReconcile >= TimeSpan.FromMinutes(options.CurrentValue.ReconcileMinutes);
@@ -325,9 +327,10 @@ public sealed class WorkbenchPlanWorker(IServiceScopeFactory scopes, WorkbenchPl
                         || (reconcile && s.ReconcileEnabled && s.State != WorkbenchPlanSyncState.Running)).Select(s => s.ProjectId).ToListAsync(stoppingToken);
                     foreach (var id in due) await svc.RunAsync(id, stoppingToken);
                 }
+                WorkerPulse.Ok("workbench-plan");
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { log.LogError(ex, "Workbench plan sync sweep failed"); }
+            catch (Exception ex) { WorkerPulse.Fail("workbench-plan", ex); log.LogError(ex, "Workbench plan sync sweep failed"); }
             try { await signal.Semaphore.WaitAsync(TimeSpan.FromSeconds(10), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }

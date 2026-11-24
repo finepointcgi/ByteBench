@@ -15,6 +15,7 @@ public sealed class MirrorWorker(IDbContextFactory<AppDbContext> dbFactory, Mirr
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        WorkerPulse.Report("mirror", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled)
         {
             log.LogInformation("Background mirror syncs are turned off (Mirroring:Enabled=false)");
@@ -30,6 +31,7 @@ public sealed class MirrorWorker(IDbContextFactory<AppDbContext> dbFactory, Mirr
         {
             try
             {
+                WorkerPulse.Tick("mirror");
                 List<int> due;
                 await using (var db = await dbFactory.CreateDbContextAsync(ct))
                 {
@@ -43,9 +45,10 @@ public sealed class MirrorWorker(IDbContextFactory<AppDbContext> dbFactory, Mirr
                     if (ct.IsCancellationRequested) break;
                     await runner.SyncAsync(id, wait: false, ct); // already running (e.g. "Sync now"): skip; it reschedules itself
                 }
+                WorkerPulse.Ok("mirror");
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch (Exception ex) { log.LogError(ex, "Pull mirror poll failed"); }
+            catch (Exception ex) { WorkerPulse.Fail("mirror", ex); log.LogError(ex, "Pull mirror poll failed"); }
 
             try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, options.CurrentValue.PollSeconds)), ct); }
             catch (OperationCanceledException) { break; }

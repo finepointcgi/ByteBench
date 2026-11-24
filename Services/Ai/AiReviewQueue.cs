@@ -109,6 +109,7 @@ public class AiReviewWorker(AiReviewQueue queue, IServiceScopeFactory scopes, ID
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "AI review worker startup failed"); }
 
+        WorkerPulse.Report("ai-review", true);
         var intake = IntakeAsync(stoppingToken);
         try
         {
@@ -121,11 +122,14 @@ public class AiReviewWorker(AiReviewQueue queue, IServiceScopeFactory scopes, ID
                 var svc = scope.ServiceProvider.GetRequiredService<AiReviewService>();
                 try
                 {
+                    WorkerPulse.Tick("ai-review");
                     await svc.RunAsync(reviewId, stoppingToken);
+                    WorkerPulse.Ok("ai-review");
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception ex)
                 {
+                    WorkerPulse.Fail("ai-review", ex);
                     log.LogError(ex, "AI review {ReviewId} failed", reviewId);
                     try { await svc.MarkFailedAsync(reviewId, ex.Message); }
                     catch (Exception ex2) { log.LogError(ex2, "Could not record failure of AI review {ReviewId}", reviewId); }

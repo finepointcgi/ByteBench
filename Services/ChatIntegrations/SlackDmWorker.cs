@@ -26,9 +26,9 @@ public sealed class SlackDmWorker(IDbContextFactory<AppDbContext> dbFactory, Liv
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await ProcessAsync(stoppingToken); }
+            try { WorkerPulse.Tick("slack-dm"); await ProcessAsync(stoppingToken); WorkerPulse.Ok("slack-dm"); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { log.LogError(ex, "Slack DM pass failed"); }
+            catch (Exception ex) { WorkerPulse.Fail("slack-dm", ex); log.LogError(ex, "Slack DM pass failed"); }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             timeout.CancelAfter(PollInterval);

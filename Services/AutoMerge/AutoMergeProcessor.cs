@@ -33,6 +33,7 @@ public sealed class AutoMergeProcessor(AutoMergeSignal signal, LiveEvents live, 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+        WorkerPulse.Report("auto-merge", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled) return;
         using var prs = live.Subscribe<PullRequestChanged>(async e => { if (await AnyArmedAsync(a => a.PullRequest.Repository.ProjectId == e.ProjectId)) signal.Wake(); });
         using var pipelines = live.Subscribe<PipelineChanged>(OnPipelineChangedAsync);
@@ -43,11 +44,13 @@ public sealed class AutoMergeProcessor(AutoMergeSignal signal, LiveEvents live, 
             {
                 try
                 {
+                    WorkerPulse.Tick("auto-merge");
                     await using var scope = scopes.CreateAsyncScope();
                     scope.ServiceProvider.GetRequiredService<ProjectAccess>().ActAsSystem();
                     await scope.ServiceProvider.GetRequiredService<AutoMergeService>().ProcessAllAsync(stoppingToken);
+                    WorkerPulse.Ok("auto-merge");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Auto-merge processing failed"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("auto-merge", ex); log.LogError(ex, "Auto-merge processing failed"); }
                 await signal.WaitAsync(TimeSpan.FromSeconds(Math.Max(1, options.CurrentValue.SweepSeconds)), stoppingToken);
             }
         }

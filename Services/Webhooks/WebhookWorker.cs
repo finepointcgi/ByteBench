@@ -30,6 +30,7 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+        WorkerPulse.Report("webhook", true);
         await ResumePendingAsync(stoppingToken);
         try
         {
@@ -42,9 +43,9 @@ public sealed class WebhookWorker(WebhookDispatcher dispatcher, WebhookSender se
                         await slots.WaitAsync(stoppingToken);
                         _ = Task.Run(async () =>
                         {
-                            try { await DeliverAsync(deliveryRowId, stoppingToken); }
+                            try { WorkerPulse.Tick("webhook"); await DeliverAsync(deliveryRowId, stoppingToken); WorkerPulse.Ok("webhook"); }
                             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-                            catch (Exception ex) { log.LogError(ex, "Webhook delivery {Id} failed unexpectedly", deliveryRowId); }
+                            catch (Exception ex) { WorkerPulse.Fail("webhook", ex); log.LogError(ex, "Webhook delivery {Id} failed unexpectedly", deliveryRowId); }
                             finally { slots.Release(); }
                         }, CancellationToken.None);
                     }

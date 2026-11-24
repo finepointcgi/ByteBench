@@ -158,7 +158,9 @@ public sealed class InboundMailPoller(IEnumerable<IInboundMailSource> sources, S
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {
+            WorkerPulse.Tick("service-desk-mail");
             await PollOnceAsync(stoppingToken);
+            WorkerPulse.Ok("service-desk-mail");
             try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(10, options.Value.Imap.PollSeconds)), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
@@ -172,7 +174,7 @@ public sealed class InboundMailPoller(IEnumerable<IInboundMailSource> sources, S
         {
             try { total += await s.PollAsync(intake, ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) { log.LogError(ex, "Service desk: polling {Source} failed", s.Name); }
+            catch (Exception ex) { WorkerPulse.Fail("service-desk-mail", ex); log.LogError(ex, "Service desk: polling {Source} failed", s.Name); }
         }
         return total;
     }

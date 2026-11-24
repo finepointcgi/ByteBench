@@ -43,14 +43,17 @@ public class TriageWorker(TriageQueue queue, IServiceScopeFactory scopes, IDbCon
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "AI triage worker startup failed"); }
 
+        WorkerPulse.Report("ai-triage", true);
         try
         {
             await foreach (var runId in queue.Reader.ReadAllAsync(stoppingToken))
             {
                 try
                 {
+                    WorkerPulse.Tick("ai-triage");
                     using var scope = scopes.CreateScope();
                     await scope.ServiceProvider.GetRequiredService<TriageRunner>().RunAsync(runId, stoppingToken);
+                    WorkerPulse.Ok("ai-triage");
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception ex) { log.LogError(ex, "AI triage run {RunId} failed", runId); }

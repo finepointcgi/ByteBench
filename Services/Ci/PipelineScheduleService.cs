@@ -170,6 +170,7 @@ public class CiScheduleRunner(IServiceScopeFactory scopes, IOptionsMonitor<CiOpt
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        WorkerPulse.Report("ci-schedules", options.CurrentValue.Enabled && options.CurrentValue.SchedulesEnabled);
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         try
         {
@@ -178,10 +179,12 @@ public class CiScheduleRunner(IServiceScopeFactory scopes, IOptionsMonitor<CiOpt
                 if (!options.CurrentValue.Enabled || !options.CurrentValue.SchedulesEnabled) continue;
                 try
                 {
+                    WorkerPulse.Tick("ci-schedules");
                     using var scope = scopes.CreateScope();
                     await scope.ServiceProvider.GetRequiredService<PipelineScheduleService>().RunDueAsync(DateTime.UtcNow, stoppingToken);
+                    WorkerPulse.Ok("ci-schedules");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Running pipeline schedules failed"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("ci-schedules", ex); log.LogError(ex, "Running pipeline schedules failed"); }
             } while (await timer.WaitForNextTickAsync(stoppingToken));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
@@ -195,16 +198,19 @@ public class CiCleanupService(CiArtifactStore artifacts, CiCacheStore caches, IL
     {
         try
         {
+            WorkerPulse.Report("ci-cleanup", true);
             await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
             do
             {
                 try
                 {
+                    WorkerPulse.Tick("ci-cleanup");
                     await artifacts.CleanupAsync(stoppingToken);
                     await caches.CleanupAsync(stoppingToken);
+                    WorkerPulse.Ok("ci-cleanup");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "CI artifact cleanup failed"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("ci-cleanup", ex); log.LogError(ex, "CI artifact cleanup failed"); }
             } while (await timer.WaitForNextTickAsync(stoppingToken));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }

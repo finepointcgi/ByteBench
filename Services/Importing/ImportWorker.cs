@@ -12,6 +12,7 @@ public sealed class ImportWorker(ImportRunner runner, IOptionsMonitor<ImportOpti
     {
         try { await runner.RecoverInterruptedAsync(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Cleaning up interrupted imports failed"); }
+        WorkerPulse.Report("repo-import", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled)
         {
             log.LogInformation("Background repository imports are turned off (Import:Enabled=false)");
@@ -28,8 +29,8 @@ public sealed class ImportWorker(ImportRunner runner, IOptionsMonitor<ImportOpti
                 running.RemoveAll(t => t.IsCompleted);
                 running.Add(Task.Run(async () =>
                 {
-                    try { await runner.RunAsync(id, stoppingToken); }
-                    catch (Exception ex) { log.LogError(ex, "Import {Id} crashed", id); }
+                    try { WorkerPulse.Tick("repo-import"); await runner.RunAsync(id, stoppingToken); WorkerPulse.Ok("repo-import"); }
+                    catch (Exception ex) { WorkerPulse.Fail("repo-import", ex); log.LogError(ex, "Import {Id} crashed", id); }
                     finally { slots.Release(); }
                 }, CancellationToken.None));
             }

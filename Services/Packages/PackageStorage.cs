@@ -272,11 +272,12 @@ public sealed class PackageSweeper(PackageStorage storage, ILogger<PackageSweepe
     {
         try
         {
+            WorkerPulse.Report("package-sweeper", true);
             await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
             while (!stoppingToken.IsCancellationRequested)
             {
-                try { await storage.SweepAsync(TimeSpan.FromDays(1), stoppingToken); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Package sweep failed"); }
+                try { WorkerPulse.Tick("package-sweeper"); await storage.SweepAsync(TimeSpan.FromDays(1), stoppingToken); WorkerPulse.Ok("package-sweeper"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("package-sweeper", ex); log.LogError(ex, "Package sweep failed"); }
                 await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
             }
         }

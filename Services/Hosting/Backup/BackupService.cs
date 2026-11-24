@@ -105,6 +105,7 @@ public sealed class BackupScheduler(BackupService backups, IOptionsMonitor<Backu
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        WorkerPulse.Report("backup", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled) return;
         log.LogInformation("Scheduled backups every {Hours} h from {Start:HH:mm} UTC into {Dir}; keeping the newest {Keep}",
             options.CurrentValue.IntervalHours, options.CurrentValue.StartTime, backups.Directory, options.CurrentValue.KeepLast);
@@ -114,10 +115,12 @@ public sealed class BackupScheduler(BackupService backups, IOptionsMonitor<Backu
             try
             {
                 while (wait > TimeSpan.Zero) { var step = wait > TimeSpan.FromDays(1) ? TimeSpan.FromDays(1) : wait; await Task.Delay(step, ct); wait -= step; }
+                WorkerPulse.Tick("backup");
                 await backups.RunAsync("scheduled", ct);
+                WorkerPulse.Ok("backup");
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) { log.LogError(ex, "Scheduled backup failed; trying again at the next slot"); }
+            catch (Exception ex) { WorkerPulse.Fail("backup", ex); log.LogError(ex, "Scheduled backup failed; trying again at the next slot"); }
             await Task.Delay(TimeSpan.FromSeconds(5), ct).ContinueWith(_ => { }); // never twice in one slot
         }
     }

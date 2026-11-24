@@ -107,6 +107,7 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        WorkerPulse.Report("ssh-server", true);
         using var stop = stoppingToken.Register(() => listener?.Stop());
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -126,6 +127,7 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
                 socket.Dispose();
                 continue;
             }
+            WorkerPulse.Tick("ssh-server");
             _ = Task.Run(() => HandleConnectionAsync(socket, stoppingToken), CancellationToken.None);
         }
     }

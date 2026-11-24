@@ -221,9 +221,9 @@ public sealed class WorkbenchPushWorker(WorkbenchPushEngine engine, IOptionsMoni
         await Task.Yield();
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { if (options.CurrentValue.PushWorkerEnabled) await engine.RunOnceAsync(stoppingToken); }
+            try { WorkerPulse.Report("workbench-push", options.CurrentValue.PushWorkerEnabled); WorkerPulse.Tick("workbench-push"); if (options.CurrentValue.PushWorkerEnabled) await engine.RunOnceAsync(stoppingToken); WorkerPulse.Ok("workbench-push"); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { log.LogError(ex, "Workbench push sweep failed"); }
+            catch (Exception ex) { WorkerPulse.Fail("workbench-push", ex); log.LogError(ex, "Workbench push sweep failed"); }
             try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, options.CurrentValue.PushIntervalSeconds)), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }

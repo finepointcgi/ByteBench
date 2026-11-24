@@ -14,6 +14,7 @@ public sealed class AutomationWorker(AutomationQueue queue, AutomationEngine eng
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        WorkerPulse.Report("automation", options.CurrentValue.Enabled);
         try
         {
             // Know the bot's id if it exists already, so its changes count as automation (it is created on first use).
@@ -34,10 +35,12 @@ public sealed class AutomationWorker(AutomationQueue queue, AutomationEngine eng
             {
                 try
                 {
+                    WorkerPulse.Tick("automation");
                     if (options.CurrentValue.Enabled) await engine.ProcessAsync(e, ct);
                     else e.Completion?.TrySetResult(null);
+                    WorkerPulse.Ok("automation");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Automation event failed"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("automation", ex); log.LogError(ex, "Automation event failed"); }
                 finally { queue.Done(); }
             }
         }

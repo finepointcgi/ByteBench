@@ -17,6 +17,7 @@ public sealed class MergeQueueProcessor(MergeQueueSignal signal, LiveEvents live
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+        WorkerPulse.Report("merge-queue", options.CurrentValue.Enabled);
         if (!options.CurrentValue.Enabled) return;
         using var pipelines = live.Subscribe<PipelineChanged>(OnPipelineChangedAsync);
         using var prs = live.Subscribe<PullRequestChanged>(e =>
@@ -30,11 +31,13 @@ public sealed class MergeQueueProcessor(MergeQueueSignal signal, LiveEvents live
             {
                 try
                 {
+                    WorkerPulse.Tick("merge-queue");
                     await using var scope = scopes.CreateAsyncScope();
                     scope.ServiceProvider.GetRequiredService<ProjectAccess>().ActAsSystem();
                     await scope.ServiceProvider.GetRequiredService<MergeQueueEngine>().ProcessAllAsync(stoppingToken);
+                    WorkerPulse.Ok("merge-queue");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Merge queue processing failed"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("merge-queue", ex); log.LogError(ex, "Merge queue processing failed"); }
                 await signal.WaitAsync(TimeSpan.FromSeconds(Math.Max(1, options.CurrentValue.PollSeconds)), stoppingToken);
             }
         }

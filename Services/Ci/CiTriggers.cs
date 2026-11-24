@@ -242,6 +242,7 @@ public class CiPullRequestWatcher(LiveEvents live, IServiceScopeFactory scopes, 
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        WorkerPulse.Report("ci-pr-watcher", true);
         var work = System.Threading.Channels.Channel.CreateUnbounded<int>(new() { SingleReader = true });
         using var sub = live.Subscribe<PullRequestChanged>(e => { work.Writer.TryWrite(e.PullRequestId); return Task.CompletedTask; });
         try
@@ -250,11 +251,13 @@ public class CiPullRequestWatcher(LiveEvents live, IServiceScopeFactory scopes, 
             {
                 try
                 {
+                    WorkerPulse.Tick("ci-pr-watcher");
                     using var scope = scopes.CreateScope();
                     scope.ServiceProvider.GetRequiredService<ProjectAccess>().ActAsSystem();
                     await scope.ServiceProvider.GetRequiredService<CiTriggerService>().OnPullRequestChangedAsync(prId, stoppingToken);
+                    WorkerPulse.Ok("ci-pr-watcher");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "CI trigger for PR {Id} failed", prId); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("ci-pr-watcher", ex); log.LogError(ex, "CI trigger for PR {Id} failed", prId); }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }

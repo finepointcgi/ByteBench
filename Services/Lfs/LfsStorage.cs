@@ -167,11 +167,12 @@ public sealed class LfsSweeper(LfsStorage storage, ILogger<LfsSweeper> log) : Ba
     {
         try
         {
+            WorkerPulse.Report("lfs-sweeper", true);
             await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
             while (!stoppingToken.IsCancellationRequested)
             {
-                try { await storage.SweepAsync(TimeSpan.FromDays(1), stoppingToken); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "LFS sweep failed"); }
+                try { WorkerPulse.Tick("lfs-sweeper"); await storage.SweepAsync(TimeSpan.FromDays(1), stoppingToken); WorkerPulse.Ok("lfs-sweeper"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("lfs-sweeper", ex); log.LogError(ex, "LFS sweep failed"); }
                 await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
             }
         }

@@ -43,8 +43,13 @@ public sealed class EmailWorker(EmailQueue queue, IEmailSender sender, ILogger<E
     {
         try
         {
+            WorkerPulse.Report("email", true);
             await foreach (var message in queue.Reader.ReadAllAsync(stoppingToken))
-                await SendWithRetriesAsync(message, stoppingToken);
+            {
+                WorkerPulse.Tick("email");
+                try { await SendWithRetriesAsync(message, stoppingToken); WorkerPulse.Ok("email"); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { WorkerPulse.Fail("email", ex); throw; }
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
