@@ -89,6 +89,13 @@ public class BranchProtectionService(IDbContextFactory<AppDbContext> dbFactory, 
         if (pattern.StartsWith("refs/heads/", StringComparison.Ordinal)) pattern = pattern["refs/heads/".Length..];
         if (BranchPatterns.Validate(pattern) is { } problem) throw new InvalidOperationException(problem);
         if (input.RequiredApprovals is < 0 or > 10) throw new InvalidOperationException("Required approvals must be between 0 and 10.");
+        // Rules saved before the merge queue existed carry stored zeros for its settings: only a queue that is switched on needs valid ones.
+        if (!input.MergeQueueEnabled)
+        {
+            if (input.MergeQueueMaxBatch is < 1 or > 20) input.MergeQueueMaxBatch = 5;
+            if (input.MergeQueueTimeoutMinutes is < 1 or > 1440) input.MergeQueueTimeoutMinutes = 60;
+            if (input.MergeQueueApprovalTimeoutMinutes is < 1 or > 10080) input.MergeQueueApprovalTimeoutMinutes = 1440;
+        }
         if (input.MergeQueueMaxBatch is < 1 or > 20) throw new InvalidOperationException("The merge queue batch size must be between 1 and 20.");
         if (input.MergeQueueTimeoutMinutes is < 1 or > 1440) throw new InvalidOperationException("The merge queue timeout must be between 1 and 1440 minutes.");
         if (input.MergeQueueApprovalTimeoutMinutes is < 1 or > 10080) throw new InvalidOperationException("The merge queue approval timeout must be between 1 and 10080 minutes.");
