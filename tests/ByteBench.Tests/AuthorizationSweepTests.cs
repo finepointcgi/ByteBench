@@ -84,7 +84,7 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
     };
 
     /// <summary>Query parameters every swept request carries, so required-parameter checks (400) do not hide what follows them.</summary>
-    private const string Query = "?q=deploy&rev=main&ref=main&path=README.md&base=main&head=main&from=2020-01-01&to=2030-01-01";
+    private const string Query = "?q=deploy&ref=main&path=README.md&base=main&head=main&from=2020-01-01&to=2030-01-01";
 
     private static readonly Regex Parameter = new(@"\{\**(?<name>[A-Za-z_][A-Za-z0-9_]*)[^}]*\}", RegexOptions.Compiled);
 
@@ -165,7 +165,7 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
                 "path" or "file" or "fileName" or "tag" => "README.md",
                 "rest" => "nothing-here",
                 _ => "x",
-            }) + Query;
+            }) + Query + (route.Pattern.Contains("/snippets") ? "" : "&rev=main"); // a snippet's ?rev= is a number
         }
     }
 
@@ -254,11 +254,34 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
             {
                 var url = Urls(route, values).First().Replace("q=deploy", "q=" + Uri.EscapeDataString(q));
                 using var response = await client.GetAsync(url);
-                var body = await response.Content.ReadAsStringAsync();
+                var body = Regex.Replace(await response.Content.ReadAsStringAsync(), "\"query\":\"[^\"]*\"", ""); // the echoed search term
                 if (response.IsSuccessStatusCode && (body.Contains("\"WEB\"") || body.Contains("WEB-") || body.Contains("/WEB/") || body.Contains("web-app")))
-                    failures.Add($"{route.Name} ({url}) mentions the private project: {body[..Math.Min(body.Length, 1500)]}");
+                    failures.Add($"{route.Name} ({url}) mentions the private project: {body[..Math.Min(body.Length, 500)]}");
             }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    /// <summary>
+    /// Control: the same URLs work for the owner, so the refusals above come from permission checks and not from made-up ids.
+    /// </summary>
+    [Fact]
+    public async Task Owner_gets_data_from_the_swept_urls()
+    {
+        await app.EnsureReadyAsync();
+        var values = await TargetValuesAsync();
+        var client = Client(await app.CreateTokenAsync("alice", TokenScopes.ReadApi));
+        var routes = ApiRoutes().Where(r => r.Method == "GET" && r.Pattern.StartsWith("/api/v1/projects/{key}", StringComparison.Ordinal)).ToList();
+        var hits = new List<string>();
+        var misses = new List<string>();
+        foreach (var route in routes)
+        {
+            var ok = false;
+            foreach (var url in Urls(route, values))
+                if ((int)await SendAsync(client, "GET", url) is >= 200 and < 300) { ok = true; break; }
+            (ok ? hits : misses).Add(route.Name);
+        }
+        output.WriteLine($"{hits.Count}/{routes.Count} project GET routes answered the owner. Misses:\n" + string.Join("\n", misses));
+        Assert.True(hits.Count * 100 / routes.Count >= 60, $"Only {hits.Count} of {routes.Count} project GET routes answered the owner; the sweep's sample values no longer reach real data.");
     }
 
     [Fact]
