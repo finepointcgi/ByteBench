@@ -14,9 +14,10 @@
     <Version Condition="'$(Version)' == ''">0.1.0</Version>
   </PropertyGroup>
 
-  <!-- NuGet package metadata. The repository has no LICENSE file, so no license metadata is set. -->
+  <!-- NuGet package metadata. -->
   <PropertyGroup>
     <PackageId>ByteBench.Cli</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Title>ByteBench CLI</Title>
     <Authors>ByteBench contributors</Authors>
     <Description>Command-line client for ByteBench: issues, pull requests, repositories and pipelines from a terminal. Installs the `bytebench` command.</Description>
