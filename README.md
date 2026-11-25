@@ -36,7 +36,7 @@ The suite is in `tests/ByteBench.Tests` (xUnit, referenced from `ByteBench.sln`)
 The UI uses [MudBlazor](https://mudblazor.com) 9 (no Bootstrap).
 
 - **Theme:** `Components/Layout/ByteBenchTheme.cs` holds the light and dark palettes, typography and radii.
-- **Dark mode:** the moon/sun button in the app bar toggles it. The choice is kept in the browser's `localStorage` (`wwwroot/js/theme.js`); until you choose, it follows the OS setting.
+- **Dark mode:** the theme button in the app bar offers System, Light and Dark. The choice is kept in the browser (`localStorage` plus the `bytebench-theme` and `bytebench-scheme` cookies, set by `wwwroot/js/theme.js`) so the server renders the right palette on first paint; nothing is stored server-side. System follows the OS setting.
 - **Shell:** `MainLayout.razor` is a MudLayout with an app bar (project switcher, New issue, notifications, account menu) and a responsive drawer. It also hosts the Popover, Dialog and Snackbar providers. Confirmations use `IDialogService` and transient messages use `ISnackbar`.
 - **CSS:** component styles live in scoped `.razor.css` files. `wwwroot/app.css` keeps only shared bits, and its `--bg`, `--surface`, `--text`, `--muted`, `--border` and `--accent` variables map onto `--mud-palette-*`, so custom CSS follows the theme.
 - **Account pages** (sign-in, registration, profile) are static SSR, so they post real HTML forms with inputs styled like MudBlazor's (`Components/Account/AccountLayout.razor.css`).

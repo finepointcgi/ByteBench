@@ -60,7 +60,7 @@
 /* ----- Code and diff tables (file viewer, search results, DiffView) ----- */
 .code-table, .diff-table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 20px; }
 .code-table td.ln, .diff-table td.ln {
-    width: 1%; min-width: 44px; padding: 0 10px; text-align: right; color: var(--mud-palette-text-disabled); user-select: none;
+    width: 1%; min-width: 44px; padding: 0 10px; text-align: right; color: var(--mud-palette-text-secondary); user-select: none;
     vertical-align: top; white-space: nowrap; border-right: 1px solid var(--border);
 }
 .code-table td.code { padding: 0 14px; white-space: pre; tab-size: 4; }

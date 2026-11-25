@@ -1,10 +1,13 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bb-dark="@(dark ? "" : null)">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
+    @* Applies the colour theme before first paint (no flash): a blocking script, ahead of the stylesheets. *@
+    <script src="@Assets["js/theme.js"]"></script>
+    <style>@((MarkupString)ByteBenchTheme.BootCss)</style>
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
@@ -23,7 +26,6 @@
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
-    <script src="@Assets["js/theme.js"]"></script>
     <script src="@Assets["js/forms.js"]"></script>
     <script src="@Assets["lib/highlightjs/highlight.min.js"]"></script>
     <script src="@Assets["lib/highlightjs/languages/dockerfile.min.js"]"></script>
@@ -39,6 +41,8 @@
 @code {
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
+
+    private bool dark => ThemePreference.IsDark(HttpContext);
 
     // Account pages carry [ExcludeFromInteractiveRouting] and run as static SSR,
     // because SignInManager has to write cookies on a real HTTP response.

@@ -25,7 +25,7 @@
 .diff-file .diff-table { display: block; overflow-x: auto; }
 .diff-file .diff-table tbody { display: table; width: 100%; }
 .diff-table td.code { padding: 0 14px 0 26px; white-space: pre; position: relative; tab-size: 4; }
-.diff-sign { display: inline-block; width: 14px; margin-left: -14px; color: var(--mud-palette-text-disabled); user-select: none; }
+.diff-sign { display: inline-block; width: 14px; margin-left: -14px; color: var(--mud-palette-text-secondary); user-select: none; }
 .diff-hunk td { background: var(--diff-hunk-bg); color: var(--muted); padding-top: 3px; padding-bottom: 3px; }
 .diff-hunk td.code { padding-left: 14px; }
 .diff-added td { background: var(--diff-add-bg); }

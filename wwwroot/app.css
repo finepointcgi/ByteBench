@@ -112,7 +112,8 @@ input.invalid, textarea.invalid, select.invalid { outline: 1px solid var(--mud-p
 .gb-content { padding: 24px 28px; max-width: 1400px; }
 @media (max-width: 600px) { .gb-content { padding: 16px; } .gb-project-switch { display: none; } }
 .gb-drawer .mud-nav-link { color: var(--mud-palette-drawer-text); border-radius: 6px; margin: 1px 8px; width: auto; }
-.gb-drawer .mud-nav-link.active { background: rgba(167,139,250,.18); color: #fff; }
+.gb-drawer .mud-nav-link.active, .gb-drawer .mud-nav-link.active:not(.mud-nav-link-disabled) { background: rgba(167,139,250,.18); color: #fff; }
+.gb-drawer .mud-nav-link.active .mud-nav-link-text, .gb-drawer .mud-nav-link.active .mud-nav-link-icon { color: #fff; }
 .gb-drawer .mud-nav-link:hover { color: #fff; }
 .gb-nav { padding-top: 8px; }
 .gb-nav-divider { border-color: rgba(255,255,255,.08) !important; }

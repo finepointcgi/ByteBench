@@ -1,4 +1,5 @@
 using MudBlazor;
+using MudBlazor.Utilities;
 
 namespace ByteBench.Components.Layout;
 
@@ -13,7 +14,7 @@ public static class ByteBenchTheme
             PrimaryLighten = "#8b5cf6",
             PrimaryDarken = "#5b21b6",
             Secondary = "#0ea5e9",
-            Tertiary = "#16a34a",
+            Tertiary = "#15803d",
             AppbarBackground = "#151322",
             AppbarText = "#ffffff",
             DrawerBackground = "#1e1b2e",
@@ -25,8 +26,8 @@ public static class ByteBenchTheme
             TableLines = "#e3e5ea",
             TextPrimary = "#1f2328",
             TextSecondary = "#656d76",
-            Success = "#16a34a",
-            Warning = "#d97706",
+            Success = "#15803d",
+            Warning = "#b45309",
             Error = "#dc2626",
             Info = "#2563eb",
         },
@@ -52,6 +53,14 @@ public static class ByteBenchTheme
             Warning = "#d29922",
             Error = "#f85149",
             Info = "#58a6ff",
+            // The dark accents are light tints, so filled buttons and chips need dark text (white would be ~2.7:1).
+            PrimaryContrastText = "#0d1117",
+            SecondaryContrastText = "#0d1117",
+            TertiaryContrastText = "#0d1117",
+            SuccessContrastText = "#0d1117",
+            WarningContrastText = "#0d1117",
+            ErrorContrastText = "#0d1117",
+            InfoContrastText = "#0d1117",
         },
         Typography = new Typography
         {
@@ -60,4 +69,23 @@ public static class ByteBenchTheme
         },
         LayoutProperties = new LayoutProperties { DefaultBorderRadius = "8px", DrawerWidthLeft = "240px" },
     };
+
+    /// <summary>
+    /// Dark values for the main surface variables, applied while <c>&lt;html data-bb-dark&gt;</c> is set (wwwroot/js/theme.js sets it
+    /// before first paint). Covers the gap before the server-rendered MudThemeProvider matches the resolved theme, for example the
+    /// first visit with an OS in dark mode. Generated from <see cref="PaletteDark"/> so the two cannot drift apart.
+    /// </summary>
+    public static string BootCss { get; } = BuildBootCss();
+
+    private static string BuildBootCss()
+    {
+        var p = Theme.PaletteDark;
+        string C(MudColor c) => c.ToString(MudColorOutputFormats.RGBA);
+        return "html[data-bb-dark]{color-scheme:dark;"
+            + $"--mud-native-html-color-scheme:dark;--mud-palette-background:{C(p.Background)};--mud-palette-surface:{C(p.Surface)};"
+            + $"--mud-palette-text-primary:{C(p.TextPrimary)};--mud-palette-text-secondary:{C(p.TextSecondary)};"
+            + $"--mud-palette-lines-default:{C(p.LinesDefault)};--mud-palette-primary:{C(p.Primary)};"
+            + $"--mud-palette-drawer-background:{C(p.DrawerBackground)};--mud-palette-appbar-background:{C(p.AppbarBackground)};"
+            + "}";
+    }
 }

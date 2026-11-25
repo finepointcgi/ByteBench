@@ -45,10 +45,22 @@
             <MudIconButton Href="@($"/p/{projectKey}/issues/new")" Icon="@Icons.Material.Filled.AddCircle" Color="Color.Inherit"
                            Class="d-flex d-sm-none" aria-label="New issue" />
         }
-        <MudTooltip Text="@(isDark ? "Switch to light mode" : "Switch to dark mode")">
-            <MudIconButton Icon="@(isDark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"
-                           OnClick="ToggleDark" aria-label="Toggle dark mode" />
-        </MudTooltip>
+        <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Colour theme" Class="gb-theme-menu">
+            <ActivatorContent Context="menu">
+                <MudTooltip Text="@($"Theme: {ModeLabel(themeMode)}")">
+                    <MudIconButton Icon="@ModeIcon(themeMode)" Color="Color.Inherit" OnClick="menu.ToggleAsync" aria-label="@($"Colour theme: {ModeLabel(themeMode)}")" />
+                </MudTooltip>
+            </ActivatorContent>
+            <ChildContent>
+                @foreach (var m in new[] { ThemePreference.System, ThemePreference.Light, ThemePreference.Dark })
+                {
+                    var mode = m;
+                    <MudMenuItem Icon="@ModeIcon(mode)" OnClick="() => SetThemeMode(mode)" Class="@(themeMode == mode ? "gb-theme-current" : null)">
+                        @ModeLabel(mode)@(themeMode == mode ? " ✓" : "")
+                    </MudMenuItem>
+                }
+            </ChildContent>
+        </MudMenu>
         @if (Me.User != null)
         {
             <NotificationBell />
@@ -172,10 +184,17 @@
     private List<ProjectSummary> projects = [];
     private HashSet<int> starred = [];
     private DotNetObjectReference<MainLayout>? shortcutsRef;
+    private DotNetObjectReference<MainLayout>? themeRef;
     private ProjectPermissions projectPerms = ProjectPermissions.None;
     private string? projectKey;
     private bool userLoaded;
     private bool drawerOpen = true;
+    // Colour theme: System / Light / Dark. The server seeds both from the theme cookies (static prerender) and
+    // [PersistentState] carries them to the interactive circuit; wwwroot/js/theme.js owns the stored choice.
+    [CascadingParameter] private HttpContext? Http { get; set; }
+    [PersistentState] public string? ThemeMode { get; set; }
+    [PersistentState] public bool? ThemeDark { get; set; }
+    private string themeMode = ThemePreference.System;
     private bool isDark;
     private MudThemeProvider? themeProvider;
 
@@ -183,6 +202,10 @@
 
     protected override async Task OnInitializedAsync()
     {
+        themeMode = ThemeMode ?? ThemePreference.Mode(Http);
+        isDark = ThemeDark ?? ThemePreference.IsDark(Http);
+        ThemeMode = themeMode;
+        ThemeDark = isDark;
         await Me.EnsureLoadedAsync();
         userLoaded = true;
         await RefreshProjects();
@@ -223,11 +246,13 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        // Saved choice first, else the OS preference. Interactive renders only (JS isn't available while prerendering).
+        // The browser knows the real choice and OS preference (JS isn't available while prerendering); register for later changes.
         try
         {
-            var saved = await JS.InvokeAsync<string?>("bytebenchTheme.get");
-            isDark = saved is "dark" || (saved is null && themeProvider != null && await themeProvider.GetSystemDarkModeAsync());
+            themeRef = DotNetObjectReference.Create(this);
+            themeMode = ThemePreference.Normalize(await JS.InvokeAsync<string?>("bytebenchTheme.get"));
+            isDark = await JS.InvokeAsync<bool>("bytebenchTheme.isDark");
+            await JS.InvokeVoidAsync("bytebenchTheme.watch", themeRef);
             StateHasChanged();
         }
         catch (InvalidOperationException) { } // static render: no JS interop
@@ -260,11 +285,29 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async Task ToggleDark()
+    private async Task SetThemeMode(string mode)
     {
-        isDark = !isDark;
-        await JS.InvokeVoidAsync("bytebenchTheme.set", isDark ? "dark" : "light");
+        themeMode = ThemePreference.Normalize(mode);
+        isDark = await JS.InvokeAsync<bool>("bytebenchTheme.set", themeMode);
     }
+
+    /// <summary>Called by theme.js when the OS preference or another tab changes the theme.</summary>
+    [JSInvokable]
+    public async Task OnThemeChanged(string mode, bool dark)
+    {
+        themeMode = ThemePreference.Normalize(mode);
+        isDark = dark;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string ModeLabel(string mode) => mode switch { ThemePreference.Light => "Light", ThemePreference.Dark => "Dark", _ => "System" };
+
+    private static string ModeIcon(string mode) => mode switch
+    {
+        ThemePreference.Light => Icons.Material.Outlined.LightMode,
+        ThemePreference.Dark => Icons.Material.Outlined.DarkMode,
+        _ => Icons.Material.Outlined.SettingsBrightness,
+    };
 
     private void OpenProfile() => Nav.NavigateTo("account/profile", forceLoad: true);
 
@@ -273,5 +316,6 @@
         Nav.LocationChanged -= OnLocationChanged;
         Stars.Changed -= OnStarsChanged;
         shortcutsRef?.Dispose();
+        themeRef?.Dispose();
     }
 }

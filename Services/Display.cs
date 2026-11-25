@@ -49,15 +49,17 @@ public static class Display
 
     /// <summary>Inline style for a status chip in the workflow status's colour (empty: use the category's CSS class).</summary>
     public static string StatusStyle(string? color) => string.IsNullOrEmpty(color) ? ""
-        : $"background:color-mix(in srgb, {color} 18%, white);color:color-mix(in srgb, {color} 75%, black)";
+        : $"background:color-mix(in srgb, {color} 18%, var(--mud-palette-surface));color:color-mix(in srgb, {color} 70%, var(--mud-palette-text-primary))";
 
-    /// <summary>Picks black or white text for readable contrast on a hex background.</summary>
+    /// <summary>Picks black or white text, whichever has the higher WCAG contrast on the hex background.</summary>
     public static string TextOn(string hex)
     {
         hex = hex.TrimStart('#');
         if (hex.Length < 6) return "#fff";
-        int r = Convert.ToInt32(hex[..2], 16), g = Convert.ToInt32(hex[2..4], 16), b = Convert.ToInt32(hex[4..6], 16);
-        return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#111" : "#fff";
+        static double Lin(int v) { var c = v / 255.0; return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4); }
+        var l = 0.2126 * Lin(Convert.ToInt32(hex[..2], 16)) + 0.7152 * Lin(Convert.ToInt32(hex[2..4], 16)) + 0.0722 * Lin(Convert.ToInt32(hex[4..6], 16));
+        // Contrast against white is 1.05 / (l + 0.05); against black it is (l + 0.05) / 0.05.
+        return (l + 0.05) / 0.05 > 1.05 / (l + 0.05) ? "#111" : "#fff";
     }
 
     public static string Ago(DateTime utc)

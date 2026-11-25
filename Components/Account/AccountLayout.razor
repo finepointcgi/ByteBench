@@ -1,7 +1,7 @@
 @inherits LayoutComponentBase
 
-@* Account pages are static SSR: the theme provider only emits the (light) palette CSS variables. *@
-<MudThemeProvider Theme="ByteBenchTheme.Theme" />
+@* Account pages are static SSR: the theme provider only emits the palette CSS variables, light or dark per the theme cookies. *@
+<MudThemeProvider Theme="ByteBenchTheme.Theme" IsDarkMode="ThemePreference.IsDark(Http)" />
 
 <div class="auth-shell">
     <a class="auth-brand" href="/">
@@ -11,3 +11,7 @@
         @Body
     </MudPaper>
 </div>
+
+@code {
+    [CascadingParameter] private HttpContext? Http { get; set; }
+}
