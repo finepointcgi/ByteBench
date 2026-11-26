@@ -1401,6 +1401,12 @@ dispatcher.Enqueue(projectId, "pipeline.completed", new { pipeline = new { id, s
 
 The payload is serialized with the API's camelCase settings and merged into the envelope. `IssueService` and `PullRequestService` call `WebhookNotifier` (one line per event). Pushes are handled by `WebhookPushListener` (an `IGitPushListener`), which reads the ref updates that `WebhookPushCaptureMiddleware` copies from the start of the `git-receive-pack` request body. Both it and `PullRequestService.MergeAsync` hand ref updates to `WebhookPushEvents.SendAsync`, which builds the payload after checking that each ref really is at `after`. Other push listeners can inject `PushCapture` to get them too.
 
+## Desktop app
+
+`desktop/` holds an Electron app (TypeScript, electron-builder) that opens any ByteBench server as a native application: saved servers with isolated sign-ins, a Cmd/Ctrl+K switcher, OS notifications with a dock/taskbar badge and tray item, `bytebench://open?server=<id|name|host>&path=/p/KEY/issues/12` links, "Clone with ByteBench", workspaces, and auto-update from GitHub releases. Run it with `cd desktop && npm ci && npm start`; tests are `npm test` (unit) and `npm run test:e2e` (starts a scratch server and drives the real app). Details, signing variables and security notes are in `desktop/README.md` and `site/pages/desktop-app.html`.
+
+Server side it uses two small endpoints: `GET /api/v1/server-info` (anonymous: name, version, `apiVersion`, capabilities, workspace base domain) and the caller's own notifications, `GET /api/v1/notifications?unread=&afterId=&limit=` and `POST /api/v1/notifications/{id}/read` (`Api/DesktopEndpoints.cs`, tests in `DesktopApiTests`). CI: `.github/workflows/desktop-ci.yml` (type-check, lint and unit tests on changes under `desktop/`) and `desktop-release.yml` (installers for tags `desktop-v*`).
+
 ## MCP server & command-line client
 
 AI assistants and terminals use ByteBench with a personal access token (`read_api` to read, `write_api` to also create and change issues). Everything runs as the token's user through the same services and `ProjectAccess` checks as the REST API. Documentation: `site/pages/mcp-cli.html`.

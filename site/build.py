@@ -59,6 +59,7 @@ SECTIONS = [
     ("Integrations and API", [
         ("api", "REST API and webhooks", "Tokens, endpoints, GraphQL-style search and webhook events"),
         ("mcp-cli", "AI tools (MCP) and the command line", "MCP server for AI assistants, tool reference and the bytebench CLI"),
+        ("desktop-app", "Desktop app", "Install the ByteBench app, add servers, notifications, links and security"),
         ("chat", "Slack and Microsoft Teams", "Notifications, slash commands and link previews"),
         ("notifications", "Notifications and email", "In-app, email, preferences and mentions"),
     ]),
