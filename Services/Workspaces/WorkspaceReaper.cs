@@ -31,6 +31,19 @@ public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, I
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
 
+    /// <summary>A graceful shutdown ends every workspace too (their files go with them), so nothing keeps running unattended without ByteBench.</summary>
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken);
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(20));
+            await CleanAtStartupAsync(cts.Token);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogDebug(ex, "Workspace cleanup at shutdown did not finish"); }
+    }
+
     /// <summary>After a restart nothing is live: remove this instance's containers and close the rows (tokens revoked).</summary>
     public async Task CleanAtStartupAsync(CancellationToken ct)
     {
@@ -51,7 +64,7 @@ public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, I
             await backend.RemoveAsync(c.ContainerId, ct);
             removed++;
         }
-        if (stale.Count > 0 || removed > 0) log.LogInformation("Workspaces: {Rows} workspace(s) closed and {Containers} container(s) removed after a restart", stale.Count, removed);
+        if (stale.Count > 0 || removed > 0) log.LogInformation("Workspaces: {Rows} workspace(s) closed and {Containers} container(s) removed (startup or shutdown cleanup)", stale.Count, removed);
     }
 
     /// <summary>One pass of the periodic checks (public so tests can run it without a timer).</summary>

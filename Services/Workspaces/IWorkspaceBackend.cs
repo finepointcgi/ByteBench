@@ -4,9 +4,13 @@ public sealed record WorkspaceLimits(string? Memory, string? Cpus, int PidsLimit
 
 /// <summary>What to start: a locked-down container, nothing published except the IDE port on loopback.</summary>
 public sealed record WorkspaceContainerSpec(int WorkspaceId, string Name, string Image, string Network, string HostAlias, int IdePort,
-    IReadOnlyDictionary<string, string> Env, WorkspaceLimits Limits);
+    IReadOnlyDictionary<string, string> Env, WorkspaceLimits Limits)
+{
+    /// <summary>Publish the IDE port on the host's loopback (false: ByteBench relays through the container instead).</summary>
+    public bool PublishIdePort { get; init; } = true;
+}
 
-/// <summary>A started container; <see cref="IdeHostPort"/> is the loopback port its IDE port is published on.</summary>
+/// <summary>A started container; <see cref="IdeHostPort"/> is the loopback port its IDE port is published on (0: not published, reached through the relay).</summary>
 public sealed record WorkspaceContainer(string ContainerId, int IdeHostPort, bool DiskLimitApplied = true);
 
 /// <summary>A command to run inside a container as an unprivileged user (never root).</summary>

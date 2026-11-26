@@ -21,7 +21,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git openssh-client postgresql-client curl ca-certificates sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Optional docker CLI for CI pipelines (talks to a daemon through a mounted socket or DOCKER_HOST).
+# Optional docker CLI for CI pipelines and Workspaces (talks to a daemon through a mounted socket or DOCKER_HOST). The workspace
+# image's build context ships in /app/docker/workspace, so ByteBench builds the image itself on first use (README "Workspaces").
 # docker build --build-arg WITH_DOCKER_CLI=true -t bytebench .
 ARG WITH_DOCKER_CLI=false
 ARG DOCKER_CLI_VERSION=27.3.1

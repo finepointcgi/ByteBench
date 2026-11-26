@@ -54,6 +54,14 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         return new Uri($"http://host.docker.internal:{port}/");
     }
 
+    /// <summary>Whether the IDE is reached through the in-container relay instead of a published loopback port (see <see cref="WorkspaceOptions.IdeTransport"/>).</summary>
+    public bool UseRelay() => Opts.IdeTransport.ToLowerInvariant() switch
+    {
+        "relay" => true,
+        "published" => false,
+        _ => File.Exists("/.dockerenv") || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOCKER_HOST")),
+    };
+
     // ---------- start ----------
 
     /// <summary>Provisions a workspace row created by <see cref="WorkspaceService"/>: container, network policy, checkout, IDE. Never throws; failures are recorded.</summary>
@@ -79,7 +87,7 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             if (urls.Mode == WorkspaceOriginMode.SharedPath) env["BB_IDE_BASE_PATH"] = $"/_ws/{ws.PublicId}/ide";
             var name = $"bb-ws-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{ws.PublicId[..10]}";
             var container = await backend.StartAsync(new WorkspaceContainerSpec(ws.Id, name, ws.Image, o.Network, "host.docker.internal", IdePort, env,
-                new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit)), ct);
+                new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit)) { PublishIdePort = !UseRelay() }, ct);
             containerId = container.ContainerId;
             ws.ContainerId = containerId;
             ws.ContainerName = name;

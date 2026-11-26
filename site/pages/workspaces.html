@@ -1,0 +1,98 @@
+<h1>Workspaces</h1>
+<p class="lead">A private development environment per user: a Docker container with the repository checked out and VS Code in the browser (OpenVSCode Server), an integrated terminal, previews of the ports your app listens on, an AI assistant that works inside the container, and a commit and push helper. Everything is reached through ByteBench.</p>
+
+<h2 id="opening">Opening a workspace</h2>
+<p>Click <strong>Open in workspace</strong> on a repository's Source page (it uses the branch or tag you are viewing), on a pull request (its source branch; for a fork pull request, the branch in the fork) or on an issue (you pick the repository, and the issue key is recorded as the source). A start page lets you change the branch, tag or commit, then <strong>Open in workspace</strong> starts the container; the workspace page shows progress and the IDE appears when it is ready. <strong>Workspaces</strong> in the side menu lists yours.</p>
+<p>Anyone who can view the project can start one. Whether it may push is decided at the start: Developers and above on a writable repository get a token that can push; Viewers, archived repositories and <a href="repositories.html#pull-mirror">pull mirrors</a> get a read-only token. The role is checked again on every push.</p>
+
+<h2 id="set-up">Set-up: nothing to do</h2>
+<p>If Docker is reachable (the <code>docker</code> CLI and its daemon), workspaces are on, and ByteBench builds the workspace image from <code>docker/workspace/</code> in the background shortly after startup (or when the first workspace is requested). Progress and any error are shown on the start page and on <strong>Admin &rarr; Workspaces</strong>, whose health table lists: Docker reachable, image present, the reaper's last pass, how workspaces are reached and the limits in force. If Docker is missing the buttons explain it; nothing else breaks.</p>
+<p>The image (<code>bytebench-workspace:1</code>, set with <code>Workspaces:Image</code>) contains git, node, python, make and g++ and OpenVSCode Server <code>1.109.5</code>, downloaded in the Dockerfile and checked against a pinned SHA-256 (the build fails on a mismatch). For the .NET SDK build it on an SDK base: <code>docker build --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 -t bytebench-workspace:1 docker/workspace</code>.</p>
+
+<h3 id="on-by-default">On by default, bounded</h3>
+<p>The administrator switch (<strong>Admin &rarr; Workspaces</strong>) is on unless an administrator turns it off, and each project can turn workspaces and the assistant off in its settings (Maintainers and Owners). Being on by default is limited by: Docker having to be reachable, a per-user cap (<code>MaxPerUser</code>, 2) and a server cap (<code>MaxTotal</code>, 10), CPU, memory, process and disk limits, an idle timeout (30 minutes) and a maximum lifetime (8 hours). Workspaces can only be opened where a safe origin exists, see below.</p>
+
+<h2 id="using">Using the IDE</h2>
+<p>The toolbar above the IDE has:</p>
+<ul>
+  <li><strong>Preview</strong>: lists ports something in the container is listening on (checked every few seconds); choosing one opens it in a panel next to the IDE, or in a new tab. Servers bound to <code>127.0.0.1</code> work too.</li>
+  <li><strong>AI</strong>: the assistant panel (see below).</li>
+  <li><strong>Commit &amp; push</strong>: shows <code>git status</code>, takes a message and commits everything as you; <strong>Commit &amp; push</strong> pushes to the workspace's branch or to a branch name you type. A protected branch refuses the push (server-side), so type a new branch name and open a pull request.</li>
+  <li><strong>New tab</strong>, <strong>Restart</strong> (restarts the container: files stay, running processes end; the network policy is applied again before the IDE returns) and <strong>Stop</strong> (deletes the container and everything in it: push first).</li>
+</ul>
+<p>A workspace stops by itself after the idle timeout (no proxied request and no IDE traffic), at its maximum lifetime, or when ByteBench restarts. All stops are audited with the reason.</p>
+
+<h2 id="ai">The AI assistant</h2>
+<p>The panel next to the IDE uses ByteBench's AI (the Anthropic API with the editor's tool loop; Claude Code is not used here) with tools that run in the container through <code>docker exec</code>: <code>list_files</code>, <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, <code>search_code</code> and <code>run_command</code>.</p>
+<ul>
+  <li><strong>It never commits or pushes.</strong> Its commands run as a separate unprivileged user (<code>bbai</code>) that cannot read your git credentials or git configuration, and commands that try <code>git commit</code>, <code>push</code>, <code>fetch</code>, <code>remote</code>, <code>config</code> and similar are refused before they run. You review the changes (the working tree and <code>git diff</code>) and commit them yourself.</li>
+  <li><strong>Limits:</strong> paths must be relative and are checked twice (in ByteBench, then in the container after symlinks are resolved: no <code>..</code>, absolute paths, symlinks out of the checkout or anything under <code>.git</code>); commands have a time limit (60 s) enforced inside the container, and output, file reads and writes are capped. File contents, search results and command output are put in delimited <em>untrusted</em> blocks and the model is told they are data, not instructions.</li>
+  <li><strong>Switches:</strong> <code>Ai:Enabled</code> and an API key; <strong>Admin &rarr; Workspaces</strong> (assistant switch); the project's setting; a per-user rate limit (<code>Workspaces:Ai:RequestsPerMinute</code>, 6) separate from the web editor's; tool-call and token budgets per request. Usage is logged as <code>workspace.chat</code>.</li>
+  <li><strong>Audit:</strong> each request that used tools records <code>workspace.ai_tools</code> with the tool counts and the first word of each command, never file contents or output.</li>
+</ul>
+
+<h2 id="security">How it is secured</h2>
+<h3 id="containers">Containers</h3>
+<p>Each workspace container runs as uid 1000, with every capability dropped, <code>no-new-privileges</code>, never privileged, with no host mounts and never the Docker socket, and with memory (swap off), CPU and process limits (and a disk limit where the Docker storage driver supports <code>--storage-opt size=</code>; where it does not, ByteBench logs a warning and starts without). IPv6 is off. Workspaces sit on their own Docker network with inter-container traffic switched off. Orphans are removed at startup and by a periodic reaper.</p>
+
+<h3 id="network">Network egress</h3>
+<p>The container starts idle. ByteBench applies the network policy from a separate throw-away helper container that shares its network namespace (the workspace itself never holds <code>NET_ADMIN</code>, so its user cannot undo the rules), and only then checks out the repository and lets the IDE start, so there is no unrestricted window. <code>Workspaces:EgressMode</code>:</p>
+<ul>
+  <li><code>public-only</code> (default): the internet is open; private, link-local, CGNAT, loopback and multicast ranges are rejected, which includes the Docker network, other workspaces and the ByteBench host. Only ByteBench's git endpoint (one address and port) stays reachable.</li>
+  <li><code>none</code>: only the git endpoint. <code>open</code>: no restrictions (not recommended).</li>
+</ul>
+<p>Limits: the policy is IPv4 and IP-based (a hostname that resolves to a private address is blocked by its address); it does not stop data leaving to the internet in <code>public-only</code> mode; and it is only as strong as the Docker host's kernel and Docker itself, so use a dedicated Docker host for untrusted code.</p>
+
+<h3 id="origins">The IDE and previews are only reachable through ByteBench</h3>
+<p>The only thing a container publishes is the IDE port on <code>127.0.0.1</code> of the Docker host (or nothing at all with <code>IdeTransport: Relay</code>, which relays through the container and is chosen automatically when ByteBench itself runs in a container or <code>DOCKER_HOST</code> is set). ByteBench's proxy handles HTTP and WebSocket and checks that the signed-in user owns the workspace.</p>
+<ul>
+  <li><strong>Subdomain mode (recommended):</strong> the IDE is <code>ide-{id}.{BaseDomain}</code> and a preview of port 3000 is <code>p3000-{id}.{BaseDomain}</code>, each its own origin, with a random 100-bit id. Point a wildcard DNS name and certificate (<code>*.{BaseDomain}</code>) at ByteBench and set <code>Workspaces:BaseDomain</code>. In Development it defaults to <code>localhost</code>. ByteBench's session cookie is host-only, so it is never sent to these origins, and scripts in a workspace cannot read or act on ByteBench's origin. A signed-in user gets a single-use link (60 seconds) from ByteBench; the workspace origin turns it into its own host-only, HttpOnly session cookie (<code>SameSite=None; Secure; Partitioned</code> where the browser accepts it, because the IDE is shown in an iframe of ByteBench's page). The OpenVSCode connection token is random per workspace and injected by the proxy: the browser never has it. Upstream <code>X-Frame-Options</code> is replaced by a CSP <code>frame-ancestors</code> naming ByteBench.</li>
+  <li><strong>Shared-origin mode</strong> (only with <code>Workspaces:AllowSharedOrigin: true</code> and no base domain): <code>/_ws/{id}/ide/</code> and <code>/_ws/{id}/p3000/</code> on ByteBench's own origin, authenticated by the normal session; every cookie is stripped before the request goes upstream and previews are served with CSP <code>sandbox</code> (an opaque origin: no cookies, no access to ByteBench), but the IDE cannot be sandboxed, so code running in the workspace can act as the signed-in user in ByteBench. Use it only for code you trust. Without either setting, workspaces cannot be opened and the page says why.</li>
+</ul>
+
+<h3 id="git">Git access</h3>
+<p>The container clones from ByteBench's own git endpoint with a token <code>gbw_&hellip;</code> made for that workspace: valid for that one repository, only while the workspace is starting or running, only for its owner, and revoked when it stops, fails or ByteBench restarts (only its SHA-256 is stored). It is not a personal access token and the REST API, MCP and the package registry do not accept it. It is written to <code>~/.git-credentials</code> (mode 600) through standard input, never a command line or environment variable. Pushing needs a token that was created with write access <em>and</em> the owner's current <code>PushCode</code>, archived and mirror checks and branch protection, all enforced by the git endpoint on every push. No personal tokens or passwords are put in the container.</p>
+
+<h2 id="admin">Administration</h2>
+<ul>
+  <li><strong>Admin &rarr; Workspaces</strong>: the health table, the workspaces switch, the assistant switch, every workspace (owner, repository, state, activity) with <strong>Stop</strong> and <strong>Stop all</strong>. Administrators can stop any workspace but cannot open one.</li>
+  <li><strong>Project settings &rarr; Workspaces</strong> (Maintainer and Owner): allow workspaces and the assistant for the project.</li>
+  <li><strong>Audit log</strong>: <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
+</ul>
+
+<h2 id="configuration">Configuration</h2>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>Workspaces:Image</code></td><td><code>bytebench-workspace:1</code></td><td>The image; built from <code>docker/workspace</code> (or pulled when that directory is missing) if absent.</td></tr>
+  <tr><td><code>Workspaces:BuildContext</code></td><td>docker/workspace beside the app</td><td>Directory with the Dockerfile.</td></tr>
+  <tr><td><code>Workspaces:BaseDomain</code></td><td>(<code>localhost</code> in Development)</td><td>Parent domain of the workspace origins.</td></tr>
+  <tr><td><code>Workspaces:AllowSharedOrigin</code></td><td>false</td><td>Path mode on ByteBench's origin when there is no base domain (less safe).</td></tr>
+  <tr><td><code>Workspaces:GitBaseUrl</code></td><td><code>http://host.docker.internal:{port}</code></td><td>How containers reach ByteBench's git endpoint.</td></tr>
+  <tr><td><code>Workspaces:IdeTransport</code></td><td>Auto</td><td>Published, Relay or Auto.</td></tr>
+  <tr><td><code>MaxPerUser</code> / <code>MaxTotal</code></td><td>2 / 10</td><td>Concurrent workspaces.</td></tr>
+  <tr><td><code>IdleTimeoutMinutes</code> / <code>MaxLifetimeHours</code></td><td>30 / 8</td><td>Automatic stops.</td></tr>
+  <tr><td><code>Memory</code>, <code>Cpus</code>, <code>PidsLimit</code>, <code>DiskLimit</code></td><td>4g, 2, 2048, 10g</td><td>Container limits.</td></tr>
+  <tr><td><code>EgressMode</code></td><td>public-only</td><td>public-only, none or open.</td></tr>
+  <tr><td><code>Workspaces:Ai:*</code></td><td>6 requests/min, 25 tool calls, 60 s commands</td><td>Assistant limits.</td></tr>
+</table>
+
+<h2 id="docker-deployments">With Docker or docker-compose</h2>
+<p>ByteBench needs a Docker CLI and a daemon, exactly like <a href="ci.html">CI pipelines</a>. In the container image build with <code>--build-arg WITH_DOCKER_CLI=true</code> and give it the daemon: mount <code>/var/run/docker.sock</code> (anyone who can start a workspace is then bounded only by the container restrictions above, and ByteBench can control the host), or better set <code>DOCKER_HOST</code> to a separate Docker host over TLS. The workspace Dockerfile ships inside the image (<code>/app/docker/workspace</code>), so the image is built on first use. Set <code>Workspaces:BaseDomain</code> to a wildcard domain routed to ByteBench, and make the git endpoint reachable from workspaces: put ByteBench on the workspaces' Docker network and set <code>Workspaces:GitBaseUrl</code> to <code>http://bytebench:8080</code>. The compose file has the lines ready, commented out.</p>
+
+<h2 id="api">REST API</h2>
+<table>
+  <tr><th>Call</th><th>Purpose</th></tr>
+  <tr><td><code>GET /api/v1/workspaces</code></td><td>Your workspaces (only yours).</td></tr>
+  <tr><td><code>POST /api/v1/projects/{key}/repos/{slug}/workspaces</code></td><td>Start one: <code>{"ref": "main", "source": "pr:12"}</code>. Returns 202; poll until <code>state</code> is <code>Running</code> or <code>Failed</code>.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}</code></td><td>One of yours; 404 for anyone else's.</td></tr>
+  <tr><td><code>POST /api/v1/workspaces/{id}/stop</code>, <code>/restart</code></td><td>Stop (deletes the container) or restart.</td></tr>
+</table>
+<p>The API never returns an IDE link or a credential; the IDE is opened from the workspace page in a browser.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<ul>
+  <li><strong>"Docker isn't available"</strong>: the <code>docker</code> CLI must run as ByteBench's account and reach a daemon; see Admin &rarr; Workspaces.</li>
+  <li><strong>The image never becomes ready</strong>: the build output (last lines) is on the admin page; the build needs internet access for the base image, the apt packages and the OpenVSCode download.</li>
+  <li><strong>Clone fails with a connection error</strong>: containers must reach <code>Workspaces:GitBaseUrl</code>, so ByteBench must listen on an address the Docker network can reach, not only on <code>127.0.0.1</code> of a Linux host.</li>
+  <li><strong>The IDE shows "Open this workspace from ByteBench"</strong>: the link expired (60 seconds) or cookies for the workspace origin are blocked; use <strong>New tab</strong>.</li>
+</ul>

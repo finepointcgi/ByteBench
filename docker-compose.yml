@@ -43,6 +43,10 @@ services:
       # Ssh__Enabled: "false"                  # HTTPS only
       # Ci__Enabled: "true"
       # Ci__WorkDirectory: "/data/ci"          # must be the same path on the host when using the host's socket
+      # Workspaces are on by default once Docker is reachable (see the volume lines below). Wildcard DNS + certificate for *.ws.example.com
+      # must point at ByteBench's proxy; the workspace image is built from /app/docker/workspace on first use.
+      # Workspaces__BaseDomain: "ws.example.com"
+      # Workspaces__GitBaseUrl: "http://bytebench:8080"   # containers reach the git endpoint over the workspace network (networks: below)
       # Secrets come from the environment (or an env_file), never from appsettings.json:
       # Ai__ApiKey: "${BYTEBENCH_AI_API_KEY}"
     # depends_on:
@@ -56,9 +60,14 @@ services:
       - bytebench-pages:/data/pages
       - bytebench-keys:/data/keys               # Data Protection key ring and the SSH host key
       - bytebench-backups:/data/backups         # archives: put this on another disk (or bind-mount a backup share) in production
+      # Workspaces (README "Workspaces"): VS Code in the browser in per-user containers. Needs the same Docker access as CI
+      # (build with --build-arg WITH_DOCKER_CLI=true; or DOCKER_HOST=tcp://... to a separate Docker host, the safer choice):
+      # - /var/run/docker.sock:/var/run/docker.sock
       # CI option A (host daemon; anyone who can push can then control the host, see README):
       # - /var/run/docker.sock:/var/run/docker.sock
       # - /data/ci:/data/ci
+    # Workspaces: join the network the workspace containers run on (uncomment with the "networks:" block at the bottom).
+    # networks: [default, workspaces]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/readyz"]
       interval: 30s
@@ -99,6 +108,9 @@ services:
   #     - caddy-data:/data
   #   depends_on: [bytebench]
 
+# networks:
+#   workspaces:
+#     name: bytebench-workspaces   # = Workspaces:Network; ByteBench's own workspace containers are attached to it
 volumes:
   bytebench-db:
   bytebench-repos:

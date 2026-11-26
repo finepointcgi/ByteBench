@@ -1111,6 +1111,63 @@ CSP: Monaco's web workers are started from `/lib/monaco/vs/base/worker/workerMai
 
 Code: `Services/Editor/` (workspaces, `WorkspaceSnapshot`, `EditorPushNotifier`), `Services/Editor/Ai/` (backends, tools, prompts, `EditorAiService`, `ClaudeCodeDetector`), `Services/Git/GitOps.Editor.cs`, `Components/Pages/Repositories/WebEditor.razor`, `Components/Repositories/EditorChatPanel.razor`, `Components/Pages/Admin/AiAdminPage.razor`, `wwwroot/js/web-editor.js`, `wwwroot/css/web-editor.css`. Schema: `EditorWorkspace`, `EditorWorkspaceChange`, `ProjectEditorSettings` (migration `WebEditor`). Tests: `tests/ByteBench.Tests/WebEditorTests.cs` (fake model) and `WebEditorClaudeCodeTests.cs` (a fake `claude` script; the real CLI is never run against the API).
 
+## Workspaces
+
+Per-user development environments, like GitLab Workspaces or Codespaces: **Open in workspace** (on a repository's Source page, a pull request or an issue) starts a Docker container with the repository checked out and [OpenVSCode Server](https://github.com/gitpod-io/openvscode-server) running, with the integrated terminal, previews of the ports your app listens on, an AI assistant that works inside the container, and a commit and push helper. Everything is reached through ByteBench: `/workspaces` (yours), `/workspaces/{id}` (the IDE page with its toolbar), `Admin → Workspaces`. The documentation site has a full page ([site/pages/workspaces.html](site/pages/workspaces.html)).
+
+### Set-up: no manual steps
+
+With Docker reachable (the `docker` CLI and a daemon, as for CI), workspaces are **on by default** and ByteBench **builds the workspace image itself** from `docker/workspace/` (or pulls it when that directory is missing) shortly after startup or on the first request. Progress and errors show on the start page and on **Admin → Workspaces**, whose health table lists *Docker reachable*, *Workspace image* (present / building with the last output line / failed with the reason), *Reaper* (last pass), the origin mode and the limits in force. Without Docker the buttons say so and nothing else is affected. `dotnet run`, sign in, **Open in workspace** works on a fresh database (Development defaults the workspace origins to `*.localhost`).
+
+On by default is bounded: Docker must be reachable, workspaces can only be opened where a safe origin exists (below), per-user (`MaxPerUser` 2) and server (`MaxTotal` 10) caps, CPU/memory/process/disk limits, an idle timeout (30 min) and a maximum lifetime (8 h). An administrator can switch the feature (and the assistant) off under Admin → Workspaces, and each project can switch them off in its settings (Maintainers+). Switching off refuses new workspaces; running ones keep going until stopped (**Stop all** is on the admin page).
+
+### The image (`docker/workspace/`)
+
+`Dockerfile` (Debian + git, node, python, make/g++, socat, iptables, and OpenVSCode Server **1.109.5**, downloaded in the build and verified against a pinned SHA-256 per architecture; the build fails on a mismatch), `bb-entrypoint.sh` (idles until ByteBench has locked the network down and checked the code out, then starts the IDE), `bb-apply-egress.sh` (the network policy) and `bb-healthcheck.sh` (the image's `HEALTHCHECK`; ByteBench waits for `healthy`). Build by hand with `docker build -t bytebench-workspace:1 docker/workspace`; with the .NET SDK: `--build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0`. Set `Workspaces:Image` for another tag or registry image.
+
+### Where the IDE and previews live (read this before exposing ByteBench)
+
+The only thing a container publishes is the IDE port on `127.0.0.1` of the Docker host (nothing with `Workspaces:IdeTransport=Relay`, which relays through `docker exec … socat` and is picked automatically inside a container or with `DOCKER_HOST`). ByteBench's proxy (`Services/Workspaces/WorkspaceProxy.cs`, HTTP and WebSocket, raw upgrade) authenticates every request:
+
+- **Subdomain mode (recommended)**: `ide-{id}.{Workspaces:BaseDomain}` and `p{port}-{id}.{BaseDomain}` are separate origins with host-only cookies, so ByteBench's session cookie is never sent to them and their scripts can't reach ByteBench's origin. Needs a wildcard DNS record and certificate for `*.{BaseDomain}`; the port of ByteBench's own address is kept. ByteBench mints a **single-use 60-second ticket** for the signed-in owner; the workspace origin exchanges it for its own HttpOnly session cookie (`SameSite=None; Secure; Partitioned`, because the IDE is framed by ByteBench's page). The OpenVSCode connection token is random per workspace, stored hashed, and injected by the proxy so the browser never sees it. `X-Frame-Options` from upstream is replaced by `frame-ancestors` for ByteBench; ByteBench's own CSP gets `frame-src` for `*.{BaseDomain}`.
+- **Shared-origin mode** (`Workspaces:AllowSharedOrigin=true` and no base domain): `/_ws/{id}/ide/…` and `/_ws/{id}/p{port}/…` on ByteBench's origin with the normal session; all browser cookies are stripped upstream and previews get CSP `sandbox` (no `allow-same-origin`), but the **IDE can't be sandboxed**, so code in a workspace could act as the signed-in user. Only for trusted code.
+- With neither, workspaces can't be opened and the page says why. Documented decision: no silent fallback to the unsafe mode.
+
+### Containers
+
+`docker run` with `--user 1000:1000 --cap-drop ALL --security-opt no-new-privileges`, never `--privileged`, no host mounts, no Docker socket, `--memory` (`--memory-swap` equal: no swap), `--cpus`, `--pids-limit`, `--storage-opt size=` where the storage driver supports it (Docker Desktop doesn't: ByteBench logs a warning and starts without a disk limit), `--sysctl net.ipv6.conf.all.disable_ipv6=1`, labelled per instance, on their own network (`bytebench-workspaces`, inter-container traffic off). **Egress** (`Workspaces:EgressMode`): `public-only` (default; internet yes; private, link-local, CGNAT, loopback and multicast ranges rejected, so no Docker network, other workspaces or ByteBench host; only the git endpoint's address and port allowed), `none`, `open`. The rules are applied from a throw-away helper sharing the container's network namespace (`--cap-add NET_ADMIN` there only), before any user code or repository content is in the container, and again after a restart. Limits of the policy: IPv4 and address based, doesn't stop exfiltration to the public internet, as strong as the host kernel and Docker. Use a dedicated Docker host for untrusted code.
+
+An **orphan reaper** (`WorkspaceReaper`) removes every container of this instance at startup (marking the rows stopped and revoking tokens) and every 30 s stops idle and expired workspaces, closes hung starts, notices vanished containers and removes orphans.
+
+### Git access
+
+The container clones and pushes with `gbw_…`, a token minted for that workspace: one repository, only while starting/running, only for its owner, SHA-256 stored, revoked on stop/failure/restart (cleared before the container is touched), not accepted by the REST API, MCP or the registry. It reaches `~/.git-credentials` (mode 600) through stdin only. Pushing needs a write token **and** the owner's current `PushCode` role, archived/mirror checks and branch protection, all enforced by the git endpoint per request (`WorkspaceGitAuth`, `GitHttpEndpoints`, LFS). Read-only users get a read-only token.
+
+### AI in workspaces
+
+`WorkspaceAiService` reuses the web editor's tool loop (`IEditorChatModel`, `AiClient` usage logging, `EditorAiRateLimiter`) with tools that run in the container through `docker exec` (`WorkspaceAiTools`): `list_files`, `read_file`, `write_file`, `edit_file`, `search_code`, `run_command`. They run as a second user (`bbai`, same group so files stay editable, but no access to your git credentials or `~/.gitconfig`); `git commit/push/fetch/remote/config…` is refused before it runs (the credential is the real boundary: there is none for `bbai`). Paths: no absolute, `..`, `~`, control characters or `.git`, validated in ByteBench and again in the container after `realpath` (symlinks out of the checkout are refused). Timeouts are enforced inside the container with `timeout(1)`; output, reads and writes are capped; content is wrapped as untrusted. Gates, per request: Anthropic API configured, the site assistant switch, the project's assistant switch, workspaces on, owner of a running workspace, and `Workspaces:Ai:RequestsPerMinute` (default 6, separate from the editor's). Audit: `workspace.ai_tools` with counts and each command's first word. The API backend is required (Claude Code isn't used here).
+
+### Settings, audit, API
+
+```json
+"Workspaces": {
+  "Image": "bytebench-workspace:1", "BaseDomain": null, "AllowSharedOrigin": false, "GitBaseUrl": null, "IdeTransport": "Auto",
+  "MaxPerUser": 2, "MaxTotal": 10, "IdleTimeoutMinutes": 30, "MaxLifetimeHours": 8, "StartupTimeoutSeconds": 180,
+  "Memory": "4g", "Cpus": "2", "PidsLimit": 2048, "DiskLimit": "10g", "EgressMode": "public-only",
+  "Ai": { "RequestsPerMinute": 6, "MaxToolCalls": 25, "CommandTimeoutSeconds": 60, "MaxOutputBytes": 32768 }
+}
+```
+
+Audit events: `workspace.started`, `workspace.stopped` (reason, owner/admin/system), `workspace.failed`, `workspace.restarted`, `workspace.commit`, `workspace.ai_tools`, `workspace.admin_switch`, `workspace.admin_ai_switch`, `workspace.project_settings`. REST: `GET /api/v1/workspaces`, `POST /api/v1/projects/{key}/repos/{slug}/workspaces` (202), `GET /api/v1/workspaces/{id}`, `POST …/{id}/stop`, `POST …/{id}/restart`; only your own are visible, there is no endpoint that returns an IDE link or a credential.
+
+### Running it in Docker / docker-compose
+
+ByteBench needs the same Docker access as CI (see *CI in the container*): build the image with `--build-arg WITH_DOCKER_CLI=true`, mount `/var/run/docker.sock` (ByteBench can then control the host; prefer a separate Docker host via `DOCKER_HOST=tcp://…` with TLS), and set `Workspaces__BaseDomain` to a wildcard domain routed to ByteBench. The workspace Dockerfile ships in the image (`/app/docker/workspace`), so the image is built on first use. For the git endpoint: attach ByteBench to the workspace network and set `Workspaces__GitBaseUrl=http://bytebench:8080` (commented lines in `docker-compose.yml`). With the socket mounted, `IdeTransport` becomes `Relay` on its own, since a published loopback port would be on the host, not in ByteBench's container.
+
+### Not verified / known limits
+
+Real end-to-end runs were on Docker Desktop (macOS, arm64) only; the Linux `host-gateway`, `DOCKER_HOST` and compose paths follow Docker's documented behaviour but were not run. The disk limit isn't enforceable on Docker Desktop. Sessions and tickets are in memory (one ByteBench process; they are meant to die with a restart, like the workspaces). The IDE is OpenVSCode with its stock marketplace configuration; extensions are not curated.
+
 ## REST API & webhooks
 
 ### REST API (`/api/v1`)

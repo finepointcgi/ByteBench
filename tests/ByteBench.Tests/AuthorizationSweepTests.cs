@@ -77,6 +77,7 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
         ["GET /api/v1/groups/{group}/roadmap"] = "an internal group's roadmap, filtered by project visibility",
         ["GET /api/v1/groups/{group}/subgroups"] = "an internal group's subgroups",
         ["GET /api/v1/dashboards"] = "the caller's own and shared dashboards",
+        ["GET /api/v1/workspaces/"] = "the caller's own workspaces (never anyone else's)",
         ["GET /api/v1/snippets/"] = "the caller's own and visible snippets",
         ["POST /api/v1/snippets/"] = "creates a personal snippet (the empty test body is refused with 422)",
         ["POST /api/v1/projects/{key}/repos/{slug}/pull-requests/{number:int}/apply-suggestions"] =

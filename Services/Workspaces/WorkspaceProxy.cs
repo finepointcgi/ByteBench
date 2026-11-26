@@ -110,7 +110,7 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
     }
 
     /// <summary>Only a path on this origin: starts with a single '/', no scheme-relative or backslash tricks.</summary>
-    internal static string LocalPath(string? p) =>
+    public static string LocalPath(string? p) =>
         p is { Length: > 0 } && p[0] == '/' && !p.StartsWith("//", StringComparison.Ordinal) && !p.Contains('\\') && !p.Any(char.IsControl) ? p : "/";
 
     // ---------- shared-origin mode ----------
@@ -189,7 +189,7 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
     }
 
     /// <summary>The Cookie header for upstream: ByteBench's session cookie never goes (nor, in shared mode, any other), and the IDE gets its token.</summary>
-    internal static string? BuildCookie(string? header, bool stripAll, string? connectionToken)
+    public static string? BuildCookie(string? header, bool stripAll, string? connectionToken)
     {
         var parts = new List<string>();
         if (!stripAll && !string.IsNullOrEmpty(header))
@@ -263,7 +263,7 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
     /// The workspace is shown in an iframe of ByteBench's page (another site), where a SameSite=Lax cookie (OpenVSCode's own token cookie, which its
     /// page script reads) would be dropped. Where the browser accepts it, upstream cookies are made SameSite=None; Secure; Partitioned.
     /// </summary>
-    internal static string FrameableCookie(string setCookie, bool crossSiteCapable)
+    public static string FrameableCookie(string setCookie, bool crossSiteCapable)
     {
         if (!crossSiteCapable) return setCookie;
         var parts = setCookie.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)

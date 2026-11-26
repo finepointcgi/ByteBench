@@ -45,6 +45,8 @@ public sealed class LiveWorkspace(int id, string publicId, int ownerId, string c
     private long lastActivityTicks = DateTime.UtcNow.Ticks;
     public DateTime LastActivity => new(Interlocked.Read(ref lastActivityTicks), DateTimeKind.Utc);
     public void Touch() => Interlocked.Exchange(ref lastActivityTicks, DateTime.UtcNow.Ticks);
+    /// <summary>Sets the last activity explicitly (tests).</summary>
+    public void SetActivity(DateTime utc) => Interlocked.Exchange(ref lastActivityTicks, utc.Ticks);
     public WorkspaceEndpoint Endpoint => new(ContainerId, IdeHostPort, IdePort);
 }
 

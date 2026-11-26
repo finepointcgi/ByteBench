@@ -31,6 +31,13 @@ public class WorkspaceOptions
     /// </summary>
     public string? GitBaseUrl { get; set; }
 
+    /// <summary>
+    /// How ByteBench reaches the IDE: <c>Published</c> (the IDE port is published on 127.0.0.1 of the Docker host; needs ByteBench on the same host),
+    /// <c>Relay</c> (nothing is published; every connection goes through <c>docker exec … socat</c>; works with ByteBench in a container and with a remote
+    /// DOCKER_HOST, a little slower) or <c>Auto</c> (default: Relay inside a container or with DOCKER_HOST set, else Published).
+    /// </summary>
+    public string IdeTransport { get; set; } = "Auto";
+
     /// <summary>Workspaces running at once per user (counting Starting and Stopping ones).</summary>
     public int MaxPerUser { get; set; } = 2;
     /// <summary>Workspaces running at once on the server.</summary>

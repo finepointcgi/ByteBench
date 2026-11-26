@@ -96,8 +96,8 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
             "--sysctl", "net.ipv6.conf.all.disable_ipv6=1",
             "--ulimit", "nofile=65536:65536", "--ulimit", "core=0",
             "--pids-limit", l.PidsLimit > 0 ? l.PidsLimit.ToString() : "-1",
-            "-p", $"127.0.0.1::{spec.IdePort}", // loopback only: never on the host's public interface
         };
+        if (spec.PublishIdePort) args.AddRange(["-p", $"127.0.0.1::{spec.IdePort}"]); // loopback only: never on the host's public interface
         if (!string.IsNullOrWhiteSpace(l.Memory)) args.AddRange(["--memory", l.Memory, "--memory-swap", l.Memory]);
         if (!string.IsNullOrWhiteSpace(l.Cpus)) args.AddRange(["--cpus", l.Cpus]);
         if (withDiskLimit && !string.IsNullOrWhiteSpace(l.DiskLimit)) args.AddRange(["--storage-opt", "size=" + l.DiskLimit]);
@@ -120,7 +120,7 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         }
         if (code != 0) throw new InvalidOperationException("Docker could not start the workspace container: " + Tail(output));
         var id = output.Trim().Split('\n')[^1].Trim();
-        try { return new WorkspaceContainer(id, await PublishedPortAsync(id, spec.IdePort, ct), applied); }
+        try { return new WorkspaceContainer(id, spec.PublishIdePort ? await PublishedPortAsync(id, spec.IdePort, ct) : 0, applied); }
         catch { await RemoveAsync(id, CancellationToken.None); throw; }
     }
 
@@ -128,7 +128,8 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
     {
         var (code, output) = await RunAsync(["restart", "-t", "3", containerId], null, ct);
         if (code != 0) throw new InvalidOperationException("Docker could not restart the workspace container: " + Tail(output));
-        return new WorkspaceContainer(containerId, await PublishedPortAsync(containerId, idePort, ct));
+        var published = await RunAsync(["port", containerId, idePort + "/tcp"], null, ct);
+        return new WorkspaceContainer(containerId, published.Code == 0 && published.Output.Contains("127.0.0.1") ? await PublishedPortAsync(containerId, idePort, ct) : 0);
     }
 
     private async Task<int> PublishedPortAsync(string id, int containerPort, CancellationToken ct)
@@ -232,7 +233,7 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
 
     public async Task<Stream> ConnectAsync(WorkspaceEndpoint endpoint, int port, CancellationToken ct)
     {
-        if (port == endpoint.IdeContainerPort)
+        if (port == endpoint.IdeContainerPort && endpoint.IdeHostPort > 0)
         {
             var client = new TcpClient();
             try

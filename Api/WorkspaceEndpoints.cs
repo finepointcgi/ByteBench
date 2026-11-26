@@ -43,8 +43,10 @@ public static class WorkspaceEndpoints
     private static async Task<WorkspaceDto> Get(ApiCaller caller, WorkspaceService workspaces, string id) =>
         ToDto(await workspaces.GetMineAsync(id, caller.Id) ?? throw ApiException.NotFound("Workspace not found."));
 
-    private static async Task<IResult> Start(HttpContext http, ApiCaller caller, WorkspaceService workspaces, string key, string slug)
+    private static async Task<IResult> Start(HttpContext http, ApiCaller caller, WorkspaceService workspaces, ByteBench.Services.RepositoryService repos, string key, string slug)
     {
+        // A repository the caller can't see is a 404 whatever state Docker is in.
+        if (await repos.GetRepositoryAsync(key, slug) == null) throw ApiException.NotFound($"Repository '{key.ToUpperInvariant()}/{slug}' not found.");
         var body = http.Request.ContentLength is > 0 ? await ApiResults.ReadBodyAsync<StartWorkspaceRequest>(http.Request) : new StartWorkspaceRequest();
         var ws = await workspaces.StartAsync(key, slug, body.Ref, body.Source, caller.Id);
         var view = await workspaces.GetMineAsync(ws.PublicId, caller.Id) ?? throw ApiException.NotFound("Workspace not found.");

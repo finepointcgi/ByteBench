@@ -39,6 +39,7 @@ SECTIONS = [
         ("code-tools", "Code browsing and tools", "Code view, search, blame, compare, releases and tags"),
         ("insights-dependencies", "Insights and the dependency bot", "Contributors, activity and languages, and automatic dependency update pull requests"),
         ("web-editor", "Web editor and AI assistant", "Edit code in the browser with an AI assistant"),
+        ("workspaces", "Workspaces", "VS Code in the browser in a per-user Docker container, with a terminal, previews and an AI assistant"),
         ("wiki-snippets", "Wiki and snippets", "Project wikis and shareable snippets"),
     ]),
     ("Build, test and ship", [
