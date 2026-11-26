@@ -23,7 +23,7 @@ public sealed record WorkspaceStatus(bool Enabled, bool SiteSwitchOn, string? Pr
 /// </summary>
 public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
     WorkspaceLifecycle lifecycle, WorkspaceUrls urls, IOptionsMonitor<WorkspaceOptions> options, ProjectAccess access, RepositoryService repos,
-    RepoStorage storage, WorkspaceImage image, SiteSettings siteSettings, AuditLog audit, ILogger<WorkspaceService> log)
+    RepoStorage storage, WorkspaceImage image, SiteSettings siteSettings, AuditLog audit)
 {
     public const string EnabledKey = "workspaces.enabled";
     public const string AiEnabledKey = "workspaces.ai.enabled";
