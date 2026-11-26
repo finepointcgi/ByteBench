@@ -378,6 +378,18 @@ public class CiPipelineFeatureParseTests
     }
 
     [Fact]
+    public void A_fork_pull_requests_file_never_makes_the_server_fetch_a_remote_include()
+    {
+        using var server = new TinyServer(_ => (200, "jobs:\n  x: { steps: [ { run: x } ] }\n", null));
+        var remote = Remote(enabled: true, allowPrivate: true);
+        var e = Err($"include: [ {{ remote: '{server.Base}/ok.yml' }} ]\n", new CiIncludeProvider("/nonexistent", "HEAD", remote, allowRemote: false));
+        Assert.Contains("pull requests from forks", e);
+        Assert.Equal(0, server.Hits);
+        Ok($"include: [ {{ remote: '{server.Base}/ok.yml' }} ]\n", new CiIncludeProvider("/nonexistent", "HEAD", remote, allowRemote: true));   // same file, trusted source
+        Assert.Equal(1, server.Hits);
+    }
+
+    [Fact]
     public void Remote_includes_fetch_when_allowed_cap_size_refuse_redirects_and_cache()
     {
         using var server = new TinyServer(path => path switch

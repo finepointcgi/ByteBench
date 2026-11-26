@@ -25,9 +25,9 @@ public interface ICiIncludeProvider
 
 /// <summary>
 /// Includes of one commit: local files come from the repository's git objects (never the working tree of a job), remote ones
-/// through <see cref="CiRemoteIncludes"/>.
+/// through <see cref="CiRemoteIncludes"/> (never for a fork pull request, whose author is outside the project).
 /// </summary>
-public sealed class CiIncludeProvider(string repoPath, string rev, CiRemoteIncludes remote) : ICiIncludeProvider
+public sealed class CiIncludeProvider(string repoPath, string rev, CiRemoteIncludes remote, bool allowRemote = true) : ICiIncludeProvider
 {
     public CiIncludeRead ReadLocal(string path)
     {
@@ -46,7 +46,8 @@ public sealed class CiIncludeProvider(string repoPath, string rev, CiRemoteInclu
         return CiIncludeRead.Ok(blob.Text);
     }
 
-    public CiIncludeRead ReadRemote(string url) => remote.Fetch(url);
+    public CiIncludeRead ReadRemote(string url) =>
+        allowRemote ? remote.Fetch(url) : CiIncludeRead.Fail("is not fetched for pull requests from forks (their author is not trusted to name addresses)");
 }
 
 /// <summary>

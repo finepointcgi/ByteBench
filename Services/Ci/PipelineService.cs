@@ -369,7 +369,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null,
         bool forkPullRequest = false, string? variablesJson = null, IReadOnlyDictionary<string, string>? extraVariables = null)
     {
-        var def = await triggers.LoadDefinitionAsync(repo, sha)
+        var def = await triggers.LoadDefinitionAsync(repo, sha, forkPullRequest)
             ?? throw new InvalidOperationException($"There is no {CiFile.FileName} at the root of '{branch}' ({sha[..7]}).");
         if (prId == null && !CiRef.IsTag(branch))
         {

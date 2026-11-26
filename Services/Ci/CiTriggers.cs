@@ -55,18 +55,18 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     public bool Enabled => options.CurrentValue.Enabled;
 
     /// <summary>The pipeline file at a commit: null if there is none, otherwise its parse result.</summary>
-    public async Task<CiParseResult?> LoadDefinitionAsync(Repository repo, string sha)
+    public async Task<CiParseResult?> LoadDefinitionAsync(Repository repo, string sha, bool forkPullRequest = false)
     {
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var blob = await Task.Run(() => CiFile.GetBlob(path, sha));
         if (blob == null) return null;
         if (blob.TooLarge || blob.IsBinary || blob.Text == null) return new CiParseResult(null, $"{CiFile.FileName}: the file is too large or not text.");
         // Parsing may read included files (git objects of this commit, or remote URLs when the admin allows them): keep it off the caller's thread.
-        return await Task.Run(() => CiFile.Parse(blob.Text, IncludesFor(path, sha)));
+        return await Task.Run(() => CiFile.Parse(blob.Text, IncludesFor(path, sha, allowRemote: !forkPullRequest)));
     }
 
     /// <summary>The reader of <c>include:</c> files for the commit <paramref name="rev"/> of the repository at <paramref name="repoPath"/>.</summary>
-    public ICiIncludeProvider IncludesFor(string repoPath, string rev) => new CiIncludeProvider(repoPath, rev, remoteIncludes);
+    public ICiIncludeProvider IncludesFor(string repoPath, string rev, bool allowRemote = true) => new CiIncludeProvider(repoPath, rev, remoteIncludes, allowRemote);
 
     /// <summary>
     /// After a push (or a merge done in ByteBench): starts a pipeline for every branch whose tip moved and that matches
@@ -162,7 +162,7 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         if (await Task.Run(() => GitOps.BranchExists(path, source) ? GitOps.ResolveSha(path, source) : null, ct) is not { } head) return;
         if (await AttachToExistingAsync(pr.RepositoryId, source, head, pr.Id, ct)) return;
 
-        var def = await LoadDefinitionAsync(pr.Repository, head);
+        var def = await LoadDefinitionAsync(pr.Repository, head, forkPullRequest: pr.IsCrossFork);
         if (def == null || def.Definition is { On.PullRequests: false }) return;
         await CreateAsync(pr.Repository, source, head, PipelineTrigger.PullRequest, pr.AuthorId, pr.Id, def, dedupe: true, ct, forkPullRequest: pr.IsCrossFork);
     }
