@@ -3322,6 +3322,9 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
+                    b.Property<double?>("Coverage")
+                        .HasColumnType("double precision");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -3335,6 +3338,9 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasColumnType("boolean");
 
                     b.Property<int?>("PullRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecoveryAttempts")
                         .HasColumnType("integer");
 
                     b.Property<string>("Ref")
@@ -3446,6 +3452,9 @@ namespace ByteBench.Data.MigrationsPostgres
 
                     b.Property<bool>("AllowFailure")
                         .HasColumnType("boolean");
+
+                    b.Property<double?>("Coverage")
+                        .HasColumnType("double precision");
 
                     b.Property<string>("EnvironmentAction")
                         .HasMaxLength(16)

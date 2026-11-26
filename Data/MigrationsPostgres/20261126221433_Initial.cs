@@ -3512,6 +3512,8 @@ namespace ByteBench.Data.MigrationsPostgres
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Coverage = table.Column<double>(type: "double precision", nullable: true),
+                    RecoveryAttempts = table.Column<int>(type: "integer", nullable: false),
                     RepositoryId = table.Column<int>(type: "integer", nullable: false),
                     Ref = table.Column<string>(type: "character varying(250)", maxLength: 250, nullable: false),
                     CommitSha = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
@@ -4287,6 +4289,7 @@ namespace ByteBench.Data.MigrationsPostgres
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Coverage = table.Column<double>(type: "double precision", nullable: true),
                     EnvironmentAction = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
                     PipelineId = table.Column<int>(type: "integer", nullable: false),
                     Name = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
