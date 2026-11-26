@@ -32,10 +32,9 @@
                 <b>Save these codes now.</b> They are shown only once. If you lose your device, each code signs you in once instead of an authenticator code.
             </MudAlert>
             <pre id="recovery-codes" class="mono recovery-codes">@string.Join("\n", recoveryCodes)</pre>
-            @* A plain button: MudButton's OnClick parameter would claim the inline JS onclick (static SSR has no events).
-               The handler string is allowed by hash in ProductionSetup.InlineHandlers; keep the two in sync. *@
+            @* A plain button handled by wwwroot/js/forms.js (data-copy-from): the clipboard needs the click's user gesture, which a server round trip loses. *@
             <button type="button" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-small"
-                    onclick="navigator.clipboard.writeText(document.getElementById('recovery-codes').textContent); this.textContent='Copied';">Copy codes</button>
+                    data-copy-from="recovery-codes">Copy codes</button>
         </section>
     }
 
@@ -89,9 +88,9 @@
             <MudText Typo="Typo.body2" Class="mb-3">You have <b>@codesLeft</b> unused recovery code@(codesLeft == 1 ? "" : "s"). Generating new codes makes the old ones stop working.</MudText>
             <form method="post" @formname="regenerate-codes" @onsubmit="Regenerate">
                 <AntiforgeryToken />
-                @* Plain button for the inline confirm(); its string is allowed by hash in ProductionSetup.InlineHandlers. *@
+                @* Plain button; wwwroot/js/forms.js asks data-confirm before the form submits. *@
                 <button type="submit" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-medium"
-                        onclick="return confirm('Generate new recovery codes? Your current codes will stop working.');">Generate new recovery codes</button>
+                        data-confirm="Generate new recovery codes? Your current codes will stop working.">Generate new recovery codes</button>
             </form>
         </section>
 

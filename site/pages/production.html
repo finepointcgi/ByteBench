@@ -99,7 +99,7 @@ server {
   <li>Outside Development, sign-in cookies are <code>Secure</code>-only. Over plain HTTP sign-in does not work; ByteBench logs a warning when it sees that. For a short trial set <code>Security__SecureCookies=false</code>.</li>
   <li>HSTS is sent on HTTPS responses outside Development: <code>Security:HstsMaxAgeDays</code> (365) and <code>Security:HstsIncludeSubDomains</code> (false). It only appears once ByteBench knows the request was HTTPS, which needs the forwarded headers above.</li>
   <li><code>Security:HttpsRedirection</code> redirects HTTP to HTTPS. The image turns it off because the proxy does that.</li>
-  <li>Every response also gets <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, a referrer policy, a permissions policy and <code>Cross-Origin-Opener-Policy: same-origin</code>. HTML pages get a Content-Security-Policy; see <a href="troubleshooting.html#csp">CSP blocking something</a>.</li>
+  <li>Every response also gets <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, a referrer policy, a permissions policy, <code>Cross-Origin-Opener-Policy: same-origin</code> and <code>Cross-Origin-Resource-Policy: same-origin</code>. HTML pages get a Content-Security-Policy; see <a href="troubleshooting.html#csp">CSP blocking something</a>.</li>
 </ul>
 
 <h2 id="postgres">Postgres or SQLite</h2>

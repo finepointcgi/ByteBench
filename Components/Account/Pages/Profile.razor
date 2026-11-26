@@ -189,10 +189,10 @@
             <MudAlert Severity="Severity.Success" Class="auth-alert" NoIcon="true">
                 <div class="mb-2"><b>Copy your new token now.</b> You won't be able to see it again.</div>
                 <div class="token-copy">
-                    <input id="new-token" class="gb-input mono" readonly value="@newToken" onfocus="this.select()" aria-label="New token" />
-                    @* A plain button: MudButton's OnClick parameter would claim the inline JS onclick (static SSR has no events). *@
+                    <input id="new-token" class="gb-input mono" readonly value="@newToken" data-select-on-focus aria-label="New token" />
+                    @* A plain button handled by wwwroot/js/forms.js (data-copy-from; static SSR has no Blazor events). *@
                     <button type="button" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-medium"
-                            onclick="navigator.clipboard.writeText(document.getElementById('new-token').value); this.textContent='Copied';">Copy</button>
+                            data-copy-from="new-token">Copy</button>
                 </div>
             </MudAlert>
         }
@@ -285,20 +285,20 @@
         </MudText>
         <div class="gb-field">
             <label class="gb-field-label" for="mcp-url">MCP server address</label>
-            <input id="mcp-url" class="gb-input mono" readonly value="@McpUrl" onfocus="this.select()" />
+            <input id="mcp-url" class="gb-input mono" readonly value="@McpUrl" data-select-on-focus />
             <MudText Typo="Typo.caption" Class="mud-text-secondary">Clients that support OAuth sign-in need only this address: they open a ByteBench page where you approve them, no token to paste.</MudText>
         </div>
         <div class="gb-field">
             <label class="gb-field-label" for="mcp-claude">Claude Code</label>
-            <textarea id="mcp-claude" class="gb-input mono" readonly rows="5" onfocus="this.select()">@ClaudeCodeSnippet</textarea>
+            <textarea id="mcp-claude" class="gb-input mono" readonly rows="5" data-select-on-focus>@ClaudeCodeSnippet</textarea>
         </div>
         <div class="gb-field">
             <label class="gb-field-label" for="mcp-json">Other MCP clients (JSON configuration)</label>
-            <textarea id="mcp-json" class="gb-input mono" readonly rows="10" onfocus="this.select()">@McpJsonSnippet</textarea>
+            <textarea id="mcp-json" class="gb-input mono" readonly rows="10" data-select-on-focus>@McpJsonSnippet</textarea>
         </div>
         <div class="gb-field">
             <label class="gb-field-label" for="cli-login">Command-line tool</label>
-            <textarea id="cli-login" class="gb-input mono" readonly rows="4" onfocus="this.select()">@CliSnippet</textarea>
+            <textarea id="cli-login" class="gb-input mono" readonly rows="4" data-select-on-focus>@CliSnippet</textarea>
         </div>
         @if (user != null)
         {

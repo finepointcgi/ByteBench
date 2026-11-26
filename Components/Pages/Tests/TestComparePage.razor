@@ -48,7 +48,7 @@ else if (project != null)
                         @foreach (var row in comparison.Rows.Where(r => r.Change != TestChange.Unchanged))
                         {
                             <tr @key="row.Case.Id">
-                                <td><a href="@TestUi.Case(project.Key, row.Case.Number)"><span class="mono">@row.Case.Key</span> @row.Case.Title</a></td>
+                                <td class="cp-title"><a href="@TestUi.Case(project.Key, row.Case.Number)"><span class="mono">@row.Case.Key</span> @row.Case.Title</a></td>
                                 <td>@Cell(row.A)</td>
                                 <td>@Cell(row.B)</td>
                                 <td class="@(row.Change == TestChange.Regressed ? "ts-fail" : row.Change == TestChange.Fixed ? "ts-pass" : "")">@Describe(row.Change)</td>
@@ -71,7 +71,7 @@ else if (project != null)
         }
         else
         {
-            <MudPaper Outlined="true" Class="cp-matrix-wrap">
+            <MudPaper Outlined="true"><div class="cp-matrix-wrap">
                 <table class="cp-matrix">
                     <thead>
                         <tr>
@@ -94,7 +94,7 @@ else if (project != null)
                         }
                     </tbody>
                 </table>
-            </MudPaper>
+            </div></MudPaper>
             @if (matrix.Cases.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">@(problems ? "No case failed in these runs." : "No results recorded yet.")</MudText> }
         }
     </div>

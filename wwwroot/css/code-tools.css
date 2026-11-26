@@ -85,12 +85,12 @@ mark.search-hit { background: var(--search-mark-bg); color: inherit; padding: 0;
 }
 a.sha-pill:hover { text-decoration: none; background: var(--accent-soft); color: var(--accent); }
 .branch-pill {
-    display: inline-block; background: rgba(var(--mud-palette-info-rgb), .12); color: var(--mud-palette-info);
+    display: inline-block; background: rgba(var(--mud-palette-info-rgb), .12); color: light-dark(#1d4ed8, var(--mud-palette-info)); /* #2563eb on the tint was 4.1:1 */
     border-radius: 5px; padding: 0 6px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 a.branch-pill:hover { text-decoration: none; background: rgba(var(--mud-palette-info-rgb), .22); }
 .issue-key-chip {
-    display: inline-block; font-size: 11.5px; background: rgba(var(--mud-palette-warning-rgb), .15); color: light-dark(#9a6200, #e3b341);
+    display: inline-block; font-size: 11.5px; background: rgba(var(--mud-palette-warning-rgb), .15); color: light-dark(#8a5600, #e3b341); /* #9a6200 on the tint was 4.1:1 */
     border-radius: 10px; padding: 0 7px; margin: 0 2px 0 4px; vertical-align: middle; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 a.issue-key-chip:hover { text-decoration: none; background: rgba(var(--mud-palette-warning-rgb), .28); }

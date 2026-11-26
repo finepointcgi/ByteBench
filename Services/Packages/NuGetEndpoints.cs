@@ -188,7 +188,12 @@ public static partial class NuGetEndpoints
         var entry = zip.Entries.FirstOrDefault(e => !e.FullName.Contains('/') && e.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
         if (entry == null || entry.Length > 1024 * 1024) return null;
         using var stream = entry.Open();
-        var doc = XDocument.Load(stream);
+        // No DOCTYPE at all: nothing to expand (XDocument.Load(Stream) would parse DTDs, capped only at 10M characters of entities).
+        using var reader = System.Xml.XmlReader.Create(stream, new System.Xml.XmlReaderSettings
+        {
+            DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 1024 * 1024,
+        });
+        var doc = XDocument.Load(reader);
         var meta = doc.Root?.Elements().FirstOrDefault(e => e.Name.LocalName == "metadata");
         string? Get(string name) => meta?.Elements().FirstOrDefault(e => e.Name.LocalName == name)?.Value.Trim();
         var id = Get("id");

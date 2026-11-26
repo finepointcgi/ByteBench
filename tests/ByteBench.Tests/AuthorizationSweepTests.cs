@@ -37,9 +37,34 @@ public sealed class AuthorizationSweepApp : TestApp
                 await db.SaveChangesAsync();
             }
             await CreateUserAsync("sweep-outsider");
+            await SeedNewSurfacesAsync();
             ready = true;
         }
         finally { gate.Release(); }
+    }
+
+    /// <summary>
+    /// The seed has no test management or release data, so without this the sweep's ids for those routes would all be 404s (a route that
+    /// forgot its permission check would look fine). Test cases, a plan, a run with a result and evidence, and a release with an asset and
+    /// an auto-attach rule, all in the private WEB project.
+    /// </summary>
+    private async Task SeedNewSurfacesAsync()
+    {
+        var alice = UserId("alice");
+        await using var s = Scope(alice);
+        await using var db = Db();
+        var project = await db.Projects.FirstAsync(p => p.Key == TargetKey);
+        var repo = await db.Repositories.Where(r => r.ProjectId == project.Id).OrderBy(r => r.Id).FirstAsync();
+        var tests = s.Get<ByteBench.Services.Tests.TestService>();
+        var c = await tests.CreateCaseAsync(project.Id, new ByteBench.Services.Tests.TestCaseInput { Title = "Sweep case", Steps = "1. open", Expected = "ok" });
+        var plan = await tests.SavePlanAsync(project.Id, null, "Sweep plan", null, [c.Number]);
+        var run = await tests.CreateRunAsync(project.Id, new ByteBench.Services.Tests.TestRunInput { Name = "Sweep run", PlanId = plan.Id });
+        await tests.RecordResultAsync(project.Id, run.Number, c.Number, TestResultStatus.Failed, "sweep");
+        await tests.AddEvidenceAsync(project.Id, run.Number, c.Number, "sweep.txt", new MemoryStream("sweep"u8.ToArray()));
+        var releases = s.Get<ByteBench.Services.Releases.ReleaseService>();
+        var release = await releases.CreateAsync(repo, new ByteBench.Services.Releases.ReleaseInput { TagName = "sweep-v1", Target = "main", Title = "Sweep release" }, alice);
+        await releases.UploadAssetAsync(repo, release.Id, "sweep.bin", new MemoryStream("sweep"u8.ToArray()), alice);
+        await s.Get<ByteBench.Services.Releases.ReleaseAutoAttachService>().SaveRuleAsync(repo.Id, true, "dist/**");
     }
 }
 
@@ -322,6 +347,39 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
                 }
             }
         Assert.True(failures.Count == 0, string.Join("\n", failures));
+    }
+
+    /// <summary>
+    /// The browser download routes outside /api (source archives, release assets): anonymous callers are refused and a signed-in
+    /// non-member gets nothing, while the owner gets the files (the control that proves the URLs are real).
+    /// </summary>
+    [Fact]
+    public async Task Web_downloads_refuse_anonymous_callers_and_non_members()
+    {
+        await app.EnsureReadyAsync();
+        var values = await TargetValuesAsync();
+        int assetId;
+        await using (var db = app.Db())
+        {
+            var repoIds = await db.Repositories.Where(r => r.Project.Key == AuthorizationSweepApp.TargetKey).Select(r => r.Id).ToListAsync();
+            assetId = await db.ReleaseAssets.Where(a => repoIds.Contains(a.Release.RepositoryId)).Select(a => a.Id).FirstAsync();
+        }
+        var urls = new[]
+        {
+            $"/p/{values.Key}/repos/{values.Slug}/archive/main.zip",
+            $"/p/{values.Key}/repos/{values.Slug}/archive/main.tar.gz",
+            $"/release-assets/{assetId}/sweep.bin",
+        };
+        var anonymous = Client(null);
+        var outsider = Client(await app.CreateTokenAsync("sweep-outsider", TokenScopes.ReadApi | TokenScopes.ReadRepository));
+        var owner = Client(await app.CreateTokenAsync("alice", TokenScopes.ReadApi | TokenScopes.ReadRepository));
+        foreach (var url in urls)
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(url)).StatusCode);
+            var status = (await outsider.GetAsync(url)).StatusCode;
+            Assert.True(status is HttpStatusCode.NotFound or HttpStatusCode.Forbidden, $"{url} gave a non-member {(int)status}");
+            Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync(url)).StatusCode);
+        }
     }
 
     [Fact]

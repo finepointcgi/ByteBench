@@ -8,3 +8,4 @@
 .cp-matrix .cp-case { text-align: left; position: sticky; left: 0; background: var(--mud-palette-surface); max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
 .cp-run { font-weight: 400; color: var(--mud-palette-text-secondary); font-size: 11px; }
 @media (max-width: 800px) { .cp-pick { grid-template-columns: 1fr; } }
+.cp-title { overflow-wrap: anywhere; min-width: 0; } /* a long unbroken case title must wrap, not widen the page */

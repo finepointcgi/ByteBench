@@ -205,6 +205,9 @@ public static class ProductionSetup
                 h["Referrer-Policy"] = "strict-origin-when-cross-origin";
                 h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
                 h["Cross-Origin-Opener-Policy"] = "same-origin";
+                // Nothing here is meant to be embedded by another site (no-cors <img>/<script>/<link>): block it, which also closes Spectre-style
+                // side channels. Responses that are CORS-open on purpose (the flag SDK, the OAuth endpoints) and ones that set their own keep theirs.
+                if (!h.ContainsKey("Cross-Origin-Resource-Policy") && !h.ContainsKey("Access-Control-Allow-Origin")) h["Cross-Origin-Resource-Policy"] = "same-origin";
                 // Blazor's own "frame-ancestors 'self'" is replaced (ours is stricter); a response's own full policy (attachments) is kept.
                 var existing = h.ContentSecurityPolicy.ToString();
                 if (cspEnabled && (existing.Length == 0 || existing.StartsWith("frame-ancestors", StringComparison.Ordinal))
@@ -213,7 +216,8 @@ public static class ProductionSetup
                 {
                     var host = ctx.Request.Host.Value;
                     var csp = "default-src 'self'; " +
-                              $"script-src 'self' 'nonce-{nonce}' 'unsafe-hashes' {hashes}; " +
+                              // 'unsafe-hashes' only when the operator allows extra handler strings (Security:CspInlineHandlers): the app itself has none.
+                              (hashes.Length == 0 ? $"script-src 'self' 'nonce-{nonce}'; " : $"script-src 'self' 'nonce-{nonce}' 'unsafe-hashes' {hashes}; ") +
                               "style-src 'self' 'unsafe-inline'; " +
                               // Workers (Monaco in the web editor) only from this origin: no blob: or data: workers.
                               "worker-src 'self'; " +
@@ -244,16 +248,8 @@ public static class ProductionSetup
     /// <summary>The per-request CSP nonce for inline <c>&lt;script&gt;</c> elements (App.razor's import map).</summary>
     public static string? CspNonce(HttpContext? ctx) => ctx?.Items[CspNonceKey] as string;
 
-    /// <summary>Inline event-handler attributes in the app's markup (allowed by hash with 'unsafe-hashes').</summary>
-    private static readonly string[] InlineHandlers =
-    [
-        "this.select()",
-        "navigator.clipboard.writeText(document.getElementById('new-token').value); this.textContent='Copied';",
-        "navigator.clipboard.writeText(document.getElementById('hook-secret').value); this.textContent='Copied';",
-        // Account/Pages/TwoFactorSettings.razor (static SSR): copy recovery codes, confirm regenerating them.
-        "navigator.clipboard.writeText(document.getElementById('recovery-codes').textContent); this.textContent='Copied';",
-        "return confirm('Generate new recovery codes? Your current codes will stop working.');",
-    ];
+    /// <summary>Inline event-handler attributes in the app's markup: none (wwwroot/js/forms.js handles data-select-on-focus, data-copy-from and data-confirm).</summary>
+    private static readonly string[] InlineHandlers = [];
 
     /// <summary><c>/health/live</c> (process up) and <c>/health/ready</c> (database, storage, Docker as "degraded").</summary>
     public static WebApplication MapByteBenchHealth(this WebApplication app)

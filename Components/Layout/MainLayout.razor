@@ -47,7 +47,7 @@
         }
         <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Colour theme" Class="gb-theme-menu">
             <ActivatorContent Context="menu">
-                <MudTooltip Text="@($"Theme: {ModeLabel(themeMode)}")">
+                <MudTooltip Text="@($"Theme: {ModeLabel(themeMode)}")" Placement="Placement.Left"> @* Left, not below: below it covers the first menu item while the menu is open *@
                     <MudIconButton Icon="@ModeIcon(themeMode)" Color="Color.Inherit" OnClick="menu.ToggleAsync" aria-label="@($"Colour theme: {ModeLabel(themeMode)}")" />
                 </MudTooltip>
             </ActivatorContent>

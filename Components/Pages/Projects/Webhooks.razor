@@ -36,10 +36,10 @@ else if (project != null)
         <MudAlert Severity="Severity.Success" Class="hooks-narrow mb-3">
             <div class="mb-2"><b>Copy the secret now.</b> It won't be shown again.</div>
             <div class="secret-row">
-                <input id="hook-secret" class="secret-input mono" readonly value="@shownSecret" onfocus="this.select()" aria-label="Webhook secret" />
-                @* Inline JS, not a Blazor handler: the clipboard needs the click's user gesture, which a server round trip loses. *@
+                <input id="hook-secret" class="secret-input mono" readonly value="@shownSecret" data-select-on-focus aria-label="Webhook secret" />
+                @* Handled by wwwroot/js/forms.js (data-copy-from), not a Blazor handler: the clipboard needs the click's user gesture, which a server round trip loses. *@
                 <button type="button" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-default mud-button-outlined-size-small"
-                        onclick="navigator.clipboard.writeText(document.getElementById('hook-secret').value); this.textContent='Copied';">Copy</button>
+                        data-copy-from="hook-secret">Copy</button>
             </div>
         </MudAlert>
     }

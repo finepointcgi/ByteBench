@@ -2097,17 +2097,18 @@ Settings come from these sources; later ones override earlier ones:
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `Permissions-Policy`
 - `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Resource-Policy: same-origin` on pages, API responses and static files (not on the CORS-open flag SDK and OAuth endpoints, which set `Access-Control-Allow-Origin`)
 - HSTS on HTTPS, outside Development
 
 **Content Security Policy.** HTML pages get a CSP with `default-src 'self'`:
 
-- **Scripts** come from the site. Blazor's import map is allowed by a per-request nonce, and the app's few inline handlers (`onfocus="this.select()"` and the copy buttons) by hash.
+- **Scripts** come from the site. Blazor's import map is allowed by a per-request nonce. The app has no inline handlers (select-on-focus, copy buttons and confirm prompts are `data-` attributes handled by `wwwroot/js/forms.js`), so there is no `'unsafe-hashes'` unless you add handler strings yourself.
 - **Styles** allow `'unsafe-inline'`, because components set `style` attributes (label colours, charts).
 - **`connect-src`** covers the circuit's `ws:`/`wss:` connection to the same host.
 - **`worker-src 'self'`**: web workers (the web editor's Monaco) only from the site, never `blob:` or `data:` (see [Web editor & AI assistant](#web-editor--ai-assistant)).
 - The policy also sets `frame-ancestors 'none'`, `form-action 'self'` (plus the origins of configured SSO providers) and `object-src 'none'`.
 - Responses with their own CSP (attachments, release assets) keep theirs.
-- New inline `<script>` blocks or `on…=""` attributes will be blocked. Put the code in a `.js` file in `wwwroot/js`, or add the handler string to `Security:CspInlineHandlers`.
+- New inline `<script>` blocks or `on…=""` attributes will be blocked. Put the code in a `.js` file in `wwwroot/js`, or add the handler string to `Security:CspInlineHandlers` (that brings `'unsafe-hashes'` back).
 
 **Health checks.** Both endpoints are anonymous, return JSON without error details, and aren't rate limited.
 

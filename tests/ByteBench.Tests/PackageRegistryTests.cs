@@ -117,6 +117,33 @@ public class PackageRegistryTests(PackageTestApp app) : IClassFixture<PackageTes
 
     // ---------------------------------------------------------------- NuGet
 
+    /// <summary>A .nupkg whose .nuspec starts with a DOCTYPE (entity expansion / external entities).</summary>
+    private static byte[] NupkgWithDoctype(string id, string version)
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var w = new StreamWriter(zip.CreateEntry($"{id}.nuspec").Open());
+            w.Write($"""
+                <?xml version="1.0" encoding="utf-8"?>
+                <!DOCTYPE package [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">]>
+                <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+                  <metadata><id>{id}</id><version>{version}</version><authors>x</authors><description>&lol2;</description></metadata>
+                </package>
+                """);
+        }
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public async Task NuGet_push_refuses_a_nuspec_with_a_DOCTYPE()
+    {
+        var p = await ProjectAsync();
+        var bobToken = await app.CreateTokenAsync("bob", TokenScopes.WriteRepository);
+        var push = await NuGetPushAsync(p.Key, NupkgWithDoctype("Acme.Doctype", "1.0.0"), bobToken);
+        Assert.Equal(HttpStatusCode.BadRequest, push.StatusCode);
+    }
+
     [Fact]
     public async Task NuGet_push_restore_search_and_delete()
     {

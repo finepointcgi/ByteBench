@@ -40,7 +40,7 @@ else if (pr != null)
         else
         {
             <MudText Typo="Typo.h5" HtmlTag="h1" Class="pr-title">@pr.Title <span class="muted mono">@repo.Slug#@pr.Number</span></MudText>
-            <div class="d-flex gap-2 align-center">
+            <div class="d-flex gap-2 align-center flex-wrap">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" PullRequestId="pr.Id" />
                 @if (pr.State == PullRequestState.Open && (pr.IsCrossFork ? pr.SourceRepository?.Project : repo.Project) != null)
                 {

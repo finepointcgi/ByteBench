@@ -35,7 +35,7 @@
                         <div class="markdown rn-preview">@Display.Markdown(notes)</div>
                     </MudTabPanel>
                     <MudTabPanel Text="Markdown">
-                        <textarea class="mono rn-raw" readonly rows="16" onfocus="this.select()" aria-label="Release notes Markdown">@notes</textarea>
+                        <textarea class="mono rn-raw" readonly rows="16" data-select-on-focus aria-label="Release notes Markdown">@notes</textarea>
                     </MudTabPanel>
                 </MudTabs>
             }
