@@ -20,6 +20,29 @@ public partial class PullRequestService
         }
     }
 
+    /// <summary>
+    /// "Fixes SHOP-1" in the title, description or a commit message moves that issue to Done once the pull request is merged into the
+    /// repository's default branch (a merge into a release branch, or a bare mention, leaves it alone). Done as the merging user, who
+    /// can edit issues by definition; an issue that can't move (a workflow rule, already closed) is skipped without failing the merge.
+    /// </summary>
+    private async Task CloseIssuesNamedByMergeAsync(PullRequest pr, IEnumerable<CommitInfo>? commits, int actorId)
+    {
+        if (pr.TargetBranch != pr.Repository.DefaultBranch) return;
+        var texts = new List<string?> { pr.Title, pr.Description };
+        if (commits != null) texts.AddRange(commits.Select(c => c.Message));
+        var numbers = IssueKeys.ClosingNumbers(pr.Repository.Project.Key, texts);
+        if (numbers.Count == 0) return;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var open = await db.Issues.AsNoTracking()
+            .Where(i => i.ProjectId == pr.Repository.ProjectId && numbers.Contains(i.Number) && i.Status != IssueStatus.Done)
+            .Select(i => i.Id).ToListAsync();
+        foreach (var id in open)
+        {
+            try { await issues.SetStatusAsync(id, IssueStatus.Done, actorId); }
+            catch (Exception ex) when (ex is InvalidOperationException) { /* a workflow without a way to Done, or no permission: the merge stands */ }
+        }
+    }
+
     /// <summary>Refuses a direct merge into a branch whose merge queue applies to the actor (admins may bypass a rule that allows it).</summary>
     private async Task EnsureNoMergeQueueAsync(PullRequest pr, int actorId)
     {
@@ -98,6 +121,7 @@ public partial class PullRequestService
             }
         }
         await db.SaveChangesAsync();
+        await CloseIssuesNamedByMergeAsync(pr, commits, actorId);
         await notifications.OnPullRequestMergedAsync(prId, actorId);
         if (deleted != null) await pushEvents.SendAsync(pr.RepositoryId, [deleted], actorId);
         await webhooks.PullRequestMergedAsync(prId, actorId);

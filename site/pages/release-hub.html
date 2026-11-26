@@ -28,7 +28,7 @@
 <li>It runs when a release is created or published, and when a pipeline passes later on the release's commit.</li>
 <li>Only artifacts of <b>passed</b> pipelines whose commit is the tag's commit are used, newest pipeline first.</li>
 <li>Matching files are copied onto the release as assets (file name only, no folders). A name the release already has is skipped, so running it again adds nothing. The usual limits apply: 50 assets per release and the release asset size limit (<code>Releases:MaxAssetBytes</code>, default 512 MB per file, measured on the bytes actually read, so a small zip that expands hugely is cut off).</li>
-<li>Developers can press <b>Attach artifacts now</b> (or <code>POST …/releases/{id}/attach-artifacts</code>) at any time; it uses the patterns even if automatic attaching is off.</li>
+<li>Developers can press <b>Attach artifacts now</b> (or <code>POST …/releases/{id}/attach-artifacts</code>) at any time; it uses the patterns even if automatic attaching is off. If no patterns are saved yet it says so ("No patterns are configured") instead of attaching nothing silently, and a file that more than one pipeline of the tagged commit produced is attached once, from the newest pipeline.</li>
 <li>Patterns must be relative (no leading <code>/</code>, <code>..</code>, <code>~</code> or backslashes), at most 20 patterns of 200 characters. Artifacts are read entry by entry from the zip and never extracted to disk; entries with <code>..</code> or absolute names are ignored.</li>
 </ul>
 <div class="note">Artifacts expire (<code>expire_in</code> on the job) and are deleted after that. Attach them while they exist: once copied, they are ordinary release assets that do not expire.</div>

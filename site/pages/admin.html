@@ -15,6 +15,7 @@
 </tbody></table>
 
 <h2 id="users">User administration</h2>
+<p>All site-admin pages are under <b>Administration</b> in the sidebar. The group is collapsed so it does not push the project navigation off small screens, and it opens by itself while an <code>/admin</code> page is showing.</p>
 <p>At <code>/admin/users</code> you can search by username, display name or email (25 per page). Each row shows the username and display name, email, admin flag, status (active, locked until a date, or deactivated), whether two-factor is on, the last sign-in and the number of project memberships. The last sign-in comes from the newest <code>auth.sign_in</code> audit event, so it is limited by <a href="#retention">audit retention</a>.</p>
 <p>People register themselves at <code>/account/register</code> (an admin can <a href="#registration-admin">close or limit that</a>), or sign in through SSO or LDAP, which can create accounts automatically (see <a href="accounts.html">Accounts</a>). Admins can also add people with <strong>Create user</strong>, which works while registration is closed. To have a first admin, set <code>Bootstrap:AdminUsers</code> to a list of usernames; they are made site admins at start-up.</p>
 <table>

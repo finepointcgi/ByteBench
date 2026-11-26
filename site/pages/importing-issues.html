@@ -13,7 +13,7 @@
 <table>
   <tr><th>Source</th><th>Fields</th></tr>
   <tr><td>GitHub</td><td>Repository as <code>owner/name</code>. Address: leave blank for github.com; for GitHub Enterprise Server enter the API root, for example <code>https://ghe.example.com/api/v3</code>. Token: optional for a public repository.</td></tr>
-  <tr><td>GitLab</td><td>Project path (<code>group/subgroup/project</code>) or numeric id. Address: blank for gitlab.com, or your self-hosted GitLab. Token: optional for a public project.</td></tr>
+  <tr><td>GitLab</td><td>Project path (<code>group/subgroup/project</code>) or numeric id. Address: blank for gitlab.com, or your self-hosted GitLab. Token: optional for a public project, but gitlab.com only serves a public project's labels, milestones, comments and issue links to signed-in callers, so without a token those four are skipped (a warning says so; issues keep their label names) and only the issues themselves are imported.</td></tr>
   <tr><td>Jira</td><td>Address (required, for example <code>https://example.atlassian.net</code>), project key (for example <code>PROJ</code>), and the credentials: on Jira Cloud your account email plus an API token; on Server or Data Center a personal access token (leave the user blank) or a username and password.</td></tr>
   <tr><td>Trello</td><td>Board: the short link or id, or the board's address (<code>https://trello.com/b/AbCdEfGh/name</code>). API key and token (both needed; the token may be left out for a public board). No address field: the importer talks to <code>api.trello.com</code>.</td></tr>
   <tr><td>Linear</td><td>Team key (the prefix of the issue numbers, for example <code>ENG</code>) or the team's id, and a personal API key. No address field: <code>api.linear.app</code>.</td></tr>
@@ -186,6 +186,8 @@
 <table>
   <tr><th>Message</th><th>What to check</th></tr>
   <tr><td>rejected the credentials (wrong, expired or missing token)</td><td>The source answered 401. Create a new token; for Jira Cloud use your account email with an API token, not your password.</td></tr>
+  <tr><td>No token: gitlab.com only serves ...</td><td>Not an error. The project is public, so its issues were read without a token, but gitlab.com refuses labels, milestones, comments and links to anonymous callers. Add a token with <code>read_api</code> and run the import again to bring them in.</td></tr>
+  <tr><td>N pull requests were skipped because GitHub lists pull requests with the issues</td><td>The repository's "issues" are partly or entirely pull requests. Tick <b>Include pull requests as issues</b> to import them (branches and diffs are not copied).</td></tr>
   <tr><td>says the token isn't allowed to read this</td><td>The source answered 403. Check the token's scopes (see above) and that the account can see the project; fine-grained GitHub tokens must be granted this repository.</td></tr>
   <tr><td>Linear rejected the request (HTTP 400)</td><td>Linear refused the query, usually because a team with very large issues exceeded its complexity limit, or because of its rate limit. Run the import again (it continues), or turn off comments.</td></tr>
   <tr><td>Trello needs your API key</td><td>Both the API key and a token are needed; see <a href="#tokens">tokens</a>.</td></tr>

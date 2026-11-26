@@ -26,7 +26,7 @@ docker compose logs -f bytebench</code></pre>
   <li><strong>Secure cookies.</strong> Sign-in cookies are marked <code>Secure</code> and will not work over plain HTTP. For a quick local trial add <code>Security__SecureCookies: "false"</code> under <code>environment</code> in <code>docker-compose.yml</code>. For anything real, put a TLS proxy in front (see <a href="production.html#reverse-proxy">Reverse proxy</a>).</li>
   <li><strong>CI is off.</strong> <code>Ci__Enabled=false</code> because the container has no Docker daemon. See <a href="production.html#ci-in-docker">CI in the container</a>.</li>
 </ul>
-<p>To make yourself a site admin, register, then restart once with <code>Bootstrap__AdminUsers</code> set to your username (uncomment the line in <code>docker-compose.yml</code>).</p>
+<p>To make yourself a site admin, register, then restart once with <code>Bootstrap__AdminUsers</code> set to your username (uncomment the line in <code>docker-compose.yml</code>). Until a site admin exists, the dashboard of every signed-in user shows a note saying exactly this, with their username filled in.</p>
 <p>The rest of this tour assumes Option A. With Docker, replace <code>http://localhost:5108</code> with your address and sign in with the account you registered.</p>
 
 <h2 id="sign-in">1. Sign in with a demo account</h2>

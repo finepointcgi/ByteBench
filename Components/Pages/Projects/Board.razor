@@ -164,7 +164,7 @@ else if (project != null && board != null && data != null)
                              @ondragover:preventDefault="allowed"
                              @ondragenter="() => dragOver = cellKey"
                              @ondrop="() => Drop(col, null)">
-                            @foreach (var i in cards)
+                            @foreach (var i in cards.Take(CardCap(cellKey)))
                             {
                                 <div class="board-card @(dragging?.Id == i.Id ? "dragging" : "")" draggable="@(canEdit ? "true" : "false")" @key="i.Id"
                                      @ondragstart="() => dragging = i"
@@ -172,6 +172,10 @@ else if (project != null && board != null && data != null)
                                      @ondrop="() => Drop(col, i.Id)" @ondrop:stopPropagation>
                                     <BoardCardBody Issue="i" ProjectKey="@project.Key" Fields="board.CardFields" Epic="@data.Epics.GetValueOrDefault(i.Id)" />
                                 </div>
+                            }
+                            @if (cards.Count > CardCap(cellKey))
+                            {
+                                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => ShowMoreCards(cellKey)">Show @Math.Min(CardsPerPage, cards.Count - CardCap(cellKey)) more (@(cards.Count - CardCap(cellKey)) hidden)</MudButton>
                             }
                             @if (cards.Count == 0 && !showLanes)
                             {
@@ -226,6 +230,12 @@ else if (project != null && board != null && data != null)
             return list;
         }
     }
+
+    // A busy board can hold thousands of cards (a Done column grows forever); show a page per cell and let people ask for more.
+    private const int CardsPerPage = 100;
+    private readonly Dictionary<string, int> cardCaps = [];
+    private int CardCap(string cellKey) => cardCaps.GetValueOrDefault(cellKey, CardsPerPage);
+    private void ShowMoreCards(string cellKey) => cardCaps[cellKey] = CardCap(cellKey) + CardsPerPage;
 
     private string BoardHref(BoardEntity b) => b.IsDefault ? $"/p/{project!.Key}/board" : $"/p/{project!.Key}/boards/{b.Id}";
 

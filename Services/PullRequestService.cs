@@ -9,7 +9,7 @@ public record PullRequestCounts(int Open, int Merged, int Declined);
 /// <summary>Pull requests: lifecycle (open → merged/declined → reopened), comments, reviews and issue linking.</summary>
 public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access, NotificationService notifications, Ai.AiReviewQueue aiReviewQueue,
     MergeGate gate, ReviewerService reviewers, BranchProtectionService protection, Webhooks.WebhookNotifier webhooks,
-    Audit.AuditLog audit, Webhooks.WebhookPushEvents pushEvents, CodeOwnersService codeOwners)
+    Audit.AuditLog audit, Webhooks.WebhookPushEvents pushEvents, CodeOwnersService codeOwners, IssueService issues)
 {
     // ---------- Queries ----------
 
@@ -82,7 +82,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
     public async Task<List<Issue>> GetLinkedIssuesAsync(PullRequest pr, IEnumerable<CommitInfo>? commits = null)
     {
         var key = pr.Repository.Project.Key;
-        var texts = new List<string?> { pr.Title, pr.SourceBranch };
+        var texts = new List<string?> { pr.Title, pr.Description, pr.SourceBranch };
         if (commits != null) texts.AddRange(commits.Select(c => c.Message));
         var numbers = IssueKeys.Numbers(key, texts).ToList();
         if (numbers.Count == 0) return [];
@@ -206,6 +206,7 @@ public partial class PullRequestService(IDbContextFactory<AppDbContext> dbFactor
         await NoteMergeOnLinkedIssuesAsync(db, pr, actor.Id, before?.Commits, now);
 
         await db.SaveChangesAsync();
+        await CloseIssuesNamedByMergeAsync(pr, before?.Commits, actor.Id);
         await notifications.OnPullRequestMergedAsync(prId, actor.Id);
         await pushEvents.SendAsync(pr.RepositoryId, pushed, actor.Id);
         await webhooks.PullRequestMergedAsync(prId, actor.Id);
