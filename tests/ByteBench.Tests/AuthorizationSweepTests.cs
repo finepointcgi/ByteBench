@@ -150,7 +150,8 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
     private static IEnumerable<string> Urls(Route route, Values v)
     {
         var names = Parameter.Matches(route.Pattern).Select(m => m.Groups["name"].Value).ToList();
-        var numeric = names.Any(n => n.Equals("number", StringComparison.OrdinalIgnoreCase) || n.Equals("id", StringComparison.OrdinalIgnoreCase) || n.EndsWith("Id", StringComparison.Ordinal));
+        var numeric = names.Any(n => n.Equals("number", StringComparison.OrdinalIgnoreCase) || n.Equals("id", StringComparison.OrdinalIgnoreCase) || n.EndsWith("Id", StringComparison.Ordinal)
+                                     || n.EndsWith("Number", StringComparison.Ordinal));
         var count = numeric ? Math.Max(v.Ids.Count, v.Numbers.Count) : 1;
         for (var i = 0; i < count; i++)
         {
@@ -159,7 +160,7 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
             {
                 "key" or "projectKey" => v.Key,
                 "slug" or "repo" => v.Slug,
-                "number" => v.Numbers[index % v.Numbers.Count].ToString(),
+                "number" or "caseNumber" => v.Numbers[index % v.Numbers.Count].ToString(), // int-constrained: a made-up value would fall through to the catch-all 404
                 var n when n == "id" || n.EndsWith("Id", StringComparison.Ordinal) => v.Ids[index % v.Ids.Count].ToString(),
                 "sha" => v.Sha,
                 "documentName" => "v1",

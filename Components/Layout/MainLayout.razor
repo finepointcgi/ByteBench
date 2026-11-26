@@ -137,6 +137,8 @@
                 <MudNavLink Href="@($"/p/{cp.Key}/wiki")" Icon="@Icons.Material.Outlined.MenuBook">Wiki</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/snippets")" Icon="@Icons.Material.Outlined.ContentPaste">Snippets</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/packages")" Icon="@Icons.Material.Outlined.Inventory">Packages</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/releases")" Icon="@Icons.Material.Outlined.Rocket">Releases</MudNavLink>
+                <MudNavLink Href="@($"/p/{cp.Key}/tests")" Icon="@Icons.Material.Outlined.FactCheck">Tests</MudNavLink>
                 <MudNavLink Href="@($"/p/{cp.Key}/members")" Icon="@Icons.Material.Outlined.Group">Members</MudNavLink>
                 @if (projectPerms.ProjectId == cp.Id && projectPerms.Can(Permission.ManageLabelsAndMilestones))
                 {

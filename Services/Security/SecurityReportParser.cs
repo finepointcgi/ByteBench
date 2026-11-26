@@ -48,6 +48,9 @@ public static partial class SecurityReportParser
 {
     public const string NightOwlFormat = "nightowl";
     public const string SarifFormat = "sarif";
+
+    /// <summary>The report types of <c>artifacts.reports</c> that are security reports (the others are test reports).</summary>
+    public static bool IsSecurityFormat(string type) => type is NightOwlFormat or SarifFormat;
     public const int MaxFindings = 20_000;
 
     /// <summary>Parses <paramref name="json"/> as <paramref name="format"/> ("nightowl" or "sarif"; null detects it).</summary>

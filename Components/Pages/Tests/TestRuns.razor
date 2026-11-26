@@ -1,0 +1,183 @@
+@page "/p/{Key}/tests/runs"
+@using ByteBench.Components.Tests
+@using ByteBench.Services.Releases
+@using ByteBench.Services.Tests
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TestService Tests
+@inject RepositoryService Repos
+@inject ReleaseService Releases
+@inject NavigationManager Nav
+
+<PageTitle>Test runs · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="tr-page">
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">Test runs</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Each run records results for a version, release or CI build.</MudText>
+            </div>
+            @if (perms.Can(Permission.RunTests))
+            {
+                <div class="d-flex gap-2 flex-wrap">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="@(() => Toggle("start"))">Start a run</MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="@(() => Toggle("upload"))">Upload a report</MudButton>
+                </div>
+            }
+        </div>
+        <TestsNav ProjectKey="@project.Key" Active="runs" />
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+        @if (notice != null) { <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">@notice</MudAlert> }
+
+        @if (mode == "start")
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <EditForm Model="startForm" OnValidSubmit="StartRun" FormName="startrun">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" md="4"><MudTextField T="string" @bind-Value="startForm.Name" Label="Name" Placeholder="Release candidate 1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudSelect T="int?" @bind-Value="startForm.PlanId" Label="Plan (blank: all manual cases)" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var (plan, count) in plans) { <MudSelectItem T="int?" Value="@((int?)plan.Id)">@plan.Name (@count)</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudSelect T="string" @bind-Value="startForm.Tag" Label="Tag / release" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="The run records the tag's commit and release">
+                                @foreach (var t in tags) { <MudSelectItem T="string" Value="@t">@t</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="4"><MudTextField T="string" @bind-Value="startForm.Build" Label="Build / version label (optional)" Placeholder="2026.11.3-rc1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    </MudGrid>
+                    <div class="mt-3 d-flex gap-2">
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy">Start</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="@(() => Toggle(""))">Cancel</MudButton>
+                    </div>
+                </EditForm>
+            </MudPaper>
+        }
+        else if (mode == "upload")
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.body2" Class="mb-2">Upload a JUnit XML, TRX, xUnit XML or CTRF JSON report (up to 16 MB). Tests are matched to cases by name; unknown tests become automated cases. CI jobs can do this automatically with <code>artifacts: reports: junit: …</code>.</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="4"><MudTextField T="string" @bind-Value="uploadBuild" Label="Build / version label" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudSelect T="string" @bind-Value="uploadTag" Label="Tag / release" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var t in tags) { <MudSelectItem T="string" Value="@t">@t</MudSelectItem> }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="4" Class="d-flex align-center">
+                        <MudButton HtmlTag="label" Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" StartIcon="@Icons.Material.Filled.AttachFile">
+                            Choose report
+                            <InputFile OnChange="Upload" accept=".xml,.trx,.json" class="tr-file" disabled="@busy" />
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
+
+        @if (rows.Count == 0)
+        {
+            <div class="tr-empty">No runs yet.</div>
+        }
+        else
+        {
+            <MudPaper Outlined="true">
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                    <thead><tr><th>Run</th><th>Version</th><th>Progress</th><th>Result</th><th>Source</th><th>Started</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in rows)
+                        {
+                            <tr @key="r.Run.Id">
+                                <td><a href="@TestUi.Run(project.Key, r.Run.Number)" class="tr-name">#@r.Run.Number @r.Run.Name</a>@(r.Run.IsClosed ? " · closed" : "")</td>
+                                <td>@r.Run.Label@(r.Run.CommitSha != null ? $" · {r.Run.CommitSha[..7]}" : "")</td>
+                                <td class="tr-bar"><MudProgressLinear Value="@r.Summary.Progress" Size="Size.Small" Color="@(r.Summary.Failed + r.Summary.Blocked > 0 ? Color.Error : Color.Success)" /></td>
+                                <td>
+                                    <span class="ts-pass">@r.Summary.Passed</span> / <span class="ts-fail">@r.Summary.Failed</span> / <span class="ts-block">@r.Summary.Blocked</span> / <span class="ts-skip">@r.Summary.Skipped</span> / <span class="ts-none">@r.Summary.NotRun</span>
+                                    @if (r.Summary.PassRate is { } pr) { <span class="mud-text-secondary small"> · @pr.ToString("0.#")% pass</span> }
+                                </td>
+                                <td>@r.Run.Source</td>
+                                <td title="@r.Run.CreatedAt.ToString("u")">@r.Run.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">Result columns: passed / failed / blocked / skipped / not run.</MudText>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "plan")] public int? PlanQuery { get; set; }
+
+    private sealed class StartForm { public string Name = ""; public int? PlanId; public string? Tag; public string? Build; }
+
+    private Project? project;
+    private bool notFound, busy;
+    private string mode = "";
+    private string? error, notice, uploadBuild, uploadTag;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<TestRunRow> rows = [];
+    private List<(TestPlan Plan, int CaseCount)> plans = [];
+    private List<string> tags = [];
+    private StartForm startForm = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        rows = await Tests.ListRunsAsync(project.Id);
+        plans = await Tests.ListPlansAsync(project.Id);
+        if (perms.Can(Permission.RunTests))
+        {
+            var names = new List<string>();
+            foreach (var r in await Repos.GetRepositoriesAsync(project.Id))
+                names.AddRange((await Releases.ListTagsAsync(r.Repository)).Take(60).Select(t => t.Name));
+            tags = names.Distinct().ToList();
+        }
+        if (PlanQuery is { } p && plans.Any(x => x.Plan.Id == p) && mode == "") { startForm.PlanId = p; startForm.Name = plans.First(x => x.Plan.Id == p).Plan.Name; mode = "start"; }
+    }
+
+    private void Toggle(string m) => mode = mode == m ? "" : m;
+
+    private async Task StartRun()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            var run = await Tests.CreateRunAsync(project!.Id, new TestRunInput { Name = startForm.Name, PlanId = startForm.PlanId, Tag = startForm.Tag, Build = startForm.Build });
+            Nav.NavigateTo(TestUi.Run(project.Key, run.Number));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Upload(InputFileChangeEventArgs e)
+    {
+        error = notice = null;
+        busy = true;
+        try
+        {
+            var file = e.File;
+            if (file.Size > TestReportParser.MaxBytes) { error = "A report can be at most 16 MB."; return; }
+            using var reader = new StreamReader(file.OpenReadStream(TestReportParser.MaxBytes));
+            var content = await reader.ReadToEndAsync();
+            var r = await Tests.IngestAsync(project!.Id, new TestIngestInput { Content = content, Build = uploadBuild, Tag = uploadTag, Name = $"Upload {file.Name}", Source = TestRunSource.Api });
+            notice = $"{r.Total} test(s): {r.Passed} passed, {r.Failed} failed, {r.Skipped} skipped" + (r.Created > 0 ? $"; {r.Created} new case(s)" : "") + $" → run #{r.RunNumber}.";
+            rows = await Tests.ListRunsAsync(project.Id);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        catch (IOException ex) { error = "Upload failed: " + ex.Message; }
+        finally { busy = false; }
+    }
+}

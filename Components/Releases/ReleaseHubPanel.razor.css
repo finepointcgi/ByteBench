@@ -1,0 +1,8 @@
+.rh-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; font-size: 13px; margin-bottom: 14px; }
+.rh-ico { vertical-align: -4px; }
+.rh-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px 28px; }
+.rh-h { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--mud-palette-text-secondary); margin: 0 0 6px; }
+.rh-row { padding: 4px 0; font-size: 13px; overflow-wrap: anywhere; }
+.rh-sub { font-size: 12px; color: var(--mud-palette-text-secondary); margin-left: 4px; }
+.rh-muted { color: var(--mud-palette-text-secondary); font-size: 12px; }
+.rh-none { color: var(--mud-palette-text-secondary); font-size: 13px; }

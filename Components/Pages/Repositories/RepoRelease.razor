@@ -43,6 +43,8 @@ else if (Repo != null && release != null)
         <ByteBench.Components.Pipelines.DeployedToPanel Repo="Repo" Tag="@release.TagName" ShowEmpty="true" EmptyText="This release's tag isn't deployed to any environment yet." />
     </MudPaper>
 
+    <ReleaseHubPanel Repo="Repo" ReleaseId="release.Id" CanPush="CanEdit" CanManage="perms.Can(Permission.ManageRepositories) && !Repo.IsArchived" OnAttached="Load" />
+
     @if (CanEdit)
     {
         <div class="rel-upload-wrap">

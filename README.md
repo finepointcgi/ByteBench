@@ -260,12 +260,14 @@ Every project has members, each with one role. `Services/ProjectAccess.cs` makes
 | ReviewPullRequest | | ✓ | ✓ | ✓ |
 | PublishPackages (NuGet/npm publish, docker push) | | ✓ | ✓ | ✓ |
 | ToggleFlags (turn feature flags on/off, edit values, rules and segments) | | ✓ | ✓ | ✓ |
+| RunTests (write test cases, start runs, record results, upload test reports) | | ✓ | ✓ | ✓ |
 | ManageLabelsAndMilestones (also sprints: create, edit, start, complete, delete) | | | ✓ | ✓ |
 | MergePullRequest | | | ✓ | ✓ |
 | DeleteBranch | | | ✓ | ✓ |
 | ManageRepositories | | | ✓ | ✓ |
 | DeletePackages (packages, versions, image tags) | | | ✓ | ✓ |
 | ManageFlags (create, archive, delete feature flags; environments, SDK keys) | | | ✓ | ✓ |
+| ManageTests (test plans; archive or delete test cases; delete runs) | | | ✓ | ✓ |
 | ManageMembers | | | | ✓ |
 | ManageProjectSettings (name, description, visibility) | | | | ✓ |
 | DeleteProject | | | | ✓ |
@@ -917,6 +919,16 @@ Every project has a private NuGet v3 feed (`/packages/{KEY}/nuget/index.json`), 
 ## Feature flags
 
 Flags belong to a project (`/p/{KEY}/flags`), have a stable key, a type (boolean, string, number, json) and per-environment state: on/off, a default value and ordered targeting rules (attribute clauses, segments and stable SHA-256 percentage rollouts). Environments are synced from the names your CI `environment:` keys use. Permissions: ToggleFlags (Developer) and ManageFlags (Maintainer), as in the permission table. Applications evaluate flags with a client (`gbsdk_c_`) or server (`gbsdk_s_`) SDK key at `/api/v1/flags/evaluate`, `/evaluate-all`, `/stream` (server-sent events) and, for server keys, `/definitions` for local evaluation, with ETag support. Management API: `/api/v1/projects/{key}/flags`, `/flag-environments`, `/flag-sdk-keys`. Details: [Feature flags](https://finepointcgi.github.io/ByteBench/feature-flags.html).
+
+## Test management
+
+Each project has test cases, plans and runs under `/p/{KEY}/tests` (cases, plans, runs, a keyboard-driven run page, compare and matrix). Cases have steps, expected result, preconditions, priority, manual or automated type, tags, a folder/suite, linked issues, requirements and a version history (editing the text keeps the old version). A run targets a tag (its commit and release are recorded), a build label or a CI pipeline; results are passed, failed, blocked or skipped with who, when, comment and evidence files (always served as attachments). A failed result can create a prefilled bug in one click. Compare shows which cases regressed between two runs; the matrix lines cases up against the latest runs. Permissions: `RunTests` (Developer) to write cases, run and record, `ManageTests` (Maintainer) for plans and deleting; read access views.
+
+Automated results: JUnit XML, TRX, xUnit v2 XML and CTRF JSON, from CI jobs (`artifacts: reports: junit: "out/*.xml"`; types `junit`, `trx`, `xunit`, `ctrf`, patterns allowed, one run per pipeline) or `POST /api/v1/projects/{key}/tests/reports` (raw body or JSON, up to 16 MB). Tests map to cases by a `TC-n` token or the case's automated name; unknown tests create automated cases (CI: `Tests:AutoCreateCases`, default true). XML with a DOCTYPE is refused (no XXE, no entity bombs), size and test counts are capped. REST: `/api/v1/projects/{key}/tests/...`; webhook `test_run.completed`. Details: [Test management](https://finepointcgi.github.io/ByteBench/test-management.html).
+
+## Release hub
+
+A release page (`/p/{KEY}/repos/{slug}/releases/{id}`) has a **Release hub** panel and `/p/{KEY}/releases` lists the releases of every repository of the project. The hub gathers, for the tag's commit: CI pipelines and artifacts (pipelines that ran on the same commit; ByteBench does not run pipelines for tags), packages and container images published by them or versioned like the tag, the Night Owl scan, SBOM files among the assets, test runs, issues of the matching fix version or milestone, merged pull requests since the previous release, the commit's signature badge, a compare link, `SHA256SUMS` and download counts. Per repository, Maintainers can configure glob patterns so that matching files from the artifacts of passed pipelines on the tagged commit are copied onto the release as assets when it is published or when a pipeline passes later. API: `GET /api/v1/projects/{key}/releases`, `.../releases/{id}/hub`, `.../checksums`, `POST .../attach-artifacts`, `GET/PUT .../release-settings`. Existing release APIs are unchanged. Details: [Release hub](https://finepointcgi.github.io/ByteBench/release-hub.html).
 
 ## Pages (static sites from CI)
 

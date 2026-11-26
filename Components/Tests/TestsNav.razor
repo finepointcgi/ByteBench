@@ -1,0 +1,15 @@
+@* The tab strip of the Tests area. Active: cases, plans, runs or compare. *@
+<nav class="tn-nav" aria-label="Tests">
+    <MudButton Href="@TestUi.Cases(ProjectKey)" Size="Size.Small" Variant="@V("cases")" Color="@C("cases")" StartIcon="@Icons.Material.Outlined.Checklist">Cases</MudButton>
+    <MudButton Href="@TestUi.Plans(ProjectKey)" Size="Size.Small" Variant="@V("plans")" Color="@C("plans")" StartIcon="@Icons.Material.Outlined.Assignment">Plans</MudButton>
+    <MudButton Href="@TestUi.Runs(ProjectKey)" Size="Size.Small" Variant="@V("runs")" Color="@C("runs")" StartIcon="@Icons.Material.Outlined.PlayCircleOutline">Runs</MudButton>
+    <MudButton Href="@TestUi.Compare(ProjectKey)" Size="Size.Small" Variant="@V("compare")" Color="@C("compare")" StartIcon="@Icons.Material.Outlined.CompareArrows">Compare &amp; matrix</MudButton>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public string Active { get; set; } = "cases";
+
+    private Variant V(string tab) => tab == Active ? Variant.Filled : Variant.Text;
+    private Color C(string tab) => tab == Active ? Color.Primary : Color.Default;
+}

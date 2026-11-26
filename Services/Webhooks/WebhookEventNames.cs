@@ -28,6 +28,9 @@ public static class WebhookEventNames
     // ----- Package & container registry -----
     public const string PackagePublished = "package.published";
     public const string PackageDeleted = "package.deleted";
+    // ----- Test management -----
+    /// <summary>A test run was closed, or an automated report (CI or API) was recorded. Raised by Services/Tests.</summary>
+    public const string TestRunCompleted = "test_run.completed";
     // ----- Feature flags -----
     /// <summary>A feature flag is created, toggled, edited (value, rules, details), archived or deleted. Raised by Services/Flags.</summary>
     public const string FlagChanged = "flag.changed";
@@ -53,6 +56,7 @@ public static class WebhookEventNames
         (TagDeleted, "A tag is deleted (in ByteBench or by a push)"),
         (PackagePublished, "A package version or container image tag is published"),
         (PackageDeleted, "A package, version or image tag is deleted"),
+        (TestRunCompleted, "A test run is closed or an automated test report is recorded"),
         (FlagChanged, "A feature flag is created, toggled, edited, archived or deleted"),
     ];
 

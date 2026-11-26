@@ -234,7 +234,7 @@ public class SecurityCiFileTests
 
     [Theory]
     [InlineData("include: [codeql]\njobs: { a: { steps: [ { run: x } ] } }", "not a built-in template")]
-    [InlineData("jobs: { a: { artifacts: { reports: { junit: r.xml } }, steps: [ { run: x } ] } }", "not supported")]
+    [InlineData("jobs: { a: { artifacts: { reports: { tap: r.tap } }, steps: [ { run: x } ] } }", "not supported")]
     [InlineData("jobs: { a: { artifacts: { reports: { sarif: \"*.sarif\" } }, steps: [ { run: x } ] } }", "one file")]
     [InlineData("jobs: { a: { artifacts: { reports: { sarif: ../x.sarif } }, steps: [ { run: x } ] } }", "relative")]
     public void Bad_includes_and_reports_are_errors(string yaml, string expected)

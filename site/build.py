@@ -45,6 +45,8 @@ SECTIONS = [
     ("Build, test and ship", [
         ("ci", "CI pipelines", "The CI file format, runners, variables, artifacts, caches and schedules"),
         ("environments", "Environments and deployments", "Deploy approvals, rollback, freezes and traceability"),
+        ("test-management", "Test management", "Test cases, plans, runs, results, and JUnit, TRX, xUnit and CTRF reports from CI"),
+        ("release-hub", "Release hub", "Everything for a tagged version: assets, CI artifacts, packages, security, SBOM, tests"),
         ("packages", "Package and container registry", "NuGet, npm and Docker images per project"),
         ("pages", "Static sites (Pages)", "Publish a site from a CI job"),
         ("security-scanning", "Security scanning", "Night Owl findings, triage and pull request checks"),

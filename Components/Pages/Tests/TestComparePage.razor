@@ -1,0 +1,153 @@
+@page "/p/{Key}/tests/compare"
+@using ByteBench.Components.Tests
+@using ByteBench.Services.Tests
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TestService Tests
+@inject NavigationManager Nav
+
+<PageTitle>Compare test results · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="cp-page">
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">Compare &amp; matrix</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Which cases regressed between two builds, and how every case did across the latest runs.</MudText>
+            </div>
+        </div>
+        <TestsNav ProjectKey="@project.Key" Active="compare" />
+
+        <MudPaper Outlined="true" Class="pa-3 mb-3">
+            <div class="cp-pick">
+                <MudSelect T="int?" Value="a" ValueChanged="v => { a = v; return Compare(); }" Label="Baseline run" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                    @foreach (var r in runs) { <MudSelectItem T="int?" Value="@((int?)r.Number)">#@r.Number · @r.Label · @r.CreatedAt.ToLocalTime().ToString("MMM d")</MudSelectItem> }
+                </MudSelect>
+                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" />
+                <MudSelect T="int?" Value="b" ValueChanged="v => { b = v; return Compare(); }" Label="Candidate run" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                    @foreach (var r in runs) { <MudSelectItem T="int?" Value="@((int?)r.Number)">#@r.Number · @r.Label · @r.CreatedAt.ToLocalTime().ToString("MMM d")</MudSelectItem> }
+                </MudSelect>
+            </div>
+            @if (comparison != null)
+            {
+                <div class="cp-counts">
+                    <span class="ts-fail"><b>@comparison.Count(TestChange.Regressed)</b> regressed</span>
+                    <span class="ts-pass"><b>@comparison.Count(TestChange.Fixed)</b> fixed</span>
+                    <span class="ts-block"><b>@comparison.Count(TestChange.StillFailing)</b> still failing</span>
+                    <span><b>@comparison.Count(TestChange.NewlyRun)</b> newly run</span>
+                    <span><b>@comparison.Count(TestChange.NoLongerRun)</b> no longer run</span>
+                </div>
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                    <thead><tr><th>Case</th><th>#@comparison.A.Number @comparison.A.Label</th><th>#@comparison.B.Number @comparison.B.Label</th><th>Change</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in comparison.Rows.Where(r => r.Change != TestChange.Unchanged))
+                        {
+                            <tr @key="row.Case.Id">
+                                <td><a href="@TestUi.Case(project.Key, row.Case.Number)"><span class="mono">@row.Case.Key</span> @row.Case.Title</a></td>
+                                <td>@Cell(row.A)</td>
+                                <td>@Cell(row.B)</td>
+                                <td class="@(row.Change == TestChange.Regressed ? "ts-fail" : row.Change == TestChange.Fixed ? "ts-pass" : "")">@Describe(row.Change)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                @if (comparison.Rows.All(r => r.Change == TestChange.Unchanged)) { <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">No differences between these runs.</MudText> }
+            }
+            else { <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">Pick two runs to compare.</MudText> }
+        </MudPaper>
+
+        <div class="d-flex align-center gap-3 mb-2 flex-wrap">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2">Results matrix</MudText>
+            <MudSwitch T="bool" Value="problems" ValueChanged="v => { problems = v; return LoadMatrix(); }" Label="Only cases that failed somewhere" Color="Color.Primary" Size="Size.Small" />
+        </div>
+        @if (matrix == null || matrix.Runs.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">No results recorded yet.</MudText>
+        }
+        else
+        {
+            <MudPaper Outlined="true" Class="cp-matrix-wrap">
+                <table class="cp-matrix">
+                    <thead>
+                        <tr>
+                            <th class="cp-case">Case</th>
+                            @foreach (var r in matrix.Runs) { <th @key="r.Id"><a href="@TestUi.Run(project.Key, r.Number)" title="@r.Name">@r.Label</a><div class="cp-run">#@r.Number</div></th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in matrix.Cases)
+                        {
+                            <tr @key="c.Id">
+                                <td class="cp-case"><a href="@TestUi.Case(project.Key, c.Number)"><span class="mono">@c.Key</span> @c.Title</a></td>
+                                @foreach (var r in matrix.Runs)
+                                {
+                                    matrix.Cells.TryGetValue((c.Id, r.Id), out var s);
+                                    var has = matrix.Cells.ContainsKey((c.Id, r.Id));
+                                    <td class="cp-cell" @key="r.Id"><span class="@TestUi.CssOf(has ? s : null)" title="@(has ? TestUi.LabelOf(s) : "No result")"><MudIcon Icon="@TestUi.IconOf(has ? s : null)" Size="Size.Small" /></span></td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </MudPaper>
+            @if (matrix.Cases.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">@(problems ? "No case failed in these runs." : "No results recorded yet.")</MudText> }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "a")] public int? QueryA { get; set; }
+    [SupplyParameterFromQuery(Name = "b")] public int? QueryB { get; set; }
+
+    private Project? project;
+    private bool notFound, problems;
+    private List<TestRun> runs = [];
+    private int? a, b;
+    private TestCompare? comparison;
+    private TestMatrix? matrix;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        runs = (await Tests.ListRunsAsync(project.Id, 100)).Select(r => r.Run).ToList();
+        a ??= QueryA;
+        b ??= QueryB;
+        if (a == null && b == null && runs.Count >= 2)
+        {
+            // The newest run against the one before it that came from the same kind of source (CI against CI, manual against manual).
+            var newest = runs[0];
+            var before = runs.Skip(1).FirstOrDefault(r => r.Source == newest.Source) ?? runs[1];
+            b = newest.Number;
+            a = before.Number;
+        }
+        await Compare();
+        await LoadMatrix();
+    }
+
+    private async Task Compare()
+    {
+        comparison = a is { } x && b is { } y ? await Tests.CompareAsync(project!.Id, x, y) : null;
+    }
+
+    private async Task LoadMatrix() => matrix = await Tests.MatrixAsync(project!.Id, null, 8, problems);
+
+    private static string Describe(TestChange c) => c switch
+    {
+        TestChange.Regressed => "Regressed",
+        TestChange.Fixed => "Fixed",
+        TestChange.StillFailing => "Still failing",
+        TestChange.NewlyRun => "Newly run",
+        TestChange.NoLongerRun => "No longer run",
+        _ => "",
+    };
+
+    private RenderFragment Cell(TestResultStatus? s) => @<span class="@TestUi.CssOf(s)"><MudIcon Icon="@TestUi.IconOf(s)" Size="Size.Small" Class="cp-ico" /> @(s == null ? "—" : TestUi.LabelOf(s))</span>;
+}

@@ -107,6 +107,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         await using var db = await dbFactory.CreateDbContextAsync();
         var files = await Attachments.AttachmentService.StoredNamesForProjectAsync(db, id);
         files.AddRange(await Releases.ReleaseService.StoredNamesAsync(db, projectId: id)); // release assets cascade with the project
+        files.AddRange(await db.TestEvidence.Where(e => e.Result.Run.ProjectId == id).Select(e => e.StoredName).ToListAsync()); // test evidence cascades too
         var gone = await db.Projects.Where(p => p.Id == id).Select(p => new { p.Key, p.Name, Issues = p.Issues.Count }).FirstOrDefaultAsync();
         await db.Projects.Where(p => p.Id == id).ExecuteDeleteAsync();
         attachmentFiles.Delete(files); // rows first, then files

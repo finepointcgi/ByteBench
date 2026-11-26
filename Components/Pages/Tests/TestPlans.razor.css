@@ -1,0 +1,7 @@
+.tp-page { max-width: 1000px; }
+.tp-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; flex-wrap: wrap; }
+.tp-name { font-weight: 600; }
+.tp-picker { max-height: 320px; overflow: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: var(--mud-default-borderradius); padding: 6px 10px; }
+.tp-pick { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
+.tp-empty { padding: 32px; text-align: center; color: var(--mud-palette-text-secondary); border: 1px dashed var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius); background: var(--mud-palette-surface); }

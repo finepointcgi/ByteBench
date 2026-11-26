@@ -388,7 +388,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 }
             }
             // Security reports (artifacts.reports): read whether the job passed or failed (a failed quality gate still has a report).
-            if (extras.Artifacts?.Reports is { Count: > 0 } reports && lastStarted != null && !ct.IsCancellationRequested && Directory.Exists(workspace))
+            if (extras.Artifacts?.Reports is { Count: > 0 } allReports && allReports.Where(r => Security.SecurityReportParser.IsSecurityFormat(r.Key)).ToDictionary() is { Count: > 0 } reports && lastStarted != null && !ct.IsCancellationRequested && Directory.Exists(workspace))
             {
                 try
                 {
@@ -400,6 +400,22 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 {
                     log.LogWarning(ex, "Reading the security reports of job {Job} failed", job.Id);
                     postNotes.Add($"[bytebench] Could not read the security reports: {ex.Message}");
+                }
+            }
+            // Test reports (artifacts.reports junit/trx/xunit/ctrf): recorded as one test run per pipeline, read whether the job passed or failed.
+            if (extras.Artifacts?.Reports is { Count: > 0 } testReports && testReports.Any(r => Tests.TestReportParser.IsFormat(r.Key)) && lastStarted != null
+                && !ct.IsCancellationRequested && Directory.Exists(workspace))
+            {
+                try
+                {
+                    using var scope = scopes.CreateScope();
+                    postNotes.AddRange(await scope.ServiceProvider.GetRequiredService<Tests.TestReportIngestor>()
+                        .IngestWorkspaceAsync(p, job, workspace, testReports));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    log.LogWarning(ex, "Reading the test reports of job {Job} failed", job.Id);
+                    postNotes.Add($"[bytebench] Could not read the test reports: {ex.Message}");
                 }
             }
             if (postNotes.Count > 0 && lastStarted != null) await AppendLogAsync(lastStarted.Id, postNotes, run.Variables);
@@ -595,6 +611,12 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         if (status == PipelineStatus.Manual) return; // blocked on a manual job: not completed yet, so no webhook or notification
         if (status is PipelineStatus.Failed or PipelineStatus.Error) await NotifyFailedAsync(p);
         RaiseWebhook(p);
+        if (status == PipelineStatus.Passed)
+        {
+            // Release hub: a release whose tag is this commit gets this pipeline's matching artifacts (repository setting).
+            using var attachScope = scopes.CreateScope();
+            await attachScope.ServiceProvider.GetRequiredService<Releases.ReleaseAutoAttachService>().OnPipelineFinishedAsync(p.Id);
+        }
         if (status is PipelineStatus.Passed or PipelineStatus.Failed or PipelineStatus.Error) // automation: "pipeline passed/failed" triggers
             automation.Enqueue(new(Automation.AutomationEventKind.PipelineCompleted, p.TriggeredById ?? 0) { PipelineId = p.Id, PipelinePassed = status == PipelineStatus.Passed });
     }
