@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src/main/**/*.ts", "src/shared/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "vitest.e2e.config.ts"]
+}
