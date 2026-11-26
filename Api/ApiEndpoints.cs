@@ -111,6 +111,9 @@ public static class ApiEndpoints
         api.MapSignedCommitEndpoints(); // commit signature status
         api.MapTestEndpoints(); // test management: cases, plans, runs, results, report upload
         api.MapReleaseHubEndpoints(); // release hub: everything for a tag, auto-attach rules
+        api.MapNotificationApiEndpoints(); // your notifications (desktop app polling)
+
+        app.MapServerInfo(); // GET /api/v1/server-info (anonymous): name, version, capabilities
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.
         app.Map("/api/{**rest}", (HttpContext http) =>

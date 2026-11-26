@@ -1,0 +1,58 @@
+<h1>Desktop app</h1>
+<p class="lead">The ByteBench desktop app opens any ByteBench server (yours or a team's) in its own window, so you can work with issues, boards, pull requests, code, CI, workspaces and test runs like in a native application. It shows the server's normal web interface; nothing is installed on the server.</p>
+
+<h2 id="install">Install</h2>
+<p>Installers for macOS (dmg or zip, Apple Silicon and Intel), Windows (installer) and Linux (AppImage and deb) are attached to the <code>desktop-v*</code> releases of the project on GitHub. Release builds are unsigned unless the maintainers added signing certificates, so macOS and Windows may show a warning on first start. Packaged builds update themselves from GitHub releases.</p>
+<p>To run it from source: <code>cd desktop &amp;&amp; npm ci &amp;&amp; npm start</code> (Node 22 or later).</p>
+
+<h2 id="servers">Servers</h2>
+<p>On first start the app asks for the address of a server, for example <code>https://bytebench.example.com</code> or <code>localhost:5108</code>. You can save several servers and switch with <b>File → Switch Server</b> (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd>), the <b>Servers</b> menu (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd>) or the tray menu. Each server has its own sign-in; removing a server deletes its cookies and cache on your computer.</p>
+<ul>
+<li>Plain <code>http</code> is accepted without a prompt for <code>localhost</code>, private networks and local-only names; for any other host you must confirm it.</li>
+<li><b>Self-signed certificate:</b> tick the option for that server. When the connection fails, the error page shows the certificate's SHA-256 fingerprint; <b>Review and trust certificate</b> asks you to confirm, then pins exactly that certificate. A different certificate later is refused.</li>
+<li><b>Single sign-on:</b> if your server signs in through another website, add that address (https only) under <b>Trusted sign-in addresses</b> for the server. Otherwise links to other sites open in your default browser.</li>
+<li>The app checks <code>GET /api/v1/server-info</code> when it opens a server. A server without it still works but has no notifications; a server newer than the app shows a hint to update the app. If the server cannot be reached the app shows an error page with <b>Try again</b>.</li>
+</ul>
+
+<h2 id="notifications">Notifications and badge</h2>
+<p>The app checks each saved server's own notifications about every 30 seconds (and less often while a server is down), using your signed-in session or, if you saved one, a <a href="api.html">personal access token</a> with <code>read_api</code>. New unread notifications become operating system notifications; clicking one opens the item. The unread total appears as the dock badge (macOS, Linux), a taskbar overlay (Windows) and in the tray or menu-bar item. Turn them off under <b>Servers → Desktop Notifications</b>. Tokens are stored encrypted with the operating system keychain, and not at all if no keychain exists.</p>
+<div class="note">On Windows and Linux, closing the window keeps the app running in the tray so notifications continue; quit from the tray menu.</div>
+
+<h2 id="links">bytebench:// links</h2>
+<p><code>bytebench://open?server=&lt;id|name|host&gt;&amp;path=/p/KEY/issues/12</code> opens a page of a server you already added. The server is matched by id, name or host name. The path must be a path on that server. A link can never add a server or open another site; links that do not match are refused with a message. Installed builds register the link scheme; a build run from source does not.</p>
+
+<h2 id="clone">Clone with ByteBench</h2>
+<p><b>File → Clone This Repository</b> (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>) on a repository page asks for a folder, runs <code>git clone</code> for the repository's <a href="repositories.html">HTTP clone address</a>, and opens the new folder in VS Code (or another graphical editor named in <code>$VISUAL</code> or <code>$EDITOR</code>), otherwise shows it in your file manager. Git must be installed. For private repositories save a token for the server; it is passed to Git through its environment and never appears on a command line.</p>
+
+<h2 id="workspaces">Workspaces</h2>
+<p><b>Go → Workspaces</b> opens <a href="workspaces.html">your workspaces</a>. The IDE and previews are served from <code>ide-*</code> and <code>p&lt;port&gt;-*</code> addresses under the server's workspace domain; the app opens those of the same server in a window of their own that shares your session. Copy and paste works in the IDE.</p>
+
+<h2 id="shortcuts">Menus and shortcuts</h2>
+<table>
+<tr><th>Shortcut</th><th>Action</th></tr>
+<tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Switch server</td></tr>
+<tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>New window</td></tr>
+<tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>Add or manage servers</td></tr>
+<tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Find in page</td></tr>
+<tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Reload (add <kbd>Shift</kbd> for a hard reload)</td></tr>
+<tr><td><kbd>Cmd</kbd>+<kbd>[</kbd> and <kbd>Cmd</kbd>+<kbd>]</kbd> (<kbd>Alt</kbd>+<kbd>Left</kbd>, <kbd>Alt</kbd>+<kbd>Right</kbd>)</td><td>Back and forward</td></tr>
+<tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> with <kbd>+</kbd>, <kbd>-</kbd>, <kbd>0</kbd></td><td>Zoom in, out, actual size</td></tr>
+</table>
+<p>The window follows your operating system's light or dark setting; <b>View → Appearance</b> can force one. The web interface's own theme menu keeps working. Window size and position are remembered. <b>Servers → Launch at Login</b> starts the app with your computer (macOS and Windows).</p>
+
+<h2 id="security">Security</h2>
+<ul>
+<li>Pages run in sandboxed renderers with context isolation and no Node.js; the only bridge offered to a server page can ask to clone a repository, and a native folder picker always appears.</li>
+<li>Only the server's own address stays in the app. Other web links open in your default browser, and file, script and data addresses are blocked. Pop-ups never open windows of their own.</li>
+<li>Only notifications and the clipboard may be used by pages; camera, microphone, location and other permissions are denied.</li>
+<li>Every server has its own cookie store. The saved server list contains no secrets.</li>
+</ul>
+
+<h2 id="server">What the server provides</h2>
+<p>Two small <a href="api.html">API</a> additions: <code>GET /api/v1/server-info</code> (no sign-in: name, version, API version, capabilities and the workspace domain) and your own notifications, <code>GET /api/v1/notifications</code> (filters <code>unread=true</code>, <code>afterId</code>, <code>limit</code>; also returns <code>unreadCount</code>) and <code>POST /api/v1/notifications/{id}/read</code>.</p>
+
+<h2 id="limits">Limits</h2>
+<ul>
+<li>Browser push notifications do not exist in the app; the notification check described above replaces them.</li>
+<li>Updates on macOS need a signed build.</li>
+</ul>

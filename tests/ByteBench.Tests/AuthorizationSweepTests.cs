@@ -81,6 +81,7 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
     {
         ["/api/{documentName}/openapi.json"] = "the OpenAPI description of the API (no data)",
         ["/api/{**rest}"] = "the JSON 404 for unknown API paths",
+        ["/api/v1/server-info"] = "name, version and capabilities for the desktop app (no user data)",
     };
 
     /// <summary>Routes a signed-in user who is not a member of the private project may get a 2xx from (pattern → reason).</summary>
@@ -103,6 +104,8 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
         ["GET /api/v1/groups/{group}/subgroups"] = "an internal group's subgroups",
         ["GET /api/v1/dashboards"] = "the caller's own and shared dashboards",
         ["GET /api/v1/workspaces/"] = "the caller's own workspaces (never anyone else's)",
+        ["GET /api/v1/notifications/"] = "the caller's own notifications",
+        ["POST /api/v1/notifications/{id:int}/read"] = "marks the caller's own notification read; anyone else's id is a no-op",
         ["GET /api/v1/snippets/"] = "the caller's own and visible snippets",
         ["POST /api/v1/snippets/"] = "creates a personal snippet (the empty test body is refused with 422)",
         ["POST /api/v1/projects/{key}/repos/{slug}/pull-requests/{number:int}/apply-suggestions"] =
