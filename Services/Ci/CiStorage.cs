@@ -4,13 +4,15 @@ using Microsoft.Extensions.Options;
 
 namespace ByteBench.Services.Ci;
 
-/// <summary>A job's <c>artifacts</c> and <c>cache</c> settings, stored as JSON on <see cref="Data.PipelineJob.ExtrasJson"/>.</summary>
-public sealed record CiJobExtras(CiArtifactsDefinition? Artifacts, CiCacheDefinition? Cache, CiPagesDefinition? Pages = null)
+/// <summary>A job's <c>artifacts</c>, <c>cache</c>, <c>retry</c>, <c>timeout</c> and <c>variables</c> settings, stored as JSON on <see cref="Data.PipelineJob.ExtrasJson"/>.</summary>
+public sealed record CiJobExtras(CiArtifactsDefinition? Artifacts, CiCacheDefinition? Cache, CiPagesDefinition? Pages = null,
+    int Retry = 0, TimeSpan? Timeout = null, IReadOnlyDictionary<string, string>? Variables = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public static string? Serialize(CiJobDefinition j) =>
-        j.Artifacts == null && j.Cache == null && j.Pages == null ? null : JsonSerializer.Serialize(new CiJobExtras(j.Artifacts, j.Cache, j.Pages), Json);
+        j.Artifacts == null && j.Cache == null && j.Pages == null && j.Retry == 0 && j.Timeout == null && j.Variables.Count == 0 ? null
+            : JsonSerializer.Serialize(new CiJobExtras(j.Artifacts, j.Cache, j.Pages, j.Retry, j.Timeout, j.Variables.Count == 0 ? null : j.Variables), Json);
 
     public static CiJobExtras Parse(string? json)
     {

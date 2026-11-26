@@ -132,7 +132,7 @@
                                 <li>
                                     <PipelineStatusIcon Status="p.Status" Href="@href" />
                                     <div class="gadget-li-main">
-                                        <a href="@href">#@p.Id · @p.Ref</a> <span class="mono mud-text-secondary">@p.CommitSha[..Math.Min(8, p.CommitSha.Length)]</span>
+                                        <a href="@href">#@p.Id · @ByteBench.Services.Ci.CiRef.Display(p.Ref)</a> <span class="mono mud-text-secondary">@p.CommitSha[..Math.Min(8, p.CommitSha.Length)]</span>
                                         <div class="mud-text-secondary gadget-li-meta">@p.Status · @p.Trigger@(p.TriggeredBy is { } u ? $" by {u.DisplayName}" : "") · @Display.Ago(p.CreatedAt)</div>
                                     </div>
                                 </li>

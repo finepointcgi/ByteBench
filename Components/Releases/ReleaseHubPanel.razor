@@ -49,7 +49,7 @@
                 @foreach (var p in hub.Pipelines)
                 {
                     <div class="rh-row" @key="p.Id">
-                        <a href="@PipelineUrls.Detail(Repo, p.Id)">#@p.Id</a> <span class="rh-muted">@p.Ref · @p.Status.ToString().ToLowerInvariant()</span>
+                        <a href="@PipelineUrls.Detail(Repo, p.Id)">#@p.Id</a> <span class="rh-muted">@(CiRef.IsTag(p.Ref) ? "tag " : "")@CiRef.Display(p.Ref) · @p.Status.ToString().ToLowerInvariant()</span>
                         @foreach (var a in p.Artifacts)
                         {
                             <div class="rh-sub">

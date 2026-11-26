@@ -25,7 +25,10 @@ else if (Repo != null)
             <MudSelect T="string" @bind-Value="runBranch" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" OuterClass="gb-ref-select gb-mono-input run-branch"
                        aria-label="Branch to run">
                 @foreach (var b in branches) { <MudSelectItem T="string" Value="@b"><span class="mono">@b</span></MudSelectItem> }
+                @foreach (var t in tags) { <MudSelectItem T="string" Value="@(CiRef.ForTag(t))"><span class="mono">tag @t</span></MudSelectItem> }
             </MudSelect>
+            <MudTextField T="string" @bind-Value="runVariables" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="1" MaxLines="6" Sizing="InputSizing.Auto"
+                          Placeholder="Variables: NAME=value, one per line (optional)" aria-label="Variables for this run" Class="gb-mono-input run-variables" />
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Disabled="@busy" OnClick="Run">Run pipeline</MudButton>
         }
         @if (perms.Can(Permission.ManageRepositories))
@@ -55,7 +58,7 @@ else if (Repo != null)
                             <span class="ci-msg">@(p.CommitMessage ?? "")</span>
                         </div>
                         <div class="gb-row-meta">
-                            <a class="branch-pill" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
+                            <a class="branch-pill" href="@RepoUrls.Source(Repo, CiRef.Browsable(p.Ref))">@(CiRef.IsTag(p.Ref) ? "tag " : "")@CiRef.Display(p.Ref)</a>
                             <a class="sha-pill" href="@RepoUrls.Commit(Repo, p.CommitSha)">@p.CommitSha[..7]</a>
                             · @PipelineFormat.Trigger(p)@if (p.TriggeredBy != null) {<span> by <b>@p.TriggeredBy.DisplayName</b></span>}
                             @if (p.Error != null) { <span class="ci-row-error"> · @Shorten(p.Error)</span> }
@@ -92,6 +95,8 @@ else if (Repo != null)
     private ProjectPermissions perms = ProjectPermissions.None;
     private List<string> branches = [];
     private string? runBranch;
+    private string? runVariables;
+    private List<string> tags = [];
     private bool busy;
     private IDisposable? sub;
     private int reloadPending;
@@ -101,7 +106,8 @@ else if (Repo != null)
         if (!await LoadRepoAsync()) return;
         perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
         branches = (await Git(path => GitOps.ListBranches(path, Repo!.DefaultBranch))).Select(b => b.Name).ToList();
-        if (runBranch == null || !branches.Contains(runBranch))
+        tags = (await Git(path => GitOps.ListTagDetails(path))).Select(t => t.Name).Take(50).ToList();
+        if (runBranch == null || !(branches.Contains(runBranch) || CiRef.IsTag(runBranch) && tags.Contains(CiRef.TagName(runBranch))))
             runBranch = branches.Contains(Repo.DefaultBranch) ? Repo.DefaultBranch : branches.FirstOrDefault();
         await LoadAsync();
     }
@@ -130,11 +136,28 @@ else if (Repo != null)
         busy = true;
         try
         {
-            var id = await Pipelines.RunAsync(Repo!, runBranch);
+            var vars = ParseVariables(runVariables);
+            var id = CiRef.IsTag(runBranch) ? await Pipelines.RunTagAsync(Repo!, CiRef.TagName(runBranch), vars) : await Pipelines.RunAsync(Repo!, runBranch, vars);
             Nav.NavigateTo(PipelineUrls.Detail(Repo!, id));
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }
         finally { busy = false; }
+    }
+
+    /// <summary>"NAME=value" lines; blank lines and lines starting with # are ignored. The service validates the names and values.</summary>
+    private static Dictionary<string, string>? ParseVariables(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim('\r', ' ', '\t');
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            var eq = line.IndexOf('=');
+            if (eq <= 0) throw new InvalidOperationException($"'{line}' isn't NAME=value.");
+            result[line[..eq].Trim()] = line[(eq + 1)..];
+        }
+        return result;
     }
 
     private string PageUrl(int n) => PipelineUrls.List(Repo!) + (n > 1 ? $"?page={n}" : "");

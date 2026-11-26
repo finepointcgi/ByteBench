@@ -410,7 +410,7 @@ public class PullRequestReviewer
 public enum PipelineStatus { Queued, Running, Passed, Failed, Canceled, Error, Skipped, Manual }
 
 /// <summary>What started a pipeline.</summary>
-public enum PipelineTrigger { Push, PullRequest, Manual, Retry, Schedule, MergeQueue }
+public enum PipelineTrigger { Push, PullRequest, Manual, Retry, Schedule, MergeQueue, Tag }
 
 /// <summary>One CI run of <c>.bytebench-ci.yml</c> at a commit on a branch. Run by <see cref="ByteBench.Services.Ci.CiRunner"/>.</summary>
 public partial class Pipeline
@@ -418,7 +418,7 @@ public partial class Pipeline
     public int Id { get; set; }
     public int RepositoryId { get; set; }
     public Repository Repository { get; set; } = null!;
-    /// <summary>Branch name (e.g. <c>main</c>, <c>feature/x</c>).</summary>
+    /// <summary>Branch name (e.g. <c>main</c>, <c>feature/x</c>), or <c>refs/tags/{tag}</c> for a tag pipeline (see <c>CiRef</c>).</summary>
     [Required, MaxLength(250)] public string Ref { get; set; } = "";
     [Required, MaxLength(40)] public string CommitSha { get; set; } = "";
     [MaxLength(200)] public string? CommitMessage { get; set; }

@@ -178,9 +178,16 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 // A merge queue pipeline (ref refs/merge-queue/…) counts as its target branch when that is safe (see VariableBranchAsync).
                 var vars = scope.ServiceProvider.GetRequiredService<CiVariableService>();
                 var protectionBranch = await vars.VariableBranchAsync(p);
-                variables = await vars.ResolveAsync(p.Repository.ProjectId, p.RepositoryId, protectionBranch, p.IsForkPullRequest);
+                // A tag counts as protected when a protected tag rule matches it (those restrict who can create it).
+                bool? tagProtected = null;
+                if (CiRef.IsTag(p.Ref))
+                {
+                    await using var tagDb = await dbFactory.CreateDbContextAsync(stoppingToken);
+                    tagProtected = ProtectedTags.Matching(await ProtectedTagService.RulesForAsync(tagDb, p.RepositoryId), CiRef.TagName(p.Ref)).Count > 0;
+                }
+                variables = await vars.ResolveAsync(p.Repository.ProjectId, p.RepositoryId, protectionBranch, p.IsForkPullRequest, tagProtected);
                 protectedBranch = CiCacheStore.UsesProtectedScope(p,
-                    !p.IsForkPullRequest && (await scope.ServiceProvider.GetRequiredService<BranchProtectionService>().ForBranchAsync(p.RepositoryId, protectionBranch)).IsProtected);
+                    !p.IsForkPullRequest && (tagProtected ?? (await scope.ServiceProvider.GetRequiredService<BranchProtectionService>().ForBranchAsync(p.RepositoryId, protectionBranch)).IsProtected));
             }
             // Nor any extra (schedule) variables: those belong to the upstream.
             var run = new RunContext(p, repoPath, variables,
@@ -190,6 +197,8 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             var jobs = p.Jobs.ToDictionary(j => j.Name);
             var states = p.Jobs.OrderBy(j => j.Order).ToDictionary(j => j.Name, j => StateOf(j, protectedEnvs));
             var runningJobs = new Dictionary<Task<PipelineStatus>, PipelineJob>();
+            var attempts = new Dictionary<string, int>(); // automatic retries used per job (retry:)
+            var retryNotes = new Dictionary<string, string>();
             Task? wake = null;
 
             while (true)
@@ -202,7 +211,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                     {
                         case CiJobAction.Start:
                             states[name] = states[name] with { Status = PipelineStatus.Running };
-                            runningJobs[RunJobAsync(run, job, cts.Token)] = job;
+                            runningJobs[RunJobAsync(run, job, cts.Token, retryNotes.GetValueOrDefault(name))] = job;
                             break;
                         case CiJobAction.WaitForManual:
                             await SetJobManualAsync(job.Id, states[name].NeedsApproval);
@@ -244,8 +253,15 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                     continue;
                 }
                 var finishedJob = (Task<PipelineStatus>)done;
-                states[runningJobs[finishedJob].Name] = states[runningJobs[finishedJob].Name] with { Status = await finishedJob };
+                var finishedName = runningJobs[finishedJob].Name;
+                var jobResult = await finishedJob;
                 runningJobs.Remove(finishedJob);
+                // retry: a failed job runs again (not when the pipeline was canceled).
+                if (jobResult == PipelineStatus.Failed && !cts.IsCancellationRequested
+                    && await PrepareAutoRetryAsync(jobs, finishedName, attempts, retryNotes))
+                    states[finishedName] = states[finishedName] with { Status = PipelineStatus.Queued };
+                else
+                    states[finishedName] = states[finishedName] with { Status = jobResult };
             }
 
             var result = CiJobGraph.Result(states.Values, cts.IsCancellationRequested);
@@ -285,7 +301,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     /// <summary>The CI_PIPELINE_SOURCE value for a trigger.</summary>
     public static string SourceName(PipelineTrigger t) => t switch
     {
-        PipelineTrigger.Push => "push",
+        PipelineTrigger.Push or PipelineTrigger.Tag => "push", // a tag push is a push; CI_COMMIT_TAG tells them apart
         PipelineTrigger.PullRequest => "pull_request",
         PipelineTrigger.Manual => "manual",
         PipelineTrigger.Retry => "retry",
@@ -293,7 +309,40 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         _ => t.ToString().ToLowerInvariant(),
     };
 
-    private async Task<PipelineStatus> RunJobAsync(RunContext run, PipelineJob job, CancellationToken ct)
+    /// <summary>
+    /// <c>retry:</c>. If the failed job has retries left, resets it to Queued (steps, logs and artifacts cleared, the failed
+    /// step's last output kept as a note for the next attempt's log) and returns true.
+    /// </summary>
+    private async Task<bool> PrepareAutoRetryAsync(Dictionary<string, PipelineJob> jobs, string name, Dictionary<string, int> attempts,
+        Dictionary<string, string> notes)
+    {
+        var job = jobs[name];
+        var max = CiJobExtras.Parse(job.ExtrasJson).Retry;
+        var used = attempts.GetValueOrDefault(name);
+        if (max <= used) return false;
+        attempts[name] = used + 1;
+
+        await using var db = await dbFactory.CreateDbContextAsync(CancellationToken.None);
+        var failed = await db.PipelineSteps.Where(s => s.JobId == job.Id && s.Status == PipelineStatus.Failed).OrderBy(s => s.Order)
+            .Select(s => new { s.Id, s.Name, s.ExitCode }).FirstOrDefaultAsync();
+        var tail = failed == null ? "" : (await db.PipelineStepLogs.Where(l => l.StepId == failed.Id).Select(l => l.Text).FirstOrDefaultAsync() ?? "");
+        var lines = tail.Split('\n').Where(l => l.Length > 0).TakeLast(15);
+        notes[name] = $"[bytebench] Retry {used + 1} of {max}: the previous attempt failed" +
+                      (failed == null ? "." : $" at step '{failed.Name}'" + (failed.ExitCode is { } c ? $" (exit code {c})." : ".")) +
+                      (tail.Length > 0 ? "\n[bytebench] Its last output:\n" + string.Join("\n", lines) : "");
+
+        await artifacts.DeleteForJobAsync(job.Id);
+        await db.PipelineJobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued)
+            .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null));
+        await db.PipelineSteps.Where(s => s.JobId == job.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Queued)
+            .SetProperty(x => x.ExitCode, (int?)null).SetProperty(x => x.StartedAt, (DateTime?)null).SetProperty(x => x.FinishedAt, (DateTime?)null));
+        await db.PipelineStepLogs.Where(l => db.PipelineSteps.Any(s => s.Id == l.StepId && s.JobId == job.Id))
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.Text, "").SetProperty(l => l.Truncated, false));
+        jobs[name] = await db.PipelineJobs.AsNoTracking().Include(j => j.Steps).FirstAsync(j => j.Id == job.Id);
+        return true;
+    }
+
+    private async Task<PipelineStatus> RunJobAsync(RunContext run, PipelineJob job, CancellationToken ct, string? retryNote = null)
     {
         var (p, repoPath, variables) = (run.Pipeline, run.RepoPath, run.Variables);
         await Task.Yield();
@@ -318,6 +367,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             deploymentId = await deployments.StartAsync(p, job, job.PlayedById ?? p.TriggeredById);
 
             var preNotes = new List<string>();
+            if (retryNote != null) preNotes.Add(retryNote);
             try
             {
                 await Task.Run(() => CiWorkspace.Export(repoPath, p.CommitSha, workspace), ct);
@@ -334,7 +384,9 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromMinutes(Math.Max(1, Options.JobTimeoutMinutes)));
+            var limit = TimeSpan.FromMinutes(Math.Max(1, Options.JobTimeoutMinutes));
+            if (extras.Timeout is { } own && own > TimeSpan.Zero && own < limit) limit = own; // timeout: can only lower the server's limit
+            timeout.CancelAfter(limit);
             foreach (var step in steps)
             {
                 if (result != PipelineStatus.Passed)
@@ -344,7 +396,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                     continue;
                 }
                 lastStarted = step;
-                result = await RunStepAsync(run, job, step, workspace, timeout, ct, step == steps[0] ? preNotes : []);
+                result = await RunStepAsync(run, job, step, workspace, timeout, ct, step == steps[0] ? preNotes : [], limit);
                 Publish(p);
             }
 
@@ -372,7 +424,9 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
                 if (extras.Artifacts != null && result == PipelineStatus.Passed) result = PipelineStatus.Failed;
             }
             // Pages: a passed job with pages:/publish: (or named "pages") publishes its folder as the repository's site.
-            if (extras.Pages is { } pagesDef && result == PipelineStatus.Passed && !ct.IsCancellationRequested && Directory.Exists(workspace))
+            if (extras.Pages != null && CiRef.IsTag(p.Ref) && result == PipelineStatus.Passed)
+                postNotes.Add("[bytebench] Pages: not published, a tag pipeline never publishes a site.");
+            else if (extras.Pages is { } pagesDef && result == PipelineStatus.Passed && !ct.IsCancellationRequested && Directory.Exists(workspace))
             {
                 try
                 {
@@ -448,7 +502,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
     }
 
     private async Task<PipelineStatus> RunStepAsync(RunContext run, PipelineJob job, PipelineStep step, string workspace,
-        CancellationTokenSource timeout, CancellationToken canceled, IReadOnlyList<string> preNotes)
+        CancellationTokenSource timeout, CancellationToken canceled, IReadOnlyList<string> preNotes, TimeSpan limit)
     {
         var (p, variables) = (run.Pipeline, run.Variables);
         await SetStepAsync(step.Id, PipelineStatus.Running, started: true);
@@ -485,7 +539,10 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
         });
 
         // Secret CI variables, then the pipeline's own (schedule) variables, which win on a clash.
-        var fileValues = new Dictionary<string, string>(variables.Values, StringComparer.Ordinal);
+        // The file's own `variables:` come first, so CI variables and pipeline variables win over them.
+        var fileValues = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (k, v) in CiJobExtras.Parse(job.ExtrasJson).Variables ?? new Dictionary<string, string>()) fileValues[k] = v;
+        foreach (var (k, v) in variables.Values) fileValues[k] = v;
         foreach (var (k, v) in run.PipelineVariables) fileValues[k] = v;
         fileValues["BYTEBENCH_JOB_TOKEN"] = jobToken;
         fileValues["BYTEBENCH_REGISTRY_PASSWORD"] = jobToken;
@@ -503,6 +560,12 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             ["BYTEBENCH_PIPELINE_SOURCE"] = SourceName(p.Trigger),
             ["CI_PIPELINE_SOURCE"] = SourceName(p.Trigger),
         };
+        foreach (var (k, v) in CiRef.Predefined(p.Ref, SourceName(p.Trigger))) env[k] = v;
+        env["CI_COMMIT_SHA"] = p.CommitSha;
+        env["CI_COMMIT_SHORT_SHA"] = p.CommitSha[..Math.Min(8, p.CommitSha.Length)];
+        env["CI_PIPELINE_ID"] = p.Id.ToString();
+        env["CI_JOB_NAME"] = job.Name;
+        env["CI_PROJECT_PATH"] = $"{p.Repository.Project.Key}/{p.Repository.Slug}";
         if (baseUrl.Value is { Length: > 0 } site) // registry URLs (BYTEBENCH_REGISTRY, BYTEBENCH_NUGET_SOURCE_URL, ...)
             foreach (var (k, v) in Packages.PackageUrls.CiVariables(site, p.Repository.Project.Key)) env[k] = v;
         AddLegacyAliases(env);
@@ -523,7 +586,7 @@ public class CiRunner(CiQueue queue, CiDocker docker, CiRefTracker refs, IDbCont
             else if (timeout.IsCancellationRequested)
             {
                 status = PipelineStatus.Failed;
-                buffer.Append($"[bytebench] Job timed out after {Options.JobTimeoutMinutes} minutes; the container was killed.");
+                buffer.Append($"[bytebench] Job timed out after {(limit.TotalMinutes % 1 == 0 ? $"{limit.TotalMinutes:0} minutes" : limit.ToString())}; the container was killed.");
             }
             else
             {

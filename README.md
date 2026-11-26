@@ -807,21 +807,22 @@ jobs:
     steps: [ { name: Test, run: ./test.sh } ]
 ```
 
-Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` and `environment`; see [CI artifacts, caches, manual jobs, schedules & environments](#ci-artifacts-caches-manual-jobs-schedules--environments).
+Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only`, `environment`, `variables`, `retry`, `timeout` and `parallel: matrix`; see [CI artifacts, caches, manual jobs, schedules & environments](#ci-artifacts-caches-manual-jobs-schedules--environments) and [Tag pipelines, rules and variables](#ci-tag-pipelines-rules--variables).
 
 - **Format.** `jobs` is required. Each job has `steps` (each with `run` and an optional `name`), plus optional `image`, `needs`, `artifacts`, `cache`, `when`, `allow_failure`, `rules` or `only`, and `environment`. Job names use letters, digits, `_`, `.` and `-`. Limits: 20 jobs, 50 steps per job, 64 KB per file. Unknown keys, missing `run`, unknown or circular `needs` and invalid image names are errors: the pipeline is created in the **Error** state with a readable message, such as `invalid YAML at line 4, column 5: Property 'stepz' not found`.
-- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass (or failed without `allow_failure`) is skipped. Jobs only share files through [artifacts](#ci-artifacts-caches-manual-jobs-schedules--environments): a job gets the artifacts of the jobs it `needs`. Steps can read `CI`, `BYTEBENCH_PIPELINE_ID`, `BYTEBENCH_JOB`, `BYTEBENCH_REF`, `BYTEBENCH_COMMIT_SHA`, `BYTEBENCH_REPOSITORY`, `CI_PIPELINE_SOURCE` (= `BYTEBENCH_PIPELINE_SOURCE`: `push`, `pull_request`, `manual`, `retry` or `schedule`) and, for jobs with an environment, `CI_ENVIRONMENT_NAME` and `CI_ENVIRONMENT_URL`.
+- **Running a job.** Each job gets a fresh export of the commit's files, mounted at `/workspace`. Its steps run in order, each in its own container: `docker run --rm --entrypoint sh <image> -e -c "<run>"`. A multi-line `run` stops at its first failing command. The first failing step fails the job, and the job's later steps are skipped. A job whose `needs` didn't pass (or failed without `allow_failure`) is skipped. Jobs only share files through [artifacts](#ci-artifacts-caches-manual-jobs-schedules--environments): a job gets the artifacts of the jobs it `needs`. Steps can read `CI`, `BYTEBENCH_PIPELINE_ID`, `BYTEBENCH_JOB`, `BYTEBENCH_REF`, `BYTEBENCH_COMMIT_SHA`, `BYTEBENCH_REPOSITORY`, `CI_PIPELINE_SOURCE` (= `BYTEBENCH_PIPELINE_SOURCE`: `push`, `pull_request`, `manual`, `retry`, `schedule` or `mergequeue`), `CI_COMMIT_SHA`, `CI_COMMIT_SHORT_SHA`, `CI_COMMIT_REF_NAME`, `CI_COMMIT_BRANCH` (branch pipelines), `CI_COMMIT_TAG` (tag pipelines), `CI_PIPELINE_ID`, `CI_JOB_NAME`, `CI_PROJECT_PATH` and, for jobs with an environment, `CI_ENVIRONMENT_NAME` and `CI_ENVIRONMENT_URL`.
 - **Triggers.**
   - A push runs a pipeline for each branch it created or moved, if the branch matches `on.branches` or is the source of an open PR. Deleted branches are skipped. A merge done in ByteBench counts as a push to the target branch.
+  - A pushed tag, or one created in ByteBench (Tags page, release), runs a [tag pipeline](#ci-tag-pipelines-rules--variables) when the file has `on.tags` matching it or a job with a tag rule.
   - Opening a PR runs a pipeline for its source head, unless that commit already has one.
   - A commit runs at most once per branch automatically.
-  - **Run pipeline** (Pipelines tab) runs any branch's tip and ignores the filters. **Re-run** runs the same commit again. Both need PushCode (Developer or higher), as does **Cancel**.
+  - **Run pipeline** (Pipelines tab) runs any branch's tip or a tag's commit, optionally with `NAME=value` variables, and ignores the `on:` filters. **Re-run** runs the same commit again. Both need PushCode (Developer or higher), as does **Cancel**.
   - Pushes are noticed by `CiPushListener`. PR events reach `CiPullRequestWatcher` through `LiveEvents`.
   - Push listeners aren't told which refs moved, so ByteBench remembers each repository's branch tips, starting from a snapshot taken at startup. A branch created in the UI is picked up by the next push.
 - **Statuses.** A pipeline is Queued, Running, Passed, Failed, Canceled, Error or Manual (blocked on a manual job). Jobs and steps can also be Skipped; jobs can be Manual (waiting for someone to run them). Icons (✓ ✗ ● spinner ⊘) appear on the commit list, the branch list and the PR header.
 - **Logs.** stdout and stderr stream into the database about once a second, and the pipeline page tails them live. Each step's log is capped at about 1 MB, with a note when it's truncated. The page shows the last 200 KB. **Raw log** opens the full text.
 - **Pages.** `/p/{KEY}/repos/{slug}/pipelines` lists pipelines. `/p/{KEY}/repos/{slug}/pipelines/{id}` shows jobs, steps and logs, with Cancel and Re-run buttons. Everything needs ViewProject.
-- **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head: Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.bytebench-ci.yml`.
+- **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head (tag pipelines on the same commit don't count): Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.bytebench-ci.yml`, or if no pipeline would start for the PR (every job's rules leave it out, or `on:` excludes it), so it never waits for one that will not come.
 - **Notifications.** When a pipeline fails or errors, the person who triggered it gets a notification.
 - **Restarts.** Pipelines that were running when the server stopped are marked Error. Queued ones run again. This instance's leftover containers and workspaces are removed.
 - **Docker missing.** If the docker CLI can't reach a daemon, pipelines end in Error with "Docker is not available on the server".
@@ -835,6 +836,8 @@ Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` 
 | `JobTimeoutMinutes` | `20` | A job's container is killed after this |
 | `Network` | `bridge` | `docker run --network`. Use `none` to block network access |
 | `Memory` / `Cpus` | `2g` / `2` | `--memory` / `--cpus` per container. Empty means no limit |
+| `User` | empty | `docker run --user` (e.g. `1000:1000`) to run steps as a non-root user; empty uses the image's user |
+| `DropCapabilities` | `false` | Adds `--cap-drop ALL` |
 | `PidsLimit` | `1024` | `--pids-limit` |
 | `DockerExecutable` | `docker` | Path of the docker CLI |
 | `WorkDirectory` | `{temp}/bytebench-ci/{instance}` | Where workspaces are exported. Docker must be able to mount it |
@@ -849,7 +852,7 @@ Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only` 
 
 - The docker CLI is always started with an argument list, never a shell command line, and image names are validated so they can't be read as flags.
 - Containers never get the Docker socket, host environment variables or any ByteBench secret. They get only the `BYTEBENCH_*` variables above, plus the [CI variables](#ci-secret-variables) the pipeline is allowed to see.
-- Containers run with `--security-opt no-new-privileges`, memory, CPU and PID limits, a per-job timeout, and `--rm`.
+- Containers run with `--security-opt no-new-privileges`, memory, CPU and PID limits, a per-job timeout (a job's own `timeout:` can only lower it), and `--rm`. `Ci:User` runs them as a non-root user and `Ci:DropCapabilities` drops every Linux capability.
 - Only the exported workspace is mounted. Symlinks in the repository are created after every regular file, so nothing is written through them. Submodules aren't fetched.
 - Containers still have network access by default (`bridge`). They run as the image's user, often root inside the container, and Docker isolation is not a hard security boundary. On a shared or exposed server, use `Network: none`, rootless Docker or a separate CI host, and let only trusted people push.
 
@@ -897,6 +900,37 @@ Unknown keys are still errors (`invalid YAML at line 5, column 7: Property 'expi
 - **Environments & deployments.** Each time a job with `environment:` runs, it records a **Deployment** (environment, pipeline, job, commit, branch, user, status). The environment is created the first time, and its URL is updated from the file. The **Environments** tab (`/p/{KEY}/repos/{slug}/environments`) shows each environment's current commit (its last successful deployment), latest deployment and history. **Redeploy** re-runs a deployment's job (PushCode). A deployment's user is whoever ran the manual job or retry, else whoever started the pipeline.
 - **Protected environments.** A Maintainer can mark an environment **Protected** on the Environments tab, or add it there (already protected) before any job deploys to it. Jobs that deploy to it always wait in Manual (blocking, whatever `allow_failure` says) until enough approvers approve (see [Deployment approvals](#deployment-approvals--deploy-freezes)). With no approvers listed, a Maintainer or Owner approves; Developers can't approve, run, retry or redeploy such a job. Protection is checked when the job becomes ready, so a pipeline created before the environment was protected still waits. It controls who runs the job; secrets still follow branch protection, so use protected CI variables for deploy keys. Audit events: `environment.created`, `environment.protected`, `environment.unprotected`, `environment.approval_rules_changed`, `environment.deleted`.
 
+
+### CI tag pipelines, rules & variables
+
+```yaml
+on:
+  tags: ["v*"]                    # tags matching these start a pipeline (omit: only tags that a job rule asks for)
+variables: { CHANNEL: stable }    # plain environment variables for every job (not secret; CI variables win)
+jobs:
+  test:
+    parallel: { matrix: [ { CONFIG: [Debug, Release] } ] }   # jobs test-Debug and test-Release
+    retry: 2                      # 0-3 automatic retries of a failed job
+    timeout: 30m                  # can only lower Ci:JobTimeoutMinutes
+    variables: { VERBOSE: "1" }
+    steps: [ { run: 'dotnet test -c "$CONFIG"' } ]
+  publish:
+    needs: [test]
+    rules:
+      - { if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/' }   # == != =~ !~ && || ! ( ) on $CI_COMMIT_TAG, $CI_COMMIT_BRANCH, $CI_COMMIT_REF_NAME, $CI_PIPELINE_SOURCE and run variables
+      # or { tags: ["v*"], when: manual }, { branches: [main] }
+    steps: [ { run: ./publish.sh "$CI_COMMIT_TAG" } ]
+```
+
+- **Tag pipelines.** `Pipeline.Ref` is `refs/tags/{tag}` and the trigger is `Tag`. `CiPushListener` reads the pushed tags from `PushCapture` (created or moved, deletions ignored) and `ReleaseService.CreateTagAsync` calls `CiTriggerService.OnTagCreatedAsync`; both go through `OnTagsPushedAsync`, which loads the file at the tag's commit and checks `CiDefinition.RunsOnTag`. Files with no `on.tags` and no tag rule never run on a tag. A tag runs once per commit; a branch-only `only`/`branches` rule never matches a tag and a `tags` rule never matches a branch. Protected CI variables (and the protected cache scope) reach a tag only when it matches a protected tag rule. Tag pipelines never publish Pages; the release hub lists them first and attaches their artifacts to a release on the same commit. Mirror pulls and imports start nothing.
+- **Run by hand.** `PipelineService.RunAsync(repo, branch, variables)` and `RunTagAsync(repo, tag, variables)` (PushCode); the Pipelines tab lists tags after the branches and has a *Variables* box, and `POST .../pipelines` takes `{ "branch" | "tag", "variables": {...} }`. Variables are validated like the file's (`CiFile.ValidateVariableName`: not `CI`, `BYTEBENCH_*` or `GITBENCH_*`), stored on the pipeline like a schedule's, and are not secret.
+- **Variables precedence** (lowest first): the file's, CI variables, the run's own variables; the predefined ones always win. Names use letters, digits and `_`; values are single lines up to 2000 characters; 50 per level.
+- **Retry and timeout.** A failed job (not a canceled pipeline) with `retry: N` runs again inside the same pipeline: its steps, logs and artifacts are reset and the new attempt's log starts with a note naming the failed step, its exit code and the last lines of the failed attempt. `timeout:` is `min(job timeout, Ci:JobTimeoutMinutes)`.
+- **Matrix.** Instances are named `{job}-{value}-{value}` and get the combination as variables; `needs` on the matrix job means every instance.
+- **Commit status.** `GET .../commits/{sha}/status` returns `success`, `failure`, `pending` or `none` from the newest pipeline of each ref, plus the pipelines.
+- **Not supported:** `stages`, `extends`, `include` of files, `trigger` (child pipelines), `resource_group`, `services`, `environment: on_stop`, coverage parsing, pipeline badges, `when: always`/`delayed`. Webhooks send `pipeline.completed` only. See [the docs site](site/pages/ci.html) for the comparison with GitLab CI and GitHub Actions.
+
+Code: `Services/Ci/CiRef.cs`, `CiRuleExpression.cs`, `CiFile.cs`, `CiTriggers.cs`, `CiRunner.cs`. Tests: `tests/ByteBench.Tests/CiTagPipelineTests.cs`, `CiTagPushTests.cs`, `CiMatrixAndIsolationTests.cs`, `CiDockerFeatureTests.cs` (Docker).
 
 ### Deployment approvals & deploy freezes
 

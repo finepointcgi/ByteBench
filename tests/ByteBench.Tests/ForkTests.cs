@@ -299,6 +299,7 @@ public class ForkTests(TestApp app) : IClassFixture<TestApp>
 }
 
 /// <summary>Fork PR pipelines with CI turned on: held for a Maintainer's approval.</summary>
+[Collection("ci-docker")] // shares the Docker instance key with the other CiApp classes (startup cleanup would remove their containers)
 public class ForkPipelineTests(CiApp app) : IClassFixture<CiApp>
 {
     [Fact]

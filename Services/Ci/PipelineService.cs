@@ -101,6 +101,35 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         return result;
     }
 
+    /// <summary>
+    /// A commit's pipelines (newest first, at most 50): <paramref name="sha"/> is a full hash or a prefix of at least 7 hex
+    /// digits. Empty for anything else or without ViewProject.
+    /// </summary>
+    public async Task<List<Pipeline>> ForCommitAsync(Repository repo, string sha)
+    {
+        sha = (sha ?? "").Trim().ToLowerInvariant();
+        if (sha.Length is < 7 or > 40 || !sha.All(char.IsAsciiHexDigit) || !await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return [];
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var items = await db.Pipelines.AsNoTracking().Include(p => p.TriggeredBy).Include(p => p.ApprovedBy)
+            .Where(p => p.RepositoryId == repo.Id && p.CommitSha.StartsWith(sha)).OrderByDescending(p => p.Id).Take(50).ToListAsync();
+        foreach (var p in items) p.Repository = repo;
+        return items;
+    }
+
+    /// <summary>
+    /// The combined state of a commit's pipelines, looking at the newest pipeline of each ref: <c>failure</c> if any failed,
+    /// errored or was canceled; else <c>pending</c> if any is queued, running or waiting for a manual job; <c>success</c> if all
+    /// passed; <c>none</c> without pipelines.
+    /// </summary>
+    public static string CombinedState(IEnumerable<Pipeline> pipelines)
+    {
+        var latest = pipelines.GroupBy(p => p.Ref).Select(g => g.MaxBy(p => p.Id)!).ToList();
+        if (latest.Count == 0) return "none";
+        if (latest.Any(p => p.Status is PipelineStatus.Failed or PipelineStatus.Error or PipelineStatus.Canceled)) return "failure";
+        if (latest.Any(p => p.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual)) return "pending";
+        return "success";
+    }
+
     /// <summary>True if the branch's tip has a pipeline file (for showing the "Run pipeline" button).</summary>
     public async Task<bool> HasPipelineFileAsync(Repository repo, string branch)
     {
@@ -109,16 +138,45 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     }
 
     /// <summary>"Run pipeline" for a branch's current tip (ignores the file's filters). Needs PushCode.</summary>
-    public async Task<int> RunAsync(Repository repo, string branch)
+    public async Task<int> RunAsync(Repository repo, string branch, IReadOnlyDictionary<string, string>? variables = null)
     {
         await access.RequireAsync(repo.ProjectId, Permission.PushCode);
         EnsureEnabled();
+        var vars = ValidateRunVariables(variables);
         // Only real branches: a fork PR's refs/pull/{n}/head runs only as a fork pipeline (no CI variables, approval first).
         if (branch.StartsWith("refs/", StringComparison.Ordinal)) throw new InvalidOperationException($"Branch '{branch}' does not exist.");
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var sha = await Task.Run(() => GitOps.BranchExists(path, branch) ? GitOps.ResolveSha(path, branch) : null)
             ?? throw new InvalidOperationException($"Branch '{branch}' does not exist.");
-        return await CreateManualAsync(repo, branch, sha, PipelineTrigger.Manual);
+        return await CreateManualAsync(repo, branch, sha, PipelineTrigger.Manual, extraVariables: vars);
+    }
+
+    /// <summary>"Run pipeline" for a tag: runs the commit the tag points at as a tag pipeline (<c>CI_COMMIT_TAG</c> set). Needs PushCode.</summary>
+    public async Task<int> RunTagAsync(Repository repo, string tag, IReadOnlyDictionary<string, string>? variables = null)
+    {
+        await access.RequireAsync(repo.ProjectId, Permission.PushCode);
+        EnsureEnabled();
+        var vars = ValidateRunVariables(variables);
+        var path = storage.PathFor(repo.Project.Key, repo.Slug);
+        var sha = await Task.Run(() => GitOps.IsValidTagName(tag) && tag.Length <= CiRef.MaxTagLength && GitOps.TagExists(path, tag) ? GitOps.ResolveSha(path, CiRef.ForTag(tag)) : null)
+            ?? throw new InvalidOperationException($"Tag '{tag}' does not exist.");
+        return await CreateManualAsync(repo, CiRef.ForTag(tag), sha, PipelineTrigger.Manual, extraVariables: vars);
+    }
+
+    /// <summary>
+    /// Variables given when a pipeline is run by hand (they are not secret, like a schedule's): same rules as the file's
+    /// <c>variables:</c>, at most <see cref="CiFile.MaxVariables"/>.
+    /// </summary>
+    public static Dictionary<string, string>? ValidateRunVariables(IReadOnlyDictionary<string, string>? variables)
+    {
+        if (variables == null || variables.Count == 0) return null;
+        if (variables.Count > CiFile.MaxVariables) throw new InvalidOperationException($"Too many variables (limit {CiFile.MaxVariables}).");
+        foreach (var (name, value) in variables)
+        {
+            if (CiFile.ValidateVariableName(name) is { } ne) throw new InvalidOperationException(char.ToUpperInvariant(ne[0]) + ne[1..]);
+            if (CiFile.ValidateVariableValue(name, value ?? "") is { } ve) throw new InvalidOperationException(char.ToUpperInvariant(ve[0]) + ve[1..]);
+        }
+        return variables.ToDictionary(kv => kv.Key, kv => kv.Value ?? "", StringComparer.Ordinal);
     }
 
     /// <summary>Runs a pipeline's commit and branch again, re-reading the pipeline file at that commit. Needs PushCode.</summary>
@@ -309,11 +367,11 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     }
 
     private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null,
-        bool forkPullRequest = false, string? variablesJson = null)
+        bool forkPullRequest = false, string? variablesJson = null, IReadOnlyDictionary<string, string>? extraVariables = null)
     {
         var def = await triggers.LoadDefinitionAsync(repo, sha)
             ?? throw new InvalidOperationException($"There is no {CiFile.FileName} at the root of '{branch}' ({sha[..7]}).");
-        if (prId == null)
+        if (prId == null && !CiRef.IsTag(branch))
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             prId = await db.PullRequests.Where(p => p.RepositoryId == repo.Id && p.State == PullRequestState.Open && !p.IsCrossFork && p.SourceBranch == branch)
@@ -323,8 +381,14 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         // Re-running a fork PR's pipeline: a Maintainer's re-run counts as their approval; anyone else's waits for one.
         int? approvedBy = forkPullRequest && await access.CanAsync(repo.ProjectId, Permission.MergePullRequest) ? userId : null;
         return await triggers.CreateAsync(repo, branch, sha, trigger, userId, prId, def, dedupe: false, forkPullRequest: forkPullRequest, approvedById: approvedBy,
-                   variables: forkPullRequest ? null : CiJobExtras.ParseVariables(variablesJson))
+                   variables: forkPullRequest ? null : Merge(CiJobExtras.ParseVariables(variablesJson), extraVariables))
             ?? throw new InvalidOperationException("The pipeline could not be created.");
+    }
+
+    private static Dictionary<string, string> Merge(Dictionary<string, string> a, IReadOnlyDictionary<string, string>? b)
+    {
+        if (b != null) foreach (var (k, v) in b) a[k] = v;
+        return a;
     }
 
     private void EnsureEnabled()

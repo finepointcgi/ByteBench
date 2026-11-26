@@ -12,18 +12,51 @@ public sealed record CiDefinition(CiTriggers On, IReadOnlyList<CiJobDefinition> 
     /// The jobs that run on <paramref name="branch"/> (after <c>rules</c>/<c>only</c>), each with its effective
     /// <c>when</c>. An error if a remaining job needs one that was left out.
     /// </summary>
-    public (IReadOnlyList<CiJobDefinition> Jobs, string? Error) ForBranch(string branch)
+    public (IReadOnlyList<CiJobDefinition> Jobs, string? Error) ForBranch(string branch) => ForRef(CiRuleContext.ForBranch(branch));
+
+    /// <summary>The jobs that run for a branch or tag (see <see cref="CiRuleContext"/>); an error if a remaining job needs one that was left out.</summary>
+    public (IReadOnlyList<CiJobDefinition> Jobs, string? Error) ForRef(CiRuleContext ctx)
     {
         var kept = new List<CiJobDefinition>();
         foreach (var j in Jobs)
-            if (j.WhenFor(branch) is { } when)
+            if (j.WhenFor(ctx) is { } when)
                 kept.Add(when == j.When ? j : j with { When = when });
         var names = kept.Select(j => j.Name).ToHashSet();
         foreach (var j in kept)
             foreach (var n in j.Needs)
                 if (!names.Contains(n))
-                    return ([], $"{CiFile.FileName}: job '{j.Name}' needs '{n}', which doesn't run on branch '{branch}' (see its rules).");
+                    return ([], $"{CiFile.FileName}: job '{j.Name}' needs '{n}', which doesn't run on {ctx.Describe} (see its rules).");
         return (kept, null);
+    }
+
+    /// <summary>
+    /// True if a pushed tag starts a pipeline: <c>on.tags</c> lists a pattern that matches it, or (when the file has no
+    /// <c>on.tags</c>) some job has a rule about tags, so files written before tag pipelines existed never start on a tag.
+    /// </summary>
+    public bool RunsOnTag(string tag) => On.Tags is { } t
+        ? t.Any(p => CiFile.GlobMatch(p, tag))
+        : Jobs.Any(j => j.Rules.Any(r => r.Tags != null || r.If?.Mentions("CI_COMMIT_TAG") == true));
+}
+
+/// <summary>
+/// What a job's <c>rules</c> are matched against: the branch or tag a pipeline runs for, and the variables <c>if:</c>
+/// conditions can read (<c>CI_COMMIT_TAG</c>, <c>CI_COMMIT_BRANCH</c>, <c>CI_COMMIT_REF_NAME</c>, <c>CI_PIPELINE_SOURCE</c> and the
+/// pipeline's own schedule or manual-run variables).
+/// </summary>
+public sealed record CiRuleContext(string RefName, bool IsTag, IReadOnlyDictionary<string, string> Variables)
+{
+    public string Describe => IsTag ? $"tag '{RefName}'" : $"branch '{RefName}'";
+
+    public static CiRuleContext ForBranch(string branch) => For(branch, "push", null);
+
+    /// <summary><paramref name="pipelineRef"/> is a branch name, or <c>refs/tags/{tag}</c> for a tag pipeline.</summary>
+    public static CiRuleContext For(string pipelineRef, string source, IReadOnlyDictionary<string, string>? extra)
+    {
+        var tag = CiRef.IsTag(pipelineRef);
+        var name = tag ? CiRef.TagName(pipelineRef) : pipelineRef;
+        var vars = new Dictionary<string, string>(extra ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+        foreach (var (k, v) in CiRef.Predefined(pipelineRef, source)) vars[k] = v;
+        return new CiRuleContext(name, tag, vars);
     }
 }
 
@@ -33,6 +66,9 @@ public sealed record CiDefinition(CiTriggers On, IReadOnlyList<CiJobDefinition> 
 /// </summary>
 public sealed record CiTriggers(IReadOnlyList<string>? Branches, bool PullRequests)
 {
+    /// <summary><c>on.tags</c>: patterns of the tags that start a pipeline; null when the file doesn't say (see <see cref="CiDefinition.RunsOnTag"/>).</summary>
+    public IReadOnlyList<string>? Tags { get; init; }
+
     public bool MatchesBranch(string branch) => Branches == null || Branches.Any(p => CiFile.GlobMatch(p, branch));
 }
 
@@ -51,17 +87,29 @@ public sealed record CiJobDefinition(string Name, string Image, IReadOnlyList<st
     public CiPagesDefinition? Pages { get; init; }
     /// <summary><c>rules:</c> (or <c>only:</c>); empty means the job runs on every branch.</summary>
     public IReadOnlyList<CiRule> Rules { get; init; } = [];
+    /// <summary><c>retry:</c> how many times a failed job runs again by itself (0 to 3).</summary>
+    public int Retry { get; init; }
+    /// <summary><c>timeout:</c> kills the job after this long; it can only lower the server's <c>Ci:JobTimeoutMinutes</c>.</summary>
+    public TimeSpan? Timeout { get; init; }
+    /// <summary><c>variables:</c> of the file and of the job (the job's win): plain environment variables, not secret.</summary>
+    public IReadOnlyDictionary<string, string> Variables { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
     /// How the job runs on <paramref name="branch"/>: null if it doesn't (no rule matched, or the first matching rule
     /// says <c>never</c>), else its <c>when</c>. The first rule whose branches match decides.
     /// </summary>
-    public CiJobWhen? WhenFor(string branch)
+    public CiJobWhen? WhenFor(string branch) => WhenFor(CiRuleContext.ForBranch(branch));
+
+    /// <summary>
+    /// The same for a branch or tag. A rule matches when its <c>branches</c> (branch pipelines) or <c>tags</c> (tag pipelines)
+    /// match, if it has any, and its <c>if</c> condition holds, if it has one.
+    /// </summary>
+    public CiJobWhen? WhenFor(CiRuleContext ctx)
     {
         if (Rules.Count == 0) return When;
         foreach (var r in Rules)
         {
-            if (r.Branches != null && !r.Branches.Any(p => CiFile.GlobMatch(p, branch))) continue;
+            if (!r.Matches(ctx)) continue;
             return r.When switch { null => When, CiRuleWhen.Never => null, CiRuleWhen.Manual => CiJobWhen.Manual, _ => CiJobWhen.OnSuccess };
         }
         return null;
@@ -75,7 +123,23 @@ public enum CiRuleWhen { OnSuccess, Manual, Never }
 public enum CiArtifactsWhen { OnSuccess, OnFailure, Always }
 
 /// <summary>One entry of <c>rules:</c>. <see cref="Branches"/> null matches every branch; <see cref="When"/> null keeps the job's.</summary>
-public sealed record CiRule(IReadOnlyList<string>? Branches, CiRuleWhen? When);
+public sealed record CiRule(IReadOnlyList<string>? Branches, CiRuleWhen? When)
+{
+    /// <summary>Tag patterns: the rule matches tag pipelines whose tag matches one. Null: the rule has no tag filter.</summary>
+    public IReadOnlyList<string>? Tags { get; init; }
+    /// <summary><c>if:</c> condition, evaluated with the pipeline's variables.</summary>
+    public CiRuleExpression? If { get; init; }
+
+    public bool Matches(CiRuleContext ctx)
+    {
+        if (Branches != null || Tags != null)
+        {
+            var patterns = ctx.IsTag ? Tags : Branches;
+            if (patterns == null || !patterns.Any(p => CiFile.GlobMatch(p, ctx.RefName))) return false;
+        }
+        return If == null || If.Evaluate(ctx.Variables);
+    }
+}
 
 /// <summary>
 /// <c>artifacts:</c>. <see cref="ExpireIn"/> null means they never expire. <see cref="Reports"/> maps a report type
@@ -154,7 +218,7 @@ public static partial class CiFile
     public static ByteBench.Services.Git.BlobInfo? GetBlob(string repoPath, string? rev) =>
         ByteBench.Services.Git.GitOps.GetBlob(repoPath, rev, FileName) ?? ByteBench.Services.Git.GitOps.GetBlob(repoPath, rev, LegacyFileName);
     public const string DefaultImage = "alpine:3.20";
-    public const int MaxJobs = 20, MaxStepsPerJob = 50, MaxFileChars = 64 * 1024, MaxPaths = 50, MaxRules = 20;
+    public const int MaxJobs = 20, MaxStepsPerJob = 50, MaxFileChars = 64 * 1024, MaxPaths = 50, MaxRules = 20, MaxRetry = 3, MaxVariables = 50, MaxVariableValueChars = 2000;
     public static readonly TimeSpan DefaultArtifactExpiry = TimeSpan.FromDays(30);
 
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")]
@@ -175,12 +239,14 @@ public static partial class CiFile
         public string? Image { get; set; }
         public object? Include { get; set; }
         public OnDto? On { get; set; }
+        public Dictionary<string, object?>? Variables { get; set; }
         public Dictionary<string, JobDto?>? Jobs { get; set; }
     }
 
     private sealed class OnDto
     {
         public List<string>? Branches { get; set; }
+        public List<string>? Tags { get; set; }
         public bool? PullRequests { get; set; }
     }
 
@@ -193,6 +259,10 @@ public static partial class CiFile
         public bool? AllowFailure { get; set; }
         public List<string>? Only { get; set; }
         public List<RuleDto?>? Rules { get; set; }
+        public ParallelDto? Parallel { get; set; }
+        public int? Retry { get; set; }
+        public string? Timeout { get; set; }
+        public Dictionary<string, object?>? Variables { get; set; }
         public ArtifactsDto? Artifacts { get; set; }
         public CacheDto? Cache { get; set; }
         public EnvironmentDto? Environment { get; set; }
@@ -200,6 +270,11 @@ public static partial class CiFile
         public object? Pages { get; set; }
         /// <summary>Alias: <c>publish: dist</c> is <c>pages: { path: dist }</c>.</summary>
         public string? Publish { get; set; }
+    }
+
+    private sealed class ParallelDto
+    {
+        public List<Dictionary<string, List<object?>>?>? Matrix { get; set; }
     }
 
     private sealed class StepDto
@@ -211,6 +286,8 @@ public static partial class CiFile
     private sealed class RuleDto
     {
         public List<string>? Branches { get; set; }
+        public List<string>? Tags { get; set; }
+        public string? If { get; set; }
         public string? When { get; set; }
     }
 
@@ -266,7 +343,11 @@ public static partial class CiFile
         if (dto.Jobs == null || dto.Jobs.Count == 0) return Fail("Define at least one job under 'jobs:'.");
         if (dto.Jobs.Count > MaxJobs) return Fail($"Too many jobs ({dto.Jobs.Count}); the limit is {MaxJobs}.");
 
+        var (globalVars, varsError) = ParseVariables(dto.Variables, "variables");
+        if (varsError != null) return Fail(varsError);
+
         var jobs = new List<CiJobDefinition>();
+        var matrices = new Dictionary<string, List<Dictionary<string, string>>>();
         foreach (var (name, job) in dto.Jobs)
         {
             if (!JobNamePattern().IsMatch(name ?? ""))
@@ -289,6 +370,13 @@ public static partial class CiFile
 
             var extras = ParseExtras(name!, job);
             if (extras.Error != null) return Fail(extras.Error);
+            var (jobVars, jobVarsError) = ParseVariables(job.Variables, $"job '{name}' variables");
+            if (jobVarsError != null) return Fail(jobVarsError);
+            var (combos, matrixError) = ParseMatrix(job.Parallel, name!);
+            if (matrixError != null) return Fail(matrixError);
+            if (combos.Count > 0) matrices[name!] = combos;
+            var merged = new Dictionary<string, string>(globalVars, StringComparer.Ordinal);
+            foreach (var (k, v) in jobVars) merged[k] = v;
             jobs.Add(new CiJobDefinition(name!, image, needs, steps)
             {
                 When = extras.When,
@@ -298,24 +386,56 @@ public static partial class CiFile
                 Cache = extras.Cache,
                 Environment = extras.Environment,
                 Pages = extras.Pages,
+                Retry = extras.Retry,
+                Timeout = extras.Timeout,
+                Variables = merged,
             });
+        }
+
+        foreach (var j in jobs)
+            if (j.Needs.Contains(j.Name)) return Fail($"Job '{j.Name}' can't need itself.");
+        if (matrices.Count > 0)
+        {
+            // parallel: matrix: one job per combination (named {job}-{value}-{value}), each with the combination as variables;
+            // a job that needs the matrix job needs every instance.
+            var instances = new Dictionary<string, List<string>>();
+            var expanded = new List<CiJobDefinition>();
+            foreach (var j in jobs)
+            {
+                if (!matrices.TryGetValue(j.Name, out var combos)) { expanded.Add(j); continue; }
+                var list = instances[j.Name] = [];
+                foreach (var combo in combos)
+                {
+                    var instanceName = j.Name + "-" + string.Join("-", combo.Values.Select(SanitizeForName));
+                    if (!JobNamePattern().IsMatch(instanceName)) return Fail($"Job '{j.Name}': the matrix instance name '{instanceName}' is too long (up to 64 characters).");
+                    if (jobs.Any(o => o.Name == instanceName) || list.Contains(instanceName)) return Fail($"Job '{j.Name}': the matrix makes the name '{instanceName}' twice.");
+                    var vars = new Dictionary<string, string>(j.Variables, StringComparer.Ordinal);
+                    foreach (var (k, v) in combo) vars[k] = v;
+                    list.Add(instanceName);
+                    expanded.Add(j with { Name = instanceName, Variables = vars });
+                }
+            }
+            jobs = expanded.Select(j => j with { Needs = j.Needs.SelectMany(n => instances.TryGetValue(n, out var inst) ? inst : [n]).Distinct().ToList() }).ToList();
+            if (jobs.Count > MaxJobs) return Fail($"Too many jobs after expanding 'parallel: matrix' ({jobs.Count}); the limit is {MaxJobs}.");
         }
 
         var names = jobs.Select(j => j.Name).ToHashSet();
         foreach (var j in jobs)
             foreach (var need in j.Needs)
             {
-                if (need == j.Name) return Fail($"Job '{j.Name}' can't need itself.");
                 if (!names.Contains(need)) return Fail($"Job '{j.Name}' needs '{need}', which is not defined.");
             }
         if (FindCycle(jobs) is { } cycle) return Fail($"The 'needs' of these jobs form a cycle: {cycle}.");
 
         var branches = dto.On?.Branches?.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).ToList();
-        return new CiParseResult(new CiDefinition(new CiTriggers(branches, dto.On?.PullRequests ?? true), jobs), null);
+        var tags = dto.On?.Tags?.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).ToList();
+        if (dto.On?.Tags != null && tags!.Count == 0) return Fail("'on.tags' needs at least one tag pattern (use \"*\" for every tag).");
+        return new CiParseResult(new CiDefinition(new CiTriggers(branches, dto.On?.PullRequests ?? true) { Tags = tags }, jobs), null);
     }
 
     private sealed record Extras(CiJobWhen When, IReadOnlyList<CiRule> Rules, CiArtifactsDefinition? Artifacts,
-        CiCacheDefinition? Cache, CiEnvironmentDefinition? Environment, string? Error, CiPagesDefinition? Pages = null);
+        CiCacheDefinition? Cache, CiEnvironmentDefinition? Environment, string? Error, CiPagesDefinition? Pages = null,
+        int Retry = 0, TimeSpan? Timeout = null);
 
     private static Extras ParseExtras(string name, JobDto job)
     {
@@ -343,12 +463,24 @@ public static partial class CiFile
             if (job.Rules.Count > MaxRules) return Err($"too many rules (limit {MaxRules}).");
             foreach (var r in job.Rules)
             {
-                if (r == null) return Err("a rule is empty: give it 'branches' or 'when'.");
-                List<string>? branches = null;
+                if (r == null) return Err("a rule is empty: give it 'branches', 'tags', 'if' or 'when'.");
+                List<string>? branches = null, ruleTags = null;
                 if (r.Branches != null)
                 {
                     branches = r.Branches.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).ToList();
                     if (branches.Count == 0) return Err("a rule's 'branches' needs at least one pattern.");
+                }
+                if (r.Tags != null)
+                {
+                    ruleTags = r.Tags.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).ToList();
+                    if (ruleTags.Count == 0) return Err("a rule's 'tags' needs at least one pattern.");
+                }
+                CiRuleExpression? condition = null;
+                if (r.If != null)
+                {
+                    var (expr, exprError) = CiRuleExpression.Parse(r.If);
+                    if (expr == null) return Err($"rule 'if: {r.If}' {exprError}.");
+                    condition = expr;
                 }
                 CiRuleWhen? rw = r.When?.Trim() switch
                 {
@@ -359,8 +491,16 @@ public static partial class CiFile
                     _ => (CiRuleWhen)(-1),
                 };
                 if (rw == (CiRuleWhen)(-1)) return Err($"rule 'when: {r.When}' is not valid: use on_success, manual or never.");
-                rules.Add(new CiRule(branches, rw));
+                rules.Add(new CiRule(branches, rw) { Tags = ruleTags, If = condition });
             }
+        }
+
+        if (job.Retry is { } retry && (retry < 0 || retry > MaxRetry)) return Err($"'retry: {retry}' is not valid: use 0 to {MaxRetry}.");
+        TimeSpan? timeout = null;
+        if (job.Timeout != null)
+        {
+            if (!TryParseDuration(job.Timeout, out timeout) || timeout is not { } t || t > TimeSpan.FromDays(7))
+                return Err($"'timeout: {job.Timeout}' is not valid: use e.g. 30m or 2h (at most 7d).");
         }
 
         CiArtifactsDefinition? artifacts = null;
@@ -432,7 +572,7 @@ public static partial class CiFile
         var (pages, pagesError) = ParsePages(name, job);
         if (pagesError != null) return Err(pagesError);
 
-        return new Extras(when, rules, artifacts, cache, environment, null, pages);
+        return new Extras(when, rules, artifacts, cache, environment, null, pages, job.Retry ?? 0, timeout);
     }
 
     /// <summary>
@@ -486,6 +626,81 @@ public static partial class CiFile
         if (p.Contains('*') || p.Contains('?')) return (null, $"pages path '{p}' must name one folder, not a pattern.");
         if (CiArtifacts.ValidatePattern(p) is { } pe) return (null, $"pages path '{p}' {pe}");
         return (new CiPagesDefinition(p, review, expire), null);
+    }
+
+    private static string SanitizeForName(string value) =>
+        new(value.Select(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-' ? c : '_').ToArray());
+
+    /// <summary>
+    /// <c>parallel: { matrix: [ { A: [1, 2], B: [x] }, ... ] }</c>: the combinations of each entry's lists (an entry's variables
+    /// in the order written); several entries add up. Empty when the job has no <c>parallel</c>.
+    /// </summary>
+    private static (List<Dictionary<string, string>> Combos, string? Error) ParseMatrix(ParallelDto? parallel, string job)
+    {
+        var result = new List<Dictionary<string, string>>();
+        if (parallel == null) return (result, null);
+        string Err(string m) => $"Job '{job}': {m}";
+        if (parallel.Matrix == null || parallel.Matrix.Count == 0) return ([], Err("'parallel' needs 'matrix:' with at least one entry."));
+        foreach (var entry in parallel.Matrix)
+        {
+            if (entry == null || entry.Count == 0) return ([], Err("a matrix entry needs at least one variable with a list of values."));
+            IEnumerable<Dictionary<string, string>> combos = [new(StringComparer.Ordinal)];
+            foreach (var (name, values) in entry)
+            {
+                if (ValidateVariableName(name) is { } ne) return ([], Err("matrix " + ne));
+                if (values == null || values.Count == 0) return ([], Err($"matrix variable '{name}' needs at least one value."));
+                var texts = new List<string>();
+                foreach (var v in values)
+                {
+                    var text = v?.ToString() ?? "";
+                    if (v is IDictionary<object, object> or IList<object>) return ([], Err($"matrix variable '{name}' must list plain values."));
+                    if (ValidateVariableValue(name, text) is { } ve) return ([], Err("matrix " + ve));
+                    texts.Add(text);
+                }
+                combos = combos.SelectMany(c => texts.Select(t => new Dictionary<string, string>(c, StringComparer.Ordinal) { [name] = t })).ToList();
+                if (combos.Count() > MaxJobs) return ([], Err($"the matrix makes more than {MaxJobs} jobs."));
+            }
+            result.AddRange(combos);
+            if (result.Count > MaxJobs) return ([], Err($"the matrix makes more than {MaxJobs} jobs."));
+        }
+        return (result, null);
+    }
+
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,63}$")]
+    private static partial Regex VariableNamePattern();
+
+    /// <summary>
+    /// Checks a variable name for <c>variables:</c> and for manual-run variables: letters, digits and <c>_</c>, not starting
+    /// with a digit, and not <c>CI</c> or a <c>BYTEBENCH_*</c> / <c>GITBENCH_*</c> name (those are set by the runner).
+    /// </summary>
+    public static string? ValidateVariableName(string name)
+    {
+        if (!VariableNamePattern().IsMatch(name)) return $"variable name '{name}' is invalid: use letters, digits and '_', not starting with a digit (up to 64 characters).";
+        if (name == "CI" || name.StartsWith("BYTEBENCH_", StringComparison.OrdinalIgnoreCase) || name.StartsWith("GITBENCH_", StringComparison.OrdinalIgnoreCase))
+            return $"variable name '{name}' is reserved: ByteBench sets CI and BYTEBENCH_* itself.";
+        return null;
+    }
+
+    /// <summary>A variable's value: one line, at most <see cref="MaxVariableValueChars"/> characters.</summary>
+    public static string? ValidateVariableValue(string name, string value) =>
+        value.Length > MaxVariableValueChars ? $"variable '{name}' is longer than {MaxVariableValueChars} characters."
+        : value.IndexOfAny(['\r', '\n', '\0']) >= 0 ? $"variable '{name}' must be a single line."
+        : null;
+
+    private static (Dictionary<string, string> Values, string? Error) ParseVariables(Dictionary<string, object?>? raw, string what)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (raw == null) return (result, null);
+        if (raw.Count > MaxVariables) return (result, $"{what}: too many variables (limit {MaxVariables}).");
+        foreach (var (name, value) in raw)
+        {
+            if (ValidateVariableName(name) is { } ne) return (result, $"{what}: {ne}");
+            if (value is IDictionary<object, object> or IList<object>) return (result, $"{what}: variable '{name}' must be a plain value.");
+            var text = value switch { null => "", string str => str, _ => value.ToString() ?? "" };
+            if (ValidateVariableValue(name, text) is { } ve) return (result, $"{what}: {ve}");
+            result[name] = text;
+        }
+        return (result, null);
     }
 
     /// <summary>True if <paramref name="name"/> can name an environment.</summary>

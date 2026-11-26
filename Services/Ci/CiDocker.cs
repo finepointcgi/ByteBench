@@ -75,6 +75,8 @@ public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
         if (!string.IsNullOrWhiteSpace(o.Memory)) args.AddRange(["--memory", o.Memory]);
         if (!string.IsNullOrWhiteSpace(o.Cpus)) args.AddRange(["--cpus", o.Cpus]);
         if (o.PidsLimit > 0) args.AddRange(["--pids-limit", o.PidsLimit.ToString()]);
+        if (!string.IsNullOrWhiteSpace(o.User)) args.AddRange(["--user", o.User.Trim()]);
+        if (o.DropCapabilities) args.AddRange(["--cap-drop", "ALL"]);
         if (spec.EnvFile != null) args.AddRange(["--env-file", spec.EnvFile]); // CI secret variables; -e below wins on clashes
         foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
         // sh -e: a multi-line step fails at its first failing command.

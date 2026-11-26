@@ -44,6 +44,7 @@ public class CiApp : TestApp
 }
 
 [Trait("Category", "Docker")]
+[Collection("ci-docker")] // these fixtures share one Docker instance key and work directory: run the classes one after another
 public class DockerPipelineTests(CiApp app) : IClassFixture<CiApp>
 {
     [DockerFact]

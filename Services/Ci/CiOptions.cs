@@ -17,6 +17,10 @@ public class CiOptions
     public string? Cpus { get; set; } = "2";
     /// <summary>Docker <c>--pids-limit</c> per step container; 0 for no limit.</summary>
     public int PidsLimit { get; set; } = 1024;
+    /// <summary>Docker <c>--user</c> for step containers (e.g. <c>1000:1000</c>); empty runs as the image's user, often root.</summary>
+    public string? User { get; set; }
+    /// <summary>Adds <c>--cap-drop ALL</c>: step containers lose every Linux capability (chown, binding low ports, raw sockets...). Off by default because many images need some.</summary>
+    public bool DropCapabilities { get; set; }
     /// <summary>The docker CLI to run.</summary>
     public string DockerExecutable { get; set; } = "docker";
     /// <summary>Where job workspaces are exported. Must be shareable with the Docker daemon. Default: {temp}/bytebench-ci/{instance}.</summary>
