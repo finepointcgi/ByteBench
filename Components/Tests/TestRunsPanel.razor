@@ -1,0 +1,53 @@
+@using ByteBench.Services.Tests
+@inject TestService Tests
+@* Latest test runs for a version: a release's tag, or a pull request's head commit. Shows nothing for people who can't read the project. *@
+
+@if (rows is { Count: > 0 })
+{
+    <div class="trp">
+        <span class="gb-section-label">@Title</span>
+        @foreach (var r in rows)
+        {
+            <a class="trp-row" href="@TestUi.Run(ProjectKey, r.Run.Number)" @key="r.Run.Id">
+                <span class="trp-name">@r.Run.Name <span class="trp-build">@r.Run.Label</span></span>
+                <MudProgressLinear Value="@r.Summary.Progress" Size="Size.Small" Color="@(r.Summary.Failed + r.Summary.Blocked > 0 ? Color.Error : Color.Success)" Class="trp-bar" />
+                <span class="trp-nums">
+                    <span class="ts-pass">@r.Summary.Passed passed</span>
+                    @if (r.Summary.Failed > 0) { <span class="ts-fail"> · @r.Summary.Failed failed</span> }
+                    @if (r.Summary.Blocked > 0) { <span class="ts-block"> · @r.Summary.Blocked blocked</span> }
+                    @if (r.Summary.NotRun > 0) { <span> · @r.Summary.NotRun not run</span> }
+                    @if (r.Summary.PassRate is { } pr) { <span> · @pr.ToString("0.#")%</span> }
+                </span>
+            </a>
+        }
+    </div>
+}
+else if (loaded && ShowEmpty)
+{
+    <div class="trp"><span class="gb-section-label">@Title</span><div class="mud-text-secondary small">@EmptyText</div></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public string? CommitSha { get; set; }
+    [Parameter] public string? Tag { get; set; }
+    [Parameter] public int? ReleaseId { get; set; }
+    [Parameter] public string Title { get; set; } = "Tests";
+    [Parameter] public bool ShowEmpty { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "No test runs for this version yet.";
+
+    private List<TestRunRow>? rows;
+    private bool loaded;
+    private string? loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var token = $"{ProjectId}|{CommitSha}|{Tag}|{ReleaseId}";
+        if (token == loadedFor) return;
+        loadedFor = token;
+        try { rows = await Tests.RunsForVersionAsync(ProjectId, CommitSha, Tag, ReleaseId, 5); }
+        catch (ForbiddenException) { rows = null; }
+        loaded = true;
+    }
+}

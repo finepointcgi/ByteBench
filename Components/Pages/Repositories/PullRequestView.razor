@@ -430,6 +430,8 @@ else if (pr != null)
 
             <AiReviewPanel PullRequest="pr" OnReviewFinished="() => Reload(full: false)" />
 
+            <ByteBench.Components.Tests.TestRunsPanel ProjectId="repo.ProjectId" ProjectKey="@repo.Project.Key" CommitSha="@changes?.HeadSha" Title="Tests (head commit)" />
+
             <div class="gb-side-field">
                 <span class="gb-section-label">Linked issues</span>
                 @if (linked.Count == 0)

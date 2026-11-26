@@ -1,0 +1,81 @@
+@page "/p/{Key}/releases"
+@using ByteBench.Components.Tests
+@using ByteBench.Services.Attachments
+@using ByteBench.Services.Git
+@using ByteBench.Services.Releases
+@inject IssueService Issues
+@inject ReleaseHubService Hubs
+
+<PageTitle>Releases · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="ro-page">
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">Releases</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Every release of @project.Name's repositories, with downloads and test results. Open a release for its builds, packages, security scan and SBOM.</MudText>
+            </div>
+        </div>
+
+        @if (rows.Count == 0)
+        {
+            <div class="ro-empty">No releases yet. Create one from a repository's Releases page.</div>
+        }
+        else
+        {
+            <MudPaper Outlined="true">
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                    <thead><tr><th>Release</th><th>Repository</th><th>Published</th><th class="num">Assets</th><th class="num">Downloads</th><th>Tests</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in rows)
+                        {
+                            <tr @key="r.Release.Id">
+                                <td>
+                                    <a href="@ReleaseUrls.Detail(r.Repository, r.Release.Id)" class="ro-name">@r.Release.Title</a>
+                                    <span class="mono ro-tag">@r.Release.TagName</span>
+                                    @if (r.Release.IsDraft) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">Draft</MudChip> }
+                                    else if (r.Release.IsPrerelease) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="ma-0">Pre-release</MudChip> }
+                                    else if (r.IsLatest) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Class="ma-0">Latest</MudChip> }
+                                </td>
+                                <td><a href="@ReleaseUrls.List(r.Repository)">@r.Repository.Name</a></td>
+                                <td>@(r.Release.IsDraft ? "—" : Display.Ago(r.Release.PublishedAt ?? r.Release.CreatedAt))</td>
+                                <td class="num">@r.AssetCount</td>
+                                <td class="num">@r.Downloads</td>
+                                <td>
+                                    @if (r.Tests is { } t)
+                                    {
+                                        <span class="ts-pass">@t.Passed</span> <span>/</span> <span class="@(t.Failed + t.Blocked > 0 ? "ts-fail" : "")">@(t.Failed + t.Blocked)</span>
+                                        @if (t.PassRate is { } pr) { <span class="mud-text-secondary small"> · @pr.ToString("0.#")%</span> }
+                                    }
+                                    else { <span class="mud-text-secondary">—</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">Tests: passed / failed or blocked, from the newest run recorded against the release.</MudText>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private List<ReleaseOverviewRow> rows = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        rows = await Hubs.OverviewAsync(project.Id);
+    }
+}

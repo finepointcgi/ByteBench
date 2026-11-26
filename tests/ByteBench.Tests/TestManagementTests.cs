@@ -391,7 +391,7 @@ public class TestManagementTests(TestApp app) : IClassFixture<TestApp>
 
         var firstCi = body.GetProperty("runNumber").GetInt32();
         var secondCi = (await Read(envelope)).GetProperty("runNumber").GetInt32();
-        var cmp = await Read(await viewer.GetAsync($"{root}/compare?from={firstCi}&to={secondCi}"));
+        var cmp = await Read(await viewer.GetAsync($"{root}/compare?a={firstCi}&b={secondCi}"));
         Assert.Equal(1, cmp.GetProperty("counts").GetProperty("fixed").GetInt32());
         var matrix = await Read(await viewer.GetAsync($"{root}/matrix?runs={firstCi},{secondCi}&problems=true"));
         Assert.Equal(2, matrix.GetProperty("runs").GetArrayLength());

@@ -1,0 +1,114 @@
+@page "/p/{Key}/tests"
+@using ByteBench.Components.Tests
+@using ByteBench.Services.Tests
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TestService Tests
+
+<PageTitle>Tests · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="tc-page">
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">Tests</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Test cases, plans and runs of @project.Name</MudText>
+            </div>
+            @if (perms.Can(Permission.RunTests))
+            {
+                <MudButton Href="@($"/p/{project.Key}/tests/cases/new")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add">New test case</MudButton>
+            }
+        </div>
+        <TestsNav ProjectKey="@project.Key" Active="cases" />
+
+        <div class="tc-filters">
+            <MudTextField T="string" @bind-Value="query" Immediate="true" DebounceInterval="200" OnDebounceIntervalElapsed="Reload" Placeholder="Search title, TC-12, automated name"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" Class="tc-search" aria-label="Search test cases" />
+            <MudSelect T="string" Value="suite" ValueChanged="v => { suite = v; return Reload(); }" Label="Suite" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Class="tc-select">
+                @foreach (var s in suites) { <MudSelectItem T="string" Value="@s">@s</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="TestPriority?" Value="priority" ValueChanged="v => { priority = v; return Reload(); }" Label="Priority" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Class="tc-select">
+                @foreach (var p in Enum.GetValues<TestPriority>()) { <MudSelectItem T="TestPriority?" Value="@((TestPriority?)p)">@p</MudSelectItem> }
+            </MudSelect>
+            <MudSelect T="TestCaseType?" Value="type" ValueChanged="v => { type = v; return Reload(); }" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Class="tc-select">
+                <MudSelectItem T="TestCaseType?" Value="@((TestCaseType?)TestCaseType.Manual)">Manual</MudSelectItem>
+                <MudSelectItem T="TestCaseType?" Value="@((TestCaseType?)TestCaseType.Automated)">Automated</MudSelectItem>
+            </MudSelect>
+            <MudSwitch T="bool" Value="archived" ValueChanged="v => { archived = v; return Reload(); }" Label="Archived" Color="Color.Primary" Size="Size.Small" />
+        </div>
+
+        @if (cases.Count == 0)
+        {
+            <div class="tc-empty">No test cases match. @(perms.Can(Permission.RunTests) ? "Write the first one, or upload a JUnit/TRX report to create automated cases." : "")</div>
+        }
+        else
+        {
+            <MudPaper Outlined="true">
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="tc-table">
+                    <thead><tr><th>ID</th><th>Title</th><th>Suite</th><th>Priority</th><th>Type</th><th>Latest result</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in cases)
+                        {
+                            latest.TryGetValue(c.Number, out var l);
+                            <tr @key="c.Id" class="@(c.IsArchived ? "tc-archived" : "")">
+                                <td class="mono"><a href="@TestUi.Case(project.Key, c.Number)">@c.Key</a></td>
+                                <td><a href="@TestUi.Case(project.Key, c.Number)" class="tc-title">@c.Title</a>
+                                    @foreach (var t in c.TagList) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="tc-tag ma-0 ml-1">@t</MudChip> }</td>
+                                <td>@(c.Suite ?? "—")</td>
+                                <td><MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@TestUi.PriorityColor(c.Priority)" Class="ma-0">@c.Priority</MudChip></td>
+                                <td>@c.Type</td>
+                                <td>
+                                    @if (l.RunNumber > 0)
+                                    {
+                                        <a href="@TestUi.Run(project.Key, l.RunNumber)" class="@TestUi.CssOf(l.Status)"><MudIcon Icon="@TestUi.IconOf(l.Status)" Size="Size.Small" Class="tc-ico" /> @TestUi.LabelOf(l.Status)</a>
+                                        <span class="mud-text-secondary small"> · run #@l.RunNumber</span>
+                                    }
+                                    else { <span class="mud-text-secondary">Never run</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">@cases.Count test case@(cases.Count == 1 ? "" : "s")</MudText>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private Project? project;
+    private bool notFound;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<TestCase> cases = [];
+    private List<string> suites = [];
+    private Dictionary<int, (TestResultStatus Status, int RunNumber, DateTime At)> latest = [];
+    private string? query, suite;
+    private TestPriority? priority;
+    private TestCaseType? type;
+    private bool archived;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        suites = await Tests.SuitesAsync(project.Id);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        if (project == null) return;
+        cases = await Tests.ListCasesAsync(project.Id, new TestService.CaseFilter(query, suite, priority, type, null, archived));
+        latest = await Tests.LatestStatusesAsync(project.Id);
+        StateHasChanged();
+    }
+}

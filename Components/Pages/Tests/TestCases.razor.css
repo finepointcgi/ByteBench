@@ -1,0 +1,9 @@
+.tc-page { max-width: 1200px; }
+.tc-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.tc-filters ::deep .tc-search { max-width: 320px; min-width: 220px; }
+.tc-filters ::deep .tc-select { max-width: 170px; min-width: 130px; }
+.tc-title { font-weight: 600; }
+.tc-archived { opacity: .55; }
+.tc-ico { vertical-align: -4px; }
+.tc-empty { padding: 32px; text-align: center; color: var(--mud-palette-text-secondary); border: 1px dashed var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius); background: var(--mud-palette-surface); }

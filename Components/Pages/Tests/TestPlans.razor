@@ -1,0 +1,155 @@
+@page "/p/{Key}/tests/plans"
+@using ByteBench.Components.Tests
+@using ByteBench.Components.Repositories
+@using ByteBench.Services.Tests
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TestService Tests
+@inject IDialogService Dialogs
+
+<PageTitle>Test plans · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound />
+}
+else if (project != null)
+{
+    <div class="tp-page">
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">Test plans</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">A plan is a named set of cases you run again for every release.</MudText>
+            </div>
+            @if (perms.Can(Permission.ManageTests))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="StartNew">New plan</MudButton>
+            }
+        </div>
+        <TestsNav ProjectKey="@project.Key" Active="plans" />
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+        @if (editing)
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <EditForm Model="form" OnValidSubmit="Save" FormName="testplan">
+                    <MudTextField T="string" @bind-Value="form.Name" Label="Name" Required="true" MaxLength="120" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                    <MudTextField T="string" @bind-Value="form.Description" Label="Description" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                    <div class="gb-section-label mb-1">Cases (@selected.Count selected)</div>
+                    <div class="tp-picker">
+                        @foreach (var c in allCases)
+                        {
+                            var number = c.Number;
+                            <label class="tp-pick" @key="c.Id">
+                                <input type="checkbox" checked="@selected.Contains(number)" @onchange="e => Toggle(number, (bool)(e.Value ?? false))" />
+                                <span class="mono">@c.Key</span> <span>@c.Title</span>
+                                @if (c.Suite != null) { <span class="mud-text-secondary small"> · @c.Suite</span> }
+                            </label>
+                        }
+                        @if (allCases.Count == 0) { <span class="mud-text-secondary">Write some test cases first.</span> }
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy">Save plan</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => editing = false">Cancel</MudButton>
+                    </div>
+                </EditForm>
+            </MudPaper>
+        }
+
+        @if (plans.Count == 0 && !editing)
+        {
+            <div class="tp-empty">No plans yet.</div>
+        }
+        <MudStack Spacing="2">
+            @foreach (var (plan, count) in plans)
+            {
+                <MudPaper Outlined="true" Class="tp-row" @key="plan.Id">
+                    <div>
+                        <div class="tp-name">@plan.Name</div>
+                        <div class="mud-text-secondary small">@count case@(count == 1 ? "" : "s")@(string.IsNullOrWhiteSpace(plan.Description) ? "" : " · " + plan.Description)</div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        @if (perms.Can(Permission.RunTests))
+                        {
+                            <MudButton Href="@($"{TestUi.Runs(project.Key)}?plan={plan.Id}")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow">Start run</MudButton>
+                        }
+                        @if (perms.Can(Permission.ManageTests))
+                        {
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => Edit(plan.Id)">Edit</MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" OnClick="() => Delete(plan)">Delete</MudButton>
+                        }
+                    </div>
+                </MudPaper>
+            }
+        </MudStack>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private sealed class PlanForm { public int? Id; public string Name = ""; public string? Description; }
+
+    private Project? project;
+    private bool notFound, editing, busy;
+    private string? error;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<(TestPlan Plan, int CaseCount)> plans = [];
+    private List<TestCase> allCases = [];
+    private HashSet<int> selected = [];
+    private PlanForm form = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        plans = await Tests.ListPlansAsync(project.Id);
+    }
+
+    private async Task StartNew()
+    {
+        allCases = await Tests.ListCasesAsync(project!.Id);
+        form = new PlanForm();
+        selected = [];
+        editing = true;
+    }
+
+    private async Task Edit(int id)
+    {
+        var plan = await Tests.GetPlanAsync(project!.Id, id);
+        if (plan == null) return;
+        allCases = await Tests.ListCasesAsync(project.Id);
+        form = new PlanForm { Id = plan.Id, Name = plan.Name, Description = plan.Description };
+        selected = plan.Cases.Select(c => c.TestCase.Number).ToHashSet();
+        editing = true;
+    }
+
+    private void Toggle(int number, bool on) { if (on) selected.Add(number); else selected.Remove(number); }
+
+    private async Task Save()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            await Tests.SavePlanAsync(project!.Id, form.Id, form.Name, form.Description, allCases.Where(c => selected.Contains(c.Number)).Select(c => c.Number));
+            editing = false;
+            plans = await Tests.ListPlansAsync(project.Id);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Delete(TestPlan plan)
+    {
+        if (!await Dialogs.ConfirmAsync("Delete plan", $"Delete the plan '{plan.Name}'? Runs that used it are kept.")) return;
+        try
+        {
+            await Tests.DeletePlanAsync(project!.Id, plan.Id);
+            plans = await Tests.ListPlansAsync(project.Id);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

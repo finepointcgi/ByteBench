@@ -1,0 +1,319 @@
+@page "/p/{Key}/tests/runs/{Number:int}"
+@using ByteBench.Components.Tests
+@using ByteBench.Components.Repositories
+@using ByteBench.Services.Attachments
+@using ByteBench.Services.Tests
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TestService Tests
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Run #@Number · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="This test run does not exist." />
+}
+else if (project != null && detail != null)
+{
+    var run = detail.Run;
+    var sum = detail.Summary;
+    <div class="rp-page">
+        <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-2" />
+        <div class="page-header">
+            <div>
+                <MudText Typo="Typo.h5" HtmlTag="h1">@run.Name <span class="rp-num">#@run.Number</span></MudText>
+                <div class="rp-meta">
+                    <span>@run.Label</span>
+                    @if (run.Tag != null) { <span><MudIcon Icon="@Icons.Material.Outlined.LocalOffer" Size="Size.Small" Class="rp-ico" /> @run.Tag</span> }
+                    @if (run.CommitSha != null) { <span class="mono">@run.CommitSha[..7]</span> }
+                    @if (run.PipelineId != null) { <span>pipeline #@run.PipelineId</span> }
+                    @if (run.Plan != null) { <span>plan: @run.Plan.Name</span> }
+                    <span>@run.Source.ToString().ToLowerInvariant()</span>
+                    @if (run.IsClosed) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">Closed</MudChip> }
+                </div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <MudButton Href="@TestUi.Compare(project.Key)" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.CompareArrows">Compare</MudButton>
+                @if (perms.Can(Permission.RunTests))
+                {
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ToggleClosed">@(run.IsClosed ? "Reopen run" : "Finish run")</MudButton>
+                }
+                @if (perms.Can(Permission.ManageTests))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" OnClick="Delete">Delete</MudButton>
+                }
+            </div>
+        </div>
+
+        <div class="rp-summary" role="group" aria-label="Run summary">
+            <MudProgressLinear Value="@sum.Progress" Size="Size.Medium" Color="@(sum.Failed + sum.Blocked > 0 ? Color.Error : Color.Success)" />
+            <div class="rp-counts">
+                <span class="ts-pass">@sum.Passed passed</span><span class="ts-fail">@sum.Failed failed</span><span class="ts-block">@sum.Blocked blocked</span>
+                <span class="ts-skip">@sum.Skipped skipped</span><span class="ts-none">@sum.NotRun not run</span>
+                <span><b>@(sum.PassRate is { } pr ? pr.ToString("0.#") + "%" : "—")</b> pass rate · @sum.Progress.ToString("0.#")% done</span>
+            </div>
+        </div>
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+        <div class="rp-grid">
+            <div class="rp-list" tabindex="0" @ref="listRef" @onkeydown="OnKey" aria-label="Test cases. Keys: j and k move, p pass, f fail, b blocked, s skip, u not run.">
+                @foreach (var r in detail.Results)
+                {
+                    <div class="@("rp-item" + (r.TestCase.Number == selectedNumber ? " selected" : ""))" @key="r.Id" @onclick="() => Select(r.TestCase.Number)">
+                        <MudIcon Icon="@TestUi.IconOf(r.Status)" Class="@("rp-status " + TestUi.CssOf(r.Status))" Size="Size.Small" />
+                        <span class="mono rp-key">@r.TestCase.Key</span>
+                        <span class="rp-title">@r.TestCase.Title</span>
+                        @if (r.IssueNumber != null) { <MudIcon Icon="@Icons.Material.Outlined.BugReport" Size="Size.Small" Class="ts-fail" title="@($"Bug {project.Key}-{r.IssueNumber}")" /> }
+                    </div>
+                }
+                @if (detail.Results.Count == 0) { <div class="rp-empty">This run has no cases.</div> }
+            </div>
+
+            <div class="rp-detail">
+                @if (current == null)
+                {
+                    <div class="rp-empty">Select a case. Keyboard: <kbd>j</kbd>/<kbd>k</kbd> move, <kbd>p</kbd> pass, <kbd>f</kbd> fail, <kbd>b</kbd> blocked, <kbd>s</kbd> skip, <kbd>u</kbd> not run.</div>
+                }
+                else
+                {
+                    <MudPaper Outlined="true" Class="pa-4">
+                        <div class="d-flex justify-space-between flex-wrap gap-2 mb-2">
+                            <MudText Typo="Typo.h6" HtmlTag="h2"><a href="@TestUi.Case(project.Key, current.TestCase.Number)" class="mono">@current.TestCase.Key</a> @current.TestCase.Title</MudText>
+                            <span class="@TestUi.CssOf(current.Status)"><MudIcon Icon="@TestUi.IconOf(current.Status)" Size="Size.Small" Class="rp-ico" /> @TestUi.LabelOf(current.Status)</span>
+                        </div>
+                        <div class="rp-text">
+                            @Block("Preconditions", current.TestCase.Preconditions)
+                            @Block("Steps", current.TestCase.Steps)
+                            @Block("Expected result", current.TestCase.Expected)
+                            @if (!string.IsNullOrWhiteSpace(current.ErrorMessage))
+                            {
+                                <div class="rp-block"><div class="gb-section-label">Failure</div><pre class="rp-pre">@current.ErrorMessage</pre></div>
+                            }
+                        </div>
+                        @if (current.ExecutedAt is { } at)
+                        {
+                            <div class="mud-text-secondary small mb-2">Recorded @at.ToLocalTime().ToString("MMM d, HH:mm")@(who != null ? " by " + who : "")@(current.DurationMs is { } ms ? $" · {ms} ms" : "")@(current.CaseVersion != current.TestCase.Version ? $" · case has changed since (v{current.CaseVersion} → v{current.TestCase.Version})" : "")</div>
+                        }
+                        @if (perms.Can(Permission.RunTests) && !run.IsClosed)
+                        {
+                            <MudTextField T="string" @bind-Value="comment" Label="Comment" Lines="2" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <div class="rp-actions">
+                                <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.Passed)" StartIcon="@Icons.Material.Filled.Check">Pass (p)</MudButton>
+                                <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.Failed)" StartIcon="@Icons.Material.Filled.Close">Fail (f)</MudButton>
+                                <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.Blocked)" StartIcon="@Icons.Material.Filled.Block">Blocked (b)</MudButton>
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.Skipped)">Skip (s)</MudButton>
+                                <MudButton Variant="Variant.Text" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.NotRun)">Reset (u)</MudButton>
+                            </div>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(current.Comment))
+                        {
+                            <div class="rp-block"><div class="gb-section-label">Comment</div><div class="rp-text">@current.Comment</div></div>
+                        }
+
+                        @if (current.Status is TestResultStatus.Failed or TestResultStatus.Blocked)
+                        {
+                            <div class="rp-bug">
+                                @if (current.IssueNumber is { } issue)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Outlined.BugReport" Size="Size.Small" Class="rp-ico" /> <a href="@($"/p/{project.Key}/issues/{issue}")">@project.Key-@issue</a>
+                                }
+                                else if (perms.Can(Permission.RunTests))
+                                {
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" Disabled="@busy" OnClick="CreateBug" StartIcon="@Icons.Material.Outlined.BugReport">Create bug from this failure</MudButton>
+                                }
+                            </div>
+                        }
+
+                        <div class="rp-block">
+                            <div class="gb-section-label">Evidence</div>
+                            @foreach (var e in current.Evidence)
+                            {
+                                <div class="rp-evidence" @key="e.Id">
+                                    <a href="@($"/api/v1/projects/{project.Key}/tests/evidence/{e.Id}")" download="@e.FileName"><MudIcon Icon="@Icons.Material.Outlined.AttachFile" Size="Size.Small" Class="rp-ico" /> @e.FileName</a>
+                                    <span class="mud-text-secondary small">@AttachmentFormat.Size(e.Size)</span>
+                                    @if (perms.Can(Permission.RunTests) && !run.IsClosed) { <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Remove evidence" OnClick="() => DeleteEvidence(e)" /> }
+                                </div>
+                            }
+                            @if (current.Evidence.Count == 0) { <span class="mud-text-secondary small">None.</span> }
+                            @if (perms.Can(Permission.RunTests) && !run.IsClosed)
+                            {
+                                <div class="mt-1">
+                                    <MudButton HtmlTag="label" Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" StartIcon="@Icons.Material.Filled.AddPhotoAlternate">
+                                        Add screenshot or file
+                                        <InputFile OnChange="Upload" multiple class="rp-file" disabled="@busy" />
+                                    </MudButton>
+                                </div>
+                            }
+                        </div>
+                    </MudPaper>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int Number { get; set; }
+
+    private Project? project;
+    private TestRunDetail? detail;
+    private TestResult? current;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private List<BreadcrumbItem> crumbs = [];
+    private ElementReference listRef;
+    private int? selectedNumber;
+    private string? comment, error, who;
+    private bool notFound, busy;
+
+    private RenderFragment Block(string title, string? text) => @<text>
+        @if (!string.IsNullOrWhiteSpace(text))
+        {
+            <div class="rp-block"><div class="gb-section-label">@title</div><div class="rp-text">@text</div></div>
+        }
+    </text>;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        await Load();
+        if (detail == null) { notFound = true; return; }
+        crumbs = [new("Tests", TestUi.Cases(project.Key)), new("Runs", TestUi.Runs(project.Key)), new($"#{Number}", null, true)];
+        if (selectedNumber == null) Select(detail.Results.FirstOrDefault(r => r.Status == TestResultStatus.NotRun)?.TestCase.Number ?? detail.Results.FirstOrDefault()?.TestCase.Number);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && detail is { Results.Count: > 0 }) { try { await listRef.FocusAsync(); } catch (InvalidOperationException) { } }
+    }
+
+    private async Task Load()
+    {
+        detail = await Tests.GetRunAsync(project!.Id, Number);
+        current = detail?.Results.FirstOrDefault(r => r.TestCase.Number == selectedNumber);
+        who = current?.ExecutedById is { } id ? (await Tests.UserNamesAsync([id])).GetValueOrDefault(id) : null;
+    }
+
+    private void Select(int? number)
+    {
+        selectedNumber = number;
+        current = detail?.Results.FirstOrDefault(r => r.TestCase.Number == number);
+        comment = current?.Comment;
+        who = null;
+        if (current?.ExecutedById is { } id) _ = LoadWho(id);
+    }
+
+    private async Task LoadWho(int id)
+    {
+        who = (await Tests.UserNamesAsync([id])).GetValueOrDefault(id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (detail == null || e.CtrlKey || e.MetaKey || e.AltKey) return;
+        var list = detail.Results;
+        var index = list.FindIndex(r => r.TestCase.Number == selectedNumber);
+        switch (e.Key)
+        {
+            case "j" or "ArrowDown": if (list.Count > 0) Select(list[Math.Min(list.Count - 1, index + 1)].TestCase.Number); break;
+            case "k" or "ArrowUp": if (list.Count > 0) Select(list[Math.Max(0, index - 1)].TestCase.Number); break;
+            case "p": await Record(TestResultStatus.Passed); break;
+            case "f": await Record(TestResultStatus.Failed); break;
+            case "b": await Record(TestResultStatus.Blocked); break;
+            case "s": await Record(TestResultStatus.Skipped); break;
+            case "u": await Record(TestResultStatus.NotRun); break;
+        }
+    }
+
+    private async Task Record(TestResultStatus status)
+    {
+        if (current == null || busy || detail!.Run.IsClosed || !perms.Can(Permission.RunTests)) return;
+        error = null;
+        busy = true;
+        try
+        {
+            var number = current.TestCase.Number;
+            await Tests.RecordResultAsync(project!.Id, Number, number, status, string.IsNullOrWhiteSpace(comment) ? null : comment);
+            await Load();
+            // On to the next case that has no result yet (or just the next one when resetting).
+            var list = detail!.Results;
+            var at = list.FindIndex(r => r.TestCase.Number == number);
+            var next = status == TestResultStatus.NotRun ? null
+                : list.Skip(at + 1).FirstOrDefault(r => r.Status == TestResultStatus.NotRun) ?? list.Skip(at + 1).FirstOrDefault();
+            Select(next?.TestCase.Number ?? number);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally
+        {
+            busy = false;
+            try { await listRef.FocusAsync(); } catch (InvalidOperationException) { }
+        }
+    }
+
+    private async Task CreateBug()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            var n = await Tests.CreateBugAsync(project!.Id, Number, current!.TestCase.Number);
+            Snackbar.Add($"Created {project.Key}-{n}.", Severity.Success);
+            await Load();
+            current = detail!.Results.First(r => r.TestCase.Number == selectedNumber);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task Upload(InputFileChangeEventArgs e)
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(10))
+            {
+                await using var stream = file.OpenReadStream(TestService.MaxEvidenceBytes);
+                await Tests.AddEvidenceAsync(project!.Id, Number, current!.TestCase.Number, file.Name, stream);
+            }
+            await Load();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or AttachmentTooLargeException) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task DeleteEvidence(TestEvidence e)
+    {
+        try { await Tests.DeleteEvidenceAsync(project!.Id, e.Id); await Load(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task ToggleClosed()
+    {
+        error = null;
+        try
+        {
+            await Tests.SetRunClosedAsync(project!.Id, Number, !detail!.Run.IsClosed);
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Delete()
+    {
+        if (!await Dialogs.ConfirmAsync("Delete run", $"Delete run #{Number} and all its results and evidence? This can't be undone.")) return;
+        try
+        {
+            await Tests.DeleteRunAsync(project!.Id, Number);
+            Nav.NavigateTo(TestUi.Runs(project.Key));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

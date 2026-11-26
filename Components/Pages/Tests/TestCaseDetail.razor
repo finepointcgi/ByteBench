@@ -1,0 +1,241 @@
+@page "/p/{Key}/tests/cases/new"
+@page "/p/{Key}/tests/cases/{Number:int}"
+@using ByteBench.Components.Tests
+@using ByteBench.Components.Repositories
+@using ByteBench.Services.Tests
+@inject IssueService Issues
+@inject ProjectAccess Access
+@inject TestService Tests
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>@(testCase?.Key ?? "New test case") · @project?.Name</PageTitle>
+
+@if (notFound)
+{
+    <ProjectNotFound Message="@(project == null ? "This project does not exist." : "This test case does not exist.")" />
+}
+else if (project != null)
+{
+    <div class="tcd-page">
+        <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-2" />
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+
+        @if (editing)
+        {
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.h6" HtmlTag="h1" Class="mb-3">@(testCase == null ? "New test case" : $"Edit {testCase.Key}")</MudText>
+                <EditForm Model="input" OnValidSubmit="Save" FormName="testcase">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12"><MudTextField T="string" @bind-Value="input.Title" Label="Title" Required="true" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudSelect T="TestPriority" @bind-Value="input.Priority" Label="Priority" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var p in Enum.GetValues<TestPriority>()) { <MudSelectItem Value="p">@p</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudSelect T="TestCaseType" @bind-Value="input.Type" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="TestCaseType.Manual">Manual</MudSelectItem>
+                                <MudSelectItem Value="TestCaseType.Automated">Automated</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="input.Suite" Label="Folder / suite" Placeholder="Checkout/Payments" MaxLength="200" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6" md="3"><MudTextField T="string" @bind-Value="input.Tags" Label="Tags / components" Placeholder="smoke, ui" MaxLength="300" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12"><MudTextField T="string" @bind-Value="input.Preconditions" Label="Preconditions" Lines="2" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="input.Steps" Label="Steps (one per line)" Lines="6" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="input.Expected" Label="Expected result" Lines="6" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="input.LinkedIssues" Label="Linked issues" Placeholder="@($"{project.Key}-12, 15")" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField T="string" @bind-Value="input.Requirements" Label="Requirements" Placeholder="REQ-7, https://…" MaxLength="500" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        @if (input.Type == TestCaseType.Automated)
+                        {
+                            <MudItem xs="12"><MudTextField T="string" @bind-Value="input.AutomatedName" Label="Automated test name" HelperText="How CI reports name it: Namespace.Class.Method, or the JUnit name. Reports map to this case by it (or by TC-n in the name)." MaxLength="400" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        }
+                    </MudGrid>
+                    <div class="mt-3 d-flex gap-2">
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@busy">@(testCase == null ? "Create" : "Save")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelEdit">Cancel</MudButton>
+                    </div>
+                </EditForm>
+            </MudPaper>
+        }
+        else if (testCase != null)
+        {
+            <div class="page-header">
+                <div>
+                    <MudText Typo="Typo.h5" HtmlTag="h1"><span class="mono tcd-key">@testCase.Key</span> @testCase.Title</MudText>
+                    <div class="tcd-meta">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@TestUi.PriorityColor(testCase.Priority)" Class="ma-0">@testCase.Priority</MudChip>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">@testCase.Type</MudChip>
+                        @if (testCase.Suite != null) { <span><MudIcon Icon="@Icons.Material.Outlined.Folder" Size="Size.Small" Class="tcd-ico" /> @testCase.Suite</span> }
+                        @foreach (var tag in testCase.TagList) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">@tag</MudChip> }
+                        <span class="mud-text-secondary small">version @testCase.Version @(testCase.IsArchived ? "· archived" : "")</span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    @if (perms.Can(Permission.RunTests)) { <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="StartEdit">Edit</MudButton> }
+                    @if (perms.Can(Permission.ManageTests))
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ToggleArchive">@(testCase.IsArchived ? "Restore" : "Archive")</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Delete" OnClick="Delete">Delete</MudButton>
+                    }
+                </div>
+            </div>
+
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="8">
+                    <MudPaper Outlined="true" Class="pa-4">
+                        @Section("Preconditions", testCase.Preconditions)
+                        @Section("Steps", testCase.Steps)
+                        @Section("Expected result", testCase.Expected)
+                        @if (testCase.Type == TestCaseType.Automated && testCase.AutomatedName != null)
+                        {
+                            <div class="tcd-sec"><div class="gb-section-label">Automated name</div><div class="mono">@testCase.AutomatedName</div></div>
+                        }
+                        @if (testCase.LinkedIssueNumbers.Any() || testCase.Requirements != null)
+                        {
+                            <div class="tcd-sec">
+                                <div class="gb-section-label">Covers</div>
+                                @foreach (var n in testCase.LinkedIssueNumbers) { <a class="tcd-issue" href="@($"/p/{project.Key}/issues/{n}")">@project.Key-@n</a> }
+                                @if (testCase.Requirements != null) { <span class="mud-text-secondary"> @testCase.Requirements</span> }
+                            </div>
+                        }
+                    </MudPaper>
+
+                    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mt-4 mb-2">Version history</MudText>
+                    @if (revisions.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">Not edited since it was written (version 1).</MudText> }
+                    @foreach (var r in revisions)
+                    {
+                        <MudExpansionPanels Class="mb-1" Elevation="0" Outlined="true">
+                            <MudExpansionPanel Text="@($"Version {r.Version} · {r.Title} · {r.EditedAt.ToLocalTime():MMM d, yyyy HH:mm}")" Dense="true">
+                                @Section("Preconditions", r.Preconditions)
+                                @Section("Steps", r.Steps)
+                                @Section("Expected result", r.Expected)
+                                <div class="mud-text-secondary small">@r.Priority · @(r.Suite ?? "no suite") · @(r.Tags ?? "no tags")</div>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudPaper Outlined="true" Class="pa-3">
+                        <div class="gb-section-label mb-1">Results</div>
+                        @if (history.Count == 0) { <MudText Typo="Typo.body2" Class="mud-text-secondary">Never run.</MudText> }
+                        @foreach (var h in history)
+                        {
+                            <a class="tcd-hist" href="@TestUi.Run(project.Key, h.Run.Number)" @key="h.Result.Id">
+                                <span class="@TestUi.CssOf(h.Result.Status)"><MudIcon Icon="@TestUi.IconOf(h.Result.Status)" Size="Size.Small" Class="tcd-ico" /> @TestUi.LabelOf(h.Result.Status)</span>
+                                <span class="mud-text-secondary small">@h.Run.Label · @((h.Result.ExecutedAt ?? h.Run.CreatedAt).ToLocalTime().ToString("MMM d"))@(h.Result.CaseVersion != testCase.Version ? $" · v{h.Result.CaseVersion}" : "")</span>
+                            </a>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public int? Number { get; set; }
+
+    private Project? project;
+    private TestCase? testCase;
+    private bool notFound, editing, busy;
+    private string? error;
+    private ProjectPermissions perms = ProjectPermissions.None;
+    private TestCaseInput input = new();
+    private List<TestCaseRevision> revisions = [];
+    private List<TestCaseHistoryRow> history = [];
+    private List<BreadcrumbItem> crumbs = [];
+
+    private RenderFragment Section(string title, string? text) => @<text>
+        @if (!string.IsNullOrWhiteSpace(text))
+        {
+            <div class="tcd-sec"><div class="gb-section-label">@title</div><div class="tcd-text">@text</div></div>
+        }
+    </text>;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        project = await Issues.GetProjectAsync(Key);
+        notFound = project == null;
+        if (project == null) return;
+        perms = await Access.GetPermissionsAsync(project.Id);
+        if (Number is { } n)
+        {
+            testCase = await Tests.GetCaseAsync(project.Id, n);
+            if (testCase == null) { notFound = true; return; }
+            revisions = await Tests.RevisionsAsync(project.Id, n);
+            history = await Tests.CaseHistoryAsync(project.Id, n);
+            editing = false;
+        }
+        else
+        {
+            if (!perms.Can(Permission.RunTests)) { error = "You need Developer access to write test cases."; return; }
+            testCase = null;
+            input = new TestCaseInput();
+            editing = true;
+        }
+        crumbs = [new("Tests", TestUi.Cases(project.Key)), new(testCase?.Key ?? "New test case", null, true)];
+    }
+
+    private void StartEdit()
+    {
+        input = new TestCaseInput
+        {
+            Title = testCase!.Title, Preconditions = testCase.Preconditions, Steps = testCase.Steps, Expected = testCase.Expected, Priority = testCase.Priority,
+            Type = testCase.Type, Tags = testCase.Tags, Suite = testCase.Suite, LinkedIssues = testCase.LinkedIssues, Requirements = testCase.Requirements,
+            AutomatedName = testCase.AutomatedName,
+        };
+        error = null;
+        editing = true;
+    }
+
+    private void CancelEdit()
+    {
+        error = null;
+        if (testCase == null) Nav.NavigateTo(TestUi.Cases(project!.Key)); else editing = false;
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            if (testCase == null)
+            {
+                var c = await Tests.CreateCaseAsync(project!.Id, input);
+                Nav.NavigateTo(TestUi.Case(project.Key, c.Number));
+                return;
+            }
+            testCase = await Tests.UpdateCaseAsync(project!.Id, testCase.Number, input);
+            revisions = await Tests.RevisionsAsync(project.Id, testCase.Number);
+            editing = false;
+            Snackbar.Add("Test case saved.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task ToggleArchive()
+    {
+        try
+        {
+            await Tests.SetArchivedAsync(project!.Id, testCase!.Number, !testCase.IsArchived);
+            testCase = await Tests.GetCaseAsync(project.Id, testCase.Number);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Delete()
+    {
+        if (!await Dialogs.ConfirmAsync("Delete test case", $"Delete {testCase!.Key} and every result recorded for it? This can't be undone. Archive it to keep the history.")) return;
+        try
+        {
+            await Tests.DeleteCaseAsync(project!.Id, testCase.Number);
+            Nav.NavigateTo(TestUi.Cases(project.Key));
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

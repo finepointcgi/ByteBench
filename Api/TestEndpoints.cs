@@ -138,7 +138,7 @@ public static class TestEndpoints
                              "Documents with a DOCTYPE are refused. Closes the run and raises test_run.completed.")
             .WithJsonBody<UploadTestReportRequest>().Produces<TestIngestResultDto>(StatusCodes.Status201Created);
 
-        g.MapGet("/compare", Compare).WithName("CompareTestRuns").WithSummary("Compare two runs: ?from=<run>&to=<run>")
+        g.MapGet("/compare", Compare).WithName("CompareTestRuns").WithSummary("Compare two runs: ?a=<baseline run number>&b=<candidate run number>")
             .WithDescription("Per case: regressed (passed → failed/blocked), fixed, still failing, newly run, no longer run.");
         g.MapGet("/matrix", Matrix).WithName("GetTestMatrix").WithSummary("Cases against runs")
             .WithDescription("?runs=3,5,8 (run numbers) or ?count= latest runs (default 8); ?problems=true keeps only cases that failed somewhere.");
@@ -464,18 +464,18 @@ public static class TestEndpoints
 
     // ----- compare & matrix
 
-    private static async Task<TestCompareDto> Compare(HttpContext http, IssueService issues, TestService tests, PublicBaseUrl url, string key, int? from, int? to)
+    private static async Task<TestCompareDto> Compare(HttpContext http, IssueService issues, TestService tests, PublicBaseUrl url, string key, int? a, int? b)
     {
         var project = await ProjectAsync(issues, key);
-        if (from == null || to == null) throw ApiException.BadRequest("Give ?from=<run number>&to=<run number>.");
-        var c = await tests.CompareAsync(project.Id, from.Value, to.Value) ?? throw ApiException.NotFound("One of the runs was not found.");
-        var b = url.For(http.Request);
-        var sa = (await tests.GetRunAsync(project.Id, from.Value))!.Summary;
-        var sb = (await tests.GetRunAsync(project.Id, to.Value))!.Summary;
-        return new TestCompareDto(TestDtos.Run(c.A, sa, project.Key, b), TestDtos.Run(c.B, sb, project.Key, b),
+        if (a == null || b == null) throw ApiException.BadRequest("Give ?a=<run number>&b=<run number>.");
+        var c = await tests.CompareAsync(project.Id, a.Value, b.Value) ?? throw ApiException.NotFound("One of the runs was not found.");
+        var baseUrl = url.For(http.Request);
+        var sa = (await tests.GetRunAsync(project.Id, a.Value))!.Summary;
+        var sb = (await tests.GetRunAsync(project.Id, b.Value))!.Summary;
+        return new TestCompareDto(TestDtos.Run(c.A, sa, project.Key, baseUrl), TestDtos.Run(c.B, sb, project.Key, baseUrl),
             Enum.GetValues<TestChange>().ToDictionary(x => x.ToString().ToLowerInvariant(), x => c.Count(x)),
             c.Rows.Where(r => r.Change != TestChange.Unchanged).Select(r => new TestCompareRowDto(r.Case.Number, r.Case.Key, r.Case.Title,
-                r.A is { } a ? TestDtos.Status(a) : null, r.B is { } bb ? TestDtos.Status(bb) : null, r.Change.ToString().ToLowerInvariant())).ToList());
+                r.A is { } ra ? TestDtos.Status(ra) : null, r.B is { } rb ? TestDtos.Status(rb) : null, r.Change.ToString().ToLowerInvariant())).ToList());
     }
 
     private static async Task<TestMatrixDto> Matrix(HttpContext http, IssueService issues, TestService tests, PublicBaseUrl url, string key, string? runs, int? count, bool? problems)

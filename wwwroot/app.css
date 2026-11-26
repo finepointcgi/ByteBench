@@ -182,3 +182,10 @@ a.gb-issue-row.gb-kb-selected { box-shadow: inset 3px 0 0 var(--mud-palette-prim
 }
 .gb-gql-kind-operator, .gb-gql-kind-keyword { background: rgba(127, 127, 127, .16); color: var(--muted); }
 .gb-gql-kind-function { background: rgba(16, 185, 129, .16); color: #059669; }
+
+/* Test management (Components/Tests, Components/Pages/Tests): result colors shared by the pages and panels. */
+.ts-pass { color: var(--mud-palette-success); }
+.ts-fail { color: var(--mud-palette-error); }
+.ts-block { color: var(--mud-palette-warning-darken); }
+.ts-skip { color: var(--mud-palette-info); }
+.ts-none { color: var(--mud-palette-text-secondary); }

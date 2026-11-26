@@ -1,0 +1,212 @@
+@using ByteBench.Services.Attachments
+@using ByteBench.Services.Git
+@using ByteBench.Services.Packages
+@using ByteBench.Services.Releases
+@using ByteBench.Services.Signing
+@using ByteBench.Services.Ci
+@inject ReleaseHubService Hubs
+@inject ByteBench.Api.PublicBaseUrl PublicUrl
+@inject ISnackbar Snackbar
+@* Everything built from a release's tag, gathered in one place: provenance, CI builds and artifacts, packages and images, security, SBOM, tests, linked work. *@
+
+@if (hub != null)
+{
+    var r = hub.Release;
+    <MudPaper Outlined="true" Class="rh-panel pa-4 mt-3">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Release hub</MudText>
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@error</MudAlert> }
+        @if (hub.TagMissing) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">The tag '@r.TagName' no longer exists in the repository, so commit-based information is not available.</MudAlert> }
+
+        <div class="rh-facts">
+            @if (hub.CommitSha != null)
+            {
+                <span><MudIcon Icon="@Icons.Material.Outlined.Commit" Size="Size.Small" Class="rh-ico" /> <a class="mono" href="@RepoUrls.Commit(Repo, hub.CommitSha)">@hub.CommitSha[..10]</a></span>
+            }
+            @if (hub.Signature is { IsSigned: true } sig)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(sig.IsVerified ? Color.Success : Color.Warning)" Class="ma-0" title="@sig.Tooltip"
+                         Icon="@(sig.IsVerified ? Icons.Material.Filled.Verified : Icons.Material.Outlined.GppMaybe)">@sig.Label commit</MudChip>
+            }
+            else if (hub.Signature != null)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0" title="The tagged commit has no signature. Tag signatures themselves are not verified.">Unsigned commit</MudChip>
+            }
+            @if (hub.PreviousTag != null)
+            {
+                <span>since <a href="@hub.CompareUrl" class="mono">@hub.PreviousTag</a> · <a href="@hub.CompareUrl">compare changes</a></span>
+            }
+            <span><MudIcon Icon="@Icons.Material.Outlined.Download" Size="Size.Small" Class="rh-ico" /> @hub.TotalDownloads download@(hub.TotalDownloads == 1 ? "" : "s")</span>
+            @if (r.Assets.Count > 0)
+            {
+                <a href="@($"/api/v1/projects/{Repo.Project.Key}/repos/{Repo.Slug}/releases/{r.Id}/checksums")" download="SHA256SUMS">SHA256SUMS</a>
+            }
+        </div>
+
+        <div class="rh-grid">
+            <section aria-labelledby="rh-ci">
+                <h3 id="rh-ci" class="rh-h">CI builds &amp; artifacts</h3>
+                @if (hub.Pipelines.Count == 0) { <div class="rh-none">No pipeline ran on this commit.</div> }
+                @foreach (var p in hub.Pipelines)
+                {
+                    <div class="rh-row" @key="p.Id">
+                        <a href="@PipelineUrls.Detail(Repo, p.Id)">#@p.Id</a> <span class="rh-muted">@p.Ref · @p.Status.ToString().ToLowerInvariant()</span>
+                        @foreach (var a in p.Artifacts)
+                        {
+                            <div class="rh-sub">
+                                <MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" Class="rh-ico" /> @a.JobName · @a.FileCount file@(a.FileCount == 1 ? "" : "s") · @AttachmentFormat.Size(a.SizeBytes)@(a.Expired ? " · expired" : "")
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section aria-labelledby="rh-pk">
+                <h3 id="rh-pk" class="rh-h">Packages &amp; images</h3>
+                @if (hub.Packages.Count == 0) { <div class="rh-none">Nothing published from this tag.</div> }
+                @foreach (var p in hub.Packages)
+                {
+                    <div class="rh-row" @key="@($"{p.PackageId}/{p.Version}")">
+                        <a href="@PackageUrls.Detail(Repo.Project.Key, p.PackageId)">@p.Name</a> <span class="mono">@p.Version</span>
+                        <span class="rh-muted">@p.Type@(p.ByPipeline ? " · built by CI" : "")</span>
+                        @if (p.Type == PackageType.Container) { <div class="rh-sub mono">docker pull @PackageUrls.Image(PublicUrl.Value, Repo.Project.Key, p.Name):@p.Version</div> }
+                    </div>
+                }
+            </section>
+
+            <section aria-labelledby="rh-sec">
+                <h3 id="rh-sec" class="rh-h">Security scan</h3>
+                @if (hub.Security is { } s)
+                {
+                    <div class="rh-row">
+                        <a href="@ByteBench.Services.Security.SecurityUrls.Repo(Repo)">Pipeline #@s.PipelineId</a>
+                        <span class="rh-muted">scanned @Display.Ago(s.ScannedAt)</span>
+                        <div class="rh-sub">
+                            <span class="@(s.Critical > 0 ? "ts-fail" : "")">@s.Critical critical</span> ·
+                            <span class="@(s.High > 0 ? "ts-fail" : "")">@s.High high</span> · @s.Medium medium · @s.Low low · @s.Other other
+                            @if (s.Dismissed > 0) { <span class="rh-muted"> · @s.Dismissed dismissed</span> }
+                        </div>
+                    </div>
+                }
+                else { <div class="rh-none">No security scan for this commit.</div> }
+                <h3 class="rh-h mt-2">SBOM</h3>
+                @if (hub.Sboms.Count == 0) { <div class="rh-none">No SBOM attached. Add a file such as <span class="mono">app.cdx.json</span> to the assets.</div> }
+                @foreach (var a in hub.Sboms) { <div class="rh-row" @key="a.Id"><a href="@ReleaseUrls.Asset(a)">@a.FileName</a> <span class="rh-muted">@AttachmentFormat.Size(a.Size)</span></div> }
+            </section>
+
+            <section aria-labelledby="rh-test">
+                <h3 id="rh-test" class="rh-h">Tests</h3>
+                <ByteBench.Components.Tests.TestRunsPanel ProjectId="Repo.ProjectId" ProjectKey="@Repo.Project.Key" CommitSha="@hub.CommitSha" Tag="@r.TagName" ReleaseId="r.Id"
+                                                          Title="" ShowEmpty="true" EmptyText="No test runs for this tag or commit yet." />
+                <a href="@($"/p/{Repo.Project.Key}/tests/runs")" class="small">All test runs</a>
+            </section>
+        </div>
+
+        @if (hub.Issues.Count > 0 || hub.PullRequests.Count > 0)
+        {
+            <MudDivider Class="my-3" />
+            <div class="rh-grid">
+                @if (hub.Issues.Count > 0)
+                {
+                    <section aria-labelledby="rh-is">
+                        <h3 id="rh-is" class="rh-h">Issues in this version (@hub.Issues.Count)</h3>
+                        @foreach (var i in hub.Issues.Take(30))
+                        {
+                            <div class="rh-row" @key="i.Number"><a href="@($"/p/{Repo.Project.Key}/issues/{i.Number}")">@Repo.Project.Key-@i.Number</a> @i.Title <span class="rh-muted">@i.Status · @i.Via</span></div>
+                        }
+                    </section>
+                }
+                @if (hub.PullRequests.Count > 0)
+                {
+                    <section aria-labelledby="rh-pr">
+                        <h3 id="rh-pr" class="rh-h">Merged pull requests (@hub.PullRequests.Count)</h3>
+                        @foreach (var p in hub.PullRequests.Take(30))
+                        {
+                            <div class="rh-row" @key="p.Number"><a href="@RepoUrls.PullRequest(Repo, p.Number)">#@p.Number</a> @p.Title <span class="rh-muted">@p.Author</span></div>
+                        }
+                    </section>
+                }
+            </div>
+        }
+
+        @if (CanPush || CanManage)
+        {
+            <MudDivider Class="my-3" />
+            <h3 class="rh-h">Attach CI artifacts</h3>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+                Files from the artifacts of passed pipelines on this commit are copied onto the release as assets when it is published or when a pipeline passes later.
+                One glob per line, matched against paths inside the artifact (<span class="mono">dist/*.zip</span>, <span class="mono">**/*.nupkg</span>).
+            </MudText>
+            @if (CanManage)
+            {
+                <MudSwitch T="bool" @bind-Value="enabled" Label="Attach automatically" Color="Color.Primary" Size="Size.Small" />
+                <MudTextField T="string" @bind-Value="patterns" Label="Patterns" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+            }
+            else
+            {
+                <div class="mb-2 small">@(hub.AutoAttach is { Enabled: true } ? "Automatic attach is on." : "Automatic attach is off.") Patterns: <span class="mono">@(string.IsNullOrWhiteSpace(hub.AutoAttach?.Patterns) ? "none" : hub.AutoAttach!.Patterns.Replace("\n", ", "))</span></div>
+            }
+            <div class="d-flex gap-2 flex-wrap">
+                @if (CanManage) { <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="SaveRule">Save rule</MudButton> }
+                @if (CanPush) { <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@busy" OnClick="AttachNow" StartIcon="@Icons.Material.Outlined.AttachFile">Attach artifacts now</MudButton> }
+            </div>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public Repository Repo { get; set; } = null!;
+    [Parameter, EditorRequired] public int ReleaseId { get; set; }
+    [Parameter] public bool CanPush { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+    /// <summary>Raised after artifacts were attached, so the page reloads its asset list.</summary>
+    [Parameter] public EventCallback OnAttached { get; set; }
+
+    private ReleaseHub? hub;
+    private bool enabled, busy;
+    private string patterns = "";
+    private string? error;
+    private (int, int) loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedFor == (Repo.Id, ReleaseId)) return;
+        loadedFor = (Repo.Id, ReleaseId);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        hub = await Hubs.GetAsync(Repo, ReleaseId);
+        enabled = hub?.AutoAttach?.Enabled ?? false;
+        patterns = hub?.AutoAttach?.Patterns ?? "";
+    }
+
+    private async Task SaveRule()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            await Hubs.SaveAutoAttachAsync(Repo, enabled, patterns);
+            Snackbar.Add("Rule saved.", Severity.Success);
+            await Load();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task AttachNow()
+    {
+        error = null;
+        busy = true;
+        try
+        {
+            var result = await Hubs.AttachNowAsync(Repo, ReleaseId);
+            Snackbar.Add(result.Attached > 0 ? $"Attached {result.Attached} file(s): {string.Join(", ", result.Names)}." : result.Notes.FirstOrDefault() ?? "Nothing matched.", result.Attached > 0 ? Severity.Success : Severity.Info);
+            await Load();
+            await OnAttached.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

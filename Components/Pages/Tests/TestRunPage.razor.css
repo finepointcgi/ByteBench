@@ -1,0 +1,25 @@
+.rp-page { max-width: 1300px; }
+.rp-num { color: var(--mud-palette-text-secondary); font-size: .8em; }
+.rp-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; color: var(--mud-palette-text-secondary); font-size: 13px; margin-top: 4px; }
+.rp-ico { vertical-align: -4px; }
+.rp-summary { margin-bottom: 14px; }
+.rp-counts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; margin-top: 6px; }
+.rp-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+.rp-list { border: 1px solid var(--mud-palette-lines-default); border-radius: var(--mud-default-borderradius); max-height: 70vh; overflow: auto; outline: none; background: var(--mud-palette-surface); }
+.rp-list:focus-visible { outline: 2px solid var(--mud-palette-primary); outline-offset: 1px; }
+.rp-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; border-bottom: 1px solid var(--mud-palette-lines-default); }
+.rp-item:last-child { border-bottom: none; }
+.rp-item:hover { background: var(--mud-palette-action-default-hover); }
+.rp-item.selected { background: var(--mud-palette-primary-hover); box-shadow: inset 3px 0 0 var(--mud-palette-primary); }
+.rp-key { color: var(--mud-palette-text-secondary); font-size: 12px; flex: none; }
+.rp-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rp-empty { padding: 28px; text-align: center; color: var(--mud-palette-text-secondary); }
+.rp-block { margin-bottom: 12px; }
+.rp-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.rp-pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; margin: 0; max-height: 220px; overflow: auto; }
+.rp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.rp-bug { margin: 8px 0 12px; }
+.rp-evidence { display: flex; align-items: center; gap: 10px; }
+.rp-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+kbd { border: 1px solid var(--mud-palette-lines-default); border-radius: 3px; padding: 0 4px; font-size: 12px; background: var(--mud-palette-background-gray); }
+@media (max-width: 900px) { .rp-grid { grid-template-columns: 1fr; } }

@@ -1,0 +1,6 @@
+.ro-page { max-width: 1200px; }
+.ro-name { font-weight: 600; }
+.ro-tag { color: var(--mud-palette-text-secondary); font-size: 12px; margin: 0 6px; }
+::deep th.num, ::deep td.num { text-align: right; }
+.ro-empty { padding: 32px; text-align: center; color: var(--mud-palette-text-secondary); border: 1px dashed var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius); background: var(--mud-palette-surface); }
