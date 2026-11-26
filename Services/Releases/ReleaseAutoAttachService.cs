@@ -62,6 +62,7 @@ public class ReleaseAutoAttachService(IDbContextFactory<AppDbContext> dbFactory,
         var notes = new List<string>();
         var names = new List<string>();
         var rule = await GetRuleAsync(repo.Id);
+        if (rule == null && manual) { notes.Add("No patterns are configured. Add patterns such as dist/* or **/*.zip in the release's automatic attaching settings."); return new(0, names, notes); }
         if (rule == null || (!rule.Enabled && !manual)) return new(0, names, notes);
         var patterns = ParsePatterns(rule.Patterns);
         if (patterns.Count == 0) { notes.Add("No patterns are configured."); return new(0, names, notes); }
@@ -99,6 +100,8 @@ public class ReleaseAutoAttachService(IDbContextFactory<AppDbContext> dbFactory,
                     if (path.StartsWith('/') || path.Split('/').Any(s => s == "..")) continue;
                     if (!patterns.Any(p => CiArtifacts.Matches(p, path))) continue;
                     var name = AttachmentStorage.SanitizeFileName(entry.Name);
+                    // Newest pipeline first: the same file from an older pipeline of this run is simply superseded, not worth a warning.
+                    if (names.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
                     if (taken.Contains(name)) { notes.Add($"'{name}' skipped: the release already has an asset with that name."); continue; }
                     if (release.Assets.Count + added.Count >= ReleaseService.MaxAssetsPerRelease) { notes.Add($"Stopped: a release can have at most {ReleaseService.MaxAssetsPerRelease} assets."); goto done; }
                     if (total + Math.Max(0, entry.Length) > MaxBytesPerAttach) { notes.Add("Stopped: too much data to attach in one go."); goto done; }

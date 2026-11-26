@@ -59,7 +59,9 @@ public class ReleaseHubTests(TestApp app) : IClassFixture<TestApp>
         var hub = s.Get<ReleaseHubService>();
 
         // Without a rule nothing is attached by the publish path; the manual button reports there are no patterns.
-        Assert.Equal(0, (await hub.AttachNowAsync(t.Repo, t.ReleaseId)).Attached);
+        var none = await hub.AttachNowAsync(t.Repo, t.ReleaseId);
+        Assert.Equal(0, none.Attached);
+        Assert.Contains(none.Notes, n => n.Contains("No patterns are configured"));
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.SaveAutoAttachAsync(t.Repo, true, "dist/*.zip")); // Developer cannot manage repositories
 
         await using (var m = app.Scope(app.UserId(t.Maintainer)))
@@ -71,7 +73,9 @@ public class ReleaseHubTests(TestApp app) : IClassFixture<TestApp>
         var r = await hub.AttachNowAsync(t.Repo, t.ReleaseId);
         Assert.Equal(2, r.Attached);
         Assert.Equivalent(new[] { "app-1.2.0.zip", "app.cdx.json" }, r.Names);
-        Assert.Equal(0, (await hub.AttachNowAsync(t.Repo, t.ReleaseId)).Attached); // second time: already there
+        var again = await hub.AttachNowAsync(t.Repo, t.ReleaseId); // second time: already there
+        Assert.Equal(0, again.Attached);
+        Assert.All(again.Notes, n => Assert.Contains("already has an asset", n));
 
         var view = (await hub.GetAsync(t.Repo, t.ReleaseId))!;
         Assert.Equal(t.Sha, view.CommitSha);
@@ -83,6 +87,19 @@ public class ReleaseHubTests(TestApp app) : IClassFixture<TestApp>
         var sums = await hub.ChecksumsAsync(t.Repo, t.ReleaseId);
         Assert.Contains("  app-1.2.0.zip\n", sums);
         Assert.Contains(Convert.ToHexStringLower(SHA256.HashData("zipdata"u8)), sums);
+    }
+
+    [Fact]
+    public async Task The_same_file_from_two_pipelines_is_attached_once_without_a_contradicting_skip_note()
+    {
+        var t = await SetupAsync("v1.5.0");
+        await using (var m = app.Scope(app.UserId(t.Maintainer))) await m.Get<ReleaseHubService>().SaveAutoAttachAsync(t.Repo, true, "dist/*");
+        await PipelineWithArtifactAsync(t, ("dist/app.zip", "old"));
+        await PipelineWithArtifactAsync(t, ("dist/app.zip", "new"));
+        await using var s = app.Scope(app.UserId(t.Dev));
+        var result = await s.Get<ReleaseHubService>().AttachNowAsync(t.Repo, t.ReleaseId);
+        Assert.Equal(["app.zip"], result.Names);
+        Assert.Empty(result.Notes); // "attached 1" next to "skipped: already has app.zip" read like a failure
     }
 
     [Fact]

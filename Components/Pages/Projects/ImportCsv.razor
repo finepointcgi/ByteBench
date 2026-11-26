@@ -20,7 +20,7 @@ else if (project != null && !canImport)
 else if (project != null)
 {
 <div class="ci-page">
-    <MudText Typo="Typo.h5" Class="ci-title">Import issues from CSV</MudText>
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="ci-title">Import issues from CSV</MudText>
     <MudText Class="mud-text-secondary mb-4" Typo="Typo.body2">
         Into @project.Name. The first row names the columns. At most @Importer.Limits.MaxRows.ToString("N0") rows and @(Importer.Limits.MaxBytes / 1024) KB;
         all rows are imported together, or none.

@@ -13,6 +13,7 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
+<a class="gb-skip-link" href="#main-content">Skip to main content</a>
 <MudLayout>
     <MudAppBar Elevation="0" Dense="true" Class="gb-appbar">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => drawerOpen = !drawerOpen" aria-label="Toggle navigation" />
@@ -166,7 +167,7 @@
     </MudDrawer>
 
     <MudMainContent>
-        <div class="gb-content">
+        <div class="gb-content" id="main-content" role="main" tabindex="-1">
             @* Render once the user is loaded, even when signed out, so RedirectToLogin can run. *@
             @if (userLoaded)
             {

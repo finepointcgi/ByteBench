@@ -5,6 +5,7 @@
 @inject ByteBench.Services.Explore.UserActivityService Feed
 @inject ByteBench.Services.Dashboards.DashboardService Dashboards
 @inject NavigationManager Nav
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<ByteBench.Data.AppDbContext> DbFactory
 @implements IDisposable
 
 <PageTitle>Dashboard · ByteBench</PageTitle>
@@ -17,6 +18,13 @@
 else
 {
 <div class="dash">
+@if (noAdminYet)
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4" role="status">
+        This ByteBench has no site administrator yet. To make yourself one, restart the server once with
+        <code>Bootstrap__AdminUsers=@Me.User?.UserName</code> (see Installation in the documentation). Until then nobody can manage users, backups or settings.
+    </MudAlert>
+}
 <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-5">
     <MudText Typo="Typo.h5" Class="dash-title">Welcome back, @Me.User?.DisplayName.Split(' ')[0]</MudText>
     <div class="d-flex align-center flex-wrap gap-2">
@@ -114,6 +122,16 @@ else
     {
         homeId = (await Dashboards.GetHomeAsync())?.Dashboard.Id;
         if (homeId == null) await Load();
+        await CheckForAdminAsync();
+    }
+
+    // A fresh install has nobody with admin rights, and nothing in the UI says how to fix that.
+    private bool noAdminYet;
+    private async Task CheckForAdminAsync()
+    {
+        if (Me.User is not { IsAdmin: false }) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        noAdminYet = !await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AnyAsync(db.Users, u => u.IsAdmin);
     }
 
     private async Task ShowDefault()

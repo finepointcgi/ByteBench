@@ -192,3 +192,8 @@ a.gb-issue-row.gb-kb-selected { box-shadow: inset 3px 0 0 var(--mud-palette-prim
 
 /* The current page in a breadcrumb trail is MudBlazor's "disabled" style (contrast ~2.3:1 on both themes): keep it readable. */
 .mud-breadcrumb-item.mud-disabled > a, .mud-breadcrumb-item.mud-disabled > a:hover { color: var(--mud-palette-text-secondary); opacity: 1; }
+
+/* Keyboard users: the first Tab stop jumps past the app bar and the navigation to the page content. */
+.gb-skip-link { position: absolute; left: 8px; top: -48px; z-index: 2000; padding: 8px 14px; border-radius: 6px; background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); text-decoration: none; font-weight: 600; }
+.gb-skip-link:focus { top: 8px; }
+#main-content:focus { outline: none; }

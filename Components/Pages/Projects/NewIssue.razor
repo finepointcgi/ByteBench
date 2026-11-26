@@ -19,7 +19,7 @@ else if (project != null)
 {
 <div class="ni-page">
     <MudBreadcrumbs Items="crumbs" Class="px-0 pt-0 pb-2" />
-    <MudText Typo="Typo.h5" Class="ni-title mb-4">New issue <span class="ni-muted">in @project.Name</span></MudText>
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="ni-title mb-4">New issue <span class="ni-muted">in @project.Name</span></MudText>
 
     <ByteBench.Components.Fields.IssueTemplatePicker Project="project" Issue="issue" LabelIds="labelIds" OnApplied="StateHasChanged" />
     <ByteBench.Components.Ai.AiIssueDraft Project="project" Issue="issue" LabelIds="labelIds" OnApplied="DraftApplied" />
