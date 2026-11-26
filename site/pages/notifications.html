@@ -81,6 +81,7 @@
 <p>The switch <strong>Send notifications to my subscribed browsers</strong> and the group checkboxes choose what is pushed. By default: assigned to me, mentions and review requests. Groups set to <strong>Off</strong> above and muted items are never pushed. Clicking a notification opens the item, focusing an open ByteBench tab when there is one.</p>
 <ul>
 <li>Pushes are sent in the background, so a slow push service never slows down the page that caused the notification.</li>
+<li>When your browser replaces a subscription on its own (it rotates or expires), the service worker subscribes again and swaps it on the server without you doing anything, as long as you are still signed in.</li>
 <li>If a browser's subscription has expired, or delivery fails five times in a row, it is removed. If a push service asks ByteBench to slow down, that browser is skipped for the time it asks.</li>
 <li>When the browser does not support push, you blocked notifications for the site, or the site is not served over HTTPS, the page says so instead of showing the button.</li>
 <li><strong>iPhone and iPad:</strong> push works only from the installed web app (iOS 16.4 or later). In Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>, open ByteBench from the Home Screen and enable notifications there.</li>

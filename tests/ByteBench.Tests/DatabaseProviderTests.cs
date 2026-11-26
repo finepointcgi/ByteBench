@@ -127,6 +127,11 @@ public class DatabaseProviderTests
         Assert.Contains(weak, c => c.Key == "DataProtection:KeysPath");
         Assert.Contains(weak, c => c.Key == "Backup:Enabled");
 
+        Assert.DoesNotContain(weak, c => c.Key == "Deployment:Instances");
+        var scaled = ProductionChecks.Evaluate(Config(("Deployment:Instances", "3")), prod);
+        Assert.Contains(scaled, c => c is { Key: "Deployment:Instances", Severity: CheckSeverity.Warning });
+        Assert.DoesNotContain(ProductionChecks.Evaluate(Config(("Deployment:Instances", "1")), prod), c => c.Key == "Deployment:Instances");
+
         var proxyless = ProductionChecks.Evaluate(Config(("PublicBaseUrl", "https://git.example.com")), prod);
         Assert.Contains(proxyless, c => c.Key == "ReverseProxy:Enabled");
 

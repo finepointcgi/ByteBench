@@ -21,6 +21,23 @@ public static class OpenRedirectCases
         "/\n/evil.example/phish",
         "/\r\n/evil.example/phish",
         "/\t\\evil.example/phish",
+        "/\t/\tevil.example",
+        "/\\evil.example",
+        "/a\\..\\..\\evil.example",
+        "//evil.example",
+        "/%2F/evil.example",
+        "/%2f/evil.example",
+        "/%5Cevil.example",
+        "/%09/evil.example",
+        "/\u2028/evil.example",
+    };
+
+    public static readonly TheoryData<string?> Rejected = new()
+    {
+        null, "", "evil.example", "http://evil.example", "https://evil.example/x", "javascript:alert(1)", "\\evil.example",
+        " /evil.example", "\t/evil.example", "/\0/evil.example", "/\u007f", "/ok\r\nSet-Cookie: x=1",
+        "/\t/evil.example/phish", "/\n/evil.example", "/\r/evil.example", "/\\evil.example", "//evil.example", "///evil.example",
+        "/%2F/evil.example", "/%5c/evil.example", "/x\\evil.example",
     };
 
     /// <summary>What a browser does with a Location value: strips ASCII tab/newline and resolves it against the site.</summary>
@@ -67,4 +84,28 @@ public class SamlOpenRedirectTests(SamlTestApp app) : IClassFixture<SamlTestApp>
     [MemberData(nameof(OpenRedirectCases.Tricks), MemberType = typeof(OpenRedirectCases))]
     public void Sso_return_url_guard_rejects_control_characters(string returnUrl) =>
         Assert.Equal("/", SsoService.SafeReturnUrl(returnUrl));
+}
+
+
+public class ReturnUrlGuardTests
+{
+    [Theory]
+    [MemberData(nameof(OpenRedirectCases.Rejected), MemberType = typeof(OpenRedirectCases))]
+    public void Open_redirect_payloads_are_not_local(string? url)
+    {
+        Assert.False(ByteBench.Components.Account.AccountUrls.IsLocal(url));
+        Assert.Equal("/", ByteBench.Components.Account.AccountUrls.SafeReturnUrl(url));
+        Assert.Equal("/", SsoService.SafeReturnUrl(url));
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/projects/alice/repo")]
+    [InlineData("/projects/a/b/pulls/3?tab=files&x=%20y#c1")]
+    [InlineData("/oauth/authorize?client_id=x&redirect_uri=https%3A%2F%2Fa.example%2Fcb")]
+    public void Plain_local_paths_are_kept(string url)
+    {
+        Assert.True(ByteBench.Components.Account.AccountUrls.IsLocal(url));
+        Assert.Equal(url, SsoService.SafeReturnUrl(url));
+    }
 }

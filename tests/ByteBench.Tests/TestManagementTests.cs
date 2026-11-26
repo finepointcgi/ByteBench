@@ -190,6 +190,83 @@ public class TestManagementTests(TestApp app) : IClassFixture<TestApp>
         await Assert.ThrowsAsync<ForbiddenException>(() => v.Get<TestService>().CreateBugAsync(t.Project.Id, run.Number, c.Number));
     }
 
+    [Fact]
+    public async Task Recording_a_result_is_audited_and_a_bug_joins_the_cases_linked_issues()
+    {
+        var t = await SetupAsync();
+        TestCase c;
+        await using (var s0 = app.Scope(app.UserId(t.Dev)))
+            c = await s0.Get<TestService>().CreateCaseAsync(t.Project.Id, new TestCaseInput { Title = "Linked", Steps = "s", Expected = "e", LinkedIssues = "" });
+        await using var s = app.Scope(app.UserId(t.Dev));
+        var svc = s.Get<TestService>();
+        var run = await svc.CreateRunAsync(t.Project.Id, new TestRunInput { Name = "Audit run" });
+        await svc.RecordResultAsync(t.Project.Id, run.Number, c.Number, TestResultStatus.Failed, "nope");
+        await using (var db = app.Db())
+            Assert.Contains("Failed", (await db.AuditEvents.SingleAsync(e => e.Action == "test_result.recorded" && e.ProjectId == t.Project.Id)).Details);
+
+        var n = await svc.CreateBugAsync(t.Project.Id, run.Number, c.Number);
+        await using (var db = app.Db())
+            Assert.Equal(n.ToString(), (await db.TestCases.AsNoTracking().FirstAsync(x => x.Id == c.Id)).LinkedIssues);
+        // A second bug from another run is appended, the first stays.
+        var run2 = await svc.CreateRunAsync(t.Project.Id, new TestRunInput { Name = "Second" });
+        await svc.RecordResultAsync(t.Project.Id, run2.Number, c.Number, TestResultStatus.Blocked, "again");
+        var n2 = await svc.CreateBugAsync(t.Project.Id, run2.Number, c.Number);
+        await using (var db = app.Db())
+            Assert.Equal(string.Join(",", new[] { n, n2 }.Order()), (await db.TestCases.AsNoTracking().FirstAsync(x => x.Id == c.Id)).LinkedIssues);
+    }
+
+    private async Task<List<Notification>> RunNotificationsAsync(int userId, int projectId)
+    {
+        await using var db = app.Db();
+        return await db.Notifications.AsNoTracking().Where(n => n.UserId == userId && n.ProjectId == projectId && n.Kind == NotificationKind.TestRunCompleted).ToListAsync();
+    }
+
+    [Fact]
+    public async Task Closing_someone_elses_run_notifies_its_starter_unless_they_turned_the_group_off()
+    {
+        var t = await SetupAsync();
+        await NewCaseAsync(t, "N1");
+        int devRun, devRun2;
+        await using (var s = app.Scope(app.UserId(t.Dev)))
+        {
+            devRun = (await s.Get<TestService>().CreateRunAsync(t.Project.Id, new TestRunInput { Name = "Mine" })).Number;
+            devRun2 = (await s.Get<TestService>().CreateRunAsync(t.Project.Id, new TestRunInput { Name = "Mine too" })).Number;
+            await s.Get<TestService>().RecordResultAsync(t.Project.Id, devRun, 1, TestResultStatus.Failed, null);
+            // Closing your own manual run says nothing.
+            await s.Get<TestService>().SetRunClosedAsync(t.Project.Id, devRun, true);
+            await s.Get<TestService>().SetRunClosedAsync(t.Project.Id, devRun, false);
+        }
+        Assert.Empty(await RunNotificationsAsync(app.UserId(t.Dev), t.Project.Id));
+
+        await using (var m = app.Scope(app.UserId(t.Maintainer)))
+            await m.Get<TestService>().SetRunClosedAsync(t.Project.Id, devRun, true);
+        var got = Assert.Single(await RunNotificationsAsync(app.UserId(t.Dev), t.Project.Id));
+        Assert.Contains("Mine", got.Title);
+        Assert.Contains("1 failed", got.Excerpt);
+        Assert.EndsWith($"/tests/runs/{devRun}", got.Url);
+
+        // The starter turned the "Pipelines & deployments" group off: nothing is delivered.
+        await using (var db = app.Db())
+        {
+            db.NotificationPreferences.Add(new NotificationPreference { UserId = app.UserId(t.Dev), Group = NotificationGroup.Pipelines, Channel = NotificationChannel.Off });
+            await db.SaveChangesAsync();
+        }
+        await using (var m = app.Scope(app.UserId(t.Maintainer)))
+            await m.Get<TestService>().SetRunClosedAsync(t.Project.Id, devRun2, true);
+        Assert.Single(await RunNotificationsAsync(app.UserId(t.Dev), t.Project.Id));
+    }
+
+    [Fact]
+    public async Task An_ingested_run_notifies_the_person_whose_token_posted_it()
+    {
+        var t = await SetupAsync();
+        await using var s = app.Scope(app.UserId(t.Dev));
+        var r = await s.Get<TestService>().IngestAsync(t.Project.Id, new TestIngestInput { Content = """<testsuite><testcase name="a"/><testcase name="b"><failure/></testcase></testsuite>""", Name = "CI" });
+        var got = Assert.Single(await RunNotificationsAsync(app.UserId(t.Dev), t.Project.Id));
+        Assert.Contains("1 failed", got.Excerpt);
+        Assert.EndsWith($"/tests/runs/{r.RunNumber}", got.Url);
+    }
+
     // ---------------------------------------------------------------- ingestion
 
     private const string Report = """

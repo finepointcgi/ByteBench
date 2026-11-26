@@ -23,14 +23,27 @@ RUN apt-get update \
 
 # Optional docker CLI for CI pipelines and Workspaces (talks to a daemon through a mounted socket or DOCKER_HOST). The workspace
 # image's build context ships in /app/docker/workspace, so ByteBench builds the image itself on first use (README "Workspaces").
-# docker build --build-arg WITH_DOCKER_CLI=true -t bytebench .
+# docker build --build-arg WITH_DOCKER_CLI=true --build-arg DOCKER_CLI_SHA256_X86_64=<sha256> -t bytebench .
 ARG WITH_DOCKER_CLI=false
 ARG DOCKER_CLI_VERSION=27.3.1
-RUN if [ "$WITH_DOCKER_CLI" = "true" ]; then \
-        arch="$(uname -m)" \
-        && curl -fsSL "https://download.docker.com/linux/static/stable/${arch}/docker-${DOCKER_CLI_VERSION}.tgz" \
-           | tar -xz -C /usr/local/bin --strip-components=1 docker/docker \
-        && docker --version; \
+# The static tarball is only unpacked when its SHA-256 matches. There is no default hash in this file on purpose: compute it
+# once from a download you trust (sha256sum docker-${DOCKER_CLI_VERSION}.tgz, for each architecture you build for) and pass it
+# with --build-arg DOCKER_CLI_SHA256_X86_64=... --build-arg DOCKER_CLI_SHA256_AARCH64=... ; the build fails without it.
+ARG DOCKER_CLI_SHA256_X86_64=
+ARG DOCKER_CLI_SHA256_AARCH64=
+RUN set -eu; if [ "$WITH_DOCKER_CLI" = "true" ]; then \
+        arch="$(uname -m)"; \
+        case "$arch" in \
+            x86_64)  want="${DOCKER_CLI_SHA256_X86_64}" ;; \
+            aarch64) want="${DOCKER_CLI_SHA256_AARCH64}" ;; \
+            *) echo "WITH_DOCKER_CLI: unsupported architecture $arch" >&2; exit 1 ;; \
+        esac; \
+        if [ -z "$want" ]; then echo "WITH_DOCKER_CLI=true needs --build-arg DOCKER_CLI_SHA256_X86_64 / DOCKER_CLI_SHA256_AARCH64 (SHA-256 of docker-${DOCKER_CLI_VERSION}.tgz)" >&2; exit 1; fi; \
+        curl -fsSL -o /tmp/docker.tgz "https://download.docker.com/linux/static/stable/${arch}/docker-${DOCKER_CLI_VERSION}.tgz"; \
+        echo "${want}  /tmp/docker.tgz" | sha256sum -c -; \
+        tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 docker/docker; \
+        rm /tmp/docker.tgz; \
+        docker --version; \
     fi
 
 # All state lives under /data (one volume per kind, see docker-compose.yml), owned by the non-root "app" user (uid 1654).

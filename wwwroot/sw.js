@@ -35,6 +35,39 @@ self.addEventListener('push', event => {
     }));
 });
 
+function keyBytes(base64url) {
+    const s = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(s + '='.repeat((4 - s.length % 4) % 4));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+// The browser rotated or expired the subscription: subscribe again with the same server key and tell the server, which swaps the
+// old endpoint for the new one. The session cookie authenticates it; if the user is signed out the server answers 401 and the
+// next visit to the notification settings shows the browser as not subscribed.
+async function resubscribe(event) {
+    const old = event.oldSubscription || null;
+    let sub = event.newSubscription || null;
+    if (!sub) {
+        let key = old && old.options && old.options.applicationServerKey ? new Uint8Array(old.options.applicationServerKey) : null;
+        if (!key) {
+            const res = await fetch('/push/vapid-public-key', { credentials: 'same-origin' });
+            if (!res.ok) return;
+            key = keyBytes((await res.json()).publicKey);
+        }
+        sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    }
+    await fetch('/push/resubscribe', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-ByteBench-Push': 'resubscribe' },
+        body: JSON.stringify({ oldEndpoint: old ? old.endpoint : null, subscription: sub.toJSON() }),
+    });
+}
+
+self.addEventListener('pushsubscriptionchange', event => {
+    event.waitUntil(resubscribe(event).catch(() => { /* retried on the next change; the settings page shows the real state */ }));
+});
+
 self.addEventListener('notificationclick', event => {
     event.notification.close();
     const url = safeUrl(event.notification.data && event.notification.data.url);

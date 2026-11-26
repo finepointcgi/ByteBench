@@ -50,7 +50,7 @@ public class NotificationPreferences(IDbContextFactory<AppDbContext> dbFactory)
             => NotificationGroup.WatchedChanges,
         NotificationKind.IssueLinked or NotificationKind.IssueHierarchyChanged => NotificationGroup.IssueLinks,
         NotificationKind.PipelineFailed or NotificationKind.SecurityFindings or NotificationKind.DeploymentApprovalRequested or NotificationKind.DeploymentApproved
-            or NotificationKind.DeploymentRejected or NotificationKind.PagesDeployed => NotificationGroup.Pipelines,
+            or NotificationKind.DeploymentRejected or NotificationKind.PagesDeployed or NotificationKind.TestRunCompleted => NotificationGroup.Pipelines,
         _ => NotificationGroup.WatchedChanges, // a new kind lands somewhere sensible until it gets its own group
     };
 

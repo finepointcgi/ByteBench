@@ -506,10 +506,11 @@ else if (pr != null)
     private bool ShowAutoMerge => pr?.State == PullRequestState.Open && !pr.Repository.IsArchived && perms.Can(Permission.MergePullRequest)
                                   && (pr.IsDraft || gate is { Blocked: true } || mergeStatus?.Check == MergeCheck.Conflicts);
 
-    private Severity MergeSeverity => mergeStatus?.Check switch
+    private Severity MergeSeverity => MergeStatusText.Severity(mergeStatus?.Check, gate) switch
     {
-        MergeCheck.Clean => Severity.Success,
-        MergeCheck.Conflicts or MergeCheck.MissingBranch => Severity.Error,
+        MergeStatusText.Level.Success => Severity.Success,
+        MergeStatusText.Level.Warning => Severity.Warning,
+        MergeStatusText.Level.Error => Severity.Error,
         _ => Severity.Normal,
     };
 
@@ -521,14 +522,7 @@ else if (pr != null)
         new($"#{pr.Number}", null, disabled: true),
     ];
 
-    private string MergeText => pr?.Repository.IsArchived == true ? "This repository is archived (read-only), so pull requests can't be merged." : mergeStatus?.Check switch
-    {
-        MergeCheck.Clean => mergeStatus.CanFastForward ? "Ready to merge (can fast-forward)." : "Ready to merge. No conflicts.",
-        MergeCheck.Conflicts => "This pull request has conflicts and can't be merged. Resolve them locally and push.",
-        MergeCheck.UpToDate => "Nothing to merge: " + mergeStatus.Message,
-        MergeCheck.MissingBranch => mergeStatus.Message ?? "",
-        _ => "Checking…",
-    };
+    private string MergeText => MergeStatusText.Describe(mergeStatus?.Check, mergeStatus?.CanFastForward == true, mergeStatus?.Message, gate, pr?.Repository.IsArchived == true);
 
     private IEnumerable<object> Timeline => pr!.Comments.Select(c => (when: c.CreatedAt, item: (object)c))
         .Concat(pr.Activities.Where(a => a.Text != "opened this pull request").Select(a => (when: a.CreatedAt, item: (object)a)))

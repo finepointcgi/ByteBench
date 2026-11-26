@@ -34,6 +34,8 @@ public sealed class DigestEmailSender : IEmailSender
 public sealed class DigestTestApp : TestApp
 {
     public DigestEmailSender Mail { get; } = new();
+    /// <summary>A "Pipeline" merge check the tests set per pull request (the digest's "failing check" and "ready to merge" notes).</summary>
+    public ControllableCheck Check { get; } = new();
 
     protected override void AddSettings(IDictionary<string, string?> settings)
     {
@@ -47,6 +49,7 @@ public sealed class DigestTestApp : TestApp
     {
         services.RemoveAll<IEmailSender>();
         services.AddSingleton<IEmailSender>(Mail);
+        services.AddSingleton<IMergeCheck>(Check);
     }
 }
 
@@ -350,6 +353,132 @@ public class DigestTests(DigestTestApp app) : IClassFixture<DigestTestApp>
         Assert.DoesNotContain("Due in a month", mail.Html);
         Assert.DoesNotContain("Done already", mail.Html);
         Assert.Contains("1 due soon", mail.Subject);
+    }
+
+    /// <summary>An open pull request by <paramref name="author"/> in <paramref name="project"/> (a new repository with a feature branch).</summary>
+    private async Task<PullRequest> NewPullRequestAsync(Project project, string author, string title, bool draft = false)
+    {
+        var repo = await app.CreateRepoAsync(project.Id, "alice", "r" + Guid.NewGuid().ToString("N")[..8]);
+        app.Commit(repo, "main", "README.md", "# Hello\n", message: "base");
+        var branch = "feature/" + Guid.NewGuid().ToString("N")[..6];
+        app.Commit(repo, branch, "a.txt", "a", from: "main", message: "add a");
+        await using var s = app.Scope(app.UserId(author));
+        return await s.Get<PullRequestService>().CreateAsync(repo, title, null, branch, "main", app.UserId(author), draft: draft);
+    }
+
+    private async Task MarkAllReadAsync(User user)
+    {
+        await using var db = app.Db();
+        await db.Notifications.Where(n => n.UserId == user.Id).ExecuteUpdateAsync(x => x.SetProperty(n => n.IsRead, true));
+    }
+
+    private async Task<DigestContent> BuildAsync(User user)
+    {
+        await using var s = app.Scope();
+        return (await s.Get<DigestBuilder>().BuildAsync(user.Id, DigestFrequency.Daily, T0))!;
+    }
+
+    [Fact]
+    public async Task Pull_requests_waiting_for_my_review_are_listed_until_i_review_and_drafts_are_left_out()
+    {
+        var user = await NewUserAsync();
+        var project = await ProjectWithAsync(user);
+        var hostile = "<img src=x onerror=alert(1)> Please review";
+        var waiting = await NewPullRequestAsync(project, "alice", hostile);
+        var draft = await NewPullRequestAsync(project, "alice", "Draft work", draft: true);
+        var own = await NewPullRequestAsync(project, "alice", "Not requested");
+        await using (var db = app.Db())
+        {
+            db.PullRequestReviewers.AddRange(
+                new PullRequestReviewer { PullRequestId = waiting.Id, UserId = user.Id },
+                new PullRequestReviewer { PullRequestId = draft.Id, UserId = user.Id });
+            await db.SaveChangesAsync();
+        }
+        await MarkAllReadAsync(user);
+
+        var content = await BuildAsync(user);
+        Assert.Equal(1, content.ReviewTotal);
+        Assert.Contains(hostile, content.Reviews[0].Text);
+        Assert.StartsWith($"/p/{project.Key}/repos/", content.Reviews[0].Url);
+        Assert.EndsWith($"/pull-requests/{waiting.Number}", content.Reviews[0].Url);
+        Assert.DoesNotContain(content.Reviews, i => i.Text.Contains("Draft work") || i.Text.Contains("Not requested"));
+
+        await EnableAsync(user);
+        await Digests.RunOnceAsync(T0.AddMinutes(1));
+        var mail = Assert.Single(app.Mail.DigestsTo(user.Email!));
+        Assert.Contains("1 to review", mail.Subject);
+        Assert.Contains("Pull requests waiting for your review (1)", mail.Html);
+        Assert.Contains("&lt;img src=x onerror=alert(1)&gt; Please review", mail.Html);
+        Assert.DoesNotContain("<img src=x", mail.Html);
+
+        // Once I have reviewed it, it's gone.
+        await using (var s = app.Scope(app.UserId(user.UserName!)))
+            await s.Get<PullRequestService>().SetReviewAsync(waiting.Id, user.Id, ReviewState.Approved);
+        Assert.Equal(0, (await BuildAsync(user)).ReviewTotal);
+    }
+
+    [Fact]
+    public async Task My_pull_requests_show_when_ready_to_merge_or_failing_and_respect_the_groups()
+    {
+        var user = await NewUserAsync();
+        var project = await ProjectWithAsync(user);
+        var ready = await NewPullRequestAsync(project, user.UserName!, "Ready one");
+        var failing = await NewPullRequestAsync(project, user.UserName!, "Failing one");
+        var idle = await NewPullRequestAsync(project, user.UserName!, "Idle one");
+        var draft = await NewPullRequestAsync(project, user.UserName!, "Draft one", draft: true);
+        app.Check.Set(ready.Id, MergeCheckState.Passed);
+        app.Check.Set(failing.Id, MergeCheckState.Failed);
+        app.Check.Set(idle.Id, MergeCheckState.Passed); // passing but nobody approved it
+        app.Check.Set(draft.Id, MergeCheckState.Passed);
+        await using (var s = app.Scope(app.UserId("alice")))
+        {
+            foreach (var pr in new[] { ready, failing, draft }) await s.Get<PullRequestService>().SetReviewAsync(pr.Id, app.UserId("alice"), ReviewState.Approved);
+        }
+        await MarkAllReadAsync(user);
+
+        var content = await BuildAsync(user);
+        Assert.Equal(2, content.MyPullRequestTotal);
+        Assert.Contains(content.MyPullRequests, i => i.Text.Contains("Ready one") && i.Note == "ready to merge");
+        Assert.Contains(content.MyPullRequests, i => i.Text.Contains("Failing one") && i.Note!.StartsWith("failing: ") && i.Note.Contains("Pipeline"));
+        Assert.DoesNotContain(content.MyPullRequests, i => i.Text.Contains("Idle one") || i.Text.Contains("Draft one"));
+
+        var mail = DigestBuilder.Compose(content, p => "http://digest.test" + p, "http://digest.test/u");
+        Assert.Contains("Your pull requests (2)", mail.Html);
+        Assert.Contains("ready to merge", mail.Text);
+
+        // Pipelines group off: only the "ready" PR remains. Reviews group off as well: the section is empty.
+        await using (var db = app.Db())
+        {
+            db.NotificationPreferences.Add(new NotificationPreference { UserId = user.Id, Group = NotificationGroup.Pipelines, Channel = NotificationChannel.Off });
+            await db.SaveChangesAsync();
+        }
+        var noPipelines = await BuildAsync(user);
+        Assert.Equal(1, noPipelines.MyPullRequestTotal);
+        Assert.Equal("ready to merge", noPipelines.MyPullRequests[0].Note);
+        await using (var db = app.Db())
+        {
+            db.NotificationPreferences.Add(new NotificationPreference { UserId = user.Id, Group = NotificationGroup.Reviews, Channel = NotificationChannel.Off });
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(0, (await BuildAsync(user)).MyPullRequestTotal);
+    }
+
+    [Fact]
+    public async Task Pull_requests_of_a_project_I_left_are_not_in_the_digest()
+    {
+        var user = await NewUserAsync();
+        var project = await ProjectWithAsync(user);
+        var pr = await NewPullRequestAsync(project, "alice", "Soon hidden");
+        await using (var db = app.Db())
+        {
+            db.PullRequestReviewers.Add(new PullRequestReviewer { PullRequestId = pr.Id, UserId = user.Id });
+            await db.SaveChangesAsync();
+        }
+        await MarkAllReadAsync(user);
+        Assert.Equal(1, (await BuildAsync(user)).ReviewTotal);
+        await using (var s = app.Scope(app.UserId("alice")))
+            await s.Get<MemberService>().RemoveMemberAsync(project.Id, user.Id);
+        Assert.Equal(0, (await BuildAsync(user)).ReviewTotal);
     }
 
     [Fact]

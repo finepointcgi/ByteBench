@@ -255,6 +255,9 @@ public enum NotificationKind
 
     /// <summary>An armed "merge when ready" was cancelled (to the person who armed it).</summary>
     AutoMergeCancelled,
+
+    /// <summary>A test run was closed or ingested (to the person who started it; Services/Tests).</summary>
+    TestRunCompleted,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="ByteBench.Services.NotificationService"/>.</summary>

@@ -94,6 +94,7 @@ const timeoutSeconds = 30;
 <ul>
   <li><strong>Draft</strong>: a draft can never merge.</li>
   <li><strong>Conflicts</strong>: ByteBench computes the merge in memory; conflicting files are listed and nothing is written.</li>
+  <li><strong>Status line</strong>: a green <em>Ready to merge</em> appears only when nothing blocks the merge. A conflict-free PR that branch protection or a merge check still blocks reads <em>No conflicts, but merging is blocked</em> (amber), with the reasons listed underneath.</li>
   <li><strong>Approvals</strong>, <strong>Change requests</strong>, <strong>Threads</strong> and <strong>Code owners</strong>, from the target branch's <a href="branch-protection.html">protection rule</a>.</li>
   <li><strong>External checks</strong> such as the CI pipeline, which block when pending or failed if the rule has <em>Require checks to pass</em>. A neutral result never blocks. Pipelines are described in <a href="ci.html">CI pipelines</a>.</li>
   <li><strong>Signed commits</strong>: with <em>Require signed commits</em> on the target branch, every commit the PR brings must be Verified (see <a href="signed-commits.html">Signed commits</a>).</li>

@@ -460,6 +460,55 @@ public class WebPushTests(PushTestApp app) : IClassFixture<PushTestApp>, IDispos
     }
 
     [Fact]
+    public async Task Resubscribe_swaps_the_old_endpoint_for_the_new_one_and_needs_sign_in_and_the_header()
+    {
+        using var oldBrowser = push.NewBrowser();
+        using var newBrowser = push.NewBrowser();
+        using var otherBrowser = push.NewBrowser();
+        var user = await NewUserAsync();
+        var other = await NewUserAsync();
+        await SubscribeAsync(user.Id, oldBrowser);
+        await SubscribeAsync(other.Id, otherBrowser);
+        object Body(string? old) => new { oldEndpoint = old, subscription = new { endpoint = newBrowser.Endpoint, keys = new { p256dh = newBrowser.P256dh, auth = newBrowser.AuthText } } };
+        HttpRequestMessage Req(string? old, bool header = true)
+        {
+            var r = new HttpRequestMessage(HttpMethod.Post, "/push/resubscribe") { Content = JsonContent.Create(Body(old)) };
+            if (header) r.Headers.Add("X-ByteBench-Push", "resubscribe");
+            return r;
+        }
+
+        var anonymous = app.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.SendAsync(Req(oldBrowser.Endpoint))).StatusCode);
+
+        var client = await app.CookieClientAsync(user.UserName!);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(Req(oldBrowser.Endpoint, header: false))).StatusCode);
+        var cross = Req(oldBrowser.Endpoint);
+        cross.Headers.Add("Sec-Fetch-Site", "cross-site");
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.SendAsync(cross)).StatusCode);
+        await using (var db = app.Db()) Assert.Equal(oldBrowser.Endpoint, (await db.WebPushSubscriptions.SingleAsync(s => s.UserId == user.Id)).Endpoint);
+
+        // Naming someone else's endpoint as "old" never removes it.
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Req(otherBrowser.Endpoint))).StatusCode);
+        await using (var db = app.Db()) Assert.True(await db.WebPushSubscriptions.AnyAsync(s => s.UserId == other.Id && s.Endpoint == otherBrowser.Endpoint));
+
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(Req(oldBrowser.Endpoint))).StatusCode);
+        await using (var db = app.Db())
+        {
+            var endpoints = await db.WebPushSubscriptions.Where(s => s.UserId == user.Id).Select(s => s.Endpoint).ToListAsync();
+            Assert.Equal([newBrowser.Endpoint], endpoints);
+        }
+    }
+
+    [Fact]
+    public async Task The_service_worker_handles_pushsubscriptionchange()
+    {
+        var text = await app.CreateClient().GetStringAsync("/sw.js");
+        Assert.Contains("'pushsubscriptionchange'", text);
+        Assert.Contains("/push/resubscribe", text);
+        Assert.Contains("applicationServerKey", text);
+    }
+
+    [Fact]
     public async Task The_service_worker_and_script_are_served_from_the_site_root()
     {
         var client = app.CreateClient();
