@@ -1,0 +1,120 @@
+# Builds the desktop installers when a tag like desktop-v1.2.3 is pushed and attaches them to a GitHub release.
+# Stable tags also refresh the rolling release "desktop-latest", which is the auto-update feed (see desktop/README.md).
+#
+# Signing is optional. Without these repository secrets the installers are unsigned (macOS shows a Gatekeeper warning and
+# cannot auto-update unsigned builds):
+#   macOS:   CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+#   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#desktop-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not desktop-v<semver>" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Build installers
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          # No signing secret: tell electron-builder not to look for a certificate.
+          # Apple Silicon kills an unsigned (modified) app at launch, so without a certificate the mac build is ad-hoc signed.
+          adhoc=""
+          if [ -z "$CSC_LINK" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; adhoc="-c.mac.identity=-"; fi
+          notarize=""
+          if [ -n "$APPLE_ID" ] && [ -n "$CSC_LINK" ]; then notarize="-c.mac.notarize=true"; fi
+          npm run build
+          npx electron-builder --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }} $notarize $adhoc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.blockmap
+            desktop/release/latest*.yml
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          flags=""
+          if [ "${{ needs.version.outputs.prerelease }}" = "true" ]; then flags="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" $flags --title "ByteBench desktop ${{ needs.version.outputs.version }}" \
+            --notes "Unsigned unless the repository has signing secrets. See desktop/README.md." dist/*
+      - name: Refresh the rolling auto-update feed (stable releases only)
+        if: needs.version.outputs.prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          # The installers must sit next to latest*.yml, because the updater resolves file names against the feed URL.
+          if ! gh release view desktop-latest >/dev/null 2>&1; then
+            gh release create desktop-latest --title "ByteBench desktop (auto-update feed)" \
+              --notes "Rolling release read by the desktop app's auto-updater. Download versioned installers from the desktop-v* releases." --latest=false
+          fi
+          gh release view desktop-latest --json assets --jq '.assets[].name' | while read -r name; do gh release delete-asset desktop-latest "$name" -y; done
+          gh release upload desktop-latest dist/* --clobber
