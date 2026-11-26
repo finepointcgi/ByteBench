@@ -586,6 +586,62 @@ public class CiPipelineFeatureParseTests
         Assert.Null(Act(running, "clean"));                         // still waits for its needs to finish
     }
 
+    /// <summary>Runs the scheduler to the end: each started job finishes with <paramref name="outcome"/>.</summary>
+    private static Dictionary<string, PipelineStatus> Simulate(CiDefinition d, Func<string, PipelineStatus> outcome)
+    {
+        var jobs = Run(d);
+        var states = jobs.ToDictionary(j => j.Name, j => new CiJobState(j.Name, j.Needs, PipelineStatus.Queued, j.When == CiJobWhen.Manual, j.AllowFailure,
+            Trigger: j.When switch { CiJobWhen.Always => CiJobTrigger.Always, CiJobWhen.OnFailure => CiJobTrigger.OnFailure, _ => CiJobTrigger.OnSuccess }));
+        for (var guard = 0; guard < 50; guard++)
+        {
+            var actions = CiJobGraph.Next(states.Values, canceled: false);
+            if (actions.Count == 0) break;
+            foreach (var (name, action) in actions)
+                states[name] = states[name] with { Status = action switch { CiJobAction.Start => outcome(name), CiJobAction.Skip => PipelineStatus.Skipped, _ => PipelineStatus.Manual } };
+        }
+        return states.ToDictionary(kv => kv.Key, kv => kv.Value.Status);
+    }
+
+    [Fact]
+    public void Stages_with_a_failure_skip_on_success_jobs_but_not_always_and_on_failure_ones()
+    {
+        var d = Ok("""
+            stages: [build, test, deploy, cleanup]
+            jobs:
+              compile:  { stage: build, steps: [ { run: x } ] }
+              unit:     { stage: test, steps: [ { run: x } ] }
+              ship:     { stage: deploy, steps: [ { run: x } ] }
+              tidy:     { stage: cleanup, when: always, steps: [ { run: x } ] }
+              alert:    { stage: cleanup, when: on_failure, steps: [ { run: x } ] }
+              quiet:    { stage: build, when: on_failure, steps: [ { run: x } ] }
+            """);
+        var failed = Simulate(d, n => n == "compile" ? PipelineStatus.Failed : PipelineStatus.Passed);
+        Assert.Equal(PipelineStatus.Failed, failed["compile"]);
+        Assert.Equal(PipelineStatus.Skipped, failed["unit"]);
+        Assert.Equal(PipelineStatus.Skipped, failed["ship"]);
+        Assert.Equal(PipelineStatus.Passed, failed["tidy"]);
+        Assert.Equal(PipelineStatus.Passed, failed["alert"]);
+        Assert.Equal(PipelineStatus.Skipped, failed["quiet"]);
+        var fine = Simulate(d, _ => PipelineStatus.Passed);
+        Assert.Equal(PipelineStatus.Passed, fine["tidy"]);
+        Assert.Equal(PipelineStatus.Skipped, fine["alert"]);
+    }
+
+    [Fact]
+    public void A_skipped_on_failure_job_does_not_hold_up_or_skip_later_jobs_and_failure_jobs_wait_for_everything_before_them()
+    {
+        var jobs = new List<CiJobState>
+        {
+            S("compile", PipelineStatus.Running), S("quiet", PipelineStatus.Skipped, CiJobTrigger.OnFailure),
+            S("unit", PipelineStatus.Queued, needs: ["compile", "quiet"]), S("alert", PipelineStatus.Queued, CiJobTrigger.OnFailure, needs: "unit"),
+            S("tidy", PipelineStatus.Queued, CiJobTrigger.Always, needs: "unit"),
+        };
+        Assert.Empty(CiJobGraph.Next(jobs, canceled: false));           // unit waits for compile; alert and tidy wait for unit and compile
+        jobs[0] = jobs[0] with { Status = PipelineStatus.Failed };
+        Assert.Equal(CiJobAction.Skip, Act(jobs, "unit"));
+        Assert.Null(Act(jobs, "alert"));                                // unit hasn't been skipped yet: still waiting
+    }
+
     [Fact]
     public void The_pipeline_still_fails_when_only_an_always_job_after_the_failure_passes()
     {

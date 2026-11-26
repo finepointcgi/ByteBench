@@ -19,6 +19,9 @@ public static partial class CiFile
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$")]
     private static partial Regex StageNamePattern();
 
+    [GeneratedRegex(@"^\s*(\d{1,5})\s*(s|secs?|seconds?)\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex StartInSeconds();
+
     [GeneratedRegex("^[a-z0-9][a-z0-9_.-]{0,62}$")]
     private static partial Regex ServiceAliasPattern();
 
@@ -192,8 +195,11 @@ public static partial class CiFile
         if (job.StartIn != null)
         {
             if (!delayed) return Err("'start_in' only applies to 'when: delayed'.");
-            if (!TryParseDuration(job.StartIn, out startIn) || startIn is not { } d || d <= TimeSpan.Zero || d > TimeSpan.FromDays(1))
-                return Err($"'start_in: {job.StartIn}' is not valid: use e.g. 30m or 2h (up to 24h).");
+            var seconds = StartInSeconds().Match(job.StartIn);
+            if (seconds.Success && int.TryParse(seconds.Groups[1].Value, out var n)) startIn = TimeSpan.FromSeconds(n);
+            else if (!TryParseDuration(job.StartIn, out startIn)) startIn = null;
+            if (startIn is not { } d || d <= TimeSpan.Zero || d > TimeSpan.FromDays(1))
+                return Err($"'start_in: {job.StartIn}' is not valid: use e.g. 30s, 30m or 2h (up to 24h).");
         }
         else if (delayed) return Err("'when: delayed' needs 'start_in', e.g. start_in: 10m.");
 

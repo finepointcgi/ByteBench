@@ -48,6 +48,8 @@ public static class CiJobGraph
                 if (need.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual) waiting = true;
                 else if (job.Trigger == CiJobTrigger.OnSuccess) skip = true;
             }
+            // always / on_failure: decide only once everything before the job has finished (its result depends on all of it).
+            if (job.Trigger != CiJobTrigger.OnSuccess && !waiting && AnyUnfinished(job, byName)) waiting = true;
             if (skip) actions.Add((job.Name, CiJobAction.Skip));
             else if (!waiting)
             {
@@ -73,8 +75,25 @@ public static class CiJobGraph
         return false;
     }
 
+    /// <summary>True if a job the job needs, directly or through other needs, hasn't finished (Queued, Running or waiting for a person).</summary>
+    private static bool AnyUnfinished(CiJobState job, Dictionary<string, CiJobState> byName)
+    {
+        var seen = new HashSet<string>();
+        var todo = new Stack<string>(job.Needs);
+        while (todo.Count > 0)
+        {
+            var n = todo.Pop();
+            if (!seen.Add(n) || !byName.TryGetValue(n, out var j)) continue;
+            if (j.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual) return true;
+            foreach (var d in j.Needs) todo.Push(d);
+        }
+        return false;
+    }
+
+    /// <summary>Passed, failed with <c>allow_failure</c>, or an <c>on_failure</c> job that was skipped because nothing failed (it had nothing to do).</summary>
     public static bool IsSatisfied(CiJobState need) =>
-        need.Status == PipelineStatus.Passed || need.AllowFailure && !need.NeedsApproval && need.Status is PipelineStatus.Failed or PipelineStatus.Error;
+        need.Status == PipelineStatus.Passed || need.AllowFailure && !need.NeedsApproval && need.Status is PipelineStatus.Failed or PipelineStatus.Error
+        || need.Trigger == CiJobTrigger.OnFailure && need.Status == PipelineStatus.Skipped;
 
     /// <summary>
     /// The pipeline's status when nothing more can run now: Canceled if it was canceled; Failed if a job failed (or was
