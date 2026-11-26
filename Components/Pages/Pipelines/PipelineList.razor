@@ -2,6 +2,8 @@
 @inherits RepoPageBase
 @inject PipelineService Pipelines
 @inject ProjectAccess Access
+@inject CiBadgeService Badges
+@inject ISnackbar Snackbar
 @inject LiveEvents Live
 @implements IDisposable
 
@@ -28,16 +30,35 @@ else if (Repo != null)
                 @foreach (var t in tags) { <MudSelectItem T="string" Value="@(CiRef.ForTag(t))"><span class="mono">tag @t</span></MudSelectItem> }
             </MudSelect>
             <MudTextField T="string" @bind-Value="runVariables" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="1" MaxLines="6" Sizing="InputSizing.Auto"
-                          Placeholder="Variables: NAME=value, one per line (optional)" aria-label="Variables for this run" Class="gb-mono-input run-variables" />
+                          Placeholder="Variables: NAME=value, one per line (optional; remembered for this repository)" aria-label="Variables for this run" Class="gb-mono-input run-variables" />
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Disabled="@busy" OnClick="Run">Run pipeline</MudButton>
         }
         @if (perms.Can(Permission.ManageRepositories))
         {
             <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Schedule" Href="@PipelineUrls.Schedules(Repo)">Schedules</MudButton>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Badge" OnClick="ToggleBadges" aria-expanded="@(showBadges ? "true" : "false")">Badges</MudButton>
         }
         <span class="toolbar-note muted small">Pipelines run <span class="mono">@CiFile.FileName</span> from the repository root.</span>
     </div>
     @if (Error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@Error</MudAlert> }
+    @if (showBadges && badgeToken != null)
+    {
+        <div class="ci-badges" role="region" aria-label="Pipeline and coverage badges">
+            <div class="muted small">
+                Badges for the <b>@Repo.DefaultBranch</b> branch (add <span class="mono">&amp;branch=name</span> for another). ByteBench has no anonymous public projects, so a badge shown outside ByteBench needs this
+                repository's badge token in its address: anyone with the address can see the badge (a status and a percentage), nothing else. Rotating the token breaks every address in use.
+            </div>
+            @foreach (var kind in new[] { "pipeline", "coverage" })
+            {
+                var url = BadgeUrl(kind);
+                <div class="ci-badge-row">
+                    <img src="@url" alt="@kind badge" height="20" />
+                    <code class="mono ci-badge-code">[![@kind](@url)](@(Nav.BaseUri.TrimEnd('/') + PipelineUrls.List(Repo)))</code>
+                </div>
+            }
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Warning" OnClick="RotateToken">Rotate token</MudButton>
+        </div>
+    }
 
     <div class="gb-rows ci-list">
         @if (list == null || list.Items.Count == 0)
@@ -66,6 +87,7 @@ else if (Repo != null)
                     </div>
                     <div class="ci-col-time muted small">
                         @if (p.StartedAt != null) { <div title="Duration" class="ci-duration"><MudIcon Icon="@Icons.Material.Outlined.Timer" Style="font-size: 14px" /> @PipelineFormat.Duration(p.StartedAt, p.FinishedAt)</div> }
+                        @if (p.Coverage is { } coverage) { <div title="Test coverage">@coverage.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)% cov</div> }
                         <div title="@p.CreatedAt.ToLocalTime().ToString("g")">@Display.Ago(p.CreatedAt)</div>
                     </div>
                 </div>
@@ -109,8 +131,31 @@ else if (Repo != null)
         tags = (await Git(path => GitOps.ListTagDetails(path))).Select(t => t.Name).Take(50).ToList();
         if (runBranch == null || !(branches.Contains(runBranch) || CiRef.IsTag(runBranch) && tags.Contains(CiRef.TagName(runBranch))))
             runBranch = branches.Contains(Repo.DefaultBranch) ? Repo.DefaultBranch : branches.FirstOrDefault();
+        if (runVariables == null && perms.Can(Permission.PushCode)) runVariables = await Pipelines.GetRunDefaultsAsync(Repo!);
         await LoadAsync();
     }
+
+    private bool showBadges;
+    private string? badgeToken;
+
+    private async Task ToggleBadges()
+    {
+        showBadges = !showBadges;
+        if (showBadges)
+        {
+            try { badgeToken = await Badges.EnsureTokenAsync(Repo!); }
+            catch (ForbiddenException) { showBadges = false; }
+        }
+    }
+
+    private async Task RotateToken()
+    {
+        badgeToken = await Badges.EnsureTokenAsync(Repo!, rotate: true);
+        Snackbar.Add("New badge token created. Badge addresses with the old token no longer work.", Severity.Success);
+    }
+
+    private string BadgeUrl(string kind) =>
+        $"{Nav.BaseUri.TrimEnd('/')}/p/{Repo!.Project.Key}/repos/{Repo.Slug}/badges/{kind}.svg?branch={Uri.EscapeDataString(Repo.DefaultBranch)}&token={badgeToken}";
 
     protected override void OnAfterRender(bool firstRender)
     {
@@ -138,6 +183,7 @@ else if (Repo != null)
         {
             var vars = ParseVariables(runVariables);
             var id = CiRef.IsTag(runBranch) ? await Pipelines.RunTagAsync(Repo!, CiRef.TagName(runBranch), vars) : await Pipelines.RunAsync(Repo!, runBranch, vars);
+            await Pipelines.RememberRunVariablesAsync(Repo!, vars); // the next run starts with the same variables
             Nav.NavigateTo(PipelineUrls.Detail(Repo!, id));
         }
         catch (InvalidOperationException ex) { Error = ex.Message; }

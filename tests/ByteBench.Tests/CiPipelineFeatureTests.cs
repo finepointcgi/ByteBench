@@ -7,6 +7,7 @@ using ByteBench.Services.Ci;
 using ByteBench.Services.Webhooks;
 using ByteBench.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace ByteBench.Tests;
@@ -709,7 +710,7 @@ public class CiPipelineFeatureParseTests
 }
 
 /// <summary>Badges over HTTP, restart recovery and extended pipelines in the database (no Docker; the background runner is not involved).</summary>
-public class CiPipelineFeatureDbTests(TestApp app) : IClassFixture<TestApp>
+public class CiPipelineFeatureDbTests(CiNoRunnerApp app) : IClassFixture<CiNoRunnerApp>
 {
     private async Task<(Repository Repo, Pipeline Pipeline)> SeedPipelineAsync(string status = "Passed", string branch = "main", double? coverage = null)
     {
@@ -842,6 +843,170 @@ public class CiPipelineFeatureDbTests(TestApp app) : IClassFixture<TestApp>
             Assert.Equal(PipelineStatus.Canceled, p.Jobs.Single(j => j.Name == "ship").Status);
             Assert.Contains("Retry the job", p.Jobs.Single(j => j.Id == runningJob).Steps.OrderBy(s => s.Order).First().Log!.Text);
             Assert.NotNull(p.FinishedAt);
+        }
+    }
+
+    private async Task<(Repository Repo, Project Project)> RepoWithFileAsync(string yaml, params (string Path, string Content)[] more)
+    {
+        var project = await app.CreateProjectAsync("alice", ProjectVisibility.Private, ("bob", ProjectRole.Developer), ("dan", ProjectRole.Viewer));
+        var repo = await app.CreateRepoAsync(project.Id, "alice");
+        app.Commit(repo, "main", "README.md", "# hi\n", from: null, message: "init");
+        foreach (var (path, content) in more) app.Commit(repo, "main", path, content);
+        app.Commit(repo, "main", CiFile.FileName, yaml);
+        return (repo, project);
+    }
+
+    private static StringContent Json(object body) => new(System.Text.Json.JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+    [Fact]
+    public async Task The_lint_endpoint_reports_precise_errors_resolves_repository_includes_and_needs_developer_access()
+    {
+        var (repo, project) = await RepoWithFileAsync("""
+            include: [ { local: ci/jobs.yml } ]
+            stages: [build, test]
+            jobs:
+              compile: { extends: .tpl, stage: build }
+              unit:
+                stage: test
+                services: [ { image: postgres:17, port: 5432 } ]
+                coverage: '/(\d+)%/'
+                when: always
+                steps: [ { run: echo unit } ]
+            """, ("ci/jobs.yml", "jobs:\n  .tpl:\n    image: alpine:3.19\n    steps: [ { run: make } ]\n"));
+        var path = $"/api/v1/projects/{project.Key}/repos/{repo.Slug}/pipelines/lint";
+        var bob = await app.ApiClientAsync("bob");
+
+        var ok = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, null)).Content.ReadAsStringAsync()).RootElement;
+        Assert.True(ok.GetProperty("valid").GetBoolean(), ok.ToString());
+        Assert.Equal(["build", "test"], ok.GetProperty("stages").EnumerateArray().Select(x => x.GetString()));
+        var jobs = ok.GetProperty("jobs").EnumerateArray().ToDictionary(j => j.GetProperty("name").GetString()!);
+        Assert.Equal("alpine:3.19", jobs["compile"].GetProperty("image").GetString());      // extends a hidden job of an included file
+        Assert.Equal(["compile"], jobs["unit"].GetProperty("needs").EnumerateArray().Select(x => x.GetString()));   // the stage's implicit needs
+        Assert.Equal("always", jobs["unit"].GetProperty("when").GetString());
+        Assert.Equal(["postgres"], jobs["unit"].GetProperty("services").EnumerateArray().Select(x => x.GetString()));
+
+        // Posted content is checked instead, with errors that say where.
+        var bad = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, Json(new { content = "jobs:\n  a:\n    stepz: 1\n" }))).Content.ReadAsStringAsync()).RootElement;
+        Assert.False(bad.GetProperty("valid").GetBoolean());
+        Assert.Contains("stepz", bad.GetProperty("error").GetString());
+        var missing = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, Json(new { content = "include: [ { local: nope.yml } ]\n" }))).Content.ReadAsStringAsync()).RootElement;
+        Assert.Contains("nope.yml", missing.GetProperty("error").GetString());
+        var remote = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, Json(new { content = "include: [ { remote: 'https://example.com/ci.yml' } ]\n" }))).Content.ReadAsStringAsync()).RootElement;
+        Assert.Contains("turned off on this server", remote.GetProperty("error").GetString());
+        var cycle = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, Json(new { content = "jobs:\n  a: { extends: .b, steps: [ { run: x } ] }\n  .b: { extends: .c }\n  .c: { extends: .b }\n" }))).Content.ReadAsStringAsync()).RootElement;
+        Assert.Contains("cycle", cycle.GetProperty("error").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, (await bob.PostAsync(path, Json(new { content = new string('x', 70_000) }))).StatusCode);
+
+        // A Viewer can't (a remote include would make the server fetch an address for them); an unknown ref is just an error.
+        Assert.Equal(HttpStatusCode.Forbidden, (await (await app.ApiClientAsync("dan")).PostAsync(path, null)).StatusCode);
+        var noRef = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, Json(new { @ref = "no-such-branch" }))).Content.ReadAsStringAsync()).RootElement;
+        Assert.False(noRef.GetProperty("valid").GetBoolean());
+        var flag = System.Text.Json.JsonDocument.Parse(await (await bob.PostAsync(path, Json(new { @ref = "--upload-pack=x" }))).Content.ReadAsStringAsync()).RootElement;
+        Assert.False(flag.GetProperty("valid").GetBoolean());
+    }
+
+    [Fact]
+    public async Task The_coverage_endpoint_and_pipeline_dto_carry_coverage()
+    {
+        var (repo, project) = await RepoWithFileAsync("jobs:\n  a: { steps: [ { run: x } ] }\n");
+        await using (var db = app.Db())
+        {
+            foreach (var c in new double?[] { 70, null, 72.5, 75 })
+                db.Pipelines.Add(new Pipeline { RepositoryId = repo.Id, Ref = "main", CommitSha = new string('c', 40), Trigger = PipelineTrigger.Push, Status = PipelineStatus.Passed, Coverage = c, FinishedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        var dan = await app.ApiClientAsync("dan");
+        var cov = System.Text.Json.JsonDocument.Parse(await dan.GetStringAsync($"/api/v1/projects/{project.Key}/repos/{repo.Slug}/coverage")).RootElement;
+        Assert.Equal(75, cov.GetProperty("coverage").GetDouble());
+        Assert.Equal([70.0, 72.5, 75.0], cov.GetProperty("trend").EnumerateArray().Select(t => t.GetProperty("coverage").GetDouble()));
+        var list = System.Text.Json.JsonDocument.Parse(await dan.GetStringAsync($"/api/v1/projects/{project.Key}/repos/{repo.Slug}/pipelines")).RootElement;
+        Assert.Contains(list.EnumerateArray(), p => p.GetProperty("coverage").ValueKind == System.Text.Json.JsonValueKind.Number && p.GetProperty("coverage").GetDouble() == 75);
+        // Someone who can't see the project sees nothing.
+        var outsider = await app.CreateUserAsync("covoutsider" + Guid.NewGuid().ToString("N")[..6]);
+        var oc = await app.ApiClientAsync(outsider.UserName!);
+        Assert.Equal(HttpStatusCode.NotFound, (await oc.GetAsync($"/api/v1/projects/{project.Key}/repos/{repo.Slug}/coverage")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_variables_of_a_run_are_remembered_for_the_repository_and_only_by_people_who_can_run_it()
+    {
+        var (repo, _) = await RepoWithFileAsync("jobs:\n  a: { steps: [ { run: x } ] }\n");
+        await using (var s = app.Scope(app.UserId("bob")))
+        {
+            Assert.Equal("", await s.Get<PipelineService>().GetRunDefaultsAsync(repo));
+            await s.Get<PipelineService>().RememberRunVariablesAsync(repo, new Dictionary<string, string> { ["TARGET"] = "staging", ["LEVEL"] = "debug" });
+            Assert.Equal("TARGET=staging\nLEVEL=debug", await s.Get<PipelineService>().GetRunDefaultsAsync(repo));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => s.Get<PipelineService>().RememberRunVariablesAsync(repo, new Dictionary<string, string> { ["CI"] = "x" }));
+        }
+        await using (var s = app.Scope(app.UserId("dan")))
+        {
+            Assert.Equal("", await s.Get<PipelineService>().GetRunDefaultsAsync(repo));   // a Viewer doesn't see them
+            await Assert.ThrowsAsync<ForbiddenException>(() => s.Get<PipelineService>().RememberRunVariablesAsync(repo, null));
+        }
+        await using (var s = app.Scope(app.UserId("alice")))
+        {
+            await s.Get<PipelineService>().RememberRunVariablesAsync(repo, null);            // an empty set forgets them
+            Assert.Equal("", await s.Get<PipelineService>().GetRunDefaultsAsync(repo));
+        }
+    }
+
+    [Fact]
+    public async Task Creating_a_pipeline_raises_the_pipeline_created_webhook()
+    {
+        using var receiver = new WebhookReceiver();
+        var (repo, project) = await RepoWithFileAsync("jobs:\n  a: { steps: [ { run: x } ] }\n");
+        await using (var s = app.Scope(app.UserId("alice")))
+            await s.Get<WebhookService>().CreateAsync(project.Id, receiver.Url, null, [WebhookEventNames.PipelineCreated], true);
+        int id;
+        await using (var s = app.Scope(app.UserId("alice")))
+            id = await s.Get<PipelineService>().RunAsync(repo, "main");
+        var d = await receiver.WaitForAsync(WebhookEventNames.PipelineCreated);
+        var pipeline = System.Text.Json.JsonDocument.Parse(d.Body).RootElement.GetProperty("pipeline");
+        Assert.Equal(id, pipeline.GetProperty("id").GetInt32());
+        Assert.Equal("queued", pipeline.GetProperty("status").GetString());
+        Assert.Equal("manual", pipeline.GetProperty("trigger").GetString());
+        // An invalid file creates the pipeline in Error, and says so.
+        app.Commit(repo, "main", CiFile.FileName, "jobs:\n  a:\n    stepz: 1\n");
+        int errorId;
+        await using (var s = app.Scope(app.UserId("alice")))
+            errorId = await s.Get<PipelineService>().RunAsync(repo, "main");
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (receiver.Count(WebhookEventNames.PipelineCreated) < 2 && DateTime.UtcNow < deadline) await Task.Delay(100);
+        Assert.Equal(2, receiver.Count(WebhookEventNames.PipelineCreated));
+        await using var check = app.Db();
+        Assert.Equal(PipelineStatus.Error, (await check.Pipelines.AsNoTracking().FirstAsync(p => p.Id == errorId)).Status);
+    }
+
+    [Fact]
+    public async Task Stopping_an_environment_runs_a_waiting_stop_job_once_and_never_an_approval_gated_or_unrelated_one()
+    {
+        var (repo, _) = await RepoWithFileAsync("jobs:\n  a: { steps: [ { run: x } ] }\n");
+        int pipelineId, stopId, gatedStopId;
+        await using (var db = app.Db())
+        {
+            var p = new Pipeline { RepositoryId = repo.Id, Ref = "feature/z", CommitSha = new string('d', 40), Trigger = PipelineTrigger.Manual, Status = PipelineStatus.Passed, FinishedAt = DateTime.UtcNow };
+            var extras = "{\"onStop\":\"stop-it\"}";
+            p.Jobs.Add(new PipelineJob { Name = "deploy", Image = "alpine", Order = 0, Status = PipelineStatus.Passed, EnvironmentName = "review-z", ExtrasJson = extras, Steps = { new PipelineStep { Name = "d", Run = "x", Order = 0, Status = PipelineStatus.Passed } } });
+            p.Jobs.Add(new PipelineJob { Name = "stop-it", Image = "alpine", Order = 1, Needs = "deploy", Status = PipelineStatus.Manual, IsManual = true, AllowFailure = true, EnvironmentName = "review-z", EnvironmentAction = "stop", Steps = { new PipelineStep { Name = "s", Run = "x", Order = 0, Status = PipelineStatus.Queued } } });
+            p.Jobs.Add(new PipelineJob { Name = "deploy2", Image = "alpine", Order = 2, Status = PipelineStatus.Passed, EnvironmentName = "gated", ExtrasJson = "{\"onStop\":\"stop-gated\"}", Steps = { new PipelineStep { Name = "d", Run = "x", Order = 0, Status = PipelineStatus.Passed } } });
+            p.Jobs.Add(new PipelineJob { Name = "stop-gated", Image = "alpine", Order = 3, Needs = "deploy2", Status = PipelineStatus.Manual, IsManual = true, RequiresApproval = true, EnvironmentName = "gated", EnvironmentAction = "stop", Steps = { new PipelineStep { Name = "s", Run = "x", Order = 0, Status = PipelineStatus.Queued } } });
+            db.Pipelines.Add(p);
+            await db.SaveChangesAsync();
+            (pipelineId, stopId, gatedStopId) = (p.Id, p.Jobs[1].Id, p.Jobs[3].Id);
+        }
+        await using (var s = app.Scope(system: true))
+        {
+            await s.Get<CiTriggerService>().StopEnvironmentsAsync(repo, "other-branch");     // another branch: nothing
+            await using (var db = app.Db()) Assert.Equal(PipelineStatus.Manual, (await db.PipelineJobs.AsNoTracking().FirstAsync(j => j.Id == stopId)).Status);
+            await s.Get<CiTriggerService>().StopEnvironmentsAsync(repo, "feature/z");
+        }
+        await using (var db = app.Db())
+        {
+            var stop = await db.PipelineJobs.AsNoTracking().FirstAsync(j => j.Id == stopId);
+            Assert.Equal(PipelineStatus.Queued, stop.Status);                                 // played: the runner starts it
+            Assert.NotNull(stop.PlayedAt);
+            Assert.Equal(PipelineStatus.Manual, (await db.PipelineJobs.AsNoTracking().FirstAsync(j => j.Id == gatedStopId)).Status);   // waits for approvals
+            Assert.Equal(PipelineStatus.Queued, (await db.Pipelines.AsNoTracking().FirstAsync(p => p.Id == pipelineId)).Status);        // the pipeline is queued to run it
         }
     }
 

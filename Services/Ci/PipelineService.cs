@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ByteBench.Services.Ci;
 
 /// <summary>A pipeline's status for a commit badge.</summary>
-public sealed record PipelineBadgeInfo(int Id, PipelineStatus Status, string Ref, string CommitSha);
+public sealed record PipelineBadgeInfo(int Id, PipelineStatus Status, string Ref, string CommitSha, double? Coverage = null);
 
 public sealed record PipelinePage(List<Pipeline> Items, int Total, int Page, int PageSize)
 {
@@ -23,7 +23,7 @@ public sealed record PipelineArtifactInfo(PipelineArtifact Artifact, string JobN
 /// </summary>
 public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, CiTriggerService triggers,
     CiQueue queue, RepoStorage storage, LiveEvents live, CiStorage ciStorage, CiArtifactStore artifactStore,
-    CiDeploymentRecorder deployments, Audit.AuditLog audit, NotificationService notifications)
+    CiDeploymentRecorder deployments, Audit.AuditLog audit, NotificationService notifications, Accounts.SiteSettings siteSettings)
 {
     public bool Enabled => triggers.Enabled;
 
@@ -82,7 +82,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.Pipelines.Where(p => p.RepositoryId == repo.Id && list.Contains(p.CommitSha));
         if (branch != null) q = q.Where(p => p.Ref == branch);
-        var rows = await q.Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha)).ToListAsync();
+        var rows = await q.Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha, p.Coverage)).ToListAsync();
         return rows.GroupBy(r => r.CommitSha).ToDictionary(g => g.Key, g => g.MaxBy(r => r.Id)!);
     }
 
@@ -94,7 +94,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         var shas = list.Select(t => t.Sha).Distinct().ToList();
         await using var db = await dbFactory.CreateDbContextAsync();
         var rows = await db.Pipelines.Where(p => p.RepositoryId == repo.Id && shas.Contains(p.CommitSha))
-            .Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha)).ToListAsync();
+            .Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha, p.Coverage)).ToListAsync();
         var result = new Dictionary<string, PipelineBadgeInfo>();
         foreach (var (branch, sha) in list)
             if (rows.Where(r => r.Ref == branch && r.CommitSha == sha).MaxBy(r => r.Id) is { } hit) result[branch] = hit;

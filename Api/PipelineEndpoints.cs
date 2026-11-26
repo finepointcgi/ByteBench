@@ -9,12 +9,23 @@ namespace ByteBench.Api;
 public record PipelineStepDto(int Id, string Name, PipelineStatus Status, int? ExitCode, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt);
 
 public record PipelineJobDto(int Id, string Name, string Image, PipelineStatus Status, IReadOnlyList<string> Needs, bool Manual, bool AllowFailure,
-    string? Environment, bool RequiresApproval, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, IReadOnlyList<PipelineStepDto> Steps);
+    string? Environment, bool RequiresApproval, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, IReadOnlyList<PipelineStepDto> Steps,
+    double? Coverage = null, string? Stage = null);
 
 /// <summary>A pipeline. <c>jobs</c> (with steps) is only present when one pipeline is fetched, not in lists.</summary>
 public record PipelineDto(int Id, string Ref, string CommitSha, string? CommitMessage, int? PullRequestNumber, PipelineStatus Status,
     PipelineTrigger Trigger, UserDto? TriggeredBy, string? Error, bool ForkPullRequest, bool AwaitingApproval, UserDto? ApprovedBy,
-    DateTimeOffset CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, string WebUrl, IReadOnlyList<PipelineJobDto>? Jobs);
+    DateTimeOffset CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, string WebUrl, IReadOnlyList<PipelineJobDto>? Jobs,
+    double? Coverage = null);
+
+/// <summary>POST body to check a pipeline file: <c>content</c> (the file's text; omit to check the file in the repository) and <c>ref</c> (branch, tag or commit; default branch).</summary>
+public record LintPipelineRequest(string? Content = null, string? Ref = null);
+
+/// <summary>One point of a branch's coverage trend.</summary>
+public record CoveragePointDto(int PipelineId, double Coverage);
+
+/// <summary>The newest coverage of a branch and its recent trend (oldest first).</summary>
+public record CoverageDto(string Ref, double? Coverage, IReadOnlyList<CoveragePointDto> Trend);
 
 /// <summary>A commit's combined pipeline state (<c>success</c>, <c>failure</c>, <c>pending</c> or <c>none</c>) and its pipelines, newest first.</summary>
 public record CommitStatusDto(string Sha, string State, IReadOnlyList<PipelineDto> Pipelines);
@@ -54,6 +65,13 @@ public static class PipelineEndpoints
         g.MapPost("/pipelines", RunPipeline).WithName("RunPipeline").WithSummary("Run a pipeline for a branch")
             .WithDescription("Needs Developer+. Runs the branch's current tip (or, with \"tag\", the commit of that tag, as a tag pipeline), ignoring the pipeline file's filters. \"variables\" (an object of NAME: value strings, not secret) are set for the run. 422 if CI is off, the branch or tag doesn't exist or has no pipeline file, or a variable name is reserved.")
             .WithJsonBody<RunPipelineRequest>(optional: true).Produces<PipelineDto>(StatusCodes.Status201Created);
+        g.MapPost("/pipelines/lint", LintPipeline).WithName("LintPipelineFile").WithSummary("Check a pipeline file without running it")
+            .WithDescription("Needs Developer+. Body: { \"content\": \"...\", \"ref\": \"main\" } (both optional: without content the file at ref is checked). Parses it exactly like a run: stages, extends, anchors, include " +
+                             "(repository files at ref; remote URLs only when the administrator allows them), services, coverage, when, resource_group and environment on_stop. " +
+                             "Always 200: valid=false carries the precise error (\"error\"); valid=true lists the jobs that run on the default branch with their effective needs.")
+            .WithJsonBody<LintPipelineRequest>(optional: true).Produces<CiLintResult>();
+        g.MapGet("/coverage", GetCoverage).WithName("GetCoverage").WithSummary("A branch's latest test coverage and trend")
+            .WithDescription("?ref= is a branch (default: the default branch). Coverage is a percentage from 0 to 100 read from jobs' coverage: regex or Cobertura/LCOV reports; trend lists up to 30 recent pipelines that reported coverage, oldest first.");
         g.MapGet("/commits/{sha}/status", CommitStatus).WithName("GetCommitPipelineStatus").WithSummary("The combined pipeline status of a commit")
             .WithDescription("{sha} is a full hash or a prefix of at least 7 hex digits. state is failure if the newest pipeline of any ref failed, errored or was canceled, " +
                              "else pending if one is queued, running or waiting for a manual job, else success; none if the commit has no pipelines. Includes tag pipelines.");
@@ -112,11 +130,12 @@ public static class PipelineEndpoints
     public static PipelineDto ToDto(Repository repo, Pipeline p, string baseUrl, int? prNumber, bool withJobs) => new(
         p.Id, p.Ref, p.CommitSha, p.CommitMessage, prNumber, p.Status, p.Trigger, Dto.UserOrNull(p.TriggeredBy), p.Error, p.IsForkPullRequest,
         p.AwaitingApproval, Dto.UserOrNull(p.ApprovedBy), Dto.Utc(p.CreatedAt), Dto.Utc(p.StartedAt), Dto.Utc(p.FinishedAt), WebUrl(baseUrl, repo, p.Id),
-        withJobs ? p.Jobs.Select(Job).ToList() : null);
+        withJobs ? p.Jobs.Select(Job).ToList() : null, p.Coverage);
 
     private static PipelineJobDto Job(PipelineJob j) => new(j.Id, j.Name, j.Image, j.Status, j.NeedsList.ToList(), j.IsManual, j.AllowFailure,
         j.EnvironmentName, j.RequiresApproval, Dto.Utc(j.StartedAt), Dto.Utc(j.FinishedAt),
-        j.Steps.Select(s => new PipelineStepDto(s.Id, s.Name, s.Status, s.ExitCode, Dto.Utc(s.StartedAt), Dto.Utc(s.FinishedAt))).ToList());
+        j.Steps.Select(s => new PipelineStepDto(s.Id, s.Name, s.Status, s.ExitCode, Dto.Utc(s.StartedAt), Dto.Utc(s.FinishedAt))).ToList(),
+        j.Coverage, CiJobExtras.Parse(j.ExtrasJson).Stage);
 
     private static string ArtifactUrl(string baseUrl, string key, string slug, int pipelineId, int jobId) =>
         $"{baseUrl}/api/v1/projects/{key.ToUpperInvariant()}/repos/{slug}/pipelines/{pipelineId}/jobs/{jobId}/artifacts.zip";
@@ -187,6 +206,23 @@ public static class PipelineEndpoints
             ? await pipelines.RunAsync(repo, branch, body.Variables)
             : await pipelines.RunTagAsync(repo, body.Tag.Trim(), body.Variables);
         return TypedResults.Created($"/api/v1/projects/{key.ToUpperInvariant()}/repos/{slug}/pipelines/{id}", await FullAsync(http, pipelines, url, repo, id));
+    }
+
+    private static async Task<CiLintResult> LintPipeline(HttpContext http, RepositoryService repos, PipelineService pipelines, string key, string slug)
+    {
+        var repo = await RequireRepoAsync(repos, key, slug);
+        var body = http.Request.ContentLength is > 0 || ApiResults.IsJson(http.Request) && http.Request.ContentLength != 0
+            ? await ApiResults.ReadBodyAsync<LintPipelineRequest>(http.Request) : new LintPipelineRequest();
+        if (body.Content is { } c && c.Length > CiFile.MaxFileChars) throw ApiException.BadRequest($"content is larger than {CiFile.MaxFileChars / 1024} KB.");
+        return await pipelines.LintAsync(repo, body.Content, body.Ref);
+    }
+
+    private static async Task<CoverageDto> GetCoverage(RepositoryService repos, CiBadgeService badges, ProjectAccess access, string key, string slug, string? @ref)
+    {
+        var repo = await RequireRepoAsync(repos, key, slug);
+        var branch = string.IsNullOrWhiteSpace(@ref) ? repo.DefaultBranch : @ref.Trim();
+        var trend = await badges.TrendAsync(repo, branch);
+        return new CoverageDto(branch, trend.Count == 0 ? null : trend[^1].Coverage, trend.Select(t => new CoveragePointDto(t.PipelineId, t.Coverage)).ToList());
     }
 
     private static async Task<PipelineDto> Cancel(HttpContext http, RepositoryService repos, PipelineService pipelines, PublicBaseUrl url, string key, string slug, int id)
