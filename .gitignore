@@ -506,6 +506,8 @@ gitbench.db*
 
 # Git LFS objects (Lfs:Root)
 /lfs/
+# Published static sites (Pages:Root); a Pages deploy on a dev run otherwise leaves untracked files in the checkout
+/pages/
 # CI artifacts and caches (Ci:ArtifactsRoot, Ci:CacheRoot)
 /ci-artifacts/
 /ci-cache/
