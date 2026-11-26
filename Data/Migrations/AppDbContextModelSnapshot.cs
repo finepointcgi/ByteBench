@@ -3178,6 +3178,9 @@ namespace ByteBench.Data.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("TEXT");
 
+                    b.Property<double?>("Coverage")
+                        .HasColumnType("REAL");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -3191,6 +3194,9 @@ namespace ByteBench.Data.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RecoveryAttempts")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Ref")
@@ -3298,6 +3304,9 @@ namespace ByteBench.Data.Migrations
 
                     b.Property<bool>("AllowFailure")
                         .HasColumnType("INTEGER");
+
+                    b.Property<double?>("Coverage")
+                        .HasColumnType("REAL");
 
                     b.Property<string>("EnvironmentAction")
                         .HasMaxLength(16)

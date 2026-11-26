@@ -32,6 +32,7 @@
                             else if (job.StartedAt != null) { <span>@PipelineFormat.Duration(job.StartedAt, job.FinishedAt)</span> }
                             else if (job.IsManual) { <span>manual</span> }
                             @if (job.AllowFailure && !job.IsManual) { <span> · may fail</span> }
+                            @if (job.Coverage is { } coverage) { <span> · @coverage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</span> }
                             @if (job.EnvironmentName != null) { <span> · <MudIcon Icon="@Icons.Material.Outlined.Cloud" Style="font-size: 12px; vertical-align: -2px" /> @job.EnvironmentName</span> }
                         </span>
                     </span>

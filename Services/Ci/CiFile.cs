@@ -8,6 +8,9 @@ namespace ByteBench.Services.Ci;
 /// <summary>A parsed, validated <c>.bytebench-ci.yml</c>.</summary>
 public sealed record CiDefinition(CiTriggers On, IReadOnlyList<CiJobDefinition> Jobs)
 {
+    /// <summary>The ordered <c>stages:</c>; null when the file doesn't use stages (no <c>stages:</c>, no job with <c>stage:</c>).</summary>
+    public IReadOnlyList<string>? Stages { get; init; }
+
     /// <summary>
     /// The jobs that run on <paramref name="branch"/> (after <c>rules</c>/<c>only</c>), each with its effective
     /// <c>when</c>. An error if a remaining job needs one that was left out.
@@ -21,11 +24,18 @@ public sealed record CiDefinition(CiTriggers On, IReadOnlyList<CiJobDefinition> 
         foreach (var j in Jobs)
             if (j.WhenFor(ctx) is { } when)
                 kept.Add(when == j.When ? j : j with { When = when });
+        kept = CiFile.ApplyStageNeeds(kept, Stages);
         var names = kept.Select(j => j.Name).ToHashSet();
         foreach (var j in kept)
+        {
             foreach (var n in j.Needs)
                 if (!names.Contains(n))
                     return ([], $"{CiFile.FileName}: job '{j.Name}' needs '{n}', which doesn't run on {ctx.Describe} (see its rules).");
+            if (string.Join(",", j.Needs).Length > 1000)
+                return ([], $"{CiFile.FileName}: job '{j.Name}' waits for too many jobs on {ctx.Describe}; list fewer in 'needs' or use fewer jobs per stage.");
+        }
+        if (Stages != null && CiFile.FindCycle(kept) is { } cycle)
+            return ([], $"{CiFile.FileName}: the stages and 'needs' of these jobs form a cycle: {cycle}.");
         return (kept, null);
     }
 
@@ -94,6 +104,19 @@ public sealed record CiJobDefinition(string Name, string Image, IReadOnlyList<st
     /// <summary><c>variables:</c> of the file and of the job (the job's win): plain environment variables, not secret.</summary>
     public IReadOnlyDictionary<string, string> Variables { get; init; } = new Dictionary<string, string>();
 
+    /// <summary><c>stage:</c> (null when the file doesn't use stages).</summary>
+    public string? Stage { get; init; }
+    /// <summary>True when the job has no <c>needs</c> key and the file uses stages: it waits for the previous stage (see <see cref="CiFile.ApplyStageNeeds"/>).</summary>
+    public bool ImplicitNeeds { get; init; }
+    /// <summary><c>start_in:</c> of a <c>when: delayed</c> job.</summary>
+    public TimeSpan? StartIn { get; init; }
+    /// <summary><c>services:</c> sidecar containers on a private network for the job's steps.</summary>
+    public IReadOnlyList<CiServiceDefinition> Services { get; init; } = [];
+    /// <summary><c>coverage:</c> regex (one capture group) applied to the job's log.</summary>
+    public string? Coverage { get; init; }
+    /// <summary><c>resource_group:</c> jobs of one repository with the same group never run at the same time.</summary>
+    public string? ResourceGroup { get; init; }
+
     /// <summary>
     /// How the job runs on <paramref name="branch"/>: null if it doesn't (no rule matched, or the first matching rule
     /// says <c>never</c>), else its <c>when</c>. The first rule whose branches match decides.
@@ -110,7 +133,11 @@ public sealed record CiJobDefinition(string Name, string Image, IReadOnlyList<st
         foreach (var r in Rules)
         {
             if (!r.Matches(ctx)) continue;
-            return r.When switch { null => When, CiRuleWhen.Never => null, CiRuleWhen.Manual => CiJobWhen.Manual, _ => CiJobWhen.OnSuccess };
+            return r.When switch
+            {
+                null => When, CiRuleWhen.Never => null, CiRuleWhen.Manual => CiJobWhen.Manual, CiRuleWhen.Always => CiJobWhen.Always,
+                CiRuleWhen.OnFailure => CiJobWhen.OnFailure, CiRuleWhen.Delayed => CiJobWhen.Delayed, _ => CiJobWhen.OnSuccess,
+            };
         }
         return null;
     }
@@ -118,8 +145,12 @@ public sealed record CiJobDefinition(string Name, string Image, IReadOnlyList<st
 
 public sealed record CiStepDefinition(string Name, string Run);
 
-public enum CiJobWhen { OnSuccess, Manual }
-public enum CiRuleWhen { OnSuccess, Manual, Never }
+/// <summary>
+/// <c>when:</c>. <see cref="Always"/> runs once its needs have finished, whatever their result; <see cref="OnFailure"/> only when a job
+/// before it failed; <see cref="Delayed"/> is on_success after <c>start_in</c>.
+/// </summary>
+public enum CiJobWhen { OnSuccess, Manual, Always, OnFailure, Delayed }
+public enum CiRuleWhen { OnSuccess, Manual, Never, Always, OnFailure, Delayed }
 public enum CiArtifactsWhen { OnSuccess, OnFailure, Always }
 
 /// <summary>One entry of <c>rules:</c>. <see cref="Branches"/> null matches every branch; <see cref="When"/> null keeps the job's.</summary>
@@ -158,6 +189,8 @@ public sealed record CiCacheDefinition(string Key, IReadOnlyList<string> Paths);
 /// </summary>
 public sealed record CiEnvironmentDefinition(string Name, string? Url, string? Action = null)
 {
+    /// <summary><c>on_stop:</c> the name of the job that stops the environment when its branch is deleted or its pull request closes.</summary>
+    public string? OnStop { get; init; }
     public bool IsStop => Action == "stop";
 }
 
@@ -238,6 +271,7 @@ public static partial class CiFile
     {
         public string? Image { get; set; }
         public object? Include { get; set; }
+        public List<string>? Stages { get; set; }
         public OnDto? On { get; set; }
         public Dictionary<string, object?>? Variables { get; set; }
         public Dictionary<string, JobDto?>? Jobs { get; set; }
@@ -270,6 +304,13 @@ public static partial class CiFile
         public object? Pages { get; set; }
         /// <summary>Alias: <c>publish: dist</c> is <c>pages: { path: dist }</c>.</summary>
         public string? Publish { get; set; }
+        /// <summary><c>extends: .template</c> or a list of them.</summary>
+        public object? Extends { get; set; }
+        public string? Stage { get; set; }
+        public List<object?>? Services { get; set; }
+        public string? Coverage { get; set; }
+        public string? ResourceGroup { get; set; }
+        public string? StartIn { get; set; }
     }
 
     private sealed class ParallelDto
@@ -310,32 +351,42 @@ public static partial class CiFile
         public string? Name { get; set; }
         public string? Url { get; set; }
         public string? Action { get; set; }
+        public string? OnStop { get; set; }
     }
 
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .Build();
 
-    private static Dictionary<string, JobDto?> Deserialize(string yaml) =>
-        Deserializer.Deserialize<Dictionary<string, JobDto?>>(yaml);
+    /// <summary>Anchors, aliases and <c>&lt;&lt;:</c> merge keys work (YamlDotNet's <see cref="MergingParser"/>).</summary>
+    private static T DeserializeYaml<T>(string yaml) =>
+        Deserializer.Deserialize<T>(new MergingParser(new Parser(new StringReader(yaml))));
 
     /// <summary>Report types <c>artifacts.reports</c> accepts.</summary>
-    public static readonly IReadOnlyList<string> ReportTypes = ["nightowl", "sarif", "junit", "trx", "xunit", "ctrf"];
+    public static readonly IReadOnlyList<string> ReportTypes = ["nightowl", "sarif", "junit", "trx", "xunit", "ctrf", "cobertura", "lcov"];
 
     /// <summary>Report types that are test results (Services/Tests): these may name several files with a pattern.</summary>
     public static bool IsTestReportType(string type) => type is "junit" or "trx" or "xunit" or "ctrf";
 
-    public static CiParseResult Parse(string? yaml)
+    /// <summary>
+    /// Parses a pipeline file. <paramref name="includes"/> reads the files <c>include:</c> names (repository files, remote URLs);
+    /// without it only built-in templates can be included.
+    /// </summary>
+    public static CiParseResult Parse(string? yaml, ICiIncludeProvider? includes = null)
     {
         if (string.IsNullOrWhiteSpace(yaml)) return Fail("The file is empty.");
         if (yaml.Length > MaxFileChars) return Fail($"The file is larger than {MaxFileChars / 1024} KB.");
 
         FileDto? dto;
-        try { dto = Deserializer.Deserialize<FileDto>(yaml); }
+        try { dto = DeserializeYaml<FileDto>(yaml); }
         catch (YamlException ex) { return Fail(Describe(ex)); }
         if (dto == null) return Fail("The file is empty.");
 
-        if (CiTemplates.Expand(dto.Include, dto.Jobs ??= [], Deserialize) is { } includeError) return Fail(includeError);
+        dto.Jobs ??= [];
+        if (ResolveIncludes(dto, includes) is { } includeError) return Fail(includeError);
+        if (ResolveExtends(dto) is { } extendsError) return Fail(extendsError);
+        var (stages, stagesError) = ParseStages(dto);
+        if (stagesError != null) return Fail(stagesError);
 
         var defaultImage = dto.Image?.Trim() is { Length: > 0 } i ? i : DefaultImage;
         if (!ImagePattern().IsMatch(defaultImage)) return Fail($"'{defaultImage}' is not a valid image name.");
@@ -370,6 +421,8 @@ public static partial class CiFile
 
             var extras = ParseExtras(name!, job);
             if (extras.Error != null) return Fail(extras.Error);
+            var features = ParseFeatures(name!, job, stages, extras.When, extras.Rules);
+            if (features.Error != null) return Fail(features.Error);
             var (jobVars, jobVarsError) = ParseVariables(job.Variables, $"job '{name}' variables");
             if (jobVarsError != null) return Fail(jobVarsError);
             var (combos, matrixError) = ParseMatrix(job.Parallel, name!);
@@ -389,8 +442,15 @@ public static partial class CiFile
                 Retry = extras.Retry,
                 Timeout = extras.Timeout,
                 Variables = merged,
+                Stage = features.Stage,
+                ImplicitNeeds = stages != null && job.Needs == null,
+                StartIn = features.StartIn,
+                Services = features.Services,
+                Coverage = features.Coverage,
+                ResourceGroup = features.ResourceGroup,
             });
         }
+        if (ValidateOnStop(jobs) is { } onStopError) return Fail(onStopError);
 
         foreach (var j in jobs)
             if (j.Needs.Contains(j.Name)) return Fail($"Job '{j.Name}' can't need itself.");
@@ -426,11 +486,12 @@ public static partial class CiFile
                 if (!names.Contains(need)) return Fail($"Job '{j.Name}' needs '{need}', which is not defined.");
             }
         if (FindCycle(jobs) is { } cycle) return Fail($"The 'needs' of these jobs form a cycle: {cycle}.");
+        if (stages != null && FindCycle(ApplyStageNeeds(jobs, stages)) is { } stageCycle) return Fail($"The stages and 'needs' of these jobs form a cycle: {stageCycle}.");
 
         var branches = dto.On?.Branches?.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).ToList();
         var tags = dto.On?.Tags?.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b.Trim()).ToList();
         if (dto.On?.Tags != null && tags!.Count == 0) return Fail("'on.tags' needs at least one tag pattern (use \"*\" for every tag).");
-        return new CiParseResult(new CiDefinition(new CiTriggers(branches, dto.On?.PullRequests ?? true) { Tags = tags }, jobs), null);
+        return new CiParseResult(new CiDefinition(new CiTriggers(branches, dto.On?.PullRequests ?? true) { Tags = tags }, jobs) { Stages = stages }, null);
     }
 
     private sealed record Extras(CiJobWhen When, IReadOnlyList<CiRule> Rules, CiArtifactsDefinition? Artifacts,
@@ -446,7 +507,10 @@ public static partial class CiFile
         {
             case null or "" or "on_success": when = CiJobWhen.OnSuccess; break;
             case "manual": when = CiJobWhen.Manual; break;
-            default: return Err($"'when: {job.When}' is not valid: use on_success or manual.");
+            case "always": when = CiJobWhen.Always; break;
+            case "on_failure": when = CiJobWhen.OnFailure; break;
+            case "delayed": when = CiJobWhen.Delayed; break;
+            default: return Err($"'when: {job.When}' is not valid: use on_success, manual, always, on_failure or delayed.");
         }
 
         if (job.Only != null && job.Rules != null) return Err("use either 'only' or 'rules', not both.");
@@ -488,9 +552,12 @@ public static partial class CiFile
                     "on_success" => CiRuleWhen.OnSuccess,
                     "manual" => CiRuleWhen.Manual,
                     "never" => CiRuleWhen.Never,
+                    "always" => CiRuleWhen.Always,
+                    "on_failure" => CiRuleWhen.OnFailure,
+                    "delayed" => CiRuleWhen.Delayed,
                     _ => (CiRuleWhen)(-1),
                 };
-                if (rw == (CiRuleWhen)(-1)) return Err($"rule 'when: {r.When}' is not valid: use on_success, manual or never.");
+                if (rw == (CiRuleWhen)(-1)) return Err($"rule 'when: {r.When}' is not valid: use on_success, manual, always, on_failure, delayed or never.");
                 rules.Add(new CiRule(branches, rw) { Tags = ruleTags, If = condition });
             }
         }
@@ -566,7 +633,14 @@ public static partial class CiFile
                 case "stop": action = "stop"; break;
                 default: return Err($"environment action '{job.Environment.Action}' is not valid: use start or stop.");
             }
-            environment = new CiEnvironmentDefinition(en, url, action);
+            string? onStop = null;
+            if (!string.IsNullOrWhiteSpace(job.Environment.OnStop))
+            {
+                onStop = job.Environment.OnStop.Trim();
+                if (!JobNamePattern().IsMatch(onStop)) return Err($"environment on_stop '{onStop}' must be the name of a job.");
+                if (action == "stop") return Err("a job with 'action: stop' can't have 'on_stop' itself.");
+            }
+            environment = new CiEnvironmentDefinition(en, url, action) { OnStop = onStop };
         }
 
         var (pages, pagesError) = ParsePages(name, job);
@@ -752,7 +826,7 @@ public static partial class CiFile
         return Regex.IsMatch(value, rx, RegexOptions.None, TimeSpan.FromMilliseconds(100));
     }
 
-    private static string? FindCycle(List<CiJobDefinition> jobs)
+    internal static string? FindCycle(IReadOnlyList<CiJobDefinition> jobs)
     {
         var byName = jobs.ToDictionary(j => j.Name);
         var state = new Dictionary<string, int>(); // 1 = visiting, 2 = done

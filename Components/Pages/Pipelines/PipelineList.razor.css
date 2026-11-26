@@ -13,3 +13,7 @@
     .ci-col-time { width: 100%; text-align: left; display: flex; gap: 10px; }
     .toolbar-note { margin-left: 0; }
 }
+
+.ci-badges { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ci-badge-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ci-badge-code { font-size: 12px; overflow-wrap: anywhere; user-select: all; }

@@ -7,6 +7,10 @@
 @if (latest != null)
 {
     <PipelineStatusIcon Status="latest.Status" Href="@PipelineUrls.Detail(Repo, latest.Id)" Title="@($"Pipeline #{latest.Id}")" ShowLabel="ShowLabel" />
+    @if (ShowLabel && latest.Coverage is { } coverage)
+    {
+        <a class="muted small ci-coverage" href="@PipelineUrls.Detail(Repo, latest.Id)" title="@($"Test coverage reported by pipeline #{latest.Id}")">@coverage.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)% coverage</a>
+    }
 }
 
 @code {

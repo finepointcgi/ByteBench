@@ -1,5 +1,3 @@
-using YamlDotNet.Core;
-
 namespace ByteBench.Services.Ci;
 
 /// <summary>
@@ -61,34 +59,4 @@ public static class CiTemplates
 
     /// <summary>The YAML to paste into <c>.bytebench-ci.yml</c> under <c>jobs:</c> to customise a template.</summary>
     public static string? Snippet(string name) => All.TryGetValue(name, out var y) ? y : null;
-
-    /// <summary>
-    /// Adds the jobs of every template named in <paramref name="include"/> (a string or a list of strings) to
-    /// <paramref name="jobs"/>, unless the file defines a job of that name. Returns an error message, or null.
-    /// </summary>
-    internal static string? Expand<TJob>(object? include, Dictionary<string, TJob?> jobs, Func<string, Dictionary<string, TJob?>> parse)
-        where TJob : class
-    {
-        if (include == null) return null;
-        var names = include switch
-        {
-            string s => [s],
-            IEnumerable<object> list => list.Select(o => o as string).ToList(),
-            _ => null,
-        };
-        if (names == null || names.Any(n => string.IsNullOrWhiteSpace(n)))
-            return "'include' must be a template name or a list of names (e.g. include: [nightowl]).";
-        foreach (var raw in names.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var name = raw!.Trim();
-            if (!All.TryGetValue(name, out var yaml))
-                return $"'include: {name}' is not a built-in template. Available: {string.Join(", ", All.Keys)}.";
-            Dictionary<string, TJob?> templateJobs;
-            try { templateJobs = parse(yaml); }
-            catch (YamlException ex) { return $"built-in template '{name}' is invalid: {ex.Message}"; }
-            foreach (var (jobName, job) in templateJobs)
-                jobs.TryAdd(jobName, job); // the file's own job of that name wins
-        }
-        return null;
-    }
 }

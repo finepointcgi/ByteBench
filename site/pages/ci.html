@@ -15,7 +15,8 @@
 <h2 id="file-reference">The file format</h2>
 <p>The file is YAML. <b>Unknown keys are errors</b> so typos are caught: the pipeline is created in the <b>Error</b> state with a message such as <code>invalid YAML at line 4, column 5: Property 'stepz' not found</code>. The whole file may be at most 64 KB, with at most 20 jobs and 50 steps per job.</p>
 <pre><code>image: alpine:3.20             # default image for every job (default alpine:3.20)
-include: [nightowl]            # built-in job templates (see "include")
+include: [nightowl, { local: ci/common.yml }]   # built-in templates, repository files, remote URLs (see "include")
+stages: [build, test, deploy]  # optional: ordered stages (see "Stages")
 on:                            # which pushes/PRs start a pipeline automatically
   branches: [main, "feature/*"]
   pull_requests: true
@@ -23,13 +24,18 @@ jobs:
   &lt;job-name&gt;:
     image: ...                 # per-job image
     needs: [other-job]         # dependency graph
-    when: on_success | manual
+    stage: test                # with stages: the stage it belongs to
+    extends: .template         # reuse a hidden job (see "extends")
+    when: on_success | manual | always | on_failure | delayed   # delayed needs start_in: 10m
+    services: [ postgres:17 ]  # sidecar containers (see "Services")
+    coverage: '/Total: (\d+)%/' # test coverage from the log (or artifacts.reports cobertura / lcov)
+    resource_group: production # never two jobs of one group at once
     allow_failure: true | false
     only: [main, "release/*"]  # or rules (not both)
     rules: [ { branches: [main], when: manual } ]
     cache:     { key: ..., paths: [...] }
     artifacts: { paths: [...], expire_in: 7d, when: on_success, reports: { ... } }
-    environment: { name: production, url: https://..., action: start|stop }
+    environment: { name: production, url: https://..., action: start|stop, on_stop: stop-job }
     pages: true | false | dist | { path: dist, review: true, expire_in: 3d }
     publish: dist              # alias for pages: { path: dist }
     steps:
@@ -40,12 +46,13 @@ jobs:
 <table>
 <tr><th>Key</th><th>Meaning</th></tr>
 <tr><td><code>image</code></td><td>Default Docker image for jobs that don't set one. Default <code>alpine:3.20</code>. Names are validated (letters, digits and <code>._/:@-</code>, must not start with <code>-</code>).</td></tr>
-<tr><td><code>include</code></td><td>A template name or list of names. The only built-in template is <code>nightowl</code>. See <a href="#include">include</a>.</td></tr>
+<tr><td><code>include</code></td><td>Built-in templates (<code>nightowl</code>), repository files (<code>local:</code>) and, if the administrator allows it, remote URLs (<code>remote:</code>). See <a href="#include">include</a>.</td></tr>
+<tr><td><code>stages</code></td><td>The ordered stage names; a job's <code>stage</code> picks one. See <a href="#stages">Stages</a>.</td></tr>
 <tr><td><code>on.branches</code></td><td>Branch patterns that start a pipeline on push. Omitted means every branch. <code>*</code> matches within one path segment, <code>**</code> across segments (<code>feature/*</code> matches <code>feature/x</code> but not <code>feature/x/y</code>).</td></tr>
 <tr><td><code>on.pull_requests</code></td><td>Default <code>true</code>: a pull request's source head gets a pipeline even if its branch isn't in <code>on.branches</code>. <code>false</code> disables that.</td></tr>
 <tr><td><code>on.tags</code></td><td>Tag patterns that start a pipeline when a tag is pushed or created. Without it, tags only start pipelines when a job has a rule about tags. See <a href="#tag-pipelines">Tag pipelines</a>.</td></tr>
 <tr><td><code>variables</code></td><td>Plain environment variables for every job. See <a href="#file-variables">variables in the file</a>.</td></tr>
-<tr><td><code>jobs</code></td><td>Required map of job name to job. Names use letters, digits, <code>_</code>, <code>.</code>, <code>-</code>, up to 64 characters, starting with a letter or digit.</td></tr>
+<tr><td><code>jobs</code></td><td>Required map of job name to job. Names use letters, digits, <code>_</code>, <code>.</code>, <code>-</code>, up to 64 characters, starting with a letter or digit. A name that starts with <code>.</code> is a hidden template job (see <a href="#extends">extends</a>).</td></tr>
 </table>
 
 <h3 id="job-keys">Job keys</h3>
@@ -54,7 +61,13 @@ jobs:
 <tr><td><code>steps</code></td><td><b>Required.</b> A list of <code>{ name?, run }</code>. <code>run</code> is required; <code>name</code> defaults to the first line of the command.</td></tr>
 <tr><td><code>image</code></td><td>Image for this job (all steps).</td></tr>
 <tr><td><code>needs</code></td><td>Jobs that must pass first. See <a href="#needs">needs</a>.</td></tr>
-<tr><td><code>when</code></td><td><code>on_success</code> (default) or <code>manual</code>. Anything else (<code>always</code>, <code>on_failure</code>, <code>delayed</code>) is an error.</td></tr>
+<tr><td><code>when</code></td><td><code>on_success</code> (default), <code>manual</code>, <code>always</code>, <code>on_failure</code> or <code>delayed</code> (with <code>start_in</code>). See <a href="#when">when</a>.</td></tr>
+<tr><td><code>stage</code></td><td>The job's stage; see <a href="#stages">Stages</a>.</td></tr>
+<tr><td><code>extends</code></td><td>A hidden job (or a list of them) to build on; see <a href="#extends">extends</a>.</td></tr>
+<tr><td><code>services</code></td><td>Sidecar containers for the job's steps; see <a href="#services">Services</a>.</td></tr>
+<tr><td><code>coverage</code></td><td>A regular expression that reads the coverage from the log; see <a href="#coverage">Test coverage</a>.</td></tr>
+<tr><td><code>resource_group</code></td><td>Jobs of the repository with the same group name never run at the same time; see <a href="#resource-group">resource_group</a>.</td></tr>
+<tr><td><code>start_in</code></td><td>How long a <code>when: delayed</code> job waits (<code>30s</code>, <code>10m</code>, <code>2h</code>, up to 24h).</td></tr>
 <tr><td><code>allow_failure</code></td><td>A failure doesn't fail the pipeline and doesn't skip jobs that need it. Default <code>false</code>, but <code>true</code> for manual jobs.</td></tr>
 <tr><td><code>only</code> / <code>rules</code></td><td>Branch, tag and condition filters; see <a href="#rules">rules, only and when</a>. Using both is an error.</td></tr>
 <tr><td><code>variables</code></td><td>Environment variables for this job (they win over the file's). See <a href="#file-variables">variables in the file</a>.</td></tr>
@@ -62,22 +75,22 @@ jobs:
 <tr><td><code>timeout</code></td><td>Kill the job after this long (<code>30m</code>, <code>2h</code>, up to <code>7d</code>); it can only lower <code>Ci:JobTimeoutMinutes</code>.</td></tr>
 <tr><td><code>parallel</code></td><td><code>parallel: { matrix: [ { VAR: [a, b] } ] }</code> runs the job once per combination. See <a href="#matrix">matrix</a>.</td></tr>
 <tr><td><code>artifacts</code>, <code>cache</code></td><td>See <a href="#artifacts">artifacts</a> and <a href="#cache">cache</a>.</td></tr>
-<tr><td><code>environment</code></td><td>Records a deployment. Covered on <a href="environments.html">Environments and deployments</a>.</td></tr>
+<tr><td><code>environment</code></td><td>Records a deployment: <code>name</code>, <code>url</code>, <code>action: stop</code> and <code>on_stop</code> (<a href="#resource-group">stops it when its branch is deleted</a>). Covered on <a href="environments.html">Environments and deployments</a>.</td></tr>
 <tr><td><code>pages</code> / <code>publish</code></td><td>Publishes a static site. Covered on <a href="pages.html">Static sites (Pages)</a>.</td></tr>
 </table>
 
 <h3 id="not-supported">What the format does not have</h3>
 <table>
 <tr><th>You might look for</th><th>In ByteBench</th></tr>
-<tr><td><code>stages:</code> and a job's <code>stage</code></td><td>Not supported. Use <code>needs</code>: a job without <code>needs</code> starts immediately, one with <code>needs</code> waits for them. A "stage" is just a set of jobs that need the previous set.</td></tr>
-<tr><td><code>script</code>, <code>before_script</code>, <code>after_script</code></td><td>Use <code>steps</code>. Put setup in the first step. There is no after-script that runs on failure; later steps are skipped once a step fails.</td></tr>
+<tr><td><code>script</code>, <code>before_script</code>, <code>after_script</code></td><td>Use <code>steps</code>. Put setup in the first step. There is no after-script that runs on failure; later steps are skipped once a step fails (use a <code>when: always</code> job for cleanup).</td></tr>
 <tr><td>Secrets in <code>variables:</code></td><td><code>variables:</code> is for plain values (they are in the repository). Secrets go in <a href="#ci-variables">CI variables</a> in the UI, which win over the file's variables.</td></tr>
-<tr><td><code>services:</code> (sidecar containers)</td><td>Not supported, and jobs get no Docker daemon, so they can't start containers either. Use an image that bundles what you need, or install it in a step.</td></tr>
+<tr><td>A Docker daemon inside jobs (docker-in-docker)</td><td>Not supported: jobs get no Docker socket. <a href="#services">Services</a> start sidecar containers for you; to build images use a tool that needs no daemon.</td></tr>
 <tr><td><code>retry: { max, when }</code>, <code>parallel: N</code></td><td>Only the plain number <code>retry: 2</code> (any failure) and <code>parallel: { matrix }</code> exist.</td></tr>
-<tr><td><code>trigger:</code> (child and multi-project pipelines), <code>extends:</code> and hidden <code>.jobs</code>, <code>include: { local/remote/project }</code>, YAML anchors across files</td><td>Not supported. Repeat the keys, or use YAML anchors inside the one file.</td></tr>
-<tr><td><code>resource_group:</code>, <code>environment: on_stop</code>, <code>cache: key: files:</code></td><td>Not supported. <code>environment: { action: stop }</code> marks a stop job you run yourself, and <code>{{ hashFiles('...') }}</code> in a cache key does what <code>key: files:</code> does.</td></tr>
-<tr><td>Test coverage parsing (<code>coverage:</code>) and pipeline status badges</td><td>Not supported. Test reports (<code>artifacts.reports</code>) give pass/fail counts; the <a href="#ci-rest-api">commit status endpoint</a> gives a commit's state.</td></tr>
-<tr><td><code>when: always</code>, <code>on_failure</code>, <code>delayed</code></td><td>Not supported for jobs. (<code>artifacts.when</code> does accept <code>on_failure</code> and <code>always</code>.)</td></tr>
+<tr><td><code>trigger:</code> (child and multi-project pipelines)</td><td>Not supported. Put the jobs in one file (use <a href="#include">include</a> and <a href="#extends">extends</a> to share them) or start another repository's pipeline from a step through the <a href="#ci-rest-api">REST API</a>.</td></tr>
+<tr><td><code>include: { project, ref, file }</code> (another project's file), <code>include: template</code> from GitLab</td><td>Not supported. <code>local:</code> reads the repository's own files at the pipeline's commit; <code>remote:</code> fetches a URL when allowed.</td></tr>
+<tr><td><code>cache: key: files:</code>, <code>rules: changes:</code>, <code>rules: exists:</code>, <code>needs: optional</code></td><td>Not supported. <code>{{ hashFiles('...') }}</code> in a cache key does what <code>key: files:</code> does.</td></tr>
+<tr><td><code>environment: auto_stop_in</code>, dynamic review environment URLs from the job</td><td>Not supported. <code>on_stop</code> stops an environment when its branch goes away.</td></tr>
+<tr><td>Coverage visualisation in diffs, coverage per file</td><td>Not supported. ByteBench keeps one number per job and per pipeline (see <a href="#coverage">Test coverage</a>).</td></tr>
 </table>
 
 <h2 id="images-steps">Images and steps</h2>
@@ -140,6 +153,15 @@ jobs:
 <li>If no job at all is left for a branch, pushes don't create a pipeline and <b>Run pipeline</b> says so.</li>
 <li>There are no conditions on changed files (<code>changes:</code>) or <code>exists:</code>. For a pull request pipeline the "branch" is the pull request's source branch.</li>
 </ul>
+<h3 id="when">when: always, on_failure and delayed</h3>
+<ul>
+<li><code>when: on_success</code> (the default) runs once every needed job passed (or failed with <code>allow_failure</code>).</li>
+<li><code>when: always</code> runs once every job before it has finished, whatever the result (passed, failed or skipped). Use it for cleanup and notifications. It still doesn't run when the pipeline is canceled, and the pipeline still ends <b>Failed</b> if an earlier job failed.</li>
+<li><code>when: on_failure</code> runs only if a job it needs, directly or through other needs, failed without <code>allow_failure</code>; otherwise it is <b>Skipped</b> (and doesn't hold up or skip the jobs after it). With no needs it never runs. With <a href="#stages">stages</a> it needs the stage before, so it reacts to a failure anywhere earlier.</li>
+<li><code>when: delayed</code> with <code>start_in: 30s</code> (or <code>10m</code>, <code>2h</code>; at most 24 hours) is a normal job that waits that long once its needs are met. <code>start_in</code> is required with it and refused without it. The job stays <b>Queued</b> while it waits and holds no job slot.</li>
+<li>A rule can say <code>when: always</code>, <code>on_failure</code> or <code>delayed</code> too (a delayed rule still needs the job's <code>start_in</code>).</li>
+</ul>
+
 <h3 id="rule-conditions">if: conditions</h3>
 <p>A small subset of GitLab's syntax: <code>$NAME</code> (true when the variable is set and not empty), <code>"text"</code> or <code>'text'</code>, <code>null</code>, <code>==</code>, <code>!=</code>, <code>=~</code> and <code>!~</code> with a <code>/regular expression/</code> (flag <code>i</code> allowed), <code>&amp;&amp;</code>, <code>||</code>, <code>!</code> and parentheses. An unset variable is <code>null</code>. They can read <code>CI_COMMIT_TAG</code>, <code>CI_COMMIT_BRANCH</code>, <code>CI_COMMIT_REF_NAME</code>, <code>CI_PIPELINE_SOURCE</code> and the run's own <a href="#schedule-variables">schedule or manual variables</a> (not CI variables, which are secrets). A condition that doesn't parse is a file error.</p>
 <pre><code>jobs:
@@ -190,10 +212,16 @@ jobs:
 </table>
 
 <h3 id="ci-rest-api">REST API</h3>
-<p>Pipelines can be driven from scripts: list and filter them, read a pipeline with its jobs and steps, read a step's log (tail or page it), run a pipeline for a branch or tag (with variables), cancel or re-run it, read a commit's combined pipeline status, retry or play a job, and list or download a job's artifacts. Under <code>/api/v1/projects/{key}/repos/{slug}/pipelines</code>, with the same roles as the buttons in the UI (read: Viewer and <code>read_api</code>; actions: Developer and <code>write_api</code>). CI variables can be listed (names and flags only, never values), created, updated and deleted by a Maintainer under <code>.../ci/variables</code>. Fork pull request pipelines still wait for approval and never receive variables. See the <a href="api.html#api-pipelines">endpoint catalogue</a>.</p>
+<p>Pipelines can be driven from scripts: list and filter them, read a pipeline with its jobs and steps, read a step's log (tail or page it), run a pipeline for a branch or tag (with variables), cancel or re-run it, read a commit's combined pipeline status, retry or play a job, and list or download a job's artifacts. Under <code>/api/v1/projects/{key}/repos/{slug}/pipelines</code>, with the same roles as the buttons in the UI (read: Viewer and <code>read_api</code>; actions: Developer and <code>write_api</code>). CI variables can be listed (names and flags only, never values), created, updated and deleted by a Maintainer under <code>.../ci/variables</code>. Fork pull request pipelines still wait for approval and never receive variables. <code>POST .../pipelines/lint</code> checks a file without running it (see below) and <code>GET .../coverage</code> returns a branch's coverage trend. See the <a href="api.html#api-pipelines">endpoint catalogue</a>.</p>
 <pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"branch":"main"}' \
   https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines
 curl -H "Authorization: Bearer $TOKEN" "https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines/12/steps/34/log?tail=2000"</code></pre>
+
+<h3 id="ci-lint">Checking a file (lint)</h3>
+<p><code>POST /api/v1/projects/{key}/repos/{slug}/pipelines/lint</code> (Developer+) parses a pipeline file exactly like a run does, without running anything, and always answers 200 with <code>valid</code>, <code>error</code> (the precise message, such as <code>include of local 'ci/x.yml': was not found in the repository at this commit (ci/x.yml)</code> or <code>Job 'a' extends '.b', which is not defined</code>), <code>stages</code> and the <code>jobs</code> that would run on the default branch with their effective <code>needs</code>, <code>when</code>, services, coverage and resource group. Send <code>{"content": "..."}</code> to check text you haven't committed (up to 64 KB; its <code>include: local</code> files come from the repository at <code>ref</code>), and <code>{"ref": "feature/x"}</code> to check another branch, tag or commit. Without a body it checks the default branch's file.</p>
+<pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"content": "stages: [build]\njobs:\n  a: { stage: build, steps: [ { run: make } ] }"}' \
+  https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines/lint</code></pre>
 
 <h3 id="file-variables">variables in the file</h3>
 <p><code>variables:</code> at the top of the file and inside a job sets plain environment variables (the job's win). Names use letters, digits and <code>_</code> and can't be <code>CI</code> or start with <code>BYTEBENCH_</code> or <code>GITBENCH_</code>; values are single lines up to 2000 characters, at most 50 per level. They are <b>not secret</b> (they are in the repository and in the pipeline file's history). Precedence, lowest first: the file's variables, <a href="#ci-variables">CI variables</a>, then the run's own variables (a schedule's, or those given with <b>Run pipeline</b> or the API). The predefined variables above always win.</p>
@@ -256,12 +284,101 @@ jobs:
 <li><b>Two scopes.</b> Pipelines on a protected branch read and write only the <em>protected</em> cache; everything else (other branches, pull requests) uses the <em>unprotected</em> one. This stops someone pushing a branch that poisons <code>node_modules</code> for the next <code>main</code> pipeline, which may hold deploy secrets. The log says which scope was used.</li>
 </ul>
 
-<h2 id="include">include (the Night Owl template)</h2>
-<p><code>include: [nightowl]</code> (or <code>include: nightowl</code>) adds a built-in job named <code>nightowl</code>. A job of the same name in your file replaces it. No other templates exist; any other name is an error listing the available ones. Details, variables and the runner-image requirement are on <a href="security-scanning.html">Security scanning</a>.</p>
-<pre><code>include: [nightowl]
+<h2 id="stages">Stages</h2>
+<p>List the stages in order and give each job a <code>stage</code>. A job without a <code>needs</code> key waits for the <b>whole previous stage</b> (the nearest earlier stage that has a job in this run), so stages start one after another and a failed job skips the later stages, as in GitLab CI. Files without <code>stages</code> and without a <code>stage</code> on any job behave exactly as before.</p>
+<pre><code>stages: [build, test, deploy]
+jobs:
+  compile: { stage: build, steps: [ { run: make } ] }
+  unit:    { stage: test, steps: [ { run: make test } ] }
+  lint:    { stage: test, needs: [], steps: [ { run: make lint } ] }          # needs: [] starts at once, ignoring the stages
+  package: { stage: test, needs: [compile], steps: [ { run: make dist } ] }   # explicit needs win over the stage order
+  ship:    { stage: deploy, steps: [ { run: ./deploy.sh } ] }                 # waits for unit, lint and package</code></pre>
+<ul>
+<li>Without <code>stages:</code> but with some <code>stage:</code>, the stages are <code>build, test, deploy</code>. A job with no <code>stage</code> is in <code>test</code>; if <code>test</code> isn't in your list that is an error that says so. A job naming a stage that isn't listed is an error. Up to 10 stages; names use letters, digits, <code>_</code>, <code>.</code> and <code>-</code>.</li>
+<li>Stages are turned into plain <code>needs</code> when the pipeline is created (after <code>rules</code> have left jobs out), so the pipeline graph shows them as columns and the job list shows <code>needs</code> and <code>stage</code>. A <code>needs</code> that points to a later stage, or makes a cycle with the stage order, is reported as a cycle.</li>
+<li>An optional manual job (<code>when: manual</code> with the default <code>allow_failure</code>) doesn't hold the next stage up: the stage after it waits for the stage before.</li>
+<li>Matrix jobs work in a stage: every instance is in it.</li>
+</ul>
+
+<h2 id="extends">Templates: extends, hidden jobs and anchors</h2>
+<p>A job whose name starts with <code>.</code> is a <b>hidden job</b>: it never runs and exists to be extended. <code>extends: .name</code> (or a list, later ones win) copies the hidden job, and the extending job's own keys win. <code>variables</code>, <code>artifacts</code>, <code>cache</code> and <code>environment</code> are merged key by key; <code>steps</code>, <code>needs</code>, <code>rules</code> and everything else are replaced. A job can extend another job, up to 10 levels deep; an unknown name or a cycle is an error naming it.</p>
+<pre><code>jobs:
+  .dotnet:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    variables: { DOTNET_NOLOGO: "1" }
+    cache: { key: "nuget-{{ hashFiles('**/*.csproj') }}", paths: [.nuget/] }
+  build:
+    extends: .dotnet
+    steps: [ { run: dotnet build } ]
+  test:
+    extends: .dotnet
+    needs: [build]
+    variables: { CONFIG: Release }       # merged with the template's variables
+    steps: [ { run: 'dotnet test -c "$CONFIG"' } ]</code></pre>
+<p><b>YAML anchors and merge keys</b> work too: <code>.base: &amp;base { image: ... }</code> and then <code>&lt;&lt;: *base</code> in another job. Anchors only work inside one file; to share jobs between files use <a href="#include">include</a>.</p>
+
+<h2 id="include">include: templates, repository files and remote files</h2>
+<p><code>include</code> takes a list (or one entry) of:</p>
+<ul>
+<li><code>nightowl</code> or <code>{ template: nightowl }</code>: the built-in Night Owl job. Details, variables and the runner-image requirement are on <a href="security-scanning.html">Security scanning</a>.</li>
+<li><code>{ local: ci/common.yml }</code> (or the bare path <code>ci/common.yml</code>): a file of the repository <b>at the pipeline's commit</b>, from the repository root. Paths with <code>..</code>, <code>.git</code> or backslashes are refused.</li>
+<li><code>{ remote: https://example.com/ci.yml }</code>: a file fetched from a URL. <b>Off by default</b>: the administrator must set <code>Ci:AllowRemoteIncludes</code> to <code>true</code>, because the address is chosen by whoever can push. See the limits below.</li>
+</ul>
+<pre><code>include:
+  - local: ci/common.yml
+  - nightowl
 jobs:
   build:
+    extends: .base-build        # a hidden job from ci/common.yml
     steps: [ { run: ./build.sh } ]</code></pre>
+<ul>
+<li><b>An included file</b> has the same format (<code>jobs</code>, <code>variables</code>, <code>stages</code>, <code>image</code> and <code>include</code> of its own). Its jobs, hidden ones too, join the file's jobs; a job in your file wins over an included job of the same name; later entries win over earlier ones. An included file's <code>image</code> is the default image of its jobs; its <code>variables</code> are added unless your file sets them; its <code>stages</code> are used when your file has none. Then <code>extends</code> is resolved across everything, so a job can extend a template from an included file.</li>
+<li><b>Limits.</b> Included files may include more files up to 5 levels deep, at most 20 files, 64 KB each and 256 KB together. A file that includes itself, directly or through others, is an error showing the chain (<code>include forms a cycle: a.yml → b.yml → a.yml</code>). The same file twice is read once. A missing file or invalid YAML in it is an error naming the file.</li>
+<li><b>Remote includes</b> (when allowed): <code>https</code> only, no credentials in the address, optionally only hosts listed in <code>Ci:RemoteIncludeAllowedHosts</code>; every address the host resolves to is checked against the same list as webhooks (loopback, private, link-local, CGNAT and cloud-metadata addresses are refused, at connection time, so DNS tricks don't help); no redirects, no proxy, a 10 second timeout, at most 64 KB; answers are cached for 5 minutes. Plain http and private addresses work only with <code>Ci:AllowPrivateNetworks</code> (for local testing).</li>
+<li>The merge check, the lint endpoint and every trigger read includes the same way, at the commit being checked.</li>
+</ul>
+
+<h2 id="services">Services (sidecar containers)</h2>
+<p><code>services:</code> starts containers next to a job, for example a database for its tests. They run on a private Docker network that only the job's step containers join, each reachable by its <b>alias</b> as a host name, and are removed when the job ends (passed, failed, canceled or timed out).</p>
+<pre><code>jobs:
+  test:
+    image: postgres:17            # any image with the tools you need (psql here)
+    services:
+      - image: postgres:17
+        alias: db                 # default: the image name without registry and tag (postgres)
+        port: 5432                # ready when this port accepts connections
+        variables: { POSTGRES_PASSWORD: pw }
+    steps:
+      - run: PGPASSWORD=pw psql -h db -U postgres -c 'select 1'</code></pre>
+<ul>
+<li>An entry is an image name or <code>{ image, alias, command, variables, port }</code>. <code>command</code> is a list of arguments passed to the image's entrypoint. At most 5 services per job; two can't share an alias.</li>
+<li><b>Ready.</b> Before the first step ByteBench waits (up to <code>Ci:ServiceStartTimeoutSeconds</code>, default 60) until each service is ready: its image's <code>HEALTHCHECK</code> reports healthy, else its <code>port</code> accepts a connection, else it has been running for two seconds. A service that exits, is unhealthy or never gets ready fails the job, and the job's log shows its last 30 lines of output.</li>
+<li><b>Isolation.</b> A service container gets the same flags as step containers: <code>no-new-privileges</code>, the memory, CPU and PID limits, and <code>--cap-drop ALL</code> when <code>Ci:DropCapabilities</code> is on (databases usually need their capabilities, so leave it off for them). It does not get <code>Ci:User</code> (an image such as postgres runs as its own user), the workspace, the Docker socket, published ports, CI variables or any secret; <code>variables:</code> of a service are the plain values written in the file. With <code>Ci:Network</code> set to <code>none</code> the services network is created <code>--internal</code>: services and steps reach each other but nothing reaches the outside.</li>
+<li>The services network is per job: two jobs of one pipeline never see each other's services. Leftover service containers and networks of this instance are removed at startup.</li>
+</ul>
+
+<h2 id="coverage">Test coverage</h2>
+<p>A job can report a coverage percentage, read in one of two ways (the regex wins if both are set and it matches):</p>
+<pre><code>jobs:
+  unit:
+    coverage: '/Total coverage: (\d+\.?\d*)%/'     # the last match in the job's log; the first group, else the first number
+    artifacts:
+      reports: { cobertura: coverage/cobertura.xml }  # or lcov: coverage/lcov.info
+    steps: [ { run: ./test.sh } ]</code></pre>
+<ul>
+<li>The regex is checked when the file is read and runs with a linear-time engine, so a hostile pattern can't hang the server (lookarounds and backreferences are therefore not supported). It must be at most 200 characters; <code>/slashes/</code> around it are optional.</li>
+<li><b>Cobertura</b> XML (<code>lines-covered</code> / <code>lines-valid</code>, else <code>line-rate</code>) and <b>LCOV</b> (<code>LH</code> over <code>LF</code>) are read as line coverage from the one file named. XML with a DOCTYPE is refused. The job's log gets a line saying which source was used.</li>
+<li>Coverage is stored per job and per pipeline (the average of the jobs that report one), shown on the pipeline page with the change since the previous pipeline of the branch and a small trend, in the pipeline list, and next to the pipeline status on a pull request. <code>GET .../coverage</code> returns the branch's latest value and trend, and the pipeline and job JSON carry <code>coverage</code>. A failed job's coverage still counts.</li>
+</ul>
+
+<h2 id="resource-group">resource_group and environment on_stop</h2>
+<ul>
+<li><b>resource_group: production</b>: jobs of one repository that name the same group never run at the same time, even in different pipelines; the next one waits, in the order they asked, and says how long it waited in its log. Use it so two deployments don't overlap. A job waiting for its group holds no job slot. The lock lives in the server's memory, which is where every job runs.</li>
+<li><b>environment on_stop</b>: <code>environment: { name: review, on_stop: stop-review }</code> names a job with <code>environment: { name: review, action: stop }</code> (usually <code>when: manual</code>). When the branch of the pipeline that deployed is <b>deleted</b>, or its pull request is <b>merged or declined</b>, ByteBench runs that waiting stop job of the branch's newest pipeline for each such environment, unless the environment is already stopped. A stop job that needs a protected environment's approval still waits for it. The check happens after pushes and PR changes, so a branch deleted through any route is noticed.</li>
+</ul>
+
+<h2 id="ci-webhooks">Webhook events</h2>
+<p>Pipelines raise <code>pipeline.created</code> (queued, or Error for an invalid file), <code>pipeline.started</code> (once, when the first job begins), <code>pipeline.completed</code> (also once; not while blocked on a manual job), <code>job.started</code> and <code>job.completed</code> (each attempt). Payloads, signing (HMAC-SHA256 in <code>X-ByteBench-Signature-256</code>) and retries are those of all <a href="api.html#webhooks">webhooks</a>; hooks subscribe to the events they want, so existing ones receive nothing new.</p>
 
 <h2 id="tag-pipelines">Tag pipelines</h2>
 <p>A pipeline can run when a tag is pushed, or created in ByteBench (the Tags page, or a release that makes its tag). Its <b>ref</b> is <code>refs/tags/{tag}</code>, shown as <i>tag v1.4.0</i> in the pipeline lists, and steps see <code>CI_COMMIT_TAG</code> and <code>CI_COMMIT_REF_NAME</code> set to the tag (and no <code>CI_COMMIT_BRANCH</code>). The commit is the one the tag points at, annotated or not.</p>
@@ -278,19 +395,29 @@ jobs:
 <h2 id="matrix">Matrix jobs</h2>
 <p><code>parallel: { matrix: [ { VAR: [a, b], OTHER: [x] }, ... ] }</code> runs a job once per combination of each entry's lists (several entries add up). Each instance is named <code>{job}-{value}-{value}</code> (characters other than letters, digits, <code>_</code>, <code>.</code> and <code>-</code> become <code>_</code>; up to 64 characters), gets its combination as environment variables on top of the job's <code>variables</code>, and a job that <code>needs</code> the matrix job needs every instance. Variable names follow the <a href="#file-variables">variable rules</a>; the total, with all other jobs, can't pass 20 jobs, and two instances can't get the same name. Image names can't use variables.</p>
 
+<h2 id="badges">Badges</h2>
+<p>Two SVG badges show the newest pipeline of a branch: <code>/p/{KEY}/repos/{slug}/badges/pipeline.svg</code> (passed, failed, running, pending, blocked, canceled, error or unknown) and <code>.../badges/coverage.svg</code> (the latest coverage, coloured by value). <code>?branch=name</code> picks the branch (default: the repository's default branch).</p>
+<ul>
+<li><b>Access.</b> ByteBench has no anonymous public projects, so a badge is served to a signed-in user who can view the repository (so it shows in ByteBench pages), or to anyone who adds the repository's <b>badge token</b>: <code>?token=...</code>. Everything else, including a wrong token or an unknown repository, is a plain 404. The token only opens these two images, which show a status or a percentage and nothing else.</li>
+<li><b>The token.</b> A Maintainer opens <b>Pipelines → Badges</b>: the panel creates the token on first use, shows ready-to-paste Markdown for both badges and has <b>Rotate token</b>, which breaks every address already in use (audited as <code>ci_badge.token_created</code> and <code>ci_badge.token_rotated</code>). Put it only where the image address may be seen (a README, a wiki); treat it as read-only and low value, not as a secret.</li>
+<li>Responses are sent <code>private, no-cache</code> with <code>nosniff</code> and a locked-down content security policy.</li>
+</ul>
+<pre><code>[![pipeline](https://bytebench.example.com/p/WEB/repos/site/badges/pipeline.svg?branch=main&amp;token=...)](https://bytebench.example.com/p/WEB/repos/site/pipelines)</code></pre>
+
 <h2 id="compare">Compared with GitLab CI and GitHub Actions</h2>
 <table>
 <tr><th>Feature</th><th>ByteBench</th></tr>
 <tr><td>Push, tag, pull request, schedule, manual and API triggers</td><td>Yes. Tags need <code>on.tags</code> or a tag rule.</td></tr>
-<tr><td>Job graph (<code>needs</code>), parallel jobs, <code>allow_failure</code>, manual jobs, <code>retry</code>, <code>timeout</code>, <code>rules</code> with <code>if</code></td><td>Yes (see above). No <code>stages</code>, <code>when: always</code> or <code>delayed</code>.</td></tr>
+<tr><td>Job graph (<code>needs</code>), parallel jobs, <code>allow_failure</code>, manual jobs, <code>retry</code>, <code>timeout</code>, <code>rules</code> with <code>if</code></td><td>Yes (see above), including <code>stages</code> and <code>when: always</code>, <code>on_failure</code> and <code>delayed</code>.</td></tr>
 <tr><td>Matrix</td><td>Yes (<code>parallel: matrix</code>), variables only; not the image.</td></tr>
 <tr><td>Variables: file, project and repository, protected, masked, per-run</td><td>Yes. CI variables are always masked; protected ones only reach protected branches and tags.</td></tr>
 <tr><td>Artifacts, expiry, cache with a file-hash key, artifacts between jobs</td><td>Yes. Protected and unprotected caches are separate.</td></tr>
-<tr><td>Test, security and SARIF reports</td><td>Yes (JUnit, TRX, xUnit, CTRF and Night Owl or SARIF). No coverage parsing.</td></tr>
-<tr><td>Environments, deployments, approvals, freezes, rollbacks, protected environments</td><td>Yes. No <code>on_stop</code> and no automatic review environments.</td></tr>
-<tr><td>Pages, release artifacts, merge checks, merge queue, commit status, webhooks, notifications</td><td>Yes. Webhooks send only <code>pipeline.completed</code>. No badges.</td></tr>
-<tr><td>Reusable workflows, <code>extends</code>, remote or local <code>include</code>, child pipelines, <code>resource_group</code>, <code>services</code>, service containers, secrets managers, runners with tags, autoscaling</td><td>Not supported. The server runs jobs itself in Docker.</td></tr>
-<tr><td>Job restarts after a server restart</td><td>Running pipelines end in Error and must be re-run; queued ones continue.</td></tr>
+<tr><td>Test, security and SARIF reports</td><td>Yes (JUnit, TRX, xUnit, CTRF and Night Owl or SARIF). Coverage from a <code>coverage:</code> regex, Cobertura or LCOV, stored per pipeline with a trend; not per file.</td></tr>
+<tr><td>Environments, deployments, approvals, freezes, rollbacks, protected environments</td><td>Yes, with <code>on_stop</code> (branch deleted, pull request merged or declined) and <code>resource_group</code>. No <code>auto_stop_in</code> and no automatic review URLs.</td></tr>
+<tr><td>Pages, release artifacts, merge checks, merge queue, commit status, webhooks, notifications</td><td>Yes. Webhooks: <code>pipeline.created</code>, <code>.started</code>, <code>.completed</code>, <code>job.started</code>, <code>job.completed</code>. Pipeline and coverage <a href="#badges">badges</a> (SVG, token for use outside ByteBench).</td></tr>
+<tr><td><code>extends</code>, hidden jobs, YAML anchors, <code>include</code> of repository files and (if the administrator allows) remote files, <code>services</code> sidecar containers</td><td>Yes (see <a href="#extends">extends</a>, <a href="#include">include</a>, <a href="#services">services</a>).</td></tr>
+<tr><td>Reusable workflows, child pipelines (<code>trigger</code>), including another project's files, secrets managers, runners with tags, autoscaling</td><td>Not supported. The server runs jobs itself in Docker.</td></tr>
+<tr><td>Job restarts after a server restart</td><td>A pipeline that was running is queued again once (finished jobs keep their results, running jobs start over and say so in their log). A second interruption ends it in Error with the running jobs Failed, so they can be retried.</td></tr>
 </table>
 
 <h2 id="triggers">What starts a pipeline</h2>
@@ -314,8 +441,8 @@ jobs:
 <li><b>Retry</b> on a finished job runs it again inside the same pipeline, replacing its logs and artifacts (PushCode). A job with <code>retry: N</code> also runs again by itself, up to N more times, when it fails (not when the pipeline is canceled): its steps, logs and artifacts are replaced, the new attempt's log starts with a note naming the failed step and its exit code and the last lines of the failed attempt, and a job that deploys records a deployment per attempt. Running out of retries fails the job as before.</li>
 <li><b>Timeout:</b> every job is killed after <code>Ci:JobTimeoutMinutes</code> (default 20). A job's own <code>timeout:</code> can make that shorter but never longer, so an admin's limit stays the ceiling. The clock covers the steps, not the checkout or the artifact upload.</li>
 <li><b>Cancel</b> stops a running pipeline (PushCode).</li>
-<li>When a pipeline fails or errors, whoever triggered it gets a notification. The <code>pipeline.completed</code> webhook fires when it finishes.</li>
-<li>After a server restart, pipelines that were running are marked Error; queued ones run again; leftover containers and workspaces from this instance are removed.</li>
+<li>When a pipeline fails or errors, whoever triggered it gets a notification. The <a href="#ci-webhooks">pipeline and job webhooks</a> fire as it goes.</li>
+<li><b>After a server restart</b>, a pipeline that was running is put back in the queue once, with the job that was running starting over (its log begins with a line saying the server restarted and the job was queued again; jobs that had finished keep their result and artifacts; deployments the interrupted job had recorded are closed as canceled). If the same pipeline is interrupted a second time it ends in <b>Error</b>: the running job is <b>Failed</b> and the jobs that hadn't started are Canceled, and both can be retried (↻ on the job, or Re-run), so a crash loop never repeats a deployment. Queued pipelines run again, and this instance's leftover containers, networks and workspaces are removed.</li>
 </ul>
 
 <h2 id="schedules">Schedules (cron)</h2>
@@ -364,6 +491,10 @@ jobs:
 <tr><td><code>MaxArtifactBytes</code></td><td>100 MB</td><td>Largest artifact per job.</td></tr>
 <tr><td><code>MaxCacheBytes</code> / <code>CacheBytesPerRepository</code></td><td>500 MB / 2 GB</td><td>Single cache / total per repository.</td></tr>
 <tr><td><code>SchedulesEnabled</code></td><td><code>true</code></td><td>Run <a href="#schedules">schedules</a>.</td></tr>
+<tr><td><code>AllowRemoteIncludes</code></td><td><code>false</code></td><td>Let pipeline files <a href="#include">include remote URLs</a>. Off because the server fetches an address chosen by whoever can push.</td></tr>
+<tr><td><code>RemoteIncludeAllowedHosts</code></td><td>empty</td><td>When set, remote includes may only come from these hosts (and their subdomains).</td></tr>
+<tr><td><code>AllowPrivateNetworks</code></td><td>follows <code>Webhooks:AllowPrivateNetworks</code></td><td>Allows remote includes from private addresses and over plain http (for local testing only).</td></tr>
+<tr><td><code>ServiceStartTimeoutSeconds</code></td><td><code>60</code></td><td>How long a job waits for its <a href="#services">services</a> to be ready.</td></tr>
 </table>
 
 <h2 id="permissions">Permissions</h2>
@@ -520,6 +651,9 @@ jobs:
 <tr><td>No pipeline after a push</td><td>No <code>.bytebench-ci.yml</code> at that commit, the branch isn't in <code>on.branches</code> and has no open PR, every job's rules excluded the branch, the commit already ran on that branch, or <code>Ci:Enabled</code> is off.</td></tr>
 <tr><td>Pipeline sits Queued</td><td>All <code>Ci:MaxConcurrentJobs</code> slots are busy, or it is a fork PR waiting for approval.</td></tr>
 <tr><td>A secret is empty in a job</td><td>The variable is protected and the branch isn't, or it's a fork PR pipeline, or its value couldn't be decrypted (check the notes at the top of the first step's log).</td></tr>
+<tr><td>A job fails with "Service ... was not ready"</td><td>The service's image has no HEALTHCHECK and its <code>port</code> never opened (wrong port, or it needs more than <code>Ci:ServiceStartTimeoutSeconds</code> to start). The log shows the service's last output.</td></tr>
+<tr><td>"remote includes are turned off"</td><td>An administrator has to set <code>Ci:AllowRemoteIncludes</code>; use a <code>local:</code> file instead.</td></tr>
+<tr><td>A badge shows 404</td><td>No token (or a rotated one) and not signed in; copy the current Markdown from Pipelines → Badges.</td></tr>
 <tr><td><code>command not found</code> in a later step</td><td>Each step is a new container: install tools in the step that uses them.</td></tr>
 </table>
 <p>Related: <a href="environments.html">Environments</a>, <a href="packages.html">Packages</a>, <a href="pages.html">Pages</a>, <a href="security-scanning.html">Security scanning</a>, <a href="api.html">REST API and webhooks</a>.</p>

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ByteBench.Services.Ci;
 
 /// <summary>A pipeline's status for a commit badge.</summary>
-public sealed record PipelineBadgeInfo(int Id, PipelineStatus Status, string Ref, string CommitSha);
+public sealed record PipelineBadgeInfo(int Id, PipelineStatus Status, string Ref, string CommitSha, double? Coverage = null);
 
 public sealed record PipelinePage(List<Pipeline> Items, int Total, int Page, int PageSize)
 {
@@ -23,7 +23,7 @@ public sealed record PipelineArtifactInfo(PipelineArtifact Artifact, string JobN
 /// </summary>
 public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, CiTriggerService triggers,
     CiQueue queue, RepoStorage storage, LiveEvents live, CiStorage ciStorage, CiArtifactStore artifactStore,
-    CiDeploymentRecorder deployments, Audit.AuditLog audit, NotificationService notifications)
+    CiDeploymentRecorder deployments, Audit.AuditLog audit, NotificationService notifications, Accounts.SiteSettings siteSettings)
 {
     public bool Enabled => triggers.Enabled;
 
@@ -82,7 +82,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.Pipelines.Where(p => p.RepositoryId == repo.Id && list.Contains(p.CommitSha));
         if (branch != null) q = q.Where(p => p.Ref == branch);
-        var rows = await q.Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha)).ToListAsync();
+        var rows = await q.Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha, p.Coverage)).ToListAsync();
         return rows.GroupBy(r => r.CommitSha).ToDictionary(g => g.Key, g => g.MaxBy(r => r.Id)!);
     }
 
@@ -94,7 +94,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         var shas = list.Select(t => t.Sha).Distinct().ToList();
         await using var db = await dbFactory.CreateDbContextAsync();
         var rows = await db.Pipelines.Where(p => p.RepositoryId == repo.Id && shas.Contains(p.CommitSha))
-            .Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha)).ToListAsync();
+            .Select(p => new PipelineBadgeInfo(p.Id, p.Status, p.Ref, p.CommitSha, p.Coverage)).ToListAsync();
         var result = new Dictionary<string, PipelineBadgeInfo>();
         foreach (var (branch, sha) in list)
             if (rows.Where(r => r.Ref == branch && r.CommitSha == sha).MaxBy(r => r.Id) is { } hit) result[branch] = hit;
@@ -269,7 +269,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         var playedBy = runsNow ? me : null;
         var n = await db.PipelineJobs.Where(j => j.Id == jobId && j.Status != PipelineStatus.Queued && j.Status != PipelineStatus.Running && j.Status != PipelineStatus.Manual)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued)
-                .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null)
+                .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null).SetProperty(j => j.Coverage, (double?)null)
                 .SetProperty(j => j.PlayedById, playedBy).SetProperty(j => j.PlayedAt, playedAt));
         if (n == 0) throw new InvalidOperationException($"Job '{job.Name}' hasn't finished yet.");
         if (gate != null) await RecordRetryApprovalAsync(repo, job, me!.Value, gate.Value.Environment);
@@ -369,7 +369,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
     private async Task<int> CreateManualAsync(Repository repo, string branch, string sha, PipelineTrigger trigger, int? prId = null,
         bool forkPullRequest = false, string? variablesJson = null, IReadOnlyDictionary<string, string>? extraVariables = null)
     {
-        var def = await triggers.LoadDefinitionAsync(repo, sha)
+        var def = await triggers.LoadDefinitionAsync(repo, sha, forkPullRequest)
             ?? throw new InvalidOperationException($"There is no {CiFile.FileName} at the root of '{branch}' ({sha[..7]}).");
         if (prId == null && !CiRef.IsTag(branch))
         {

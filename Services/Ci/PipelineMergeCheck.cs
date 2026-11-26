@@ -9,7 +9,7 @@ namespace ByteBench.Services.Ci;
 /// blocked on a manual job, or no pipeline yet → Pending; Failed/Canceled/Error → Failed. Reports nothing when the head has no pipeline file.
 /// Enforcement (branch protection) lives elsewhere; this only reports.
 /// </summary>
-public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage) : IMergeCheck
+public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, CiRemoteIncludes remoteIncludes) : IMergeCheck
 {
     public const string Name = "Pipeline";
 
@@ -60,7 +60,7 @@ public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoS
         if (await db.Pipelines.AnyAsync(p => p.RepositoryId == pr.RepositoryId && p.CommitSha == head && !p.Ref.StartsWith(CiRef.TagPrefix), ct)) return false;
         var blob = await Task.Run(() => CiFile.GetBlob(path, head), ct);
         if (blob is not { Text: { } text } || blob.TooLarge || blob.IsBinary) return false;
-        if (CiFile.Parse(text).Definition is not { } def) return false; // an invalid file creates an Error pipeline: report that
+        if (await Task.Run(() => CiFile.Parse(text, new CiIncludeProvider(path, head, remoteIncludes, allowRemote: !pr.IsCrossFork)), ct) is not { Definition: { } def }) return false; // an invalid file creates an Error pipeline: report that
         if (pr.IsCrossFork) return !def.On.PullRequests || def.ForBranch(pr.SourceBranch).Jobs.Count == 0;
         if (def.ForBranch(pr.SourceBranch) is { Error: null, Jobs.Count: 0 }) return true;
         return !def.On.PullRequests && !def.On.MatchesBranch(pr.SourceBranch);

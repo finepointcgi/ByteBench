@@ -32,3 +32,8 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.45;
     white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+.ci-coverage-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ci-spark { color: var(--accent, #6366f1); vertical-align: middle; }
+.ci-cov-up { color: #2e9e44; font-variant-numeric: tabular-nums; }
+.ci-cov-down { color: #d1423f; font-variant-numeric: tabular-nums; }

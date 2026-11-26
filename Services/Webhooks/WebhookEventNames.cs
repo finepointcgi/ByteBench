@@ -15,6 +15,14 @@ public static class WebhookEventNames
     public const string PullRequestCommented = "pull_request.commented";
     /// <summary>Raised by CI pipelines (not by this module) through <see cref="WebhookDispatcher.Enqueue"/>.</summary>
     public const string PipelineCompleted = "pipeline.completed";
+    /// <summary>A pipeline was created (queued, or in Error because its file is invalid). Raised by CI.</summary>
+    public const string PipelineCreated = "pipeline.created";
+    /// <summary>A pipeline began running (once per pipeline, not again after a manual job or retry). Raised by CI.</summary>
+    public const string PipelineStarted = "pipeline.started";
+    /// <summary>A CI job started running (again for each retry). Raised by CI.</summary>
+    public const string JobStarted = "job.started";
+    /// <summary>A CI job finished: passed, failed or canceled. Raised by CI.</summary>
+    public const string JobCompleted = "job.completed";
     /// <summary>Raised by security scanning (Services/Security) when the default branch gets new findings at or above the repository's notify severity.</summary>
     public const string SecurityNewFindings = "security.new_findings";
     /// <summary>A deployment waits for approval, starts, finishes, or is rejected or canceled (raised by CI).</summary>
@@ -47,7 +55,11 @@ public static class WebhookEventNames
         (PullRequestMerged, "A pull request is merged"),
         (PullRequestDeclined, "A pull request is declined"),
         (PullRequestCommented, "Someone comments on a pull request"),
+        (PipelineCreated, "A CI pipeline is created"),
+        (PipelineStarted, "A CI pipeline starts running"),
         (PipelineCompleted, "A CI pipeline finishes"),
+        (JobStarted, "A CI job starts running"),
+        (JobCompleted, "A CI job finishes"),
         (SecurityNewFindings, "A security scan finds new high-severity issues on the default branch"),
         (DeploymentStatus, "A deployment changes status (waiting for approval, running, passed, failed, canceled)"),
         (PagesDeployed, "A Pages site is deployed or rolled back"),

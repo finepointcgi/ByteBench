@@ -6,13 +6,28 @@ namespace ByteBench.Services.Ci;
 
 /// <summary>A job's <c>artifacts</c>, <c>cache</c>, <c>retry</c>, <c>timeout</c> and <c>variables</c> settings, stored as JSON on <see cref="Data.PipelineJob.ExtrasJson"/>.</summary>
 public sealed record CiJobExtras(CiArtifactsDefinition? Artifacts, CiCacheDefinition? Cache, CiPagesDefinition? Pages = null,
-    int Retry = 0, TimeSpan? Timeout = null, IReadOnlyDictionary<string, string>? Variables = null)
+    int Retry = 0, TimeSpan? Timeout = null, IReadOnlyDictionary<string, string>? Variables = null,
+    string? When = null, TimeSpan? StartIn = null, IReadOnlyList<CiServiceDefinition>? Services = null, string? Coverage = null,
+    string? ResourceGroup = null, string? OnStop = null, string? Stage = null)
 {
+    /// <summary>The job's trigger: always or on_failure (on_success otherwise; manual jobs are <see cref="Data.PipelineJob.IsManual"/>).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CiJobTrigger Trigger => When switch { "always" => CiJobTrigger.Always, "on_failure" => CiJobTrigger.OnFailure, _ => CiJobTrigger.OnSuccess };
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDelayed => When == "delayed";
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public static string? Serialize(CiJobDefinition j) =>
-        j.Artifacts == null && j.Cache == null && j.Pages == null && j.Retry == 0 && j.Timeout == null && j.Variables.Count == 0 ? null
-            : JsonSerializer.Serialize(new CiJobExtras(j.Artifacts, j.Cache, j.Pages, j.Retry, j.Timeout, j.Variables.Count == 0 ? null : j.Variables), Json);
+    public static string? Serialize(CiJobDefinition j)
+    {
+        var when = j.When switch { CiJobWhen.Always => "always", CiJobWhen.OnFailure => "on_failure", CiJobWhen.Delayed => "delayed", _ => null };
+        var onStop = j.Environment?.OnStop;
+        if (j.Artifacts == null && j.Cache == null && j.Pages == null && j.Retry == 0 && j.Timeout == null && j.Variables.Count == 0
+            && when == null && j.StartIn == null && j.Services.Count == 0 && j.Coverage == null && j.ResourceGroup == null && onStop == null && j.Stage == null)
+            return null;
+        return JsonSerializer.Serialize(new CiJobExtras(j.Artifacts, j.Cache, j.Pages, j.Retry, j.Timeout, j.Variables.Count == 0 ? null : j.Variables,
+            when, j.StartIn, j.Services.Count == 0 ? null : j.Services, j.Coverage, j.ResourceGroup, onStop, j.Stage), Json);
+    }
 
     public static CiJobExtras Parse(string? json)
     {
@@ -32,6 +47,9 @@ public sealed record CiJobExtras(CiArtifactsDefinition? Artifacts, CiCacheDefini
     public static string? SerializeVariables(IReadOnlyDictionary<string, string>? vars) =>
         vars == null || vars.Count == 0 ? null : JsonSerializer.Serialize(vars);
 }
+
+/// <summary>How a job reacts to the result of the jobs it needs (see <see cref="CiJobGraph"/>).</summary>
+public enum CiJobTrigger { OnSuccess, Always, OnFailure }
 
 /// <summary>
 /// Folders for artifacts (<c>Ci:ArtifactsRoot</c>) and caches (<c>Ci:CacheRoot</c>), both under the content root by

@@ -42,4 +42,16 @@ public class CiOptions
     public long CacheBytesPerRepository { get; set; } = 2L * 1024 * 1024 * 1024;
     /// <summary>Run pipeline schedules (only when <see cref="Enabled"/> too).</summary>
     public bool SchedulesEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Lets a pipeline file <c>include: { remote: https://... }</c> files from other servers. Off by default: the address is chosen by
+    /// whoever can push, so the server fetches (SSRF-guarded, https only, size-capped) only when an administrator turns this on.
+    /// </summary>
+    public bool AllowRemoteIncludes { get; set; }
+    /// <summary>Hosts remote includes may come from (a host or its subdomains); empty allows any public host.</summary>
+    public string[]? RemoteIncludeAllowedHosts { get; set; }
+    /// <summary>Allows remote includes (and plain http) on private addresses. Null follows <c>Webhooks:AllowPrivateNetworks</c>.</summary>
+    public bool? AllowPrivateNetworks { get; set; }
+    /// <summary>How long a job waits for its <c>services:</c> to be ready before it fails.</summary>
+    public int ServiceStartTimeoutSeconds { get; set; } = 60;
 }
