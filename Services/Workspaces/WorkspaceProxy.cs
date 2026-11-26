@@ -286,9 +286,9 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         {
             if (name.Equals("Host", StringComparison.OrdinalIgnoreCase) || name.Equals("Cookie", StringComparison.OrdinalIgnoreCase)
                 || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)) continue;
-            foreach (var v in values) head.Append(name).Append(": ").Append(Sanitize(v)).Append("\r\n");
+            foreach (var v in values) head.Append(name).Append(": ").Append(Sanitize(v ?? "")).Append("\r\n");
         }
-        if (cookie != null) head.Append("Cookie: ").Append(Sanitize(cookie)).Append("\r\n");
+        if (cookie != null) head.Append("Cookie: ").Append(Sanitize(cookie!)).Append("\r\n");
         head.Append("\r\n");
         await upstream.WriteAsync(Encoding.ASCII.GetBytes(head.ToString()), ctx.RequestAborted);
         await upstream.FlushAsync(ctx.RequestAborted);
