@@ -61,7 +61,7 @@ public sealed record TestRunRow(TestRun Run, TestRunSummary Summary);
 /// the <c>test_run.completed</c> webhook. Split over <c>TestService.*.cs</c>.
 /// </summary>
 public partial class TestService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, AuditLog audit, WebhookDispatcher webhooks,
-    PublicBaseUrl baseUrl, AttachmentStorage files, IssueService issues, RepositoryService repos, IConfiguration config)
+    PublicBaseUrl baseUrl, AttachmentStorage files, IssueService issues, RepositoryService repos, IConfiguration config, NotificationService notifications)
 {
     public const int MaxEvidencePerResult = 20;
     public const long MaxEvidenceBytes = 25L * 1024 * 1024;

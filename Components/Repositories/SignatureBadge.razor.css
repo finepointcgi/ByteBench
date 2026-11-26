@@ -1,6 +1,11 @@
 .sig-badge {
     display: inline-flex; align-items: center; gap: 3px; border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 600;
     line-height: 18px; white-space: nowrap; cursor: help; border: 1px solid transparent;
+    /* Breathing room from the text before it and, when the meta line wraps on a phone, from the line above and below. */
+    margin: 2px 6px 2px 6px; vertical-align: middle; max-width: 100%;
+}
+@media (max-width: 480px) {
+    .sig-badge { margin-left: 0; margin-right: 8px; }
 }
 .sig-verified { color: var(--mud-palette-success); border-color: rgba(var(--mud-palette-success-rgb), .5); background: rgba(var(--mud-palette-success-rgb), .1); }
 .sig-unverified { color: var(--mud-palette-warning); border-color: rgba(var(--mud-palette-warning-rgb), .6); background: rgba(var(--mud-palette-warning-rgb), .12); }

@@ -179,6 +179,7 @@ public partial class TestService
         if (status == TestResultStatus.NotRun) { result.ExecutedAt = null; result.ExecutedById = null; }
         else { result.ExecutedAt = DateTime.UtcNow; result.ExecutedById = actor; }
         await db.SaveChangesAsync();
+        await audit.RecordAsync("test_result.recorded", "test_run", run.Id, projectId, new { run = run.Number, @case = c.Number, status = status.ToString() }, actor);
         return result;
     }
 
@@ -209,6 +210,17 @@ public partial class TestService
                 webUrl = RunUrl(baseUrl.Value, key, run.Number),
             },
         }, actor);
+
+        // In-app notification (and the user's "Pipelines" preference decides email/in-app) for whoever started the run.
+        // A person closing their own manual run doesn't need telling; automated (ingested) runs always notify the starter.
+        if (run.CreatedById is { } creator && !(run.Source == TestRunSource.Manual && creator == actor))
+        {
+            var text = sum.Failed + sum.Blocked > 0
+                ? $"{sum.Failed} failed, {sum.Blocked} blocked, {sum.Passed} passed of {sum.Total}"
+                : $"All clear: {sum.Passed} passed, {sum.Skipped} skipped, {sum.NotRun} not run";
+            try { await notifications.OnTestRunCompletedAsync(run.ProjectId, creator, $"{run.Name} (run #{run.Number})", $"/p/{key}/tests/runs/{run.Number}", text); }
+            catch (Exception) { /* a failed notification never fails closing the run */ }
+        }
     }
 
     public async Task DeleteRunAsync(int projectId, int number)
@@ -312,6 +324,13 @@ public partial class TestService
             Priority = c.Priority switch { TestPriority.Critical => IssuePriority.Highest, TestPriority.High => IssuePriority.High, TestPriority.Low => IssuePriority.Low, _ => IssuePriority.Medium },
         }, [], actor);
         result.IssueNumber = issue.Number;
+        // The bug joins the case's linked issues (kept within the column's limit), so the case shows the bugs it found.
+        var linked = c.LinkedIssueNumbers.ToHashSet();
+        if (linked.Add(issue.Number) && string.Join(",", linked.Order()).Length <= 300)
+        {
+            c.LinkedIssues = string.Join(",", linked.Order());
+            c.UpdatedAt = DateTime.UtcNow;
+        }
         await db.SaveChangesAsync();
         await audit.RecordAsync("test_result.bug_created", "test_run", run.Id, projectId, new { run = run.Number, @case = c.Number, issue = issue.Number }, actor);
         return issue.Number;

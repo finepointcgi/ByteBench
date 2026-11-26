@@ -386,6 +386,22 @@ public class McpOAuthTests(McpOAuthTestApp app) : IClassFixture<McpOAuthTestApp>
     }
 
     [Fact]
+    public async Task Registration_caps_field_sizes_and_the_body()
+    {
+        var anon = app.CreateClient();
+        var ok = "https://a.example/cb";
+        await AssertOAuthError(await anon.PostAsync("/oauth/register", TestOAuthClient.JsonBody(new { client_name = new string('n', 1001), redirect_uris = new[] { ok } })), "invalid_client_metadata");
+        await AssertOAuthError(await anon.PostAsync("/oauth/register", TestOAuthClient.JsonBody(new { redirect_uris = Enumerable.Range(0, McpOAuthService.MaxRedirectUris + 1).Select(i => $"https://a.example/{i}").ToArray() })), "invalid_redirect_uri");
+        await AssertOAuthError(await anon.PostAsync("/oauth/register", TestOAuthClient.JsonBody(new { redirect_uris = new[] { "https://a.example/" + new string('p', McpOAuthService.MaxRedirectUriLength) } })), "invalid_redirect_uri");
+        var huge = await anon.PostAsync("/oauth/register", TestOAuthClient.JsonBody(new { client_name = new string('x', 70 * 1024), redirect_uris = new[] { ok } }));
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, huge.StatusCode);
+        // A name with control and bidi characters is stored cleaned, so the consent page can't be spoofed with it.
+        var named = await anon.PostAsync("/oauth/register", TestOAuthClient.JsonBody(new { client_name = "Evil‮\r\nApp", redirect_uris = new[] { ok } }));
+        Assert.Equal(HttpStatusCode.Created, named.StatusCode);
+        Assert.Equal("EvilApp", (await TestOAuthClient.JsonAsync(named))["client_name"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task A_missing_state_is_an_error_page_and_deny_returns_access_denied()
     {
         var (user, browser) = await NewUserAsync();

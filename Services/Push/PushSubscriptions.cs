@@ -63,6 +63,17 @@ public sealed class PushSubscriptions(IDbContextFactory<AppDbContext> dbFactory,
         return null;
     }
 
+    /// <summary>
+    /// The browser replaced a subscription (<c>pushsubscriptionchange</c>): drops the user's old one (when they had it) and stores
+    /// the new one. The old endpoint is only ever removed if it belongs to this user.
+    /// </summary>
+    public async Task<string?> ReplaceAsync(int userId, string? oldEndpoint, string? endpoint, string? p256dh, string? auth, string? userAgent, CancellationToken ct = default)
+    {
+        var error = await AddAsync(userId, endpoint, p256dh, auth, userAgent, ct);
+        if (error == null && !string.IsNullOrEmpty(oldEndpoint) && oldEndpoint != endpoint) await RemoveAsync(userId, oldEndpoint, ct);
+        return error;
+    }
+
     /// <summary>Removes the user's subscription with this endpoint (this browser unsubscribed). False if there was none.</summary>
     public async Task<bool> RemoveAsync(int userId, string? endpoint, CancellationToken ct = default)
     {

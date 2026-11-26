@@ -44,6 +44,8 @@ public static class ProductionChecks
             Add(CheckSeverity.Problem, "Account:RequireEmailConfirmation", "On while Email:Enabled is false: confirmation and reset emails can't be sent, so unconfirmed users can't sign in. Enable email or turn this off.");
         if (!c.GetValue("Email:Enabled", false))
             Add(CheckSeverity.Info, "Email:Enabled", "Off: \"Forgot password\" emails and other account emails are not sent. Admins can still set a temporary password on /admin/users.");
+        if (c.GetValue("Deployment:Instances", 1) > 1)
+            Add(CheckSeverity.Warning, "Deployment:Instances", "More than one instance is configured, but ByteBench is built to run as one: live updates, rate limits, OAuth registration limits, Workspaces (running environments, IDE tickets and sessions) and the CI runner keep state in memory, and SQLite is a single-writer file. Run exactly one instance, or pin each user to one with sticky routing at your own risk.");
         if (!c.GetValue("RateLimiting:Enabled", true))
             Add(CheckSeverity.Warning, "RateLimiting:Enabled", "Rate limiting is off.");
 

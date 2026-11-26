@@ -9,6 +9,7 @@
 @inject IWorkspaceBackend Backend
 @inject WorkspaceUrls Urls
 @inject IOptionsMonitor<WorkspaceOptions> Options
+@inject Microsoft.Extensions.Configuration.IConfiguration Config
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
@@ -33,6 +34,7 @@ else
                 <tr><td>Docker reachable</td><td data-testid="ws-health-docker">@(docker == null ? "Checking…" : docker == true ? "Yes" : "No: install Docker and make it reachable for ByteBench (docker CLI on the PATH, and the daemon socket or DOCKER_HOST)")</td></tr>
                 <tr><td>Workspace image</td><td data-testid="ws-health-image"><span class="mono">@Image.Image</span>: @ImageText()</td></tr>
                 <tr><td>Reaper</td><td data-testid="ws-health-reaper">@(Runtime.ReaperLastRun is { } r ? $"running, last pass {r.ToLocalTime():T}" : "not started yet")</td></tr>
+                <tr><td>Instances</td><td data-testid="ws-health-instances">@InstancesText()</td></tr>
                 <tr><td>Origins</td><td>@OriginText()</td></tr>
                 <tr><td>Limits</td><td>@o.MaxPerUser per user, @o.MaxTotal in total · @o.Memory memory, @o.Cpus CPUs, @o.PidsLimit processes, @(o.DiskLimit ?? "no") disk · idle @o.IdleTimeoutMinutes min, lifetime @o.MaxLifetimeHours h · network: @o.EgressMode</td></tr>
             </tbody>
@@ -94,6 +96,11 @@ else
         WorkspaceImageState.NoDocker => "unknown (no Docker)",
         _ => "not checked yet",
     };
+
+    // Running workspaces, IDE tickets (60 s, single use) and IDE sessions live in this process's memory, not the database.
+    private string InstancesText() => Config.GetValue("Deployment:Instances", 1) > 1
+        ? $"Warning: Deployment:Instances is {Config.GetValue("Deployment:Instances", 1)}. Workspace tickets, sessions and running environments are held in memory, so a ticket redeemed on another instance fails. Run one instance."
+        : "One instance only: IDE tickets, sessions and running environments are kept in memory (a restart drops them, and the reaper removes the containers).";
 
     private string OriginText() => Urls.Mode switch
     {

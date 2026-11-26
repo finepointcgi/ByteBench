@@ -2,7 +2,7 @@
 <p class="lead">Run ByteBench on a real server: Docker image and compose file, a TLS reverse proxy, PostgreSQL or SQLite, data protection keys, backups, upgrades, health checks and a checklist.</p>
 
 <h2 id="overview">The shape of a deployment</h2>
-<p>ByteBench is one ASP.NET Core process with a database (SQLite by default, or PostgreSQL) and a handful of folders: repositories, attachments, packages, LFS objects, published sites and the Data Protection key ring. Run it as <strong>a single instance</strong>; the in-process queues for CI, webhooks and AI review are not built for several replicas.</p>
+<p>ByteBench is one ASP.NET Core process with a database (SQLite by default, or PostgreSQL) and a handful of folders: repositories, attachments, packages, LFS objects, published sites and the Data Protection key ring. Run it as <strong>a single instance</strong>; the in-process queues for CI, webhooks and AI review are not built for several replicas. Live updates, rate limits and the Workspaces tickets, sessions and running environments are also held in memory. If you run more than one anyway, set <code>Deployment:Instances</code> to the count and <code>/admin/system</code> and the Workspaces health row show a warning.</p>
 <p>A typical layout: a TLS reverse proxy (Caddy or nginx) in front of the container, the container's volumes on reliable disks, backups written to a different disk, and optionally a PostgreSQL container or server.</p>
 
 <h2 id="docker">Docker image and compose</h2>
@@ -28,7 +28,7 @@ docker compose logs -f bytebench     # JSON logs</code></pre>
 <h3 id="ci-in-docker">CI in the container</h3>
 <p>CI jobs need a Docker daemon, so CI is off in the image. Three ways to turn it on:</p>
 <ol>
-  <li><strong>Mount the host Docker socket</strong>: build with <code>--build-arg WITH_DOCKER_CLI=true</code>, mount <code>/var/run/docker.sock</code>, set <code>Ci__Enabled=true</code>, and set <code>Ci__WorkDirectory</code> to a folder mounted at the <em>same path</em> on the host and in the container (the daemon mounts workspaces by host path). The socket's group must be usable by uid 1654 (<code>group_add</code>).</li>
+  <li><strong>Mount the host Docker socket</strong>: build with <code>--build-arg WITH_DOCKER_CLI=true</code> plus <code>--build-arg DOCKER_CLI_SHA256_X86_64=…</code> / <code>DOCKER_CLI_SHA256_AARCH64=…</code> (the SHA-256 of the pinned <code>docker-$DOCKER_CLI_VERSION.tgz</code> for your architecture; the build fails without a matching hash), mount <code>/var/run/docker.sock</code>, set <code>Ci__Enabled=true</code>, and set <code>Ci__WorkDirectory</code> to a folder mounted at the <em>same path</em> on the host and in the container (the daemon mounts workspaces by host path). The socket's group must be usable by uid 1654 (<code>group_add</code>).</li>
   <li><strong>Run ByteBench on the host</strong> (<code>dotnet ByteBench.dll</code> under systemd) with Docker installed.</li>
   <li><strong>Use a separate Docker host</strong> via <code>DOCKER_HOST=tcp://ci-host:2376</code> with TLS (<code>DOCKER_TLS_VERIFY=1</code>, <code>DOCKER_CERT_PATH</code>). This is the safest: builds cannot touch the ByteBench host.</li>
 </ol>
