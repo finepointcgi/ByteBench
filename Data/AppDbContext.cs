@@ -372,6 +372,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureMcpOAuth(b);
         ConfigureDependencyRegistries(b);
         ConfigureNotificationDelivery(b);
+        ConfigureTests(b);
     }
 
     // ----- Forks -----

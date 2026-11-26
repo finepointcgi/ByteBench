@@ -243,7 +243,10 @@ public static partial class CiFile
         Deserializer.Deserialize<Dictionary<string, JobDto?>>(yaml);
 
     /// <summary>Report types <c>artifacts.reports</c> accepts.</summary>
-    public static readonly IReadOnlyList<string> ReportTypes = ["nightowl", "sarif"];
+    public static readonly IReadOnlyList<string> ReportTypes = ["nightowl", "sarif", "junit", "trx", "xunit", "ctrf"];
+
+    /// <summary>Report types that are test results (Services/Tests): these may name several files with a pattern.</summary>
+    public static bool IsTestReportType(string type) => type is "junit" or "trx" or "xunit" or "ctrf";
 
     public static CiParseResult Parse(string? yaml)
     {
@@ -367,10 +370,10 @@ public static partial class CiFile
             foreach (var (type, file) in job.Artifacts.Reports ?? [])
             {
                 var t = type?.Trim().ToLowerInvariant() ?? "";
-                if (!ReportTypes.Contains(t)) return Err($"artifacts report type '{type}' is not supported: use {string.Join(" or ", ReportTypes)}.");
+                if (!ReportTypes.Contains(t)) return Err($"artifacts report type '{type}' is not supported: use {string.Join(", ", ReportTypes)}.");
                 var f = file?.Trim() ?? "";
                 if (f.Length == 0) return Err($"artifacts report '{t}' needs a file name.");
-                if (f.Contains('*') || f.Contains('?') || f.EndsWith('/')) return Err($"artifacts report '{t}' must name one file, not a pattern.");
+                if ((!IsTestReportType(t) && (f.Contains('*') || f.Contains('?'))) || f.EndsWith('/')) return Err($"artifacts report '{t}' must name one file, not a pattern.");
                 if (CiArtifacts.ValidatePattern(f) is { } re) return Err($"artifacts report '{t}' path '{f}' {re}");
                 reports[t] = f;
             }

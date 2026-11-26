@@ -27,6 +27,10 @@ public enum Permission
     ToggleFlags,
     /// <summary>Create, delete and archive feature flags; manage flag environments, segments and SDK keys (Maintainer+).</summary>
     ManageFlags,
+    /// <summary>Write and edit test cases, start runs, record results and upload automated results (Developer+).</summary>
+    RunTests,
+    /// <summary>Manage test plans, archive and delete test cases and runs (Maintainer+).</summary>
+    ManageTests,
 }
 
 /// <summary>
@@ -85,9 +89,9 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
     {
         Permission.ViewProject => ProjectRole.Viewer,
         Permission.EditIssues or Permission.Comment or Permission.PushCode
-            or Permission.CreatePullRequest or Permission.ReviewPullRequest or Permission.PublishPackages or Permission.ToggleFlags => ProjectRole.Developer,
+            or Permission.CreatePullRequest or Permission.ReviewPullRequest or Permission.PublishPackages or Permission.ToggleFlags or Permission.RunTests => ProjectRole.Developer,
         Permission.ManageLabelsAndMilestones or Permission.MergePullRequest
-            or Permission.DeleteBranch or Permission.ManageRepositories or Permission.DeletePackages or Permission.ManageFlags => ProjectRole.Maintainer,
+            or Permission.DeleteBranch or Permission.ManageRepositories or Permission.DeletePackages or Permission.ManageFlags or Permission.ManageTests => ProjectRole.Maintainer,
         _ => ProjectRole.Owner, // ManageMembers, ManageProjectSettings, DeleteProject
     };
 
@@ -228,6 +232,8 @@ public partial class ProjectAccess(IDbContextFactory<AppDbContext> dbFactory, Cu
         Permission.DeletePackages => "delete packages in this project",
         Permission.ToggleFlags => "change feature flags in this project",
         Permission.ManageFlags => "create, delete or archive feature flags in this project",
+        Permission.RunTests => "write test cases, run tests and record results in this project",
+        Permission.ManageTests => "manage test plans and delete test cases or runs in this project",
         _ => p.ToString(),
     };
 }

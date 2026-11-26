@@ -40,7 +40,7 @@ public sealed record GeneratedNotes(string Markdown, string? PreviousTag, int Co
 /// </summary>
 public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access,
     AttachmentStorage files, AuditLog audit, WebhookDispatcher webhooks, PublicBaseUrl baseUrl, IConfiguration config,
-    ILogger<ReleaseService> log, ProtectedTagService protectedTags)
+    ILogger<ReleaseService> log, ProtectedTagService protectedTags, ReleaseAutoAttachService autoAttach)
 {
     public const int MaxAssetsPerRelease = 50;
     public const long DefaultMaxAssetBytes = 512L * 1024 * 1024;
@@ -423,6 +423,9 @@ public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, Repositor
                 new { release = ReleaseDtos.Release(r, url), repository = Dto.Repository(repo, url) }, actorId);
         }
         catch (Exception ex) { log.LogError(ex, "Could not queue release.published for release {Id}", releaseId); }
+        // Release hub: copy matching CI artifacts of the tagged commit onto the release (a repository setting; never fails the publish).
+        try { await autoAttach.AttachAsync(repo, releaseId, actorId); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Attaching CI artifacts to release {Id} failed", releaseId); }
     }
 
     private void RaiseTagEvent(Repository repo, string eventName, TagInfo tag, int actorId)

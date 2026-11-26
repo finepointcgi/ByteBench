@@ -123,6 +123,7 @@ builder.Services.AddScoped<CiVariableService>(); // CI secret variables (Data Pr
 // Re-check cookies against the security stamp every minute, so an admin's "sign out" or lock takes effect quickly.
 builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 builder.Services.AddReleases(); // tags, releases, assets, source archives
+ByteBench.Services.Tests.TestsServiceCollectionExtensions.AddTestManagement(builder.Services); // test cases, plans, runs, results; release hub
 // ----- Explore & profiles -----
 builder.Services.AddScoped<ByteBench.Services.Explore.StarService>();
 builder.Services.AddScoped<ByteBench.Services.Explore.ExploreService>();
