@@ -824,7 +824,7 @@ Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only`,
 - **Pages.** `/p/{KEY}/repos/{slug}/pipelines` lists pipelines. `/p/{KEY}/repos/{slug}/pipelines/{id}` shows jobs, steps and logs, with Cancel and Re-run buttons. Everything needs ViewProject.
 - **Merge check.** `PipelineMergeCheck` (an `IMergeCheck`) reports the latest pipeline on the PR's current source head (tag pipelines on the same commit don't count): Passed, Pending (queued, running or none yet) or Failed (failed, canceled or error). It reports nothing if the head has no `.bytebench-ci.yml`, or if no pipeline would start for the PR (every job's rules leave it out, or `on:` excludes it), so it never waits for one that will not come.
 - **Notifications.** When a pipeline fails or errors, the person who triggered it gets a notification.
-- **Restarts.** Pipelines that were running when the server stopped are marked Error. Queued ones run again. This instance's leftover containers and workspaces are removed.
+- **Restarts.** A pipeline that was running when the server stopped is queued again once (jobs that finished keep their results; the running job starts over and its log says so); interrupted a second time it ends in Error with the running jobs Failed, which can be retried. Queued ones run again. This instance's leftover containers, networks and workspaces are removed.
 - **Docker missing.** If the docker CLI can't reach a daemon, pipelines end in Error with "Docker is not available on the server".
 
 **Configuration** (`appsettings.json`, section `Ci`):
@@ -845,6 +845,10 @@ Jobs can also use `artifacts`, `cache`, `when`, `allow_failure`, `rules`/`only`,
 | `MaxArtifactBytes` | 100 MB | Largest artifact per job (total file size and zip size). Over it, the job fails |
 | `MaxCacheBytes` / `CacheBytesPerRepository` | 500 MB / 2 GB | Largest single cache; total per repository before least-recently-used caches are evicted |
 | `SchedulesEnabled` | `true` | Run [pipeline schedules](#ci-artifacts-caches-manual-jobs-schedules--environments) |
+| `AllowRemoteIncludes` | `false` | Let pipeline files `include: { remote: https://... }` (SSRF-guarded, https, size-capped; see [CI stages, templates, includes...](#ci-stages-templates-includes-services-coverage-badges--more)) |
+| `RemoteIncludeAllowedHosts` | empty | Restrict remote includes to these hosts and their subdomains |
+| `AllowPrivateNetworks` | follows `Webhooks:AllowPrivateNetworks` | Remote includes from private addresses and over http (testing only) |
+| `ServiceStartTimeoutSeconds` | `60` | How long a job waits for its `services:` to be ready |
 
 ### Security model
 
@@ -928,9 +932,55 @@ jobs:
 - **Retry and timeout.** A failed job (not a canceled pipeline) with `retry: N` runs again inside the same pipeline: its steps, logs and artifacts are reset and the new attempt's log starts with a note naming the failed step, its exit code and the last lines of the failed attempt. `timeout:` is `min(job timeout, Ci:JobTimeoutMinutes)`.
 - **Matrix.** Instances are named `{job}-{value}-{value}` and get the combination as variables; `needs` on the matrix job means every instance.
 - **Commit status.** `GET .../commits/{sha}/status` returns `success`, `failure`, `pending` or `none` from the newest pipeline of each ref, plus the pipelines.
-- **Not supported:** `stages`, `extends`, `include` of files, `trigger` (child pipelines), `resource_group`, `services`, `environment: on_stop`, coverage parsing, pipeline badges, `when: always`/`delayed`. Webhooks send `pipeline.completed` only. See [the docs site](site/pages/ci.html) for the comparison with GitLab CI and GitHub Actions.
+- **Not supported:** `trigger` (child and multi-project pipelines), `include` of another project's files, `retry: { when }`, `parallel: N`, `rules: changes`/`exists`, `cache: key: files:`, `environment: auto_stop_in`, per-file coverage, a Docker daemon inside jobs. See [the docs site](site/pages/ci.html) for the comparison with GitLab CI and GitHub Actions.
 
 Code: `Services/Ci/CiRef.cs`, `CiRuleExpression.cs`, `CiFile.cs`, `CiTriggers.cs`, `CiRunner.cs`. Tests: `tests/ByteBench.Tests/CiTagPipelineTests.cs`, `CiTagPushTests.cs`, `CiMatrixAndIsolationTests.cs`, `CiDockerFeatureTests.cs` (Docker).
+
+### CI stages, templates, includes, services, coverage, badges & more
+
+```yaml
+include:
+  - local: ci/common.yml          # a file of the repository at the pipeline's commit
+  - nightowl                      # built-in template; { remote: https://... } only if the admin allows it
+stages: [build, test, deploy]
+jobs:
+  .dotnet:                        # hidden job: never runs, only extended
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+  test:
+    extends: .dotnet
+    stage: test
+    services:
+      - { image: postgres:17, alias: db, port: 5432, variables: { POSTGRES_PASSWORD: pw } }
+    coverage: '/Total coverage: (\d+\.?\d*)%/'
+    artifacts: { reports: { cobertura: coverage/cobertura.xml } }
+    steps: [ { run: dotnet test } ]
+  deploy:
+    stage: deploy
+    resource_group: production    # never two deploys at once
+    environment: { name: review, on_stop: stop-review }
+    steps: [ { run: ./deploy.sh } ]
+  stop-review:
+    when: manual
+    environment: { name: review, action: stop }
+    steps: [ { run: ./teardown.sh } ]
+  cleanup: { stage: deploy, when: always, steps: [ { run: ./cleanup.sh } ] }
+```
+
+- **Stages.** `stages:` orders them (default `build, test, deploy`; a job without `stage:` is in `test`). A job without a `needs` key waits for the nearest earlier stage that has a job in the run (decided after `rules`, stored as ordinary needs); `needs: []` or an explicit list overrides; optional manual jobs don't hold the next stage up. Files with neither `stages` nor `stage` are unchanged. Errors: unknown or duplicate stage, default stage missing, `needs` that forms a cycle with the stage order.
+- **extends, hidden jobs, anchors.** A job named `.x` never runs. `extends: .x` (or a list) merges `variables`, `artifacts`, `cache` and `environment` key by key and replaces everything else; up to 10 levels, cycles and unknown parents are errors. YAML anchors, aliases and `<<:` work inside a file (YamlDotNet's merging parser).
+- **include.** Entries: a built-in template (`nightowl`, or `{ template: }`), `{ local: path }` (read from the repository's git objects at the pipeline's commit; `..`, `.git`, backslashes refused) and `{ remote: url }`. Included files have the same format (jobs, hidden jobs, variables, stages, image, nested `include`); the file's own jobs win over included ones, later entries win over earlier ones; included `image` becomes their jobs' default. Depth cap 5, 20 files, 64 KB each, 256 KB total, cycles reported as `a.yml → b.yml → a.yml`. **Remote includes are off** (`Ci:AllowRemoteIncludes`): https only, no credentials, optional `Ci:RemoteIncludeAllowedHosts`, every resolved address checked at connect time against the webhook blocklist (`Ci:AllowPrivateNetworks`, default `Webhooks:AllowPrivateNetworks`, relaxes it and allows http for tests), no redirects or proxy, 10 s timeout, 64 KB cap, 5 minute cache. Code: `CiFile.Features.cs`, `CiIncludes.cs`.
+- **services.** Each job gets a private Docker network (`--internal` when `Ci:Network` is `none`); services start before the first step as `docker run -d` with the job containers' flags (`no-new-privileges`, memory, CPUs, PIDs, `--cap-drop ALL` if configured; not `--user`, no volumes, socket, published ports or CI variables) and `--network-alias`, and wait for health: the image's HEALTHCHECK, else the entry's `port` (probed with an alpine `nc -z` on that network), else two seconds of running (`Ci:ServiceStartTimeoutSeconds`, default 60). A service that dies, is unhealthy or times out fails the job with its last 30 log lines. Containers and the network are removed after the job (also on cancel or timeout) and stale ones at startup (labelled with the instance key). Code: `CiDocker.cs` (`StartServicesAsync`).
+- **when.** `always` runs after all earlier jobs finished, whatever happened; `on_failure` runs only if a job it needs (transitively) failed without `allow_failure`, else it is Skipped without blocking later jobs; `delayed` + `start_in: 30s|10m|2h` waits (Queued, no slot held). Rules accept the same values. The pipeline stays Failed if an earlier job failed. Code: `CiJobGraph.cs`.
+- **Coverage.** `coverage:` is a regex (`NonBacktracking`, 2 s timeout, 200 chars, no lookarounds or backreferences) over the job's log (last match; first group, else first number); `artifacts.reports` accepts `cobertura` and `lcov` (line coverage; DOCTYPE refused). Stored as `PipelineJob.Coverage` and `Pipeline.Coverage` (average of reporting jobs), shown on the pipeline page (change vs the previous pipeline of the branch, sparkline of the last 30), the pipeline list and the PR header; `GET .../coverage` returns the trend. Code: `CiCoverage.cs`.
+- **Badges.** `/p/{KEY}/repos/{slug}/badges/pipeline.svg` and `coverage.svg` (`?branch=`). There are no anonymous public projects, so a badge needs a signed-in viewer or `?token=` (24 random bytes in `SiteSetting` `ci:badge-token:{repoId}`; **Pipelines → Badges** creates, shows and rotates it, Maintainer, audited). Wrong token or unknown repository: 404. `CiBadgeService`.
+- **Webhooks.** `pipeline.created`, `pipeline.started`, `pipeline.completed`, `job.started`, `job.completed` (`CiWebhookEvents`; same signing and delivery as other events; opt-in per hook).
+- **Restart recovery.** `CiRecovery`: a pipeline that was Running at startup goes back to Queued once (`Pipeline.RecoveryAttempts`); finished jobs keep their results and artifacts, the job that was running starts over and its log begins with `[bytebench] The server restarted while this job was running; it was queued again (automatic, once).`, and deployments it had recorded as running are closed. A second interruption ends the pipeline in Error with the running jobs Failed and the unstarted ones Canceled, all retryable (↻ or Re-run).
+- **resource_group / on_stop.** `resource_group:` serializes jobs of one repository by group name in the server's memory (`CiResourceGroups`), before taking a job slot. `environment.on_stop` names the stop job; when a branch is deleted (`CiRefTracker` sees it vanish), or its PR is merged or declined, `CiTriggerService.StopEnvironmentsAsync` plays that job in the newest pipeline that deployed there if it is waiting (manual), the environment isn't stopped and it doesn't need approval.
+- **Lint.** `POST .../pipelines/lint` (Developer) returns `valid`, the precise `error` or the jobs (with effective needs) for posted `content` or the file at `ref`; includes are resolved at that ref.
+- **Manual runs.** The variables of the last UI run are remembered per repository (`SiteSetting` `ci:run-variables:{repoId}`, PushCode) and prefill the next run. Schedules: **Pipelines → Schedules** (`PipelineSchedules.razor`).
+- **Config.** `Ci:AllowRemoteIncludes` (false), `Ci:RemoteIncludeAllowedHosts`, `Ci:AllowPrivateNetworks`, `Ci:ServiceStartTimeoutSeconds` (60). One migration: `CiFeatures` (`Pipeline.Coverage`, `Pipeline.RecoveryAttempts`, `PipelineJob.Coverage`).
+
+Tests: `CiPipelineFeatureTests.cs` (parser, graph, includes with a local fake server, badges, recovery, lint, on_stop; no Docker) and `CiDockerPipelineFeatureTests.cs` (Docker: stages, extends and include, services including a postgres sidecar, coverage, when, resource_group, webhooks, on_stop).
 
 ### Deployment approvals & deploy freezes
 
