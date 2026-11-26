@@ -137,14 +137,21 @@ else if (project != null)
             <div class="il-bulk-header">
                 <MudCheckBox T="bool" Value="@(SelectedOnPage.Count == issues.Count)" ValueChanged="ToggleAll" Dense="true" Size="Size.Small"
                              AriaLabel="Select all on this page" title="Select all on this page" />
-                <span class="il-muted">@(SelectedOnPage.Count > 0 ? $"{SelectedOnPage.Count} of {issues.Count} selected" : $"{issues.Count} issues")</span>
+                <span class="il-muted">@(SelectedOnPage.Count > 0 ? $"{SelectedOnPage.Count} of {issues.Count} selected" : $"{issues.Count}{(hasMore ? "+" : "")} issues")</span>
             </div>
         }
         @if (issues.Count == 0)
         {
             <div class="il-empty">
                 <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" />
-                <div>No issues match these filters.</div>
+                @if (!IsFiltered && !Advanced && counts.open + counts.closed == 0)
+                {
+                    <div>No issues yet.@if (canCreate) { <text> <a href="@($"p/{project!.Key}/issues/new")">Create the first one</a>.</text> }</div>
+                }
+                else
+                {
+                    <div>No issues match these filters.</div>
+                }
             </div>
         }
         @foreach (var i in issues)
@@ -161,6 +168,13 @@ else if (project != null)
             {
                 <div class="il-row" @key="i.Id"><IssueRow Issue="i" /><ByteBench.Components.Fields.IssueFieldCells Issue="i" Data="columnData" /></div>
             }
+        }
+        @if (hasMore)
+        {
+            <div class="il-empty">
+                <div class="il-muted">Showing the first @issues.Count issues.</div>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="ShowMore">Show more</MudButton>
+            </div>
         }
     </MudPaper>
 </div>
@@ -245,12 +259,28 @@ else if (project != null)
         await Load();
     }
 
+    private const int PageSize = 100;
+    private int limit = PageSize;
+    private bool hasMore;
+
+    private async Task ShowMore()
+    {
+        limit += PageSize;
+        await Load();
+    }
+
     private async Task Load()
     {
         if (project == null) return;
         workflow = await Workflows.GetAsync(project.Id);
         if (Advanced) await LoadGql();
-        else issues = await Issues.GetIssuesAsync(project.Id, filter);
+        else
+        {
+            // One extra row tells whether there is more; the page never renders thousands of rows at once.
+            var page = await Issues.GetIssuesAsync(project.Id, filter, limit + 1);
+            hasMore = page.Count > limit;
+            issues = hasMore ? page.Take(limit).ToList() : page;
+        }
         counts = await Issues.CountAsync(project.Id);
     }
 
@@ -315,6 +345,7 @@ else if (project != null)
     private async Task Apply()
     {
         if (project == null) return;
+        limit = PageSize;
         var q = IssueFilterQuery.ToQueryString(filter);
         var target = $"p/{project.Key}/issues" + (q.Length > 0 ? "?" + q : "");
         if (Nav.ToBaseRelativePath(Nav.Uri) != target) Nav.NavigateTo(target, replace: true);
@@ -333,6 +364,7 @@ else if (project != null)
         {
             filter = parsed;
             gqlText = parsed.Gql;
+            limit = PageSize;
             await Load();
             StateHasChanged();
         });

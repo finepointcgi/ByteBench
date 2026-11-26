@@ -85,6 +85,8 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
         return project;
     }
 
+    private const string PublicWithoutTokenNote = "No token: gitlab.com only lists a project's labels and milestones to signed-in users, so those are skipped. Issues still keep their label names; milestones are not created. Add a token to import them.";
+
     public async Task<SourceProbe> ProbeAsync(CancellationToken ct)
     {
         var p = await EnsureProjectAsync(ct);
@@ -96,11 +98,17 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
                 && s.TryGetProperty("counts", out var counts) && counts.TryGetProperty("all", out var all) && all.TryGetInt32(out var n)) count = n;
         }
         catch (SourceException ex) when (!ex.AuthFailure) { /* the count is a nicety */ }
+        string? warning = null;
+        if (string.IsNullOrEmpty(connection.Secret))
+        {
+            try { await GetAsync(Api + ProjectPath + "/labels?per_page=1", ct); }
+            catch (SourceException ex) when (ex.AuthFailure) { warning = PublicWithoutTokenNote; }
+        }
         var samples = new List<string>();
         var first = await GetAsync(Api + ProjectPath + "/issues?scope=all&state=all&order_by=created_at&sort=asc&per_page=3", ct);
         if (first.Body.ValueKind == JsonValueKind.Array)
             foreach (var i in first.Body.EnumerateArray().Take(3)) if (Str(i, "title") is { } t) samples.Add(t);
-        return new SourceProbe(Str(p, "name_with_namespace") ?? Str(p, "name") ?? connection.Project, Str(p, "description"), count, samples);
+        return new SourceProbe(Str(p, "name_with_namespace") ?? Str(p, "name") ?? connection.Project, Str(p, "description"), count, samples, warning);
     }
 
     public Task<IReadOnlyList<SourceStatus>> ReadStatusesAsync(CancellationToken ct) =>
@@ -109,8 +117,12 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
     public async Task<IReadOnlyList<SourceLabel>> ReadLabelsAsync(CancellationToken ct)
     {
         var list = new List<SourceLabel>();
-        await foreach (var l in PagesAsync(Api + ProjectPath + "/labels?per_page=100", int.MaxValue, ct))
-            if (Str(l, "name") is { } name) list.Add(new SourceLabel(name, Str(l, "color")));
+        try
+        {
+            await foreach (var l in PagesAsync(Api + ProjectPath + "/labels?per_page=100", int.MaxValue, ct))
+                if (Str(l, "name") is { } name) list.Add(new SourceLabel(name, Str(l, "color")));
+        }
+        catch (SourceException ex) when (ex.AuthFailure && string.IsNullOrEmpty(connection.Secret)) { return []; } // gitlab.com lists a public project's labels only for signed-in callers; issues still carry their label names
         return list;
     }
 
@@ -118,13 +130,17 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
     {
         var list = new List<SourceMilestone>();
         var ids = new HashSet<string>();
-        await foreach (var m in PagesAsync(Api + ProjectPath + "/milestones?state=all&per_page=100", int.MaxValue, ct))
+        try
         {
-            var id = Id(m, "id");
-            if (id == null || Str(m, "title") is not { } title) continue;
-            ids.Add(id);
-            list.Add(new SourceMilestone(id, title, Str(m, "description"), Date(m, "start_date"), Date(m, "due_date"), Str(m, "state") == "closed"));
+            await foreach (var m in PagesAsync(Api + ProjectPath + "/milestones?state=all&per_page=100", int.MaxValue, ct))
+            {
+                var id = Id(m, "id");
+                if (id == null || Str(m, "title") is not { } title) continue;
+                ids.Add(id);
+                list.Add(new SourceMilestone(id, title, Str(m, "description"), Date(m, "start_date"), Date(m, "due_date"), Str(m, "state") == "closed"));
+            }
         }
+        catch (SourceException ex) when (ex.AuthFailure && string.IsNullOrEmpty(connection.Secret)) { /* same as labels: needs a token on gitlab.com */ }
         projectMilestoneIds = ids;
         return list;
     }
@@ -142,6 +158,8 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
         var epics = new HashSet<string>();
         var relatedPairs = new HashSet<string>(); // "relates_to" is reported by both issues; record it once
         var count = 0;
+        var notesBlocked = false;
+        var linksBlocked = false;
         await foreach (var i in PagesAsync(url, options.MaxIssues, ct))
         {
             var id = Id(i, "id");
@@ -181,28 +199,49 @@ public sealed partial class GitLabReader(SourceConnection connection, TrackerHtt
             var links = new List<SourceLink>();
             if (options.IncludeComments)
             {
-                if (i.TryGetProperty("user_notes_count", out var nc) && nc.TryGetInt32(out var ncount) && ncount > 0)
-                    await foreach (var n in PagesAsync($"{Api}{ProjectPath}/issues/{iid}/notes?sort=asc&order_by=created_at&per_page=100", int.MaxValue, ct))
+                if (!notesBlocked && i.TryGetProperty("user_notes_count", out var nc) && nc.TryGetInt32(out var ncount) && ncount > 0)
+                {
+                    try
                     {
-                        if (n.TryGetProperty("system", out var sys) && sys.ValueKind == JsonValueKind.True) continue;
-                        var body = Str(n, "body");
-                        if (Id(n, "id") is not { } noteId || string.IsNullOrWhiteSpace(body)) continue;
-                        rawTexts.Add(body);
-                        comments.Add(new SourceComment(noteId, User(n, "author"), FixUploads(body, webUrl)!, DateTimeOf(n, "created_at") ?? DateTime.UtcNow));
+                        await foreach (var n in PagesAsync($"{Api}{ProjectPath}/issues/{iid}/notes?sort=asc&order_by=created_at&per_page=100", int.MaxValue, ct))
+                        {
+                            if (n.TryGetProperty("system", out var sys) && sys.ValueKind == JsonValueKind.True) continue;
+                            var body = Str(n, "body");
+                            if (Id(n, "id") is not { } noteId || string.IsNullOrWhiteSpace(body)) continue;
+                            rawTexts.Add(body);
+                            comments.Add(new SourceComment(noteId, User(n, "author"), FixUploads(body, webUrl)!, DateTimeOf(n, "created_at") ?? DateTime.UtcNow));
+                        }
                     }
+                    catch (SourceException ex) when (ex.AuthFailure && string.IsNullOrEmpty(connection.Secret))
+                    {
+                        notesBlocked = true; // gitlab.com serves a public project's comments only to signed-in callers; don't ask again for every issue
+                        options.Notice?.Invoke("No token: gitlab.com only serves comments to signed-in users, so comments were not imported. Add a token and run the import again to bring them in.");
+                    }
+                }
                 // Links: only "blocks" (this -> other) and "relates_to" are recorded here. "is_blocked_by" is skipped on purpose: the other
                 // issue reports the same link as "blocks", and a SourceLink on this issue can only point away from it.
                 var skippedOtherProject = 0;
                 var seen = new HashSet<(string, IssueLinkType)>();
-                await foreach (var l in PagesAsync($"{Api}{ProjectPath}/issues/{iid}/links?per_page=100", int.MaxValue, ct))
+                if (!linksBlocked)
                 {
-                    var kind = Str(l, "link_type");
-                    if (kind is not ("relates_to" or "blocks")) continue;
-                    if (projectId != null && l.TryGetProperty("project_id", out var lp) && lp.TryGetInt64(out var lpid) && lpid != projectId) { skippedOtherProject++; continue; }
-                    if (Id(l, "id") is not { } target) continue;
-                    var t = kind == "blocks" ? IssueLinkType.Blocks : IssueLinkType.RelatesTo;
-                    if (t == IssueLinkType.RelatesTo && !relatedPairs.Add(string.CompareOrdinal(id, target) < 0 ? id + "|" + target : target + "|" + id)) continue;
-                    if (seen.Add((target, t))) links.Add(new SourceLink(target, t));
+                    try
+                    {
+                        await foreach (var l in PagesAsync($"{Api}{ProjectPath}/issues/{iid}/links?per_page=100", int.MaxValue, ct))
+                        {
+                            var kind = Str(l, "link_type");
+                            if (kind is not ("relates_to" or "blocks")) continue;
+                            if (projectId != null && l.TryGetProperty("project_id", out var lp) && lp.TryGetInt64(out var lpid) && lpid != projectId) { skippedOtherProject++; continue; }
+                            if (Id(l, "id") is not { } target) continue;
+                            var t = kind == "blocks" ? IssueLinkType.Blocks : IssueLinkType.RelatesTo;
+                            if (t == IssueLinkType.RelatesTo && !relatedPairs.Add(string.CompareOrdinal(id, target) < 0 ? id + "|" + target : target + "|" + id)) continue;
+                            if (seen.Add((target, t))) links.Add(new SourceLink(target, t));
+                        }
+                    }
+                    catch (SourceException ex) when (ex.AuthFailure && string.IsNullOrEmpty(connection.Secret))
+                    {
+                        linksBlocked = true;
+                        options.Notice?.Invoke("No token: gitlab.com only serves issue links to signed-in users, so links between issues were not imported.");
+                    }
                 }
                 if (skippedOtherProject > 0) notes.Add($"{skippedOtherProject} link(s) to issues in other GitLab projects weren't imported.");
             }

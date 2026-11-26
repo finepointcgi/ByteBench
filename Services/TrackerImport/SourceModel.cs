@@ -76,8 +76,9 @@ public sealed class SourceIssue
 public sealed record SourceProbe(string ProjectName, string? Description, int IssueCount, IReadOnlyList<string> SampleTitles, string? Warning = null);
 
 /// <summary>What to read. Readers must honour <see cref="MaxIssues"/> and stop there.</summary>
+/// <param name="Notice">Where a reader reports something the user should know about what it left out (shown as an import warning).</param>
 /// <param name="IncludeAttachments">Also report files linked from issue and comment text (GitHub, GitLab); Jira always reports its attachment list.</param>
-public sealed record SourceReadOptions(bool IncludeClosed, bool IncludeComments, bool IncludePullRequests, int MaxIssues, bool IncludeAttachments = false);
+public sealed record SourceReadOptions(bool IncludeClosed, bool IncludeComments, bool IncludePullRequests, int MaxIssues, bool IncludeAttachments = false, Action<string>? Notice = null);
 
 /// <summary>A source problem with a message that is safe to show (never contains a credential).</summary>
 public sealed class SourceException(string message, bool authFailure = false) : Exception(message)

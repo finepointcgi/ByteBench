@@ -126,10 +126,11 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
 
     // ---------- Issues ----------
 
-    public async Task<List<Issue>> GetIssuesAsync(int projectId, IssueFilter f)
+    /// <param name="take">At most this many rows (after sorting); null for all.</param>
+    public async Task<List<Issue>> GetIssuesAsync(int projectId, IssueFilter f, int? take = null)
     {
         if (!await access.CanAsync(projectId, Permission.ViewProject)) return [];
-        return await QueryIssuesAsync([projectId], f);
+        return await QueryIssuesAsync([projectId], f, take);
     }
 
     /// <summary>Issues across several projects (e.g. a group's), skipping any the acting user can't view.</summary>
@@ -139,7 +140,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         return await QueryIssuesAsync(projectIds.Where(visible.Contains).ToList(), f);
     }
 
-    private async Task<List<Issue>> QueryIssuesAsync(List<int> projectIds, IssueFilter f)
+    private async Task<List<Issue>> QueryIssuesAsync(List<int> projectIds, IssueFilter f, int? take = null)
     {
         if (projectIds.Count == 0) return [];
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -174,6 +175,7 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
             "number" => q.OrderBy(i => i.Number),
             _ => q.OrderByDescending(i => i.UpdatedAt),
         };
+        if (take is { } n) q = q.Take(n);
         return await HierarchyRules.AnnotateAsync(db, access, await q.ToListAsync());
     }
 

@@ -155,11 +155,12 @@ public sealed class GitHubReader(SourceConnection connection, TrackerHttp http) 
         var state = options.IncludeClosed ? "all" : "open";
         var idByNumber = new Dictionary<long, string>();
         var yielded = 0;
+        var skippedPullRequests = 0;
         await foreach (var i in ListAsync($"{Api}{Repo}/issues?state={state}&sort=created&direction=asc&per_page=100", ct))
         {
             if (yielded >= options.MaxIssues) yield break;
             var isPr = i.TryGetProperty("pull_request", out var pr) && pr.ValueKind == JsonValueKind.Object;
-            if (isPr && !options.IncludePullRequests) continue;
+            if (isPr && !options.IncludePullRequests) { skippedPullRequests++; continue; }
             if (!i.TryGetProperty("id", out var idEl) || !i.TryGetProperty("number", out var numEl)) continue;
             var id = idEl.GetInt64().ToString(CultureInfo.InvariantCulture);
             var number = numEl.GetInt64();
@@ -209,6 +210,8 @@ public sealed class GitHubReader(SourceConnection connection, TrackerHttp http) 
             };
             yielded++;
         }
+        if (skippedPullRequests > 0)
+            options.Notice?.Invoke($"{skippedPullRequests} pull request{(skippedPullRequests == 1 ? " was" : "s were")} skipped because GitHub lists pull requests with the issues. Tick \"Include pull requests as issues\" to import them as issues.");
     }
 
     /// <summary>bug → Bug, enhancement/feature/feature request → Feature, epic → Epic, question/documentation/chore → Task; first matching label wins.</summary>

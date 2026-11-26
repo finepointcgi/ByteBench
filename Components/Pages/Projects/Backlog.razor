@@ -159,9 +159,8 @@ else if (project != null)
             }
 
             <div class="bl-issues" role="list">
-                @foreach (var i in section.Issues)
+                @foreach (var (i, idx) in section.Issues.Take(RenderCap(section)).Select((x, n) => (x, n)))
                 {
-                    var idx = section.Issues.IndexOf(i);
                     <div class="bl-row @(i.Status == IssueStatus.Done ? "done" : "") @(dragging?.Id == i.Id ? "dragging" : "")" role="listitem" @key="i.Id"
                          draggable="@(canEdit ? "true" : "false")"
                          @ondragstart="() => dragging = i"
@@ -200,6 +199,13 @@ else if (project != null)
                                 </MudMenu>
                             }
                         </span>
+                    </div>
+                }
+                @if (section.Issues.Count > RenderCap(section))
+                {
+                    <div class="bl-empty">
+                        <span>Showing @RenderCap(section) of @section.Issues.Count issues.</span>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => ShowMore(section)">Show more</MudButton>
                     </div>
                 }
                 @if (section.Issues.Count == 0)
@@ -257,6 +263,12 @@ else if (project != null)
         if (project == null) return;
         sections = await Sprints.GetBacklogAsync(project.Id);
     }
+
+    // A backlog can hold thousands of issues; render a page of rows at a time so the page stays light.
+    private const int RowsPerPage = 200;
+    private readonly Dictionary<string, int> renderCaps = [];
+    private int RenderCap(BacklogSection section) => renderCaps.GetValueOrDefault(section.DomId, RowsPerPage);
+    private void ShowMore(BacklogSection section) => renderCaps[section.DomId] = RenderCap(section) + RowsPerPage;
 
     private static string DaysLeft(Sprint s)
     {

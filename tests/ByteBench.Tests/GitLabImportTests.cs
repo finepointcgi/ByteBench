@@ -177,6 +177,27 @@ public class GitLabImportTests(GitLabImportApp app, GitLabStrictApp strict) : IC
     }
 
     [Fact]
+    public async Task A_public_project_whose_labels_comments_and_links_need_a_token_still_imports_its_issues()
+    {
+        // gitlab.com answers 401 for these four lists without a token even on public projects; that used to fail the whole import.
+        using var fake = new FakeGitLab { Public = true, SignedInOnlyExtras = true };
+        var (p, carol) = await NewProjectAsync();
+        await using (var s = app.Scope(carol))
+        {
+            var check = await s.Get<TrackerImportService>().CheckAsync(p.Id, Input(fake, secret: null), carol);
+            Assert.Contains("No token", check.Probe.Warning);
+        }
+
+        var job = await RunAsync(p, carol, Input(fake, secret: null));
+        Assert.Equal(TrackerImportStatus.Done, job.Status);
+        Assert.True(job.IssuesCreated > 0);
+        Assert.Equal(0, job.CommentsCreated);
+        Assert.Contains("comments were not imported", job.WarningsJson);
+        Assert.Contains("links between issues were not imported", job.WarningsJson);
+        Assert.True(fake.Hits("/notes") <= 1, "comments are not requested again for every issue once gitlab.com refused them");
+    }
+
+    [Fact]
     public async Task A_numeric_project_id_and_a_relative_url_root_work()
     {
         using var fake = new FakeGitLab { RootPath = "/gitlab" };

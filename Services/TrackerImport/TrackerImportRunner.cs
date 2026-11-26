@@ -80,7 +80,7 @@ public sealed class TrackerImportRunner(IDbContextFactory<AppDbContext> dbFactor
             writer = new TrackerImportWriter(dbFactory, access, job, settings, SourceKeyOf(connection), sourceName, actorId, attachmentStorage, options.CurrentValue);
             await writer.PrepareAsync(reader, cts.Token);
             var max = Math.Clamp(options.CurrentValue.MaxIssues, 1, 1_000_000);
-            var read = new SourceReadOptions(settings.IncludeClosed, settings.IncludeComments, settings.IncludePullRequests, max + 1, settings.IncludeAttachments); // one more than allowed, so hitting the limit is noticed
+            var read = new SourceReadOptions(settings.IncludeClosed, settings.IncludeComments, settings.IncludePullRequests, max + 1, settings.IncludeAttachments, writer.Warn); // one more than allowed, so hitting the limit is noticed
             var n = 0;
             await foreach (var issue in reader.ReadIssuesAsync(read, cts.Token))
             {

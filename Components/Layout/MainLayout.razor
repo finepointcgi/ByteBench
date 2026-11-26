@@ -98,15 +98,17 @@
             <MudNavLink Href="/projects/new" Icon="@Icons.Material.Outlined.AddBox">New project</MudNavLink>
             @if (Me.User?.IsAdmin == true)
             {
-                <MudNavLink Href="/admin/audit" Icon="@Icons.Material.Outlined.Policy">Audit log</MudNavLink>
-                <MudNavLink Href="/admin/users" Icon="@Icons.Material.Outlined.ManageAccounts">Users</MudNavLink>
-                <MudNavLink Href="/admin/authentication" Icon="@Icons.Material.Outlined.Login">Authentication</MudNavLink>
-                <MudNavLink Href="/admin/ai" Icon="@Icons.Material.Outlined.AutoAwesome">AI</MudNavLink>
-                <MudNavLink Href="/admin/workspaces" Icon="@Icons.Material.Outlined.DeveloperBoard">Workspaces</MudNavLink>
-                <MudNavLink Href="/admin/workbench" Icon="@Icons.Material.Outlined.Hub">Workbench</MudNavLink>
-                <MudNavLink Href="/admin/packages" Icon="@Icons.Material.Outlined.Storage">Packages</MudNavLink>
-                <MudNavLink Href="/admin/system" Icon="@Icons.Material.Outlined.MonitorHeart">System</MudNavLink>
-                <MudNavLink Href="/admin/backups" Icon="@Icons.Material.Outlined.Backup">Backups</MudNavLink>
+                <MudNavGroup Title="Administration" Icon="@Icons.Material.Outlined.AdminPanelSettings" @bind-Expanded="adminOpen">
+                    <MudNavLink Href="/admin/audit" Icon="@Icons.Material.Outlined.Policy">Audit log</MudNavLink>
+                    <MudNavLink Href="/admin/users" Icon="@Icons.Material.Outlined.ManageAccounts">Users</MudNavLink>
+                    <MudNavLink Href="/admin/authentication" Icon="@Icons.Material.Outlined.Login">Authentication</MudNavLink>
+                    <MudNavLink Href="/admin/ai" Icon="@Icons.Material.Outlined.AutoAwesome">AI</MudNavLink>
+                    <MudNavLink Href="/admin/workspaces" Icon="@Icons.Material.Outlined.DeveloperBoard">Workspaces</MudNavLink>
+                    <MudNavLink Href="/admin/workbench" Icon="@Icons.Material.Outlined.Hub">Workbench</MudNavLink>
+                    <MudNavLink Href="/admin/packages" Icon="@Icons.Material.Outlined.Storage">Packages</MudNavLink>
+                    <MudNavLink Href="/admin/system" Icon="@Icons.Material.Outlined.MonitorHeart">System</MudNavLink>
+                    <MudNavLink Href="/admin/backups" Icon="@Icons.Material.Outlined.Backup">Backups</MudNavLink>
+                </MudNavGroup>
             }
 
             @if (projectKey != null && CurrentProject is { } cp)
@@ -216,6 +218,15 @@
         Nav.LocationChanged += OnLocationChanged;
         Stars.Changed += OnStarsChanged;
         ParseProjectKey();
+        OpenAdminGroupOnAdminPages();
+    }
+
+    // The site-admin links live in one collapsible group so they don't push the project navigation off small screens;
+    // it opens by itself while an /admin page is showing.
+    private bool adminOpen;
+    private void OpenAdminGroupOnAdminPages()
+    {
+        if (Nav.ToBaseRelativePath(Nav.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase)) adminOpen = true;
     }
 
     // Anonymous visitors (e.g. on the not-found page) don't get to see project names.
@@ -231,6 +242,7 @@
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         ParseProjectKey();
+        OpenAdminGroupOnAdminPages();
         // Pick up newly created/deleted projects.
         await RefreshProjects();
         await InvokeAsync(StateHasChanged);

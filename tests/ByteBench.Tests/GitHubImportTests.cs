@@ -96,6 +96,7 @@ public class GitHubImportTests(GitHubImportApp app, GitHubImportStrictApp strict
         Assert.Equal(TrackerImportStatus.Done, job.Status);
         Assert.Null(job.Error);
         Assert.Equal(7, job.IssuesCreated); // the pull request (#2) is skipped
+        Assert.Contains(TrackerImportService.WarningsOf(job), w => w.Contains("1 pull request was skipped") && w.Contains("Include pull requests"));
         Assert.Equal(2, job.CommentsCreated);
         await using var db = app.Db();
         var issues = await db.Issues.AsNoTracking().Include(i => i.Labels).Include(i => i.Comments).Include(i => i.Milestone)

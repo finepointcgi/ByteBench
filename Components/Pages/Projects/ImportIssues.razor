@@ -268,7 +268,7 @@ else if (project != null)
                                        Value="@Percent" Max="100" aria-label="Import progress" />
                 }
                 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
-                    @(job.Status == TrackerImportStatus.Queued ? "Waiting for a free import slot." : $"Read {job.IssuesRead:N0}{(job.IssuesExpected > 0 ? $" of about {job.IssuesExpected:N0}" : "")} issues.")
+                    @(job.Status == TrackerImportStatus.Queued ? "Waiting for a free import slot." : $"Read {job.IssuesRead:N0}{(job.IssuesExpected >= Math.Max(job.IssuesRead, 1) ? $" of about {job.IssuesExpected:N0}" : "")} issues.")
                 </MudText>
                 <dl class="ti-counters">
                     <div><dt>Created</dt><dd>@job.IssuesCreated.ToString("N0")</dd></div>

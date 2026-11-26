@@ -28,6 +28,8 @@ public sealed class FakeGitLab : IDisposable
     public string RootPath { get; set; } = "";
     public string ExpectedToken { get; set; } = Token;
     public bool Public { get; set; }
+    /// <summary>With <see cref="Public"/>: like gitlab.com, labels, milestones, comments and links answer 401 without a token while the project and its issues are readable.</summary>
+    public bool SignedInOnlyExtras { get; set; }
     /// <summary>The project's <c>web_url</c>; point it at this fake's own address to make uploaded files downloadable from it.</summary>
     public string WebUrl { get; set; } = "https://gitlab.example.com/acme/team/widgets";
     /// <summary>Uploaded files by absolute path (e.g. <c>/acme/team/widgets/uploads/ab12/shot.png</c>); they need the PRIVATE-TOKEN. A <c>{cdn}</c> in a redirect is replaced by <see cref="CdnUrl"/>.</summary>
@@ -184,6 +186,8 @@ public sealed class FakeGitLab : IDisposable
         if (!Public && token != ExpectedToken) return (401, "{\"message\":\"401 Unauthorized\"}", none);
         if (segs[3] != ProjectPath && segs[3] != ProjectId.ToString()) return (404, "{\"message\":\"404 Project Not Found\"}", none);
         var rest = segs.Skip(4).ToList();
+        if (SignedInOnlyExtras && token != ExpectedToken && (rest is ["labels"] or ["milestones"] || rest is ["issues", _, "notes" or "links"]))
+            return (401, "{\"message\":\"401 Unauthorized\"}", none);
         var qs = System.Web.HttpUtility.ParseQueryString(query);
         if (rest.Count == 0)
             return (200, new JsonObject
