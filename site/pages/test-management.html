@@ -1,0 +1,117 @@
+<h1>Test management</h1>
+<p class="lead">Write test cases, group them into plans, run them against a tag, release or CI build, record results with evidence, file bugs from failures, and bring in automated results from JUnit, TRX, xUnit or CTRF reports.</p>
+
+<h2 id="overview">Where things are</h2>
+<p>Tests live under each project at <code>/p/{KEY}/tests</code> (the <b>Tests</b> link in the project's sidebar):</p>
+<table>
+<tr><th>Page</th><th>What it is for</th></tr>
+<tr><td><code>/p/{KEY}/tests</code></td><td>Test cases: search, filter by suite, priority, type, and see each case's newest result</td></tr>
+<tr><td><code>/p/{KEY}/tests/cases/{number}</code></td><td>One case: steps, expected result, version history, results across runs. <code>/tests/cases/new</code> writes a new one</td></tr>
+<tr><td><code>/p/{KEY}/tests/plans</code></td><td>Test plans: named sets of cases, with a <b>Start run</b> button</td></tr>
+<tr><td><code>/p/{KEY}/tests/runs</code></td><td>Runs with progress and pass rate; start a run or upload a report</td></tr>
+<tr><td><code>/p/{KEY}/tests/runs/{number}</code></td><td>Run page: work through the cases with the keyboard, add comments and evidence, create bugs</td></tr>
+<tr><td><code>/p/{KEY}/tests/compare</code></td><td>Compare two runs (regressions and fixes) and a matrix of cases against the latest runs</td></tr>
+</table>
+<p>Release pages show a <b>Tests</b> panel with the latest runs for the release's tag or commit, and pull requests show one for the head commit (see <a href="release-hub.html">Release hub</a>).</p>
+
+<h2 id="permissions">Who can do what</h2>
+<table>
+<tr><th>Action</th><th>Role</th></tr>
+<tr><td>View cases, plans, runs, results, compare and matrix</td><td>Viewer and above (anyone who can see the project)</td></tr>
+<tr><td>Create and edit test cases, start runs, record results, add evidence, create bugs, upload reports</td><td>Developer and above (<code>RunTests</code>)</td></tr>
+<tr><td>Create, edit and delete plans; archive or delete cases; delete runs</td><td>Maintainer and above (<code>ManageTests</code>)</td></tr>
+</table>
+<p>Creating a bug also needs permission to create issues (Developer). Archived repositories do not matter here: tests belong to the project.</p>
+
+<h2 id="cases">Test cases</h2>
+<p>A case has a title, preconditions, steps, an expected result, a priority (low, medium, high, critical), a type (<b>manual</b> or <b>automated</b>), tags and components (comma separated, lowercase), a folder or suite path such as <code>Checkout/Payments</code>, linked issues of the project (<code>WEB-12, 15</code>), free-text requirements, and for automated cases an <b>automated name</b>. Cases are numbered per project: <code>TC-1</code>, <code>TC-2</code>, and so on.</p>
+<p><b>Version history.</b> Changing the title, preconditions, steps, expected result, priority, tags or suite creates a new version and keeps the old text; the case page lists every earlier version. Results remember which version they were recorded against, and the run page tells you when the case changed since. Archiving hides a case from lists and new runs but keeps its results; deleting removes the results and their evidence files too.</p>
+
+<h2 id="plans">Test plans</h2>
+<p>A plan is a named list of cases (for example "Smoke" or "Release acceptance"). <b>Start run</b> on a plan opens the run form with the plan selected. A run without a plan covers all active manual cases.</p>
+
+<h2 id="runs">Runs</h2>
+<p>A run targets a version. Pick a <b>tag</b> (the tag must exist in one of the project's repositories: the run records the tag's commit and the release for it, if there is one), a <b>build or version label</b>, or both; the label is what the matrix shows. Runs started from CI carry the pipeline, branch and commit instead.</p>
+<p>Every case in a manual run starts as <i>not run</i>. Results are <b>passed</b>, <b>failed</b>, <b>blocked</b> or <b>skipped</b>, each with who recorded it, when, an optional comment, and optional evidence. The run shows progress (cases with a result) and the pass rate: passed divided by passed, failed and blocked. Skipped and not-run cases count in neither direction. <b>Finish run</b> closes it (results are then read-only until it is reopened) and raises the <code>test_run.completed</code> webhook.</p>
+
+<h2 id="executing">Executing a run from the keyboard</h2>
+<p>On the run page click the case list (or press Tab to it) and use:</p>
+<table>
+<tr><th>Key</th><th>Does</th></tr>
+<tr><td><code>j</code> or <code>↓</code> / <code>k</code> or <code>↑</code></td><td>Next / previous case</td></tr>
+<tr><td><code>p</code></td><td>Record <b>passed</b> and jump to the next case without a result</td></tr>
+<tr><td><code>f</code></td><td>Record <b>failed</b></td></tr>
+<tr><td><code>b</code></td><td>Record <b>blocked</b></td></tr>
+<tr><td><code>s</code></td><td>Record <b>skipped</b></td></tr>
+<tr><td><code>u</code></td><td>Reset to <b>not run</b></td></tr>
+</table>
+<p>Text in the comment box is saved together with the result you record, and is not captured by the shortcuts while you type in it. After a failed or blocked result, <b>Create bug from this failure</b> files a bug issue prefilled with the case's preconditions, steps and expected result, your comment, the failure text, and the run, build, tag, commit and pipeline; the result links to the bug, and pressing the button again never creates a second one. The bug's priority follows the case's.</p>
+
+<h2 id="evidence">Evidence</h2>
+<p>Attach screenshots, logs or other files to a result (up to 25 MB each, 20 per result). Files are stored like issue attachments under a random name, and are always downloaded as attachments (<code>application/octet-stream</code>, <code>nosniff</code>, a sandboxing content security policy), never displayed inline, so an uploaded HTML file cannot run in ByteBench's origin.</p>
+
+<h2 id="compare">Compare and matrix</h2>
+<p><b>Compare</b> takes a baseline run and a candidate run and classifies each case: <b>regressed</b> (passed before, failed or blocked now), <b>fixed</b>, <b>still failing</b>, <b>newly run</b> and <b>no longer run</b>. Regressions are listed first. The <b>matrix</b> lines up the cases against the latest eight runs, each column labelled by its build, tag or run number, with an option to show only cases that failed somewhere. The same data is in the API (<code>/tests/compare</code>, <code>/tests/matrix</code>).</p>
+
+<h2 id="automated">Automated results (CI and API)</h2>
+<p>Automated results come from test reports in these formats, detected automatically or named explicitly:</p>
+<table>
+<tr><th>Format</th><th>Name</th><th>Typical source</th></tr>
+<tr><td>JUnit XML</td><td><code>junit</code></td><td>Maven, Gradle, pytest, Jest and most test tools</td></tr>
+<tr><td>TRX</td><td><code>trx</code></td><td><code>dotnet test --logger trx</code></td></tr>
+<tr><td>xUnit v2 XML</td><td><code>xunit</code></td><td>The xUnit v2 console runner's <code>-xml</code> output (<code>&lt;assemblies&gt;</code>)</td></tr>
+<tr><td>CTRF JSON</td><td><code>ctrf</code></td><td>Common Test Report Format reporters</td></tr>
+</table>
+
+<h3 id="mapping">How tests map to cases</h3>
+<ol>
+<li>A <code>TC-n</code> token in the test's name maps it to case <code>TC-n</code>.</li>
+<li>Otherwise the test's full name (<code>classname.name</code>, or the TRX class and method) is matched against cases' <b>automated name</b>; the plain name is also tried when exactly one case uses it.</li>
+<li>A test that matches nothing creates a new <b>automated</b> case (title = the test name, folder from its class) unless auto-creation is switched off, in which case it is counted as <i>unmapped</i>. At most 5000 cases are created per report.</li>
+</ol>
+<p>If a report names the same case twice, the worst outcome wins. Duration and the failure message (cut to 4000 characters) are stored with the result.</p>
+
+<h3 id="ci">From CI jobs</h3>
+<p>List the report in the job's <code>artifacts.reports</code>, next to the security report types:</p>
+<pre><code>jobs:
+  test:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    steps:
+      - run: dotnet test --logger trx --results-directory TestResults
+    artifacts:
+      reports:
+        trx: "TestResults/*.trx"</code></pre>
+<p>Report types are <code>junit</code>, <code>trx</code>, <code>xunit</code> and <code>ctrf</code>. Test report entries may use a pattern (<code>*</code>, <code>**</code>, <code>?</code>) and then match up to 50 files; security reports (<code>nightowl</code>, <code>sarif</code>) must still name one file. The files are also kept as artifacts. They are read whether the job passed or failed. Symbolic links and files outside the workspace are never read. All reports of one pipeline add up in <b>one run</b> ("CI pipeline #n") that records the pipeline, branch and commit; the run is closed, and the job log says what was read (<code>[bytebench] Test report … 12 test(s), 11 passed, 1 failed → run #7</code>). The configuration key <code>Tests:AutoCreateCases</code> (default <code>true</code>) controls whether CI creates missing cases.</p>
+
+<h3 id="upload">From the UI or the API</h3>
+<p>The <b>Upload a report</b> button on the Runs page takes a file (optionally a build label and tag). The API takes the raw report as the request body, or a JSON envelope, and needs a token with <code>write_api</code> and Developer access:</p>
+<pre><code>curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/xml" \
+     --data-binary @junit.xml \
+     "https://bytebench.example.com/api/v1/projects/WEB/tests/reports?build=2026.11.3&amp;tag=v2026.11.3&amp;name=Nightly"</code></pre>
+<p>Query parameters: <code>format</code> (default: detect), <code>build</code>, <code>tag</code>, <code>commit</code>, <code>ref</code>, <code>repository</code>, <code>pipelineId</code>, <code>run</code> (add to an existing run), <code>name</code>, <code>autoCreate</code> (default true). Or send <code>{"content": "…", "format": "junit", "build": "…"}</code> as JSON. The answer is <code>201</code> with the run number and counts (<code>total</code>, <code>passed</code>, <code>failed</code>, <code>skipped</code>, <code>createdCases</code>, <code>unmapped</code>, <code>truncated</code>).</p>
+
+<h3 id="hostile">Untrusted report safety</h3>
+<ul>
+<li>XML with a <b>DOCTYPE</b> is refused outright, so external entities (reading files or URLs from the server) and entity-expansion bombs cannot work; nothing is ever fetched. The refusal is a normal 422 with a clear message and leaves no half-made run.</li>
+<li>Reports larger than <b>16 MB</b> are refused (413 on the API), at most <b>50,000 tests</b> per report are read (<code>truncated</code> is then true), names are cut to 400 characters and messages to 4000. Invalid XML, JSON or a wrong document type are 422.</li>
+</ul>
+
+<h2 id="api">REST API</h2>
+<p>Everything above is available at <code>/api/v1/projects/{key}/tests/…</code> (see the OpenAPI document at <code>/api/v1/openapi.json</code>):</p>
+<table>
+<tr><th>Route</th><th>Purpose</th></tr>
+<tr><td><code>GET/POST /cases</code>, <code>GET/PATCH/DELETE /cases/{number}</code></td><td>List (filters <code>q</code>, <code>suite</code>, <code>priority</code>, <code>type</code>, <code>tag</code>, <code>archived</code>), create, read, edit, delete cases</td></tr>
+<tr><td><code>POST /cases/{number}/archive</code>, <code>/unarchive</code>, <code>GET /cases/{number}/revisions</code>, <code>/results</code></td><td>Archive, version history, results across runs</td></tr>
+<tr><td><code>GET/POST /plans</code>, <code>GET/PUT/DELETE /plans/{id}</code></td><td>Plans (body: <code>name</code>, <code>description</code>, <code>caseNumbers</code>)</td></tr>
+<tr><td><code>GET/POST /runs</code>, <code>GET/DELETE /runs/{number}</code></td><td>Runs (list filters <code>tag</code>, <code>commit</code>, <code>releaseId</code>); body for create: <code>name</code>, <code>planId</code>, <code>build</code>, <code>tag</code>, <code>commitSha</code>, <code>pipelineId</code>, <code>caseNumbers</code></td></tr>
+<tr><td><code>POST /runs/{number}/close</code>, <code>/reopen</code></td><td>Finish or reopen a run</td></tr>
+<tr><td><code>PUT /runs/{number}/results/{caseNumber}</code></td><td>Record a result: <code>{"status": "failed", "comment": "…"}</code> (passed, failed, blocked, skipped, not_run)</td></tr>
+<tr><td><code>POST /runs/{number}/results/{caseNumber}/bug</code></td><td>Create (or return) the bug for a failed result</td></tr>
+<tr><td><code>POST /runs/{number}/results/{caseNumber}/evidence?fileName=</code>, <code>GET/DELETE /evidence/{id}</code></td><td>Evidence: the request body is the file</td></tr>
+<tr><td><code>POST /reports</code></td><td>Upload an automated report</td></tr>
+<tr><td><code>GET /compare?a=&amp;b=</code>, <code>GET /matrix?runs=&amp;count=&amp;problems=</code></td><td>Compare two runs; results matrix</td></tr>
+</table>
+<p>Reads need a token with <code>read_api</code> (or <code>write_api</code>); writes need <code>write_api</code>. A project you cannot see is a 404; a missing role is a 403. The REST API is the only API for tests: the GQL search covers issues only.</p>
+
+<h2 id="webhooks-audit">Webhooks and audit</h2>
+<p>The webhook event <code>test_run.completed</code> is sent when a run is closed or an automated report is recorded. Its payload has <code>run</code> with <code>number</code>, <code>name</code>, <code>build</code>, <code>tag</code>, <code>commitSha</code>, <code>ref</code>, <code>source</code>, the counts (<code>passed</code>, <code>failed</code>, <code>blocked</code>, <code>skipped</code>, <code>notRun</code>), <code>passRate</code> and <code>webUrl</code>. Audit events: <code>test_case.created</code>, <code>.archived</code>, <code>.restored</code>, <code>.deleted</code>; <code>test_plan.created</code>, <code>.updated</code>, <code>.deleted</code>; <code>test_run.created</code>, <code>.closed</code>, <code>.reopened</code>, <code>.ingested</code>, <code>.deleted</code>; <code>test_result.bug_created</code>. Recording a single result is not audited. Test runs do not send in-app notifications.</p>

@@ -99,7 +99,7 @@ else if (project != null && detail != null)
                         }
                         @if (perms.Can(Permission.RunTests) && !run.IsClosed)
                         {
-                            <MudTextField T="string" @bind-Value="comment" Label="Comment" Lines="2" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+                            <MudTextField T="string" @bind-Value="comment" Placeholder="Comment (optional)" aria-label="Comment" Lines="2" Sizing="InputSizing.Auto" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
                             <div class="rp-actions">
                                 <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.Passed)" StartIcon="@Icons.Material.Filled.Check">Pass (p)</MudButton>
                                 <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" Disabled="@busy" OnClick="() => Record(TestResultStatus.Failed)" StartIcon="@Icons.Material.Filled.Close">Fail (f)</MudButton>

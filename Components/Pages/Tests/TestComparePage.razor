@@ -120,7 +120,14 @@ else if (project != null)
         runs = (await Tests.ListRunsAsync(project.Id, 100)).Select(r => r.Run).ToList();
         a ??= QueryA;
         b ??= QueryB;
-        if (a == null && b == null && runs.Count >= 2) { b = runs[0].Number; a = runs[1].Number; }
+        if (a == null && b == null && runs.Count >= 2)
+        {
+            // The newest run against the one before it that came from the same kind of source (CI against CI, manual against manual).
+            var newest = runs[0];
+            var before = runs.Skip(1).FirstOrDefault(r => r.Source == newest.Source) ?? runs[1];
+            b = newest.Number;
+            a = before.Number;
+        }
         await Compare();
         await LoadMatrix();
     }

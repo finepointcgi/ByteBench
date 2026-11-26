@@ -20,6 +20,6 @@
 .rp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .rp-bug { margin: 8px 0 12px; }
 .rp-evidence { display: flex; align-items: center; gap: 10px; }
-.rp-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+::deep .rp-file { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 kbd { border: 1px solid var(--mud-palette-lines-default); border-radius: 3px; padding: 0 4px; font-size: 12px; background: var(--mud-palette-background-gray); }
 @media (max-width: 900px) { .rp-grid { grid-template-columns: 1fr; } }

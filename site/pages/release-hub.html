@@ -1,0 +1,48 @@
+<h1>Release hub</h1>
+<p class="lead">One place for everything that belongs to a tagged version: the notes, source archives and uploaded files, the CI builds and artifacts, packages and images, the security scan, SBOM files, test results, linked issues and pull requests, and whether the tagged commit is signed.</p>
+
+<h2 id="what-exists">Built on what already exists</h2>
+<p>Releases, tags, generated release notes, assets, source archives and download counts are described in <a href="code-tools.html">Code browsing and tools</a>. The hub adds to a release page; nothing there changed and the existing release API keeps its shape. A release page (<code>/p/{KEY}/repos/{slug}/releases/{id}</code>) now shows, under the release card, a <b>Release hub</b> panel; <code>/p/{KEY}/releases</code> (the <b>Releases</b> link in the project sidebar) lists the releases of every repository of the project.</p>
+
+<h2 id="panel">The release page</h2>
+<table>
+<tr><th>Part</th><th>Where it comes from</th></tr>
+<tr><td>Release notes, assets, SHA-256 per asset, download counts, draft / pre-release / latest badges</td><td>The release itself. Notes can be written, or generated from the commits and merged pull requests since the previous release (<a href="ai-review-triage.html">AI</a> or plain)</td></tr>
+<tr><td>Source archives (zip, tar.gz)</td><td>Generated from the tag on request</td></tr>
+<tr><td>Commit and signature badge</td><td>The commit the tag points to, checked like any commit (<a href="signed-commits.html">Signed commits</a>). The tag object's own signature is not verified; the badge is about the tagged commit</td></tr>
+<tr><td>Compare changes</td><td>A link to the compare page between the previous release's tag (the closest earlier release tag that is an ancestor) and this tag</td></tr>
+<tr><td>Checksums</td><td><b>SHA256SUMS</b>: all assets in <code>sha256sum</code> format. Source archives are generated on demand and have no stored checksum</td></tr>
+<tr><td>CI builds and artifacts</td><td>Pipelines of the repository whose commit is the tag's commit, with their jobs' artifacts. ByteBench does not start pipelines for tags, so "the pipeline of a tag" means the pipelines that ran on that same commit, on any branch</td></tr>
+<tr><td>Packages and images</td><td>NuGet, npm and container versions of the project that were published by those pipelines (CI job token) or whose version or tag equals the release's tag, with or without a leading <code>v</code>. Container entries show the <code>docker pull</code> reference</td></tr>
+<tr><td>Security scan</td><td>The newest Night Owl scan of the tagged commit: open findings by severity and dismissed ones, linking to the <a href="security-scanning.html">Security page</a></td></tr>
+<tr><td>SBOM</td><td>Release assets that look like an SBOM (a name containing <code>sbom</code>, or ending in <code>.cdx.json</code>, <code>.cdx.xml</code>, <code>.spdx.json</code>, <code>.spdx</code>, <code>bom.json</code>, <code>bom.xml</code>). ByteBench does not generate SBOMs: have a CI job produce one and let it attach as below</td></tr>
+<tr><td>Tests</td><td>Test runs recorded against the release's tag, release or commit (see <a href="test-management.html">Test management</a>)</td></tr>
+<tr><td>Issues and pull requests</td><td>Issues whose <b>fix version</b> has the release's name (<code>1.2.0</code>, or the tag with or without <code>v</code>) or that sit in a milestone with that name, and the pull requests merged since the previous release</td></tr>
+<tr><td>Container images</td><td>Shown under packages when the registry has an image tag equal to the release's tag</td></tr>
+</table>
+<p>Drafts, and everything in a draft release, are visible only to people who can push (Developer and above), exactly like the release itself. Everything else needs only read access to the project.</p>
+
+<h2 id="auto-attach">Attaching CI artifacts automatically</h2>
+<p>On a release page, Maintainers (permission to manage repositories) can switch on <b>Attach automatically</b> and list <b>patterns</b>, one glob per line, matched against the paths <i>inside</i> the artifact zips (<code>dist/*.zip</code>, <code>**/*.nupkg</code>, <code>bom/*.cdx.json</code>). The rule is per repository (also at <code>GET/PUT /api/v1/projects/{key}/repos/{slug}/release-settings</code>).</p>
+<ul>
+<li>It runs when a release is created or published, and when a pipeline passes later on the release's commit.</li>
+<li>Only artifacts of <b>passed</b> pipelines whose commit is the tag's commit are used, newest pipeline first.</li>
+<li>Matching files are copied onto the release as assets (file name only, no folders). A name the release already has is skipped, so running it again adds nothing. The usual limits apply: 50 assets per release and the release asset size limit (<code>Releases:MaxAssetBytes</code>, default 512 MB per file, measured on the bytes actually read, so a small zip that expands hugely is cut off).</li>
+<li>Developers can press <b>Attach artifacts now</b> (or <code>POST …/releases/{id}/attach-artifacts</code>) at any time; it uses the patterns even if automatic attaching is off.</li>
+<li>Patterns must be relative (no leading <code>/</code>, <code>..</code>, <code>~</code> or backslashes), at most 20 patterns of 200 characters. Artifacts are read entry by entry from the zip and never extracted to disk; entries with <code>..</code> or absolute names are ignored.</li>
+</ul>
+<div class="note">Artifacts expire (<code>expire_in</code> on the job) and are deleted after that. Attach them while they exist: once copied, they are ordinary release assets that do not expire.</div>
+
+<h2 id="api">REST API</h2>
+<table>
+<tr><th>Route</th><th>Purpose</th></tr>
+<tr><td><code>GET /api/v1/projects/{key}/releases</code></td><td>Releases of all repositories of the project, with asset counts, download counts and the newest test summary</td></tr>
+<tr><td><code>GET …/repos/{slug}/releases/{id}/hub</code></td><td>The release with commit, signature, pipelines and artifacts, packages, security summary, SBOM files, issues, pull requests, test runs, total downloads and the checksum URL</td></tr>
+<tr><td><code>GET …/repos/{slug}/releases/{id}/checksums</code></td><td><code>SHA256SUMS</code> text for the assets</td></tr>
+<tr><td><code>POST …/repos/{slug}/releases/{id}/attach-artifacts</code></td><td>Attach matching CI artifacts (Developer+)</td></tr>
+<tr><td><code>GET/PUT …/repos/{slug}/release-settings</code></td><td>Read or set the auto-attach rule (Maintainer+): <code>{"autoAttachEnabled": true, "patterns": ["dist/*.zip"]}</code></td></tr>
+</table>
+<p>The existing routes (<code>/releases</code>, <code>/releases/latest</code>, <code>/releases/{id}</code>, <code>/releases/tags/{tag}</code>, <code>POST /releases</code>, <code>/tags</code>) are unchanged. Asset downloads at <code>/release-assets/{id}/{fileName}</code> still count downloads.</p>
+
+<h2 id="audit">Audit</h2>
+<p>Attaching files records <code>release.assets_attached</code> (repository, tag, count, file names, source <code>ci-artifacts</code>); publishing still records <code>release.published</code> and raises the <code>release.published</code> webhook.</p>

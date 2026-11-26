@@ -33,6 +33,8 @@
   <a class="card" href="wiki-snippets.html"><b>Wiki and snippets</b><span>Project wikis and shareable snippets.</span></a>
   <a class="card" href="ci.html"><b>CI pipelines</b><span>The CI file format, runners, artifacts, caches and schedules.</span></a>
   <a class="card" href="environments.html"><b>Environments and deployments</b><span>Deploy approvals, rollback, freezes and traceability.</span></a>
+  <a class="card" href="test-management.html"><b>Test management</b><span>Test cases, plans, runs and results, with JUnit, TRX, xUnit and CTRF reports from CI.</span></a>
+  <a class="card" href="release-hub.html"><b>Release hub</b><span>Assets, CI artifacts, packages, security scan, SBOM and tests for each release.</span></a>
   <a class="card" href="packages.html"><b>Package and container registry</b><span>NuGet, npm and Docker images per project.</span></a>
   <a class="card" href="pages.html"><b>Static sites (Pages)</b><span>Publish a site from a CI job.</span></a>
   <a class="card" href="security-scanning.html"><b>Security scanning</b><span>Night Owl findings, triage and pull request checks.</span></a>
@@ -72,6 +74,7 @@
   <tr><td><code>/p/{KEY}/repos/{slug}/pull-requests</code></td><td>Pull requests of a repository</td></tr>
   <tr><td><code>/p/{KEY}/settings</code></td><td>Project settings (name, visibility, members)</td></tr>
   <tr><td><code>/p/{KEY}/environments</code>, <code>/p/{KEY}/service-desk</code>, <code>/p/{KEY}/flags</code>, <code>/p/{KEY}/packages</code></td><td>Deployments and approvals, service desk queue, feature flags, package registry</td></tr>
+  <tr><td><code>/p/{KEY}/tests</code>, <code>/p/{KEY}/releases</code></td><td>Test cases, plans, runs and comparisons; releases of all repositories of the project</td></tr>
   <tr><td><code>/p/{KEY}/repos/{slug}/merge-queue</code></td><td>The merge queue of a repository</td></tr>
   <tr><td><code>/explore</code>, <code>/search</code>, <code>/u/{username}</code></td><td>Explore projects, global search, user profiles</td></tr>
   <tr><td><code>/desk/{KEY}</code></td><td>The public service desk request form (no sign-in)</td></tr>
