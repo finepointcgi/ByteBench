@@ -27,7 +27,7 @@ else if (Repo != null)
                 @foreach (var b in branches) { <MudSelectItem T="string" Value="@b"><span class="mono">@b</span></MudSelectItem> }
                 @foreach (var t in tags) { <MudSelectItem T="string" Value="@(CiRef.ForTag(t))"><span class="mono">tag @t</span></MudSelectItem> }
             </MudSelect>
-            <MudTextField T="string" @bind-Value="runVariables" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Lines="1" MaxLines="6" AutoGrow="true"
+            <MudTextField T="string" @bind-Value="runVariables" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="1" MaxLines="6" Sizing="InputSizing.Auto"
                           Placeholder="Variables: NAME=value, one per line (optional)" aria-label="Variables for this run" Class="gb-mono-input run-variables" />
             <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.PlayArrow" Disabled="@busy" OnClick="Run">Run pipeline</MudButton>
         }

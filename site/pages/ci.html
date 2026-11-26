@@ -43,6 +43,8 @@ jobs:
 <tr><td><code>include</code></td><td>A template name or list of names. The only built-in template is <code>nightowl</code>. See <a href="#include">include</a>.</td></tr>
 <tr><td><code>on.branches</code></td><td>Branch patterns that start a pipeline on push. Omitted means every branch. <code>*</code> matches within one path segment, <code>**</code> across segments (<code>feature/*</code> matches <code>feature/x</code> but not <code>feature/x/y</code>).</td></tr>
 <tr><td><code>on.pull_requests</code></td><td>Default <code>true</code>: a pull request's source head gets a pipeline even if its branch isn't in <code>on.branches</code>. <code>false</code> disables that.</td></tr>
+<tr><td><code>on.tags</code></td><td>Tag patterns that start a pipeline when a tag is pushed or created. Without it, tags only start pipelines when a job has a rule about tags. See <a href="#tag-pipelines">Tag pipelines</a>.</td></tr>
+<tr><td><code>variables</code></td><td>Plain environment variables for every job. See <a href="#file-variables">variables in the file</a>.</td></tr>
 <tr><td><code>jobs</code></td><td>Required map of job name to job. Names use letters, digits, <code>_</code>, <code>.</code>, <code>-</code>, up to 64 characters, starting with a letter or digit.</td></tr>
 </table>
 
@@ -54,7 +56,11 @@ jobs:
 <tr><td><code>needs</code></td><td>Jobs that must pass first. See <a href="#needs">needs</a>.</td></tr>
 <tr><td><code>when</code></td><td><code>on_success</code> (default) or <code>manual</code>. Anything else (<code>always</code>, <code>on_failure</code>, <code>delayed</code>) is an error.</td></tr>
 <tr><td><code>allow_failure</code></td><td>A failure doesn't fail the pipeline and doesn't skip jobs that need it. Default <code>false</code>, but <code>true</code> for manual jobs.</td></tr>
-<tr><td><code>only</code> / <code>rules</code></td><td>Branch filters; see <a href="#rules">rules, only and when</a>. Using both is an error.</td></tr>
+<tr><td><code>only</code> / <code>rules</code></td><td>Branch, tag and condition filters; see <a href="#rules">rules, only and when</a>. Using both is an error.</td></tr>
+<tr><td><code>variables</code></td><td>Environment variables for this job (they win over the file's). See <a href="#file-variables">variables in the file</a>.</td></tr>
+<tr><td><code>retry</code></td><td>0 to 3: how many times a failed job runs again by itself. See <a href="#statuses">retries and timeouts</a>.</td></tr>
+<tr><td><code>timeout</code></td><td>Kill the job after this long (<code>30m</code>, <code>2h</code>, up to <code>7d</code>); it can only lower <code>Ci:JobTimeoutMinutes</code>.</td></tr>
+<tr><td><code>parallel</code></td><td><code>parallel: { matrix: [ { VAR: [a, b] } ] }</code> runs the job once per combination. See <a href="#matrix">matrix</a>.</td></tr>
 <tr><td><code>artifacts</code>, <code>cache</code></td><td>See <a href="#artifacts">artifacts</a> and <a href="#cache">cache</a>.</td></tr>
 <tr><td><code>environment</code></td><td>Records a deployment. Covered on <a href="environments.html">Environments and deployments</a>.</td></tr>
 <tr><td><code>pages</code> / <code>publish</code></td><td>Publishes a static site. Covered on <a href="pages.html">Static sites (Pages)</a>.</td></tr>
@@ -65,10 +71,12 @@ jobs:
 <tr><th>You might look for</th><th>In ByteBench</th></tr>
 <tr><td><code>stages:</code> and a job's <code>stage</code></td><td>Not supported. Use <code>needs</code>: a job without <code>needs</code> starts immediately, one with <code>needs</code> waits for them. A "stage" is just a set of jobs that need the previous set.</td></tr>
 <tr><td><code>script</code>, <code>before_script</code>, <code>after_script</code></td><td>Use <code>steps</code>. Put setup in the first step. There is no after-script that runs on failure; later steps are skipped once a step fails.</td></tr>
-<tr><td>File-level or job-level <code>variables:</code></td><td>Not supported. Use <a href="#variables">CI variables</a> in the UI, set values in the <code>run</code> text itself, or schedule variables.</td></tr>
+<tr><td>Secrets in <code>variables:</code></td><td><code>variables:</code> is for plain values (they are in the repository). Secrets go in <a href="#ci-variables">CI variables</a> in the UI, which win over the file's variables.</td></tr>
 <tr><td><code>services:</code> (sidecar containers)</td><td>Not supported, and jobs get no Docker daemon, so they can't start containers either. Use an image that bundles what you need, or install it in a step.</td></tr>
-<tr><td><code>retry:</code>, <code>timeout:</code></td><td>Not supported per job. The server-wide <code>Ci:JobTimeoutMinutes</code> applies. A person can <b>Retry</b> a finished job on the pipeline page.</td></tr>
-<tr><td><code>trigger:</code>, <code>extends:</code>, <code>include: { local/remote }</code></td><td>Not supported.</td></tr>
+<tr><td><code>retry: { max, when }</code>, <code>parallel: N</code></td><td>Only the plain number <code>retry: 2</code> (any failure) and <code>parallel: { matrix }</code> exist.</td></tr>
+<tr><td><code>trigger:</code> (child and multi-project pipelines), <code>extends:</code> and hidden <code>.jobs</code>, <code>include: { local/remote/project }</code>, YAML anchors across files</td><td>Not supported. Repeat the keys, or use YAML anchors inside the one file.</td></tr>
+<tr><td><code>resource_group:</code>, <code>environment: on_stop</code>, <code>cache: key: files:</code></td><td>Not supported. <code>environment: { action: stop }</code> marks a stop job you run yourself, and <code>{{ hashFiles('...') }}</code> in a cache key does what <code>key: files:</code> does.</td></tr>
+<tr><td>Test coverage parsing (<code>coverage:</code>) and pipeline status badges</td><td>Not supported. Test reports (<code>artifacts.reports</code>) give pass/fail counts; the <a href="#ci-rest-api">commit status endpoint</a> gives a commit's state.</td></tr>
 <tr><td><code>when: always</code>, <code>on_failure</code>, <code>delayed</code></td><td>Not supported for jobs. (<code>artifacts.when</code> does accept <code>on_failure</code> and <code>always</code>.)</td></tr>
 </table>
 
@@ -127,10 +135,22 @@ jobs:
 <h2 id="rules">Rules, only and when</h2>
 <ul>
 <li><code>only: [main, "release/*"]</code> creates the job only on matching branches.</li>
-<li><code>rules</code> is a list of <code>{ branches, when }</code> (up to 20). The <b>first</b> rule whose <code>branches</code> match decides (no <code>branches</code> matches every branch). <code>when</code> is <code>on_success</code>, <code>manual</code> or <code>never</code>; <code>never</code> leaves the job out, and an omitted <code>when</code> keeps the job's own. If no rule matches, the job is not created.</li>
+<li><code>rules</code> is a list of <code>{ branches, tags, if, when }</code> (up to 20). The <b>first</b> rule that matches decides. A rule with <code>branches</code> matches branch pipelines whose branch matches one pattern; with <code>tags</code> it matches <a href="#tag-pipelines">tag pipelines</a> whose tag matches; with neither it matches every ref. If it has an <code>if</code>, the condition must hold too. <code>when</code> is <code>on_success</code>, <code>manual</code> or <code>never</code>; <code>never</code> leaves the job out, and an omitted <code>when</code> keeps the job's own. If no rule matches, the job is not created.</li>
+<li><code>only: [main]</code> is the branch-only form. A branch filter never matches a tag, and a <code>tags</code> filter never matches a branch.</li>
 <li>If no job at all is left for a branch, pushes don't create a pipeline and <b>Run pipeline</b> says so.</li>
-<li>Rules match <b>branch names only</b>. There are no conditions on variables, changed files or the pipeline source. For a pull request pipeline the "branch" is the pull request's source branch.</li>
+<li>There are no conditions on changed files (<code>changes:</code>) or <code>exists:</code>. For a pull request pipeline the "branch" is the pull request's source branch.</li>
 </ul>
+<h3 id="rule-conditions">if: conditions</h3>
+<p>A small subset of GitLab's syntax: <code>$NAME</code> (true when the variable is set and not empty), <code>"text"</code> or <code>'text'</code>, <code>null</code>, <code>==</code>, <code>!=</code>, <code>=~</code> and <code>!~</code> with a <code>/regular expression/</code> (flag <code>i</code> allowed), <code>&amp;&amp;</code>, <code>||</code>, <code>!</code> and parentheses. An unset variable is <code>null</code>. They can read <code>CI_COMMIT_TAG</code>, <code>CI_COMMIT_BRANCH</code>, <code>CI_COMMIT_REF_NAME</code>, <code>CI_PIPELINE_SOURCE</code> and the run's own <a href="#schedule-variables">schedule or manual variables</a> (not CI variables, which are secrets). A condition that doesn't parse is a file error.</p>
+<pre><code>jobs:
+  release:
+    rules:
+      - { if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/' }   # a release tag
+    steps: [ { run: ./release.sh "$CI_COMMIT_TAG" } ]
+  nightly:
+    rules:
+      - { if: '$CI_PIPELINE_SOURCE == "schedule" &amp;&amp; $CI_COMMIT_BRANCH == "main"' }
+    steps: [ { run: ./nightly.sh } ]</code></pre>
 <pre><code>jobs:
   preview:
     rules:
@@ -155,20 +175,33 @@ jobs:
 <tr><td><code>CI</code>, <code>BYTEBENCH_CI</code></td><td><code>true</code></td></tr>
 <tr><td><code>BYTEBENCH_PIPELINE_ID</code></td><td>The pipeline's numeric id.</td></tr>
 <tr><td><code>BYTEBENCH_JOB</code></td><td>The job name.</td></tr>
-<tr><td><code>BYTEBENCH_REF</code></td><td>The branch (for a fork pull request <code>refs/pull/{n}/head</code>; for a merge queue run <code>refs/merge-queue/...</code>).</td></tr>
+<tr><td><code>BYTEBENCH_REF</code></td><td>The branch (for a tag pipeline <code>refs/tags/{tag}</code>; for a fork pull request <code>refs/pull/{n}/head</code>; for a merge queue run <code>refs/merge-queue/...</code>).</td></tr>
+<tr><td><code>CI_COMMIT_SHA</code>, <code>CI_COMMIT_SHORT_SHA</code></td><td>The commit being built, in full and its first 8 characters.</td></tr>
+<tr><td><code>CI_COMMIT_REF_NAME</code></td><td>The branch name or the tag name.</td></tr>
+<tr><td><code>CI_COMMIT_BRANCH</code></td><td>The branch name. Not set for tag pipelines, fork pull requests and merge queue runs.</td></tr>
+<tr><td><code>CI_COMMIT_TAG</code></td><td>The tag name, for <a href="#tag-pipelines">tag pipelines</a> only.</td></tr>
+<tr><td><code>CI_PIPELINE_ID</code>, <code>CI_JOB_NAME</code>, <code>CI_PROJECT_PATH</code></td><td>Pipeline id, job name and <code>KEY/slug</code>.</td></tr>
 <tr><td><code>BYTEBENCH_COMMIT_SHA</code></td><td>The commit being built.</td></tr>
 <tr><td><code>BYTEBENCH_REPOSITORY</code></td><td><code>KEY/slug</code>, such as <code>WEB/web-app</code>.</td></tr>
-<tr><td><code>BYTEBENCH_PIPELINE_SOURCE</code>, <code>CI_PIPELINE_SOURCE</code></td><td><code>push</code>, <code>pull_request</code>, <code>manual</code>, <code>retry</code>, <code>schedule</code> or <code>mergequeue</code>.</td></tr>
+<tr><td><code>BYTEBENCH_PIPELINE_SOURCE</code>, <code>CI_PIPELINE_SOURCE</code></td><td><code>push</code> (also for tag pushes; <code>CI_COMMIT_TAG</code> tells them apart), <code>pull_request</code>, <code>manual</code>, <code>retry</code>, <code>schedule</code> or <code>mergequeue</code>.</td></tr>
 <tr><td><code>CI_ENVIRONMENT_NAME</code>, <code>CI_ENVIRONMENT_URL</code></td><td>Only for jobs with an <code>environment:</code> (the URL only if one is set).</td></tr>
 <tr><td><code>BYTEBENCH_JOB_TOKEN</code>, <code>BYTEBENCH_REGISTRY_PASSWORD</code></td><td>A short-lived token (<code>gbj_...</code>) for the project's <a href="packages.html">package and container registry</a>. It only works while the job is running. Masked in logs.</td></tr>
 <tr><td><code>BYTEBENCH_REGISTRY</code>, <code>BYTEBENCH_REGISTRY_IMAGE</code>, <code>BYTEBENCH_REGISTRY_USER</code>, <code>BYTEBENCH_NUGET_SOURCE_URL</code>, <code>BYTEBENCH_NPM_REGISTRY_URL</code></td><td>Registry addresses and the user name to pair with the token. Only set when the site's public base URL is known (<code>PublicBaseUrl</code> or after the first request).</td></tr>
 </table>
 
 <h3 id="ci-rest-api">REST API</h3>
-<p>Pipelines can be driven from scripts: list and filter them, read a pipeline with its jobs and steps, read a step's log (tail or page it), run a pipeline for a branch, cancel or re-run it, retry or play a job, and list or download a job's artifacts. Under <code>/api/v1/projects/{key}/repos/{slug}/pipelines</code>, with the same roles as the buttons in the UI (read: Viewer and <code>read_api</code>; actions: Developer and <code>write_api</code>). CI variables can be listed (names and flags only, never values), created, updated and deleted by a Maintainer under <code>.../ci/variables</code>. Fork pull request pipelines still wait for approval and never receive variables. See the <a href="api.html#api-pipelines">endpoint catalogue</a>.</p>
+<p>Pipelines can be driven from scripts: list and filter them, read a pipeline with its jobs and steps, read a step's log (tail or page it), run a pipeline for a branch or tag (with variables), cancel or re-run it, read a commit's combined pipeline status, retry or play a job, and list or download a job's artifacts. Under <code>/api/v1/projects/{key}/repos/{slug}/pipelines</code>, with the same roles as the buttons in the UI (read: Viewer and <code>read_api</code>; actions: Developer and <code>write_api</code>). CI variables can be listed (names and flags only, never values), created, updated and deleted by a Maintainer under <code>.../ci/variables</code>. Fork pull request pipelines still wait for approval and never receive variables. See the <a href="api.html#api-pipelines">endpoint catalogue</a>.</p>
 <pre><code>curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"branch":"main"}' \
   https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines
 curl -H "Authorization: Bearer $TOKEN" "https://bytebench.example.com/api/v1/projects/WEB/repos/site/pipelines/12/steps/34/log?tail=2000"</code></pre>
+
+<h3 id="file-variables">variables in the file</h3>
+<p><code>variables:</code> at the top of the file and inside a job sets plain environment variables (the job's win). Names use letters, digits and <code>_</code> and can't be <code>CI</code> or start with <code>BYTEBENCH_</code> or <code>GITBENCH_</code>; values are single lines up to 2000 characters, at most 50 per level. They are <b>not secret</b> (they are in the repository and in the pipeline file's history). Precedence, lowest first: the file's variables, <a href="#ci-variables">CI variables</a>, then the run's own variables (a schedule's, or those given with <b>Run pipeline</b> or the API). The predefined variables above always win.</p>
+<pre><code>variables: { CHANNEL: stable }
+jobs:
+  build:
+    variables: { CONFIGURATION: Release }
+    steps: [ { run: 'dotnet build -c "$CONFIGURATION" -p:Channel="$CHANNEL"' } ]</code></pre>
 
 <h3 id="ci-variables">CI variables (secrets)</h3>
 <p>Secret values are managed in the UI or the <a href="api.html#api-pipelines">REST API</a>, not in the YAML: <b>project</b> variables under <b>Project settings → CI variables</b> (<code>/p/{KEY}/settings#ci-variables</code>) and <b>repository</b> variables under <b>Repository → Settings → CI variables</b> (<code>/p/{KEY}/repos/{slug}/settings/ci-variables</code>). Managing them needs <b>Maintainer</b> or higher (ManageRepositories).</p>
@@ -185,8 +218,9 @@ curl -H "Authorization: Bearer $TOKEN" "https://bytebench.example.com/api/v1/pro
 <p>Mark a variable <b>Protected</b> and it only reaches pipelines on a <a href="branch-protection.html">protected branch</a>. For a pull request pipeline the <em>source</em> branch must be protected, so a feature branch never sees deploy keys. A merge queue pipeline counts as running on its target branch only if the PR isn't from a fork and the person who queued it can merge pull requests. The log notes how many protected variables were withheld.</p>
 <div class="warn"><b>Fork pull requests get no variables at all</b>, protected or not, because the code comes from outside the project.</div>
 
-<h3 id="schedule-variables">Pipeline (schedule) variables</h3>
-<p>The only per-run variables are those a <a href="#schedules">schedule</a> carries. They are <b>not secret</b> (Maintainers can read them), override CI variables of the same name, and go through the same env file. A fork pull request pipeline never carries them.</p>
+<h3 id="schedule-variables">Pipeline (schedule and manual-run) variables</h3>
+<p><b>Run pipeline</b> has a <i>Variables</i> box (<code>NAME=value</code>, one per line), and the API takes <code>"variables": { "NAME": "value" }</code>. They follow the same rules as the file's variables and the same treatment as a schedule's below.</p>
+<p>A <a href="#schedules">schedule</a> carries variables too. All of these are <b>not secret</b> (Maintainers can read them), override CI variables of the same name, and go through the same env file. A fork pull request pipeline never carries them.</p>
 
 <h2 id="artifacts">Artifacts</h2>
 <pre><code>jobs:
@@ -229,15 +263,47 @@ jobs:
   build:
     steps: [ { run: ./build.sh } ]</code></pre>
 
+<h2 id="tag-pipelines">Tag pipelines</h2>
+<p>A pipeline can run when a tag is pushed, or created in ByteBench (the Tags page, or a release that makes its tag). Its <b>ref</b> is <code>refs/tags/{tag}</code>, shown as <i>tag v1.4.0</i> in the pipeline lists, and steps see <code>CI_COMMIT_TAG</code> and <code>CI_COMMIT_REF_NAME</code> set to the tag (and no <code>CI_COMMIT_BRANCH</code>). The commit is the one the tag points at, annotated or not.</p>
+<ul>
+<li><b>Opt in.</b> Files written before tag pipelines existed never run on a tag. A tag starts a pipeline if the file has <code>on.tags</code> with a pattern that matches it (<code>["v*"]</code>, or <code>["*"]</code> for every tag), or, when there is no <code>on.tags</code>, if some job has a rule with <code>tags:</code> or an <code>if:</code> that mentions <code>$CI_COMMIT_TAG</code>.</li>
+<li><b>Which jobs.</b> The same <a href="#rules">rules</a> as for branches: a job with no rules runs on tags too, <code>only</code> and <code>branches</code> rules never match a tag, and <code>tags:</code> / <code>if:</code> select tag jobs. A tag whose rules leave no job starts nothing.</li>
+<li><b>Once per tag and commit.</b> Pushing the same tag again does not repeat it; moving a tag to another commit does. Deleting a tag starts nothing. <b>Re-run</b> on a tag pipeline runs the same tag and commit again.</li>
+<li><b>By hand.</b> <b>Run pipeline</b> lists tags after the branches; the API takes <code>{"tag":"v1.4.0"}</code>. Needs PushCode, like branches.</li>
+<li><b>Secrets.</b> A tag pipeline gets <a href="#protected-variables">protected variables</a> only when the tag matches a <a href="branch-protection.html#protected-tags">protected tag</a> rule (those limit who can create the tag); other tags see only unprotected variables, and the log says so. The same split applies to the cache scope.</li>
+<li><b>Not published.</b> A tag pipeline never publishes a <a href="pages.html">Pages</a> site. Its artifacts are attached to a release whose tag points at the commit, and the <a href="release-hub.html">release hub</a> lists the tag's pipeline first.</li>
+<li><b>Not covered.</b> Tags that arrive through a mirror pull or an import start nothing; use <b>Run pipeline</b>.</li>
+</ul>
+
+<h2 id="matrix">Matrix jobs</h2>
+<p><code>parallel: { matrix: [ { VAR: [a, b], OTHER: [x] }, ... ] }</code> runs a job once per combination of each entry's lists (several entries add up). Each instance is named <code>{job}-{value}-{value}</code> (characters other than letters, digits, <code>_</code>, <code>.</code> and <code>-</code> become <code>_</code>; up to 64 characters), gets its combination as environment variables on top of the job's <code>variables</code>, and a job that <code>needs</code> the matrix job needs every instance. Variable names follow the <a href="#file-variables">variable rules</a>; the total, with all other jobs, can't pass 20 jobs, and two instances can't get the same name. Image names can't use variables.</p>
+
+<h2 id="compare">Compared with GitLab CI and GitHub Actions</h2>
+<table>
+<tr><th>Feature</th><th>ByteBench</th></tr>
+<tr><td>Push, tag, pull request, schedule, manual and API triggers</td><td>Yes. Tags need <code>on.tags</code> or a tag rule.</td></tr>
+<tr><td>Job graph (<code>needs</code>), parallel jobs, <code>allow_failure</code>, manual jobs, <code>retry</code>, <code>timeout</code>, <code>rules</code> with <code>if</code></td><td>Yes (see above). No <code>stages</code>, <code>when: always</code> or <code>delayed</code>.</td></tr>
+<tr><td>Matrix</td><td>Yes (<code>parallel: matrix</code>), variables only; not the image.</td></tr>
+<tr><td>Variables: file, project and repository, protected, masked, per-run</td><td>Yes. CI variables are always masked; protected ones only reach protected branches and tags.</td></tr>
+<tr><td>Artifacts, expiry, cache with a file-hash key, artifacts between jobs</td><td>Yes. Protected and unprotected caches are separate.</td></tr>
+<tr><td>Test, security and SARIF reports</td><td>Yes (JUnit, TRX, xUnit, CTRF and Night Owl or SARIF). No coverage parsing.</td></tr>
+<tr><td>Environments, deployments, approvals, freezes, rollbacks, protected environments</td><td>Yes. No <code>on_stop</code> and no automatic review environments.</td></tr>
+<tr><td>Pages, release artifacts, merge checks, merge queue, commit status, webhooks, notifications</td><td>Yes. Webhooks send only <code>pipeline.completed</code>. No badges.</td></tr>
+<tr><td>Reusable workflows, <code>extends</code>, remote or local <code>include</code>, child pipelines, <code>resource_group</code>, <code>services</code>, service containers, secrets managers, runners with tags, autoscaling</td><td>Not supported. The server runs jobs itself in Docker.</td></tr>
+<tr><td>Job restarts after a server restart</td><td>Running pipelines end in Error and must be re-run; queued ones continue.</td></tr>
+</table>
+
 <h2 id="triggers">What starts a pipeline</h2>
 <table>
 <tr><th>Trigger</th><th><code>CI_PIPELINE_SOURCE</code></th><th>Details</th></tr>
 <tr><td>Push</td><td><code>push</code></td><td>For each branch the push created or moved, if it matches <code>on.branches</code> (or all branches when omitted). Deleted branches are skipped. A merge done in ByteBench counts as a push to the target branch.</td></tr>
+<tr><td>Tag</td><td><code>push</code></td><td>A tag pushed with git, or created in ByteBench (the Tags page or a release), starts a pipeline for the tag's commit when the file asks for it. See <a href="#tag-pipelines">Tag pipelines</a>. A tag created by a mirror pull or an import starts nothing.</td></tr>
 <tr><td>Pull request</td><td><code>pull_request</code></td><td>Opening a PR (or updating its source) runs a pipeline for the source head if <code>on.pull_requests</code> isn't <code>false</code>, unless that commit already has one on that branch (it is then linked to the PR instead).</td></tr>
 <tr><td>Fork pull request</td><td><code>pull_request</code></td><td>Same, but the pipeline waits for approval and gets no variables. See <a href="#forks">below</a>.</td></tr>
 <tr><td>Merge queue</td><td><code>mergequeue</code></td><td>The <a href="branch-protection.html">merge queue</a> tests the merge result on a temporary <code>refs/merge-queue/...</code> ref with its own pipeline. Jobs are chosen by <code>rules</code> as if the run were on the target branch.</td></tr>
 <tr><td>Schedule</td><td><code>schedule</code></td><td>A cron schedule fires, see <a href="#schedules">Schedules</a>.</td></tr>
-<tr><td>Manual</td><td><code>manual</code></td><td><b>Run pipeline</b> on the Pipelines tab runs any branch's tip and ignores <code>on.branches</code>. Needs PushCode.</td></tr>
+<tr><td>Manual</td><td><code>manual</code></td><td><b>Run pipeline</b> on the Pipelines tab runs any branch's tip, or a tag's commit, with optional variables, and ignores <code>on.branches</code> and <code>on.tags</code> (jobs' <code>rules</code> still apply). Needs PushCode.</td></tr>
+<tr><td>API</td><td><code>manual</code></td><td><code>POST .../pipelines</code> with a <code>branch</code> or <code>tag</code> and optional <code>variables</code>: the same as the button.</td></tr>
 <tr><td>Retry</td><td><code>retry</code></td><td><b>Re-run</b> runs the same commit again (PushCode).</td></tr>
 </table>
 <p>A commit runs automatically <b>at most once per branch</b>. Push detection works by comparing branch tips, so a branch created in the UI is picked up by the next push. If <code>.bytebench-ci.yml</code> is missing at a commit, nothing runs. Setting <code>Ci:Enabled</code> to <code>false</code> turns off every trigger and the Run button.</p>
@@ -245,8 +311,8 @@ jobs:
 <h2 id="statuses">Statuses, retries and timeouts</h2>
 <ul>
 <li>A pipeline is <b>Queued, Running, Passed, Failed, Canceled, Error</b> or <b>Manual</b> (blocked on a manual job). Jobs and steps can also be <b>Skipped</b>. Error means the file was invalid or Docker was unavailable.</li>
-<li><b>Retry</b> on a finished job runs it again inside the same pipeline, replacing its logs and artifacts (PushCode). There is no automatic retry.</li>
-<li><b>Timeout:</b> every job is killed after <code>Ci:JobTimeoutMinutes</code> (default 20); it is the same for all jobs.</li>
+<li><b>Retry</b> on a finished job runs it again inside the same pipeline, replacing its logs and artifacts (PushCode). A job with <code>retry: N</code> also runs again by itself, up to N more times, when it fails (not when the pipeline is canceled): its steps, logs and artifacts are replaced, the new attempt's log starts with a note naming the failed step and its exit code and the last lines of the failed attempt, and a job that deploys records a deployment per attempt. Running out of retries fails the job as before.</li>
+<li><b>Timeout:</b> every job is killed after <code>Ci:JobTimeoutMinutes</code> (default 20). A job's own <code>timeout:</code> can make that shorter but never longer, so an admin's limit stays the ceiling. The clock covers the steps, not the checkout or the artifact upload.</li>
 <li><b>Cancel</b> stops a running pipeline (PushCode).</li>
 <li>When a pipeline fails or errors, whoever triggered it gets a notification. The <code>pipeline.completed</code> webhook fires when it finishes.</li>
 <li>After a server restart, pipelines that were running are marked Error; queued ones run again; leftover containers and workspaces from this instance are removed.</li>
@@ -273,7 +339,7 @@ jobs:
 <ul>
 <li>The docker CLI is always started with an argument list, never a shell string; image names are validated so they can't be read as flags.</li>
 <li>Containers never get the Docker socket, the host's environment variables or any ByteBench secret. They get the <code>BYTEBENCH_*</code> variables, the allowed CI variables and the job token.</li>
-<li>Containers run with <code>--security-opt no-new-privileges</code>, memory, CPU and PID limits, a timeout and <code>--rm</code>, as the image's user (often root inside the container).</li>
+<li>Containers run with <code>--security-opt no-new-privileges</code>, memory, CPU and PID limits, a timeout and <code>--rm</code>, as the image's user (often root inside the container) unless you set <code>Ci:User</code>; <code>Ci:DropCapabilities</code> adds <code>--cap-drop ALL</code>.</li>
 <li>Only the exported workspace is mounted. Symlinks in the repository are created after every regular file so nothing is written through them. Submodules aren't fetched.</li>
 <li>Containers have network access by default (<code>bridge</code>). On a shared or exposed server use <code>Ci:Network: none</code>, rootless Docker or a separate CI host, and let only trusted people push.</li>
 </ul>
@@ -289,6 +355,8 @@ jobs:
 <tr><td><code>Network</code></td><td><code>bridge</code></td><td><code>docker run --network</code>. <code>none</code> blocks network access (the Night Owl install step and package registry then can't be reached).</td></tr>
 <tr><td><code>Memory</code> / <code>Cpus</code></td><td><code>2g</code> / <code>2</code></td><td><code>--memory</code> / <code>--cpus</code> per step container. Empty means no limit.</td></tr>
 <tr><td><code>PidsLimit</code></td><td><code>1024</code></td><td><code>--pids-limit</code>; <code>0</code> for none.</td></tr>
+<tr><td><code>User</code></td><td>empty</td><td><code>docker run --user</code> (for example <code>1000:1000</code>): run steps as a non-root user. The exported workspace belongs to the server user, so pick an id that can write it.</td></tr>
+<tr><td><code>DropCapabilities</code></td><td><code>false</code></td><td>Adds <code>--cap-drop ALL</code>. Off by default because many images need some capabilities (<code>chown</code>, package managers).</td></tr>
 <tr><td><code>DockerExecutable</code></td><td><code>docker</code></td><td>Path of the docker CLI.</td></tr>
 <tr><td><code>WorkDirectory</code></td><td><code>{temp}/bytebench-ci/{instance}</code></td><td>Where workspaces are exported. Docker must be able to mount it.</td></tr>
 <tr><td><code>MaxLogChars</code></td><td>1,048,576</td><td>Per-step log cap. The page shows the last 200 KB; <b>Raw log</b> has everything stored.</td></tr>
@@ -306,7 +374,7 @@ jobs:
 <tr><td>Approve a fork pull request's pipeline</td><td>Maintainer (merge permission)</td></tr>
 <tr><td>Manage CI variables, schedules</td><td>Maintainer (ManageRepositories)</td></tr>
 </table>
-<p>Pipelines are shown at <code>/p/{KEY}/repos/{slug}/pipelines</code> and <code>.../pipelines/{id}</code>. The latest pipeline on a pull request's head is a <a href="branch-protection.html">merge check</a>: Passed, Pending (queued, running, manual-blocked, or none yet) or Failed. It reports nothing if the head has no <code>.bytebench-ci.yml</code>.</p>
+<p>Pipelines are shown at <code>/p/{KEY}/repos/{slug}/pipelines</code> and <code>.../pipelines/{id}</code>. The latest pipeline on a pull request's head is a <a href="branch-protection.html">merge check</a>: Passed, Pending (queued, running, manual-blocked, or none yet) or Failed. It reports nothing if the head has no <code>.bytebench-ci.yml</code>, or if no pipeline would start for the pull request (every job's rules leave it out, or <code>on:</code> excludes it), so the check never waits for a pipeline that will not come. Tag pipelines on the same commit are not counted.</p>
 
 <h2 id="examples">Example pipelines</h2>
 
@@ -413,18 +481,37 @@ jobs:
 </code></pre>
 <p>Then add a <a href="#schedules">schedule</a> (<code>0 3 * * *</code>) on <code>main</code> so the scan also runs when nobody pushes. See <a href="security-scanning.html">Security scanning</a> and <a href="pages.html">Static sites</a>.</p>
 
-<h3 id="example-fanout">5. Matrix-like fan-out without a matrix</h3>
-<p>There is no <code>matrix</code> key; write one job per variant, or loop in a step:</p>
+<h3 id="example-fanout">5. Fan-out with a matrix</h3>
+<p>A job with <code>parallel: matrix</code> becomes one job per combination (see <a href="#matrix">matrix</a>); a job that needs it waits for all of them:</p>
+<pre><code>jobs:
+  test:
+    parallel: { matrix: [ { CONFIG: [Debug, Release] } ] }
+    steps: [ { run: 'dotnet test -c "$CONFIG"' } ]
+  all-green:
+    needs: [test]
+    steps: [ { run: echo "every variant passed" } ]</code></pre>
+<p>Image names are fixed text (they can't contain variables), so a matrix varies a variable for the steps, not the image. To vary the image, write one job per image:</p>
 <pre><code>jobs:
   test-net8:
     image: mcr.microsoft.com/dotnet/sdk:8.0
     steps: [ { run: dotnet test } ]
   test-net10:
     image: mcr.microsoft.com/dotnet/sdk:10.0
-    steps: [ { run: dotnet test } ]
-  all-green:
-    needs: [test-net8, test-net10]
-    steps: [ { run: echo "both passed" } ]</code></pre>
+    steps: [ { run: dotnet test } ]</code></pre>
+
+<h3 id="example-release">6. Build and publish when a version tag is pushed</h3>
+<pre><code>on:
+  tags: ["v*"]
+jobs:
+  build:
+    artifacts: { paths: [dist/], expire_in: never }
+    steps: [ { run: ./build.sh "$CI_COMMIT_TAG" } ]
+  publish:
+    needs: [build]
+    rules: [ { if: '$CI_COMMIT_TAG' } ]     # tags only, not branch pushes
+    environment: { name: production }
+    steps: [ { run: ./publish.sh dist/ } ]</code></pre>
+<p>Pushing <code>v1.4.0</code> runs both jobs; pushing a branch runs <code>build</code> only (the file's <code>on:</code> has no <code>branches</code>, so branches run as usual). If a release in the <a href="release-hub.html">release hub</a> uses that tag, the passed pipeline's artifacts are attached to it (when the repository's auto-attach setting is on).</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <table>
