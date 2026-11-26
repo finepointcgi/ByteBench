@@ -8,7 +8,7 @@ namespace ByteBench.Services.Ci;
 /// someone clicked Run (or Retry), so it no longer waits.
 /// </summary>
 public sealed record CiJobState(string Name, IReadOnlyList<string> Needs, PipelineStatus Status, bool Manual = false,
-    bool AllowFailure = false, bool NeedsApproval = false, bool Played = false)
+    bool AllowFailure = false, bool NeedsApproval = false, bool Played = false, CiJobTrigger Trigger = CiJobTrigger.OnSuccess)
 {
     /// <summary>Waiting for a person: a manual job, or one that needs approval.</summary>
     public bool Gated => (Manual || NeedsApproval) && !Played;
@@ -23,6 +23,7 @@ public enum CiJobAction { Start, WaitForManual, Skip, Cancel }
 /// Queued job; <see cref="Result"/> gives the pipeline's status once nothing can run.
 /// <list type="bullet">
 /// <item>A need is satisfied when it Passed, or failed with <c>allow_failure</c>.</item>
+/// <item><c>when: always</c> jobs start once every need has finished, whatever its result; <c>when: on_failure</c> jobs do too, but only when a job they (transitively) need failed, otherwise they are skipped.</item>
 /// <item>A need that was Skipped or Canceled, or failed without <c>allow_failure</c>, skips the job.</item>
 /// <item>A job waits while a need is Queued, Running or Manual.</item>
 /// <item>Once its needs are satisfied, a gated job (manual, or targeting a protected environment) goes to Manual; others start.</item>
@@ -43,14 +44,33 @@ public static class CiJobGraph
             foreach (var n in job.Needs)
             {
                 if (!byName.TryGetValue(n, out var need)) continue; // validated files can't do this
-                if (IsSatisfied(need)) continue;
+                if (job.Trigger == CiJobTrigger.OnSuccess && IsSatisfied(need)) continue;
                 if (need.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual) waiting = true;
-                else skip = true;
+                else if (job.Trigger == CiJobTrigger.OnSuccess) skip = true;
             }
             if (skip) actions.Add((job.Name, CiJobAction.Skip));
-            else if (!waiting) actions.Add((job.Name, job.Gated ? CiJobAction.WaitForManual : CiJobAction.Start));
+            else if (!waiting)
+            {
+                if (job.Trigger == CiJobTrigger.OnFailure && !AnyFailed(job, byName)) actions.Add((job.Name, CiJobAction.Skip));
+                else actions.Add((job.Name, job.Gated ? CiJobAction.WaitForManual : CiJobAction.Start));
+            }
         }
         return actions;
+    }
+
+    /// <summary>True if a job the job needs, directly or through other needs, failed without <c>allow_failure</c>.</summary>
+    private static bool AnyFailed(CiJobState job, Dictionary<string, CiJobState> byName)
+    {
+        var seen = new HashSet<string>();
+        var todo = new Stack<string>(job.Needs);
+        while (todo.Count > 0)
+        {
+            var n = todo.Pop();
+            if (!seen.Add(n) || !byName.TryGetValue(n, out var j)) continue;
+            if (j.Status is PipelineStatus.Failed or PipelineStatus.Error && !(j.AllowFailure && !j.NeedsApproval)) return true;
+            foreach (var d in j.Needs) todo.Push(d);
+        }
+        return false;
     }
 
     public static bool IsSatisfied(CiJobState need) =>

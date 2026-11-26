@@ -9,7 +9,21 @@ namespace ByteBench.Services.Ci;
 /// never appear on a command line.
 /// </summary>
 public sealed record CiContainerSpec(string Name, string Image, string Script, string Workspace, IReadOnlyDictionary<string, string> Env,
-    string? EnvFile = null);
+    string? EnvFile = null, string? Network = null);
+
+/// <summary>A service could not be started or never became ready; the message says why (and includes the service's last log lines).</summary>
+public sealed class CiServiceException(string message) : Exception(message);
+
+/// <summary>
+/// A job's running <c>services:</c>: a private Docker network and one container per service, each reachable by its alias.
+/// Dispose to stop the containers and remove the network.
+/// </summary>
+public sealed class CiServiceSet(CiDocker docker, string network, IReadOnlyList<string> containers) : IAsyncDisposable
+{
+    public string Network { get; } = network;
+    public IReadOnlyList<string> Containers { get; } = containers;
+    public async ValueTask DisposeAsync() => await docker.TeardownServicesAsync(Network, Containers);
+}
 
 /// <summary>
 /// Thin wrapper over the docker CLI (singleton). Every argument goes through <see cref="ProcessStartInfo.ArgumentList"/>,
@@ -68,7 +82,7 @@ public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
             "run", "--rm", "--name", spec.Name,
             "--label", InstanceLabel,
             "--security-opt", "no-new-privileges",
-            "--network", string.IsNullOrWhiteSpace(o.Network) ? "bridge" : o.Network,
+            "--network", spec.Network ?? (string.IsNullOrWhiteSpace(o.Network) ? "bridge" : o.Network),
             "-v", spec.Workspace + ":/workspace",
             "-w", "/workspace",
         };
@@ -123,18 +137,151 @@ public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
         catch (InvalidOperationException) { /* already exited */ }
     }
 
-    /// <summary>Removes every leftover container labelled with this instance (e.g. after a crash). Best effort.</summary>
+    /// <summary>Removes every leftover container and service network labelled with this instance (e.g. after a crash). Best effort.</summary>
     public async Task RemoveStaleContainersAsync(CancellationToken ct)
     {
         try
         {
             var (code, ids) = await RunCaptureAsync(["ps", "-aq", "--filter", "label=" + InstanceLabel], ct);
             var list = ids.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (code != 0 || list.Length == 0) return;
-            await RunCaptureAsync(["rm", "-f", .. list], ct);
-            log.LogInformation("Removed {Count} stale CI container(s)", list.Length);
+            if (code == 0 && list.Length > 0)
+            {
+                await RunCaptureAsync(["rm", "-f", .. list], ct);
+                log.LogInformation("Removed {Count} stale CI container(s)", list.Length);
+            }
+            var (ncode, nets) = await RunCaptureAsync(["network", "ls", "-q", "--filter", "label=" + InstanceLabel], ct);
+            var networks = nets.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (ncode == 0 && networks.Length > 0) await RunCaptureAsync(["network", "rm", .. networks], ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { log.LogDebug(ex, "Could not list stale CI containers"); }
+    }
+
+    // ----------------------------------------------------------------- services:
+
+    /// <summary>The flags every sidecar container gets: the job containers' isolation, minus <c>--user</c> (a database image needs its own user).</summary>
+    public IReadOnlyList<string> ServiceRunArguments(string name, string network, CiServiceDefinition service)
+    {
+        var o = Options;
+        var args = new List<string>
+        {
+            "run", "-d", "--name", name,
+            "--label", InstanceLabel,
+            "--security-opt", "no-new-privileges",
+            "--network", network, "--network-alias", service.Alias,
+        };
+        if (!string.IsNullOrWhiteSpace(o.Memory)) args.AddRange(["--memory", o.Memory]);
+        if (!string.IsNullOrWhiteSpace(o.Cpus)) args.AddRange(["--cpus", o.Cpus]);
+        if (o.PidsLimit > 0) args.AddRange(["--pids-limit", o.PidsLimit.ToString()]);
+        if (o.DropCapabilities) args.AddRange(["--cap-drop", "ALL"]);
+        foreach (var (k, v) in service.Variables ?? new Dictionary<string, string>()) args.AddRange(["-e", $"{k}={v}"]);
+        args.Add(service.Image);
+        if (service.Command != null) args.AddRange(service.Command);
+        return args;
+    }
+
+    /// <summary>
+    /// Starts a job's services on a new private network (<c>--internal</c>, so no outside access, when <c>Ci:Network</c> is
+    /// <c>none</c>) and waits until each is ready: its image's HEALTHCHECK says healthy, else its <c>port</c> accepts a connection,
+    /// else it is simply still running. A failure removes everything again and throws <see cref="CiServiceException"/>.
+    /// </summary>
+    public async Task<CiServiceSet> StartServicesAsync(string jobKey, IReadOnlyList<CiServiceDefinition> services, Action<string> onLine, CancellationToken ct)
+    {
+        var network = $"bytebench-ci-net-{jobKey}-{Guid.NewGuid().ToString("N")[..6]}";
+        var netArgs = new List<string> { "network", "create", "--label", InstanceLabel };
+        if (Options.Network == "none") netArgs.Add("--internal");
+        netArgs.Add(network);
+        var (ncode, nout) = await RunCaptureAsync(netArgs, ct);
+        if (ncode != 0) throw new CiServiceException($"Could not create the services network: {nout.Trim()}");
+
+        var started = new List<string>();
+        try
+        {
+            var timeout = TimeSpan.FromSeconds(Math.Clamp(Options.ServiceStartTimeoutSeconds, 5, 600));
+            var names = new List<(CiServiceDefinition Def, string Name)>();
+            for (var i = 0; i < services.Count; i++)
+            {
+                var name = $"bytebench-ci-svc-{jobKey}-{i}-{Guid.NewGuid().ToString("N")[..6]}";
+                onLine($"[bytebench] Starting service '{services[i].Alias}' ({services[i].Image})...");
+                var (code, output) = await RunCaptureAsync(ServiceRunArguments(name, network, services[i]), ct);
+                if (code != 0) throw new CiServiceException($"Service '{services[i].Alias}' ({services[i].Image}) could not be started: {Tail(output)}");
+                started.Add(name);
+                names.Add((services[i], name));
+            }
+            foreach (var (def, name) in names)
+            {
+                await WaitReadyAsync(def, name, network, timeout, ct);
+                onLine($"[bytebench] Service '{def.Alias}' is ready.");
+            }
+            return new CiServiceSet(this, network, started);
+        }
+        catch
+        {
+            await TeardownServicesAsync(network, started);
+            throw;
+        }
+    }
+
+    private async Task WaitReadyAsync(CiServiceDefinition def, string container, string network, TimeSpan timeout, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        var stableSince = DateTime.UtcNow;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var (code, state) = await RunCaptureAsync(["inspect", "-f", "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}", container], ct);
+            var parts = state.Trim().Split('|');
+            if (code != 0 || parts[0] != "running")
+                throw new CiServiceException($"Service '{def.Alias}' ({def.Image}) stopped before it was ready ({(code == 0 ? parts[0] : "gone")}). Its last output:\n{await LogsAsync(container)}");
+            var health = parts.Length > 1 ? parts[1] : "";
+            if (health == "healthy") return;
+            if (health == "unhealthy") throw new CiServiceException($"Service '{def.Alias}' ({def.Image}) reports unhealthy. Its last output:\n{await LogsAsync(container)}");
+            if (health == "")
+            {
+                if (def.Port is { } port)
+                {
+                    // alpine's busybox nc: the port accepts a connection from inside the services network.
+                    var (pcode, _) = await RunCaptureAsync(["run", "--rm", "--label", InstanceLabel, "--security-opt", "no-new-privileges", "--network", network,
+                        "--memory", "64m", "--entrypoint", "sh", CiFile.DefaultImage, "-c", $"nc -z -w 2 {def.Alias} {port}"], ct);
+                    if (pcode == 0) return;
+                }
+                else if (DateTime.UtcNow - stableSince >= TimeSpan.FromSeconds(2)) return; // no healthcheck, no port: running is all we can know
+            }
+            if (DateTime.UtcNow > deadline)
+                throw new CiServiceException($"Service '{def.Alias}' ({def.Image}) was not ready after {timeout.TotalSeconds:0} seconds" +
+                    (def.Port == null && health == "" ? "" : health != "" ? $" (health: {health})" : $" (port {def.Port} not open)") + $". Its last output:\n{await LogsAsync(container)}");
+            await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+        }
+    }
+
+    /// <summary>The last lines of a service container's output (for failure messages).</summary>
+    public async Task<string> LogsAsync(string container)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var (_, output) = await RunCaptureAsync(["logs", "--tail", "30", container], cts.Token);
+            return Tail(output);
+        }
+        catch (Exception) { return "(no output)"; }
+    }
+
+    private static string Tail(string text)
+    {
+        var t = text.Trim();
+        return t.Length == 0 ? "(no output)" : t.Length > 2000 ? "…" + t[^2000..] : t;
+    }
+
+    /// <summary>Stops and removes a job's service containers and its network. Best effort.</summary>
+    public async Task TeardownServicesAsync(string network, IEnumerable<string> containers)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        try
+        {
+            var list = containers.ToList();
+            if (list.Count > 0) await RunCaptureAsync(["rm", "-f", .. list], cts.Token);
+            await RunCaptureAsync(["network", "rm", network], cts.Token);
+        }
+        catch (Exception ex) { log.LogWarning(ex, "Could not remove the services of a CI job ({Network})", network); }
     }
 
     /// <summary>

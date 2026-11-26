@@ -269,7 +269,7 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         var playedBy = runsNow ? me : null;
         var n = await db.PipelineJobs.Where(j => j.Id == jobId && j.Status != PipelineStatus.Queued && j.Status != PipelineStatus.Running && j.Status != PipelineStatus.Manual)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued)
-                .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null)
+                .SetProperty(j => j.StartedAt, (DateTime?)null).SetProperty(j => j.FinishedAt, (DateTime?)null).SetProperty(j => j.Coverage, (double?)null)
                 .SetProperty(j => j.PlayedById, playedBy).SetProperty(j => j.PlayedAt, playedAt));
         if (n == 0) throw new InvalidOperationException($"Job '{job.Name}' hasn't finished yet.");
         if (gate != null) await RecordRetryApprovalAsync(repo, job, me!.Value, gate.Value.Environment);

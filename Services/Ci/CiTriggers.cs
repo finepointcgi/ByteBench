@@ -21,14 +21,18 @@ public class CiRefTracker
     }
 
     /// <summary>Records the current tips and returns the branches that are new or moved since last time (deletions are ignored).</summary>
-    public List<(string Branch, string Sha)> Update(int repositoryId, IEnumerable<BranchInfo> branches)
+    public List<(string Branch, string Sha)> Update(int repositoryId, IEnumerable<BranchInfo> branches) => UpdateWithDeleted(repositoryId, branches).Moved;
+
+    /// <summary>Like <see cref="Update"/>, and also the branches that were known before and are gone now (for <c>environment.on_stop</c>).</summary>
+    public (List<(string Branch, string Sha)> Moved, List<string> Deleted) UpdateWithDeleted(int repositoryId, IEnumerable<BranchInfo> branches)
     {
         var now = Tips(branches);
         lock (gate)
         {
             var before = known.GetValueOrDefault(repositoryId) ?? [];
             known[repositoryId] = now;
-            return now.Where(kv => before.GetValueOrDefault(kv.Key) != kv.Value).Select(kv => (kv.Key, kv.Value)).ToList();
+            return (now.Where(kv => before.GetValueOrDefault(kv.Key) != kv.Value).Select(kv => (kv.Key, kv.Value)).ToList(),
+                before.Keys.Where(k => !now.ContainsKey(k)).ToList());
         }
     }
 
@@ -42,7 +46,8 @@ public class CiRefTracker
 /// before calling <see cref="CreateAsync"/> for manual runs. A commit runs at most once per branch automatically.
 /// </summary>
 public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, CiQueue queue, CiRefTracker refs,
-    LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options, ILogger<CiTriggerService> log)
+    LiveEvents live, IServiceScopeFactory scopes, IOptionsMonitor<CiOptions> options, ILogger<CiTriggerService> log,
+    CiRemoteIncludes remoteIncludes, CiWebhookEvents ciWebhooks)
 {
     // Serializes the "already ran for this commit and branch?" check with the insert.
     private static readonly SemaphoreSlim CreateGate = new(1, 1);
@@ -56,8 +61,12 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         var blob = await Task.Run(() => CiFile.GetBlob(path, sha));
         if (blob == null) return null;
         if (blob.TooLarge || blob.IsBinary || blob.Text == null) return new CiParseResult(null, $"{CiFile.FileName}: the file is too large or not text.");
-        return CiFile.Parse(blob.Text);
+        // Parsing may read included files (git objects of this commit, or remote URLs when the admin allows them): keep it off the caller's thread.
+        return await Task.Run(() => CiFile.Parse(blob.Text, IncludesFor(path, sha)));
     }
+
+    /// <summary>The reader of <c>include:</c> files for the commit <paramref name="rev"/> of the repository at <paramref name="repoPath"/>.</summary>
+    public ICiIncludeProvider IncludesFor(string repoPath, string rev) => new CiIncludeProvider(repoPath, rev, remoteIncludes);
 
     /// <summary>
     /// After a push (or a merge done in ByteBench): starts a pipeline for every branch whose tip moved and that matches
@@ -70,7 +79,8 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         if (repo == null) return;
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var branches = await Task.Run(() => GitOps.ListBranches(path, repo.DefaultBranch), ct);
-        var moved = refs.Update(repositoryId, branches);
+        var (moved, deleted) = refs.UpdateWithDeleted(repositoryId, branches);
+        foreach (var gone in deleted) await StopEnvironmentsAsync(repo, gone, ct); // environment.on_stop
         if (moved.Count == 0) return;
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -138,6 +148,7 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
                 .FirstOrDefaultAsync(p => p.Id == pullRequestId, ct);
         if (pr == null) return;
 
+        if (pr.State != PullRequestState.Open && !pr.IsCrossFork) await StopEnvironmentsAsync(pr.Repository, pr.SourceBranch, ct); // environment.on_stop
         if (pr.State == PullRequestState.Merged)
         {
             await SyncRepositoryAsync(pr.RepositoryId, pr.MergedById, ct);
@@ -229,9 +240,47 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
         log.LogInformation("Pipeline {Id} created for {Key}/{Slug} {Branch} @ {Sha} ({Trigger}): {Status}",
             p.Id, repo.Project.Key, repo.Slug, branch, sha[..7], trigger, p.Status);
         live.Publish(new PipelineChanged(p.Id, repo.Id));
+        ciWebhooks.PipelineCreated(p);
         if (p.Status == PipelineStatus.Queued && !p.AwaitingApproval) queue.Enqueue(p.Id);
         else await CiRunner.NotifyFailedAsync(scopes, p, log);
         return p.Id;
+    }
+
+    /// <summary>
+    /// <c>environment: { on_stop: job }</c>: a branch was deleted, or its pull request merged or declined. For each environment the
+    /// branch's pipelines deployed (newest pipeline first), the named stop job of that pipeline is run if it is waiting
+    /// (manual) and the environment isn't stopped yet. A stop job that needs a protected environment's approval still waits for it.
+    /// </summary>
+    public async Task StopEnvironmentsAsync(Repository repo, string branch, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            var pipelines = await db.Pipelines.AsNoTracking().Include(p => p.Jobs)
+                .Where(p => p.RepositoryId == repo.Id && p.Ref == branch).OrderByDescending(p => p.Id).Take(20).ToListAsync(ct);
+            var stopped = await db.CiEnvironments.AsNoTracking().Where(e => e.RepositoryId == repo.Id && e.StoppedAt != null).Select(e => e.Name).ToListAsync(ct);
+            var handled = new HashSet<string>(stopped);
+            foreach (var p in pipelines)
+                foreach (var deploy in p.Jobs.Where(j => j.EnvironmentName != null && j.EnvironmentAction != "stop" && j.Status == PipelineStatus.Passed))
+                {
+                    if (CiJobExtras.Parse(deploy.ExtrasJson).OnStop is not { } stopName || !handled.Add(deploy.EnvironmentName!)) continue;
+                    var stop = p.Jobs.FirstOrDefault(j => j.Name == stopName);
+                    if (stop is not { Status: PipelineStatus.Manual, RequiresApproval: false }) continue;
+                    var n = await db.PipelineJobs.Where(j => j.Id == stop.Id && j.Status == PipelineStatus.Manual)
+                        .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, PipelineStatus.Queued).SetProperty(j => j.PlayedAt, DateTime.UtcNow), ct);
+                    if (n == 0) continue;
+                    log.LogInformation("Stopping environment '{Env}' of {Key}/{Slug}: branch '{Branch}' is gone, running job '{Job}' of pipeline {Pipeline}",
+                        deploy.EnvironmentName, repo.Project.Key, repo.Slug, branch, stop.Name, p.Id);
+                    if (!queue.Wake(p.Id))
+                    {
+                        var requeued = await db.Pipelines.Where(x => x.Id == p.Id && x.Status != PipelineStatus.Queued && x.Status != PipelineStatus.Running)
+                            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, PipelineStatus.Queued).SetProperty(x => x.Error, (string?)null), ct);
+                        if (requeued > 0) queue.Enqueue(p.Id);
+                    }
+                    live.Publish(new PipelineChanged(p.Id, repo.Id));
+                }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Could not stop environments of branch {Branch}", branch); }
     }
 
     /// <summary>True if the commit already has a pipeline on the branch; links it to the PR if it wasn't yet.</summary>

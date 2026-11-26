@@ -14,6 +14,10 @@ public static class CiServiceCollectionExtensions
         services.AddSingleton<CiDocker>();
         services.AddSingleton<CiRefTracker>();
         services.AddSingleton<CiJobTokens>(); // job tokens for the package registry
+        services.AddSingleton<CiRemoteIncludes>(); // include: { remote: ... } (off unless Ci:AllowRemoteIncludes)
+        services.AddSingleton<CiResourceGroups>(); // resource_group: serialized jobs
+        services.AddSingleton<CiWebhookEvents>(); // pipeline.* and job.* webhooks
+        services.AddScoped<CiBadgeService>();
         services.AddScoped<CiTriggerService>();
         services.AddScoped<PipelineService>();
         services.AddScoped<IGitPushListener, CiPushListener>();
@@ -48,6 +52,24 @@ public static class CiServiceCollectionExtensions
                 ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
                 return Results.Text(log.Text, "text/plain; charset=utf-8");
             }).RequireAuthorization();
+
+        // Badges: /badges/pipeline.svg and /badges/coverage.svg, ?branch= (default: the default branch) and ?token= for use outside ByteBench.
+        foreach (var kind in new[] { "pipeline", "coverage" })
+            app.MapGet($"/p/{{key}}/repos/{{slug}}/badges/{kind}.svg",
+                async (HttpContext ctx, string key, string slug, string? branch, string? token, CiBadgeService badges) =>
+                {
+                    var repo = await badges.FindRepositoryAsync(key, slug);
+                    if (repo == null || branch is { Length: > 250 } || branch?.Any(char.IsControl) == true || !await badges.MayViewAsync(repo, token, ctx.User))
+                        return Results.NotFound();
+                    var (status, coverage) = await badges.LatestAsync(repo, branch);
+                    var h = ctx.Response.Headers;
+                    h.XContentTypeOptions = "nosniff";
+                    h.ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+                    h["Referrer-Policy"] = "no-referrer";
+                    h.CacheControl = "private, no-cache, max-age=0"; // the token is a credential: no shared caches
+                    return Results.Text(CiBadgeService.Svg(kind == "pipeline" ? CiBadgeService.PipelineBadge(status) : CiBadgeService.CoverageBadge(coverage)),
+                        "image/svg+xml; charset=utf-8");
+                }).AllowAnonymous();
 
         // Artifacts: the whole zip, or one file from it. Always downloads (never rendered), like attachments.
         app.MapGet("/p/{key}/repos/{slug}/pipelines/{id:int}/jobs/{jobId:int}/artifacts.zip",
