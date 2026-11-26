@@ -27,8 +27,13 @@ public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoS
         if (head == null) return [];
         if (await Task.Run(() => CiFile.GetBlob(path, head), ct) == null) return [];
 
+        // A pipeline file that would start nothing for this PR (jobs' rules leave every job out, or `on:` excludes the branch and
+        // pull requests) must not leave the check Pending forever: there is nothing to wait for.
+        if (await WouldStartNothingAsync(pr, path, head, ct)) return [];
+
+        // Tag pipelines on the same commit belong to the tag, not to the PR.
         var latest = await db.Pipelines.AsNoTracking()
-            .Where(p => p.RepositoryId == pr.RepositoryId && p.CommitSha == head)
+            .Where(p => p.RepositoryId == pr.RepositoryId && p.CommitSha == head && !p.Ref.StartsWith(CiRef.TagPrefix))
             .OrderByDescending(p => p.Ref == pr.SourceRef).ThenByDescending(p => p.Id)
             .FirstOrDefaultAsync(ct);
         if (latest == null)
@@ -46,5 +51,18 @@ public class PipelineMergeCheck(IDbContextFactory<AppDbContext> dbFactory, RepoS
             PipelineStatus.Error => [new(Name, MergeCheckState.Failed, $"Pipeline #{latest.Id} could not run: {latest.Error}", url)],
             _ => [new(Name, MergeCheckState.Failed, $"Pipeline #{latest.Id} failed.", url)],
         };
+    }
+
+    /// <summary>True when no pipeline exists for the head and none would be created for it, so the check has nothing to report.</summary>
+    private async Task<bool> WouldStartNothingAsync(PullRequest pr, string path, string head, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        if (await db.Pipelines.AnyAsync(p => p.RepositoryId == pr.RepositoryId && p.CommitSha == head && !p.Ref.StartsWith(CiRef.TagPrefix), ct)) return false;
+        var blob = await Task.Run(() => CiFile.GetBlob(path, head), ct);
+        if (blob is not { Text: { } text } || blob.TooLarge || blob.IsBinary) return false;
+        if (CiFile.Parse(text).Definition is not { } def) return false; // an invalid file creates an Error pipeline: report that
+        if (pr.IsCrossFork) return !def.On.PullRequests || def.ForBranch(pr.SourceBranch).Jobs.Count == 0;
+        if (def.ForBranch(pr.SourceBranch) is { Error: null, Jobs.Count: 0 }) return true;
+        return !def.On.PullRequests && !def.On.MatchesBranch(pr.SourceBranch);
     }
 }

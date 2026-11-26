@@ -25,7 +25,7 @@ else if (Repo != null && pipeline != null)
                 <span>Pipeline #@p.Id</span>
             </MudText>
             <div class="ci-meta">
-                <a class="branch-pill" href="@RepoUrls.Source(Repo, p.Ref)">@p.Ref</a>
+                <a class="branch-pill" href="@RepoUrls.Source(Repo, CiRef.Browsable(p.Ref))">@(CiRef.IsTag(p.Ref) ? "tag " : "")@CiRef.Display(p.Ref)</a>
                 <a class="sha-pill" href="@RepoUrls.Commit(Repo, p.CommitSha)" title="@p.CommitSha">@p.CommitSha[..7]</a>
                 @if (p.CommitMessage != null) { <span>@p.CommitMessage</span> }
                 @if (prNumber != null) { <span> · <a href="@RepoUrls.PullRequest(Repo, prNumber.Value)">@Repo.Slug#@prNumber</a></span> }

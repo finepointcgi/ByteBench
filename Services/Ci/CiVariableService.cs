@@ -138,10 +138,11 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
     /// <summary>
     /// The decrypted variables for a pipeline on <paramref name="branch"/> of the repository (internal: no permission
     /// check). Protected variables are left out unless the branch is protected; for pull request pipelines the branch
-    /// is the source branch, so an unprotected source branch never sees them. A pipeline of a pull request from a fork
+    /// is the source branch, so an unprotected source branch never sees them. For a tag pipeline pass <paramref name="refProtected"/>
+    /// (the tag matches a protected tag rule). A pipeline of a pull request from a fork
     /// (<paramref name="forkPullRequest"/>) gets none at all, protected or not: its code comes from outside the project.
     /// </summary>
-    public async Task<CiResolvedVariables> ResolveAsync(int projectId, int repositoryId, string branch, bool forkPullRequest = false)
+    public async Task<CiResolvedVariables> ResolveAsync(int projectId, int repositoryId, string branch, bool forkPullRequest = false, bool? refProtected = null)
     {
         if (forkPullRequest)
             return new(new Dictionary<string, string>(), ["[bytebench] This pipeline runs code from a fork's pull request: no CI variables are exposed to it."]);
@@ -151,7 +152,8 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
             .ToListAsync();
         if (rows.Count == 0) return CiResolvedVariables.None;
 
-        var branchProtected = (await protection.ForBranchAsync(repositoryId, branch)).IsProtected;
+        // A tag pipeline passes refProtected (the tag matches a protected tag rule); a branch is looked up in branch protection.
+        var branchProtected = refProtected ?? (await protection.ForBranchAsync(repositoryId, branch)).IsProtected;
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var notes = new List<string>();
         var skippedProtected = 0;
@@ -167,7 +169,7 @@ public partial class CiVariableService(IDbContextFactory<AppDbContext> dbFactory
             }
         }
         if (skippedProtected > 0)
-            notes.Add($"[bytebench] {skippedProtected} protected CI variable(s) not exposed: branch '{branch}' is not protected.");
+            notes.Add($"[bytebench] {skippedProtected} protected CI variable(s) not exposed: {(CiRef.IsTag(branch) ? "tag" : "branch")} '{CiRef.Display(branch)}' is not protected.");
         return new(values, notes);
     }
 

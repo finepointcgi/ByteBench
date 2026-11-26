@@ -23,6 +23,7 @@ public static class PipelineFormat
         PipelineTrigger.Retry => "re-run",
         PipelineTrigger.Schedule => "schedule",
         PipelineTrigger.MergeQueue => "merge queue",
+        PipelineTrigger.Tag => "tag push",
         _ => p.Trigger.ToString(),
     };
 }

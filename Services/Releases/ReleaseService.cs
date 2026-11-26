@@ -40,7 +40,7 @@ public sealed record GeneratedNotes(string Markdown, string? PreviousTag, int Co
 /// </summary>
 public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, RepositoryService repos, ProjectAccess access,
     AttachmentStorage files, AuditLog audit, WebhookDispatcher webhooks, PublicBaseUrl baseUrl, IConfiguration config,
-    ILogger<ReleaseService> log, ProtectedTagService protectedTags, ReleaseAutoAttachService autoAttach)
+    ILogger<ReleaseService> log, ProtectedTagService protectedTags, ReleaseAutoAttachService autoAttach, Ci.CiTriggerService ciTriggers)
 {
     public const int MaxAssetsPerRelease = 50;
     public const long DefaultMaxAssetBytes = 512L * 1024 * 1024;
@@ -65,6 +65,9 @@ public class ReleaseService(IDbContextFactory<AppDbContext> dbFactory, Repositor
         var who = await IdentityAsync(uid);
         var tag = await repos.Git(repo, path => GitOps.CreateTag(path, name, fromRev.Trim(), message, who));
         RaiseTagEvent(repo, WebhookEventNames.TagCreated, tag, uid);
+        // A tag made here starts a tag pipeline just like a pushed one (if the commit's pipeline file asks for it).
+        try { await ciTriggers.OnTagCreatedAsync(repo.Id, tag.Name, uid); }
+        catch (Exception ex) { log.LogWarning(ex, "Could not start a tag pipeline for {Tag}", tag.Name); }
         return tag;
     }
 

@@ -26,8 +26,11 @@ public record PipelineArtifactDetailDto(PipelineArtifactDto Artifact, IReadOnlyL
 /// <summary>A CI variable. The value is never returned. <c>masked</c> is always true: values are scrubbed from job logs.</summary>
 public record CiVariableDto(int Id, string Name, bool Protected, bool Masked, string Scope, string? Repository, DateTimeOffset UpdatedAt, string? UpdatedBy);
 
-/// <summary>POST body to run a pipeline for a branch (default: the repository's default branch).</summary>
-public record RunPipelineRequest(string? Branch = null);
+/// <summary>
+/// POST body to run a pipeline for a branch (default: the repository's default branch) or, with <c>tag</c>, for a tag.
+/// <c>variables</c> are extra, non-secret environment variables for this run (like a schedule's).
+/// </summary>
+public record RunPipelineRequest(string? Branch = null, string? Tag = null, Dictionary<string, string>? Variables = null);
 
 /// <summary>
 /// POST/PUT body for a CI variable. <c>name</c> and <c>value</c> are required on create; on update, omitted fields keep their
@@ -46,7 +49,7 @@ public static class PipelineEndpoints
         g.MapGet("/pipelines", ListPipelines).WithName("ListPipelines").WithSummary("List a repository's pipelines, newest first")
             .WithDescription("?ref= (branch name) and ?status= (queued, running, passed, failed, canceled, error, skipped, manual) filter the list.");
         g.MapPost("/pipelines", RunPipeline).WithName("RunPipeline").WithSummary("Run a pipeline for a branch")
-            .WithDescription("Needs Developer+. Runs the branch's current tip, ignoring the pipeline file's filters. 422 if CI is off, the branch doesn't exist or has no pipeline file.")
+            .WithDescription("Needs Developer+. Runs the branch's current tip (or, with \"tag\", the commit of that tag, as a tag pipeline), ignoring the pipeline file's filters. \"variables\" (an object of NAME: value strings, not secret) are set for the run. 422 if CI is off, the branch or tag doesn't exist or has no pipeline file, or a variable name is reserved.")
             .WithJsonBody<RunPipelineRequest>(optional: true).Produces<PipelineDto>(StatusCodes.Status201Created);
         g.MapGet("/pipelines/{id:int}", GetPipeline).WithName("GetPipeline").WithSummary("Get a pipeline with its jobs and steps (no logs)");
         g.MapPost("/pipelines/{id:int}/cancel", Cancel).WithName("CancelPipeline").WithSummary("Cancel a queued or running pipeline")
@@ -164,8 +167,11 @@ public static class PipelineEndpoints
         var repo = await RequireRepoAsync(repos, key, slug);
         var body = http.Request.ContentLength is > 0 || ApiResults.IsJson(http.Request) && http.Request.ContentLength != 0
             ? await ApiResults.ReadBodyAsync<RunPipelineRequest>(http.Request) : new RunPipelineRequest();
+        if (!string.IsNullOrWhiteSpace(body.Tag) && !string.IsNullOrWhiteSpace(body.Branch)) throw ApiException.BadRequest("Give either 'branch' or 'tag', not both.");
         var branch = string.IsNullOrWhiteSpace(body.Branch) ? repo.DefaultBranch : body.Branch.Trim();
-        var id = await pipelines.RunAsync(repo, branch);
+        var id = string.IsNullOrWhiteSpace(body.Tag)
+            ? await pipelines.RunAsync(repo, branch, body.Variables)
+            : await pipelines.RunTagAsync(repo, body.Tag.Trim(), body.Variables);
         return TypedResults.Created($"/api/v1/projects/{key.ToUpperInvariant()}/repos/{slug}/pipelines/{id}", await FullAsync(http, pipelines, url, repo, id));
     }
 

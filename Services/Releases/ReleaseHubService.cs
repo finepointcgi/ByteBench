@@ -87,7 +87,8 @@ public class ReleaseHubService(IDbContextFactory<AppDbContext> dbFactory, Reposi
         var pipelines = new List<HubPipeline>();
         if (sha != null)
         {
-            var ps = await db.Pipelines.AsNoTracking().Where(p => p.RepositoryId == repo.Id && p.CommitSha == sha).OrderByDescending(p => p.Id).Take(10).ToListAsync();
+            var ps = await db.Pipelines.AsNoTracking().Where(p => p.RepositoryId == repo.Id && p.CommitSha == sha)
+                .OrderByDescending(p => p.Ref == "refs/tags/" + tag).ThenByDescending(p => p.Id).Take(10).ToListAsync();
             var ids = ps.Select(p => p.Id).ToList();
             var arts = await db.PipelineArtifacts.AsNoTracking().Include(a => a.Job).Where(a => ids.Contains(a.PipelineId)).ToListAsync();
             var now = DateTime.UtcNow;

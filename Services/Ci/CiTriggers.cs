@@ -97,6 +97,35 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     }
 
     /// <summary>
+    /// After a push: starts a pipeline for each tag it created or moved, if the file asks for tag pipelines
+    /// (<see cref="CiDefinition.RunsOnTag"/>). A tag whose commit has no pipeline file starts nothing.
+    /// </summary>
+    public async Task OnTagsPushedAsync(int repositoryId, int? userId, IEnumerable<string> tags, CancellationToken ct = default)
+    {
+        if (!Enabled) return;
+        var list = tags.Where(t => GitOps.IsValidTagName(t) && t.Length <= CiRef.MaxTagLength).Distinct().ToList();
+        if (list.Count == 0) return;
+        var repo = await LoadRepoAsync(repositoryId, ct);
+        if (repo == null) return;
+        foreach (var tag in list) await OnTagAsync(repo, tag, userId, ct);
+    }
+
+    /// <summary>A tag was created in ByteBench (a release or the Tags page): the same as a pushed tag.</summary>
+    public async Task OnTagCreatedAsync(int repositoryId, string tag, int? userId, CancellationToken ct = default) =>
+        await OnTagsPushedAsync(repositoryId, userId, [tag], ct);
+
+    private async Task OnTagAsync(Repository repo, string tag, int? userId, CancellationToken ct)
+    {
+        var path = storage.PathFor(repo.Project.Key, repo.Slug);
+        var sha = await Task.Run(() => GitOps.TagExists(path, tag) ? GitOps.ResolveSha(path, CiRef.ForTag(tag)) : null, ct);
+        if (sha == null) return;
+        var def = await LoadDefinitionAsync(repo, sha);
+        if (def == null) return;
+        if (def.Definition is { } d && !d.RunsOnTag(tag)) return;
+        await CreateAsync(repo, CiRef.ForTag(tag), sha, PipelineTrigger.Tag, userId, null, def, dedupe: true, ct);
+    }
+
+    /// <summary>
     /// A PR was opened or changed: makes sure its source head has a pipeline (if the file asks for PR pipelines), and
     /// after a merge picks up the moved target branch.
     /// </summary>
@@ -143,11 +172,13 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
 
         // rules/only: the jobs that run on this branch. None at all: no pipeline (an error for manual runs).
         // A merge queue pipeline (Ref refs/merge-queue/...) picks its jobs as if it ran on the target branch (rulesBranch).
-        var (jobs, jobsError) = def.Definition?.ForBranch(rulesBranch ?? branch) ?? ([], null);
+        // Tag pipelines (Ref refs/tags/{tag}) match the rules' tags and `if: $CI_COMMIT_TAG` conditions.
+        var ruleContext = CiRuleContext.For(rulesBranch ?? branch, CiRunner.SourceName(trigger), forkPullRequest ? null : variables);
+        var (jobs, jobsError) = def.Definition?.ForRef(ruleContext) ?? ([], null);
         if (def.Definition != null && jobsError == null && jobs.Count == 0)
         {
             if (dedupe) return null;
-            throw new InvalidOperationException($"No job in {CiFile.FileName} runs on branch '{rulesBranch ?? branch}' (see the jobs' rules).");
+            throw new InvalidOperationException($"No job in {CiFile.FileName} runs on {ruleContext.Describe} (see the jobs' rules).");
         }
 
         Pipeline p;
@@ -228,10 +259,16 @@ public class CiTriggerService(IDbContextFactory<AppDbContext> dbFactory, RepoSto
     private static string? Truncate(string? s, int max) => s == null || s.Length <= max ? s : s[..(max - 1)] + "…";
 }
 
-/// <summary>Runs pipelines for the branches a push updated.</summary>
-public class CiPushListener(CiTriggerService triggers) : IGitPushListener
+/// <summary>Runs pipelines for the branches and tags a push updated.</summary>
+public class CiPushListener(CiTriggerService triggers, Webhooks.PushCapture capture) : IGitPushListener
 {
-    public Task OnPushAsync(int repositoryId, int userId, CancellationToken ct) => triggers.SyncRepositoryAsync(repositoryId, userId, ct);
+    public async Task OnPushAsync(int repositoryId, int userId, CancellationToken ct)
+    {
+        await triggers.SyncRepositoryAsync(repositoryId, userId, ct);
+        // Tags the push created or moved (deletions start nothing).
+        var tags = capture.Refs.Where(r => !r.Deleted && CiRef.IsTag(r.Ref)).Select(r => CiRef.TagName(r.Ref)).ToList();
+        if (tags.Count > 0) await triggers.OnTagsPushedAsync(repositoryId, userId, tags, ct);
+    }
 }
 
 /// <summary>
