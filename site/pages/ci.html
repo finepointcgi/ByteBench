@@ -400,7 +400,7 @@ jobs:
 <ul>
 <li><b>Access.</b> ByteBench has no anonymous public projects, so a badge is served to a signed-in user who can view the repository (so it shows in ByteBench pages), or to anyone who adds the repository's <b>badge token</b>: <code>?token=...</code>. Everything else, including a wrong token or an unknown repository, is a plain 404. The token only opens these two images, which show a status or a percentage and nothing else.</li>
 <li><b>The token.</b> A Maintainer opens <b>Pipelines → Badges</b>: the panel creates the token on first use, shows ready-to-paste Markdown for both badges and has <b>Rotate token</b>, which breaks every address already in use (audited as <code>ci_badge.token_created</code> and <code>ci_badge.token_rotated</code>). Put it only where the image address may be seen (a README, a wiki); treat it as read-only and low value, not as a secret.</li>
-<li>Responses are sent <code>private, no-cache</code> with <code>nosniff</code>, <code>Referrer-Policy: no-referrer</code> and a locked-down content security policy.</li>
+<li>Responses are sent <code>private, no-cache</code> with <code>nosniff</code> and a locked-down content security policy.</li>
 </ul>
 <pre><code>[![pipeline](https://bytebench.example.com/p/WEB/repos/site/badges/pipeline.svg?branch=main&amp;token=...)](https://bytebench.example.com/p/WEB/repos/site/pipelines)</code></pre>
 
