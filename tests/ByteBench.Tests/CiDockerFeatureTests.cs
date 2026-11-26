@@ -14,6 +14,7 @@ namespace ByteBench.Tests;
 /// variables, retry, timeout, cancel, parallel jobs, allow_failure and artifacts of failed jobs.
 /// </summary>
 [Trait("Category", "Docker")]
+[Collection("ci-docker")] // these fixtures share one Docker instance key and work directory: run the classes one after another
 public class CiDockerFeatureTests(CiApp app) : IClassFixture<CiApp>
 {
     private async Task<Pipeline> WaitAsync(int id, TimeSpan? limit = null, params PipelineStatus[] until)
