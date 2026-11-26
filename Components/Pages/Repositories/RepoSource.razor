@@ -47,6 +47,11 @@ else if (Repo != null)
                 <MudButton Href="@RepoUrls.Editor(Repo, CurrentRef, blob != null ? CleanPath : null)" Variant="Variant.Outlined" Size="Size.Small"
                            StartIcon="@Icons.Material.Outlined.Code">Open in editor</MudButton>
             }
+            @if (!empty)
+            {
+                <MudButton Href="@($"/p/{Repo.Project.Key}/repos/{Repo.Slug}/workspace?ref={Uri.EscapeDataString(CurrentRef)}")" Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Outlined.Terminal" data-testid="open-in-workspace">Open in workspace</MudButton>
+            }
             @if (!IsTag && !Repo.IsArchived && branches.Any(b => b.Name == CurrentRef) && CurrentRef != Repo.DefaultBranch)
             {
                 <MudButton Href="@RepoUrls.NewPullRequest(Repo.Project.Key, Repo.Slug, CurrentRef, Repo.DefaultBranch)" Variant="Variant.Outlined" Color="Color.Primary"

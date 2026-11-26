@@ -1,0 +1,41 @@
+@page "/p/{Key}/workspace"
+@inject RepositoryService Repos
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ProjectAccess Access
+@inject NavigationManager Nav
+
+@* From an issue: open a workspace on one of the project's repositories (straight through when it has only one). *@
+
+<PageTitle>Open in workspace · ByteBench</PageTitle>
+
+<div class="page-header mb-4"><MudText Typo="Typo.h5" HtmlTag="h1">Open in workspace</MudText></div>
+
+@if (repos == null) { <MudProgressCircular Indeterminate="true" Size="Size.Small" /> }
+else if (repos.Count == 0) { <div class="empty">This project has no repositories you can open.</div> }
+else
+{
+    <MudText Class="mb-2">Which repository@(string.IsNullOrEmpty(Source) ? "" : $" for {Source}")?</MudText>
+    <MudStack Spacing="1">
+        @foreach (var r in repos)
+        {
+            <MudLink Href="@Url(r)">@r.Name <span class="mono">(@r.Slug)</span></MudLink>
+        }
+    </MudStack>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "source")] public string? Source { get; set; }
+    private List<Repository>? repos;
+
+    private string Url(Repository r) => $"/p/{r.Project.Key}/repos/{r.Slug}/workspace" + (string.IsNullOrEmpty(Source) ? "" : "?source=" + Uri.EscapeDataString(Source));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var visible = await Access.VisibleProjectIdsAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var k = Key.ToUpperInvariant();
+        repos = await db.Repositories.AsNoTracking().Include(r => r.Project).Where(r => r.Project.Key == k && visible.Contains(r.ProjectId)).OrderBy(r => r.Name).ToListAsync();
+        if (repos.Count == 1) Nav.NavigateTo(Url(repos[0]), replace: true);
+    }
+}

@@ -1,0 +1,73 @@
+@page "/workspaces"
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceService Workspaces
+@inject ISnackbar Snackbar
+
+<PageTitle>Workspaces · ByteBench</PageTitle>
+
+<div class="page-header mb-4">
+    <MudText Typo="Typo.h5" HtmlTag="h1">Workspaces</MudText>
+    <MudText Class="mud-text-secondary" Typo="Typo.body2">
+        Your development environments: VS Code in the browser with a terminal and previews. Start one from a repository's <b>Open in workspace</b> button.
+    </MudText>
+</div>
+
+@if (items == null)
+{
+    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+}
+else if (items.Count == 0)
+{
+    <div class="empty">You have no workspaces yet.</div>
+}
+else
+{
+    <MudSimpleTable Dense="true" Hover="true" Outlined="true" data-testid="ws-table">
+        <thead><tr><th>Repository</th><th>Ref</th><th>State</th><th>Started</th><th>Stops</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var w in items)
+        {
+            <tr>
+                <td>@w.RepositoryPath</td>
+                <td class="mono">@w.Workspace.Ref</td>
+                <td>@w.Workspace.State@(w.Workspace.Error != null ? ": " + w.Workspace.Error : "")</td>
+                <td>@w.Workspace.CreatedAt.ToLocalTime().ToString("g")</td>
+                <td>@(w.Workspace.IsLive ? w.Workspace.ExpiresAt.ToLocalTime().ToString("g") : w.Workspace.StopReason)</td>
+                <td>
+                    @if (w.Workspace.IsLive) { <MudButton Href="@($"/workspaces/{w.Workspace.PublicId}")" Size="Size.Small" Variant="Variant.Outlined">Open</MudButton> }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    private List<WorkspaceInfo>? items;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        items = await Workspaces.ListMineAsync(Me.Id);
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                items = await Workspaces.ListMineAsync(Me.Id);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

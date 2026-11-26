@@ -1,0 +1,64 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceService Workspaces
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">Changes in the workspace</MudText>
+            <pre class="mono" style="max-height:160px;overflow:auto;margin:0;font-size:12px" data-testid="ws-status">@status</pre>
+            <MudTextField T="string" @bind-Value="message" Immediate="true" Label="Commit message" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-commit-message" />
+            @if (CanPush)
+            {
+                <MudTextField T="string" @bind-Value="branch" Immediate="true" Label="Push to branch" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="Leave it to push to the workspace's branch. A protected branch refuses the push: use a new branch name and open a pull request." />
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">This workspace is read-only: you can commit locally but not push.</MudAlert>
+            }
+            @if (result != null) { <pre class="mono" style="max-height:140px;overflow:auto;margin:0;font-size:12px">@result</pre> }
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Close()">Close</MudButton>
+        <MudButton Variant="Variant.Outlined" Disabled="busy" OnClick="() => Run(false)">Commit</MudButton>
+        @if (CanPush)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="busy" OnClick="() => Run(true)" data-testid="ws-commit-push">Commit &amp; push</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public string PublicId { get; set; } = "";
+    [Parameter] public bool CanPush { get; set; }
+    [Parameter] public string Ref { get; set; } = "";
+
+    private string status = "…", message = "", branch = "";
+    private string? result, error;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        try { status = await Workspaces.GitStatusAsync(PublicId, Me.Id); }
+        catch (InvalidOperationException ex) { status = ex.Message; }
+    }
+
+    private async Task Run(bool push)
+    {
+        busy = true;
+        error = result = null;
+        try
+        {
+            var r = await Workspaces.CommitAsync(PublicId, Me.Id, message, push, string.IsNullOrWhiteSpace(branch) ? null : branch);
+            if (r.Ok) { result = r.Output; status = await Workspaces.GitStatusAsync(PublicId, Me.Id); message = ""; }
+            else error = r.Output;
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

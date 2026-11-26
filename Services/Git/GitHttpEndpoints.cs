@@ -101,7 +101,7 @@ public static class GitHttpEndpoints
         var storage = ctx.RequestServices.GetRequiredService<RepoStorage>();
         var dbFactory = ctx.RequestServices.GetRequiredService<IDbContextFactory<AppDbContext>>();
         var found = await GitRepoLookup.FindAsync(dbFactory, projectKey, slug, ctx.RequestAborted);
-        if (found is null) { await NotFound(ctx); return; }
+        if (found is null || ByteBench.Services.Workspaces.WorkspaceGitAuth.WrongRepository(ctx, found.Id)) { await NotFound(ctx); return; }
 
         // Project permissions. Not viewable → 404 so the repo's existence isn't revealed.
         var access = ctx.RequestServices.GetRequiredService<ByteBench.Services.ProjectAccess>();
@@ -232,6 +232,17 @@ public static class GitHttpEndpoints
             }
 
             TokenScopes? scopes = null;
+            if (password.StartsWith(ByteBench.Services.Workspaces.WorkspaceTokens.GitPrefix, StringComparison.Ordinal))
+            {
+                // A workspace's git credential: one repository, only while the workspace runs (see WorkspaceGitAuth).
+                if (await ByteBench.Services.Workspaces.WorkspaceGitAuth.ValidateAsync(ctx.RequestServices, user.Id, password) is not { } ws)
+                {
+                    logger.LogInformation("Git auth failed: invalid or expired workspace token for {User} from {Ip}", user.UserName, ctx.Connection.RemoteIpAddress);
+                    return (null, null, null);
+                }
+                ctx.Items[ByteBench.Services.Workspaces.WorkspaceGitAuth.RepositoryKey] = ws.RepositoryId;
+                return (user, ws.Scopes, null);
+            }
             if (password.StartsWith(ByteBench.Services.AccessTokenService.TokenPrefix, StringComparison.Ordinal)
                 && await ctx.RequestServices.GetRequiredService<ByteBench.Services.AccessTokenService>().ValidateAsync(user.Id, password) is { } token)
             {

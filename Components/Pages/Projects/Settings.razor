@@ -6,6 +6,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject ByteBench.Services.Editor.Ai.EditorAiService EditorAi
+@inject ByteBench.Services.Workspaces.WorkspaceService WorkspaceSvc
 @inject CurrentUser Me
 
 <PageTitle>Settings · @project?.Name</PageTitle>
@@ -59,6 +60,13 @@ else if (project != null)
                 <span>@editorAiStatus?.DisabledReason</span>
             }
         </MudText>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="settings-title">Workspaces</MudText>
+        <MudSwitch T="bool" Value="wsEnabled" ValueChanged="SetWsEnabled" Color="Color.Primary" Label="Allow workspaces (VS Code in the browser) for this project's repositories" data-testid="ws-project-enabled" />
+        <MudSwitch T="bool" Value="wsAi" ValueChanged="SetWsAi" Color="Color.Primary" Label="AI assistant in workspaces" data-testid="ws-project-ai" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">Workspaces also need to be on for the site (Admin → Workspaces). The assistant uses the server's Claude account and costs tokens.</MudText>
     </MudPaper>
 
     <MudPaper Outlined="true" Class="settings-card pa-5 mb-4">
@@ -259,6 +267,8 @@ else if (project != null)
         visibility = project.Visibility;
         transferTo = project.GroupId;
         editorAi = await EditorAi.IsProjectEnabledAsync(project.Id);
+        var wsSettings = await WorkspaceSvc.GetProjectSettingsAsync(project.Id);
+        (wsEnabled, wsAi) = (wsSettings.Enabled, wsSettings.AiEnabled);
         editorAiStatus = await EditorAi.GetStatusAsync(project.Id);
         if (perms.Can(Permission.ManageProjectSettings))
         {
@@ -287,6 +297,21 @@ else if (project != null)
         error = null;
         try { await action(); return true; }
         catch (InvalidOperationException ex) { error = ex.Message; return false; }
+    }
+
+    private bool wsEnabled = true, wsAi = true;
+
+    private async Task SetWsEnabled(bool on) => await SetWs(on, wsAi);
+    private async Task SetWsAi(bool on) => await SetWs(wsEnabled, on);
+
+    private async Task SetWs(bool enabled, bool ai)
+    {
+        await Me.EnsureLoadedAsync();
+        if (await Try(() => WorkspaceSvc.SetProjectSettingsAsync(project!.Id, enabled, ai, Me.Id)))
+        {
+            (wsEnabled, wsAi) = (enabled, ai);
+            Snackbar.Add("Workspace settings saved.", Severity.Success);
+        }
     }
 
     private bool editorAi = true;

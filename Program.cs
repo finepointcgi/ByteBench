@@ -152,6 +152,7 @@ ByteBench.Services.Editor.EditorServiceCollectionExtensions.AddWebEditor(builder
 ByteBench.Services.Packages.PackagesServiceCollectionExtensions.AddPackageRegistry(builder.Services); // NuGet, npm and container registry per project
 ByteBench.Services.ServiceDesk.ServiceDeskServiceCollectionExtensions.AddServiceDesk(builder.Services, builder.Configuration); // service desk: inbound mail, public form, queue
 ByteBench.Services.Pages.PagesServiceCollectionExtensions.AddPages(builder.Services, builder.Configuration); // static sites from CI output (Pages:*)
+ByteBench.Services.Workspaces.WorkspaceServiceCollectionExtensions.AddWorkspaces(builder.Services, builder.Configuration); // Docker workspaces with OpenVSCode Server (Workspaces:*)
 
 ByteBench.Services.Flags.FlagsServiceCollectionExtensions.AddFeatureFlags(builder.Services); // feature flags per project, SDK keys, live updates
 
@@ -193,6 +194,7 @@ app.UseAuthentication();
 ByteBench.Services.Accounts.AccountSecurityExtensions.UseMustChangePassword(app); // temporary passwords: only /account/change-password until it is changed
 // Pages serves /pages/... and Pages:BaseDomain hosts only. It sits before UseAuthorization, which would otherwise challenge the
 // app's own endpoints that a site's "/" matches (Home); it does its own access checks. Before rate limiting, antiforgery and static assets.
+ByteBench.Services.Workspaces.WorkspaceProxyExtensions.UseWorkspaceProxy(app); // /_bb/enter and the workspace origins (ide-*.{BaseDomain}); before authorization, rate limiting and antiforgery
 ByteBench.Services.Pages.PagesServiceCollectionExtensions.UsePages(app);
 app.UseAuthorization();
 app.UseRateLimiter(); // after authentication, so API limits can key on the signed-in user

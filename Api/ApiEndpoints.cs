@@ -107,6 +107,7 @@ public static class ApiEndpoints
         api.MapInsightsEndpoints(); // repository insights
         api.MapAutoMergeEndpoints(); // pull requests: merge when ready
         api.MapReleaseNotesEndpoints(); // draft release notes (AI and plain)
+        api.MapWorkspaceEndpoints(); // workspaces: list, start, stop, restart
         api.MapSignedCommitEndpoints(); // commit signature status
 
         // Anything else under /api: JSON 404 instead of the HTML not-found page.

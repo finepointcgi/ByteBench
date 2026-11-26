@@ -1,0 +1,136 @@
+@page "/p/{Key}/repos/{Slug}/workspace"
+@using ByteBench.Services.Git
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject ProjectAccess Access
+@inject RepositoryService Repos
+@inject WorkspaceService Workspaces
+@inject WorkspaceImage Image
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@* Starts a workspace on a branch, tag or commit of a repository (entry points: the repository's source page, pull requests, issues). *@
+
+<PageTitle>Open in workspace · ByteBench</PageTitle>
+
+@if (repo == null)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else
+{
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">Open in workspace</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            A private development environment for <b>@repo.Project.Key/@repo.Slug</b>: a container with the repository checked out and VS Code in your browser,
+            with a terminal, previews of the ports your app listens on, and an AI assistant.
+        </MudText>
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 720px">
+        <MudStack Spacing="3">
+            <MudTextField T="string" Label="Branch, tag or commit" @bind-Value="reference" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          HelperText="@Helper()" data-testid="ws-ref" />
+            @if (suggestions.Count > 0)
+            {
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var s in suggestions)
+                    {
+                        <MudChip T="string" Size="Size.Small" OnClick="() => reference = s" Text="@s" />
+                    }
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(source))
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Opened from @source</MudText>
+            }
+            @if (status is { Enabled: false })
+            {
+                <MudAlert Severity="@(Image.State == WorkspaceImageState.Building ? Severity.Info : Severity.Warning)" Dense="true">
+                    @status.Problem
+                    @if (Image.State == WorkspaceImageState.Building && Image.LogTail.Count > 0)
+                    {
+                        <pre class="mono" style="max-height:140px;overflow:auto;margin:6px 0 0;font-size:12px">@string.Join("\n", Image.LogTail.TakeLast(8))</pre>
+                    }
+                </MudAlert>
+            }
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                The container is limited in CPU, memory, processes and time, has no access to private networks, and is deleted when you stop it or after it has been idle.
+                Push what you want to keep.
+                @if (!canPush) { <span> You have read access only: you can browse and run code, but not push.</span> }
+            </MudText>
+            <div>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || status is not { Enabled: true })" OnClick="StartAsync"
+                           StartIcon="@Icons.Material.Outlined.Terminal" data-testid="ws-start">Open in workspace</MudButton>
+                <MudButton Href="/workspaces" Variant="Variant.Text">My workspaces</MudButton>
+            </div>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public string Slug { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "ref")] public string? RefParam { get; set; }
+    [SupplyParameterFromQuery(Name = "source")] public string? SourceParam { get; set; }
+
+    private Repository? repo;
+    private string reference = "";
+    private string? source, error;
+    private bool busy, canPush;
+    private WorkspaceStatus? status;
+    private List<string> suggestions = [];
+    private PeriodicTimer? timer;
+
+    private string Helper() => "A branch, a tag or a commit id. The default branch is used when empty.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        repo = await Repos.GetRepositoryAsync(Key, Slug);
+        if (repo == null) return;
+        reference = string.IsNullOrWhiteSpace(RefParam) ? repo.DefaultBranch : RefParam;
+        source = SourceParam;
+        var path = Repos.PathOf(repo);
+        try
+        {
+            suggestions = await Task.Run(() => GitOps.ListBranches(path, repo.DefaultBranch).Select(b => b.Name).Take(12).ToList());
+        }
+        catch (Exception) { suggestions = []; }
+        canPush = await Access.CanAsync(repo.ProjectId, Permission.PushCode) && !repo.IsArchived;
+        status = await Workspaces.GetStatusAsync(repo.ProjectId);
+        if (Image.State == WorkspaceImageState.Building && timer == null) _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync())
+            {
+                status = await Workspaces.GetStatusAsync(repo?.ProjectId);
+                await InvokeAsync(StateHasChanged);
+                if (Image.State != WorkspaceImageState.Building) break;
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task StartAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var ws = await Workspaces.StartAsync(Key, Slug, reference, source, Me.Id);
+            Nav.NavigateTo($"/workspaces/{ws.PublicId}");
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

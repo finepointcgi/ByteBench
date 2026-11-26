@@ -3725,6 +3725,25 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("ProjectVersions");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.ProjectWorkspaceSettings", b =>
+                {
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("AiEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ProjectId");
+
+                    b.ToTable("ProjectWorkspaceSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.ProtectedTagRule", b =>
                 {
                     b.Property<int>("Id")
@@ -6251,6 +6270,116 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("WorkflowTransitions");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.Workspace", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CanPush")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("ConnectionTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("ContainerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContainerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EgressMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("GitTokenHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("BLOB");
+
+                    b.Property<int>("IdleTimeoutMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Image")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastActivityAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OwnerId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PortMapJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PublicId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StopReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StoppedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RepositoryId");
+
+                    b.HasIndex("State");
+
+                    b.HasIndex("OwnerId", "State");
+
+                    b.ToTable("Workspaces");
+                });
+
             modelBuilder.Entity("IssueComponents", b =>
                 {
                     b.Property<int>("ComponentsId")
@@ -7614,6 +7743,15 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.ProjectWorkspaceSettings", b =>
+                {
+                    b.HasOne("ByteBench.Data.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ByteBench.Data.ProtectedTagRule", b =>
                 {
                     b.HasOne("ByteBench.Data.Repository", "Repository")
@@ -8322,6 +8460,25 @@ namespace ByteBench.Data.Migrations
                         .HasForeignKey("ToStatusId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ByteBench.Data.Workspace", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Repository");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>

@@ -272,7 +272,7 @@ public static class LfsEndpoints
         var dbFactory = ctx.RequestServices.GetRequiredService<IDbContextFactory<AppDbContext>>();
         var found = await GitRepoLookup.FindAsync(dbFactory, projectKey, slug, ctx.RequestAborted);
         var role = found == null ? null : await ctx.RequestServices.GetRequiredService<ProjectAccess>().GetRoleAsync(found.ProjectId, user.Id);
-        if (found == null || role == null) { await ErrorAsync(ctx, 404, "Repository not found."); return null; }
+        if (found == null || role == null || ByteBench.Services.Workspaces.WorkspaceGitAuth.WrongRepository(ctx, found.Id)) { await ErrorAsync(ctx, 404, "Repository not found."); return null; }
         if (actionToken is { } at && (at.RepositoryId != found.Id || (at.Op != op && !(at.Op == Op.Upload && op == Op.Download))))
         {
             await ErrorAsync(ctx, 403, "This LFS token is for another repository or operation.");

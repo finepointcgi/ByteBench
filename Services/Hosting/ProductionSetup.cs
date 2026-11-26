@@ -217,6 +217,8 @@ public static class ProductionSetup
                               "style-src 'self' 'unsafe-inline'; " +
                               // Workers (Monaco in the web editor) only from this origin: no blob: or data: workers.
                               "worker-src 'self'; " +
+                              // The workspace page embeds the IDE and previews from their own origins (*.Workspaces:BaseDomain).
+                              WorkspaceFrameSource(app, ctx) +
                               "img-src 'self' data: blob:; font-src 'self' data:; " +
                               $"connect-src 'self' ws://{host} wss://{host}; " +
                               "object-src 'none'; base-uri 'self'; " +
@@ -229,6 +231,14 @@ public static class ProductionSetup
             return next(ctx);
         });
         return app;
+    }
+
+    private static string WorkspaceFrameSource(WebApplication app, HttpContext ctx)
+    {
+        var domain = app.Services.GetService<Workspaces.WorkspaceUrls>()?.BaseDomain;
+        if (domain == null) return "";
+        var port = ctx.Request.Host.Port is { } p ? ":" + p : "";
+        return $"frame-src 'self' {ctx.Request.Scheme}://*.{domain}{port}; ";
     }
 
     /// <summary>The per-request CSP nonce for inline <c>&lt;script&gt;</c> elements (App.razor's import map).</summary>

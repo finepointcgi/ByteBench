@@ -1,0 +1,259 @@
+@page "/workspaces/{PublicId}"
+@using ByteBench.Services.Editor.Ai
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceService Workspaces
+@inject WorkspaceAiService WorkspaceAi
+@inject NavigationManager Nav
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@(view?.RepositoryPath ?? "Workspace") · ByteBench</PageTitle>
+
+@if (view == null)
+{
+    <ProjectNotFound Message="This workspace doesn't exist." />
+}
+else
+{
+    var ws = view.Workspace;
+    <div class="ws-bar">
+        <div class="ws-title">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h1"><b>@view.RepositoryPath</b> <span class="mono">@ws.Ref</span></MudText>
+            <MudChip T="string" Size="Size.Small" Color="@StateColor()" data-testid="ws-state">@ws.State</MudChip>
+            @if (!ws.CanPush) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">read-only</MudChip> }
+        </div>
+        <div class="ws-actions">
+            @if (ws.State == WorkspaceState.Running)
+            {
+                <MudMenu Label="Preview" Dense="true" StartIcon="@Icons.Material.Outlined.Preview" Size="Size.Small" Variant="Variant.Outlined" data-testid="ws-preview-menu">
+                    @if (ports == null) { <MudMenuItem Disabled="true">Looking for ports…</MudMenuItem> }
+                    else if (ports.Count == 0) { <MudMenuItem Disabled="true">Nothing is listening yet. Start your app in the terminal.</MudMenuItem> }
+                    else foreach (var p in ports)
+                    {
+                        var port = p;
+                        <MudMenuItem OnClick="() => OpenPreview(port)">Port @port</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="() => showAi = !showAi" data-testid="ws-ai-toggle">AI</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="OpenCommit" data-testid="ws-commit">Commit &amp; push</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.OpenInNew" OnClick="OpenIdeTab">New tab</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.RestartAlt" OnClick="Restart" data-testid="ws-restart">Restart</MudButton>
+            }
+            @if (ws.IsLive)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Stop" OnClick="Stop" data-testid="ws-stop">Stop</MudButton>
+            }
+        </div>
+    </div>
+
+    @if (ws.State == WorkspaceState.Starting)
+    {
+        <MudPaper Outlined="true" Class="pa-5 mt-3" Style="max-width:640px">
+            <MudProgressLinear Indeterminate="true" Class="mb-3" />
+            Starting the container, locking down its network and checking out <span class="mono">@ws.Ref</span>… This takes a moment.
+        </MudPaper>
+    }
+    else if (ws.State == WorkspaceState.Running)
+    {
+        <div class="ws-body">
+            @if (ideUrl != null)
+            {
+                <iframe class="ws-ide" src="@ideUrl" title="Workspace IDE" allow="clipboard-read; clipboard-write" data-testid="ws-ide"></iframe>
+            }
+            @if (previewUrl != null)
+            {
+                <div class="ws-side">
+                    <div class="ws-side-head"><b>Preview :@previewPort</b><span class="flex-grow-1"></span>
+                        <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" OnClick="OpenPreviewTab" aria-label="Open the preview in a new tab" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" OnClick="() => previewUrl = null" aria-label="Close the preview" /></div>
+                    <iframe class="ws-frame" src="@previewUrl" title="Preview" data-testid="ws-preview"></iframe>
+                </div>
+            }
+            @if (showAi)
+            {
+                <div class="ws-side" data-testid="ws-ai-panel">
+                    <div class="ws-side-head"><b>AI assistant</b><span class="flex-grow-1"></span>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" OnClick="() => showAi = false" aria-label="Close the assistant" /></div>
+                    @if (aiStatus is { Enabled: false })
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="ma-2">@aiStatus.DisabledReason</MudAlert>
+                    }
+                    else
+                    {
+                        <div class="ws-chat">
+                            @foreach (var m in chat)
+                            {
+                                <div class="ws-msg @(m.FromUser ? "me" : "ai")">@m.Text</div>
+                            }
+                            @foreach (var t in toolLines) { <div class="ws-tool mono">@t</div> }
+                            @if (aiBusy) { <MudProgressLinear Indeterminate="true" Size="Size.Small" /> }
+                            @if (aiNote != null) { <MudAlert Severity="Severity.Warning" Dense="true">@aiNote</MudAlert> }
+                        </div>
+                        <div class="ws-input">
+                            <MudTextField T="string" @bind-Value="draft" Immediate="true" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="Ask about the code, or ask for a change…"
+                                          Disabled="aiBusy" data-testid="ws-ai-input" />
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@(aiBusy || string.IsNullOrWhiteSpace(draft))" OnClick="SendAi" data-testid="ws-ai-send">Send</MudButton>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">The assistant edits files and runs commands in your workspace but never commits or pushes: review with git diff, then commit.</MudText>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <MudAlert Severity="@(ws.State == WorkspaceState.Failed ? Severity.Error : Severity.Info)" Class="mt-3" Style="max-width:720px">
+            This workspace is @ws.State.ToString().ToLowerInvariant()@(ws.StopReason != null ? $" ({ws.StopReason})" : "")@(ws.Error != null ? ": " + ws.Error : ".")
+            <MudButton Href="@($"/p/{view.ProjectKey}/repos/{view.RepoSlug}/workspace?ref={Uri.EscapeDataString(ws.Ref)}")" Size="Size.Small" Variant="Variant.Outlined" Class="ml-3">Start a new one</MudButton>
+        </MudAlert>
+    }
+}
+
+@code {
+    [Parameter] public string PublicId { get; set; } = "";
+
+    private WorkspaceInfo? view;
+    private string? ideUrl, previewUrl;
+    private int previewPort;
+    private List<int>? ports;
+    private bool showAi, aiBusy;
+    private WorkspaceAiStatus? aiStatus;
+    private string draft = "", aiNote = null!;
+    private readonly List<EditorChatMessage> chat = [];
+    private readonly List<string> toolLines = [];
+    private PeriodicTimer? timer;
+    private WorkspaceState? lastState;
+    private CancellationTokenSource? aiCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await RefreshAsync();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                await RefreshAsync();
+                if (view?.Workspace.State == WorkspaceState.Running && ++tick % 3 == 1) await LoadPorts(); // the Preview menu's ports, every ~6 s
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RefreshAsync()
+    {
+        view = await Workspaces.GetMineAsync(PublicId, Me.Id);
+        var state = view?.Workspace.State;
+        if (state != lastState)
+        {
+            lastState = state;
+            ideUrl = state == WorkspaceState.Running ? await Workspaces.EntryUrlAsync(PublicId, Me.Id, new Uri(Nav.BaseUri)) : null;
+            if (state == WorkspaceState.Running && view != null) aiStatus = await WorkspaceAi.GetStatusAsync(view.Workspace.ProjectId);
+        }
+    }
+
+    private Color StateColor() => view?.Workspace.State switch
+    {
+        WorkspaceState.Running => Color.Success, WorkspaceState.Failed => Color.Error, WorkspaceState.Starting => Color.Info, _ => Color.Default,
+    };
+
+    private int tick;
+
+    private async Task LoadPorts()
+    {
+        try { ports = await Workspaces.ListeningPortsAsync(PublicId, Me.Id); }
+        catch (InvalidOperationException) { ports = []; }
+    }
+
+    private async Task OpenPreview(int port)
+    {
+        previewPort = port;
+        previewUrl = await Workspaces.EntryUrlAsync(PublicId, Me.Id, new Uri(Nav.BaseUri), port);
+        if (previewUrl == null) Snackbar.Add("The preview isn't available.", Severity.Warning);
+    }
+
+    private async Task OpenPreviewTab()
+    {
+        var url = await Workspaces.EntryUrlAsync(PublicId, Me.Id, new Uri(Nav.BaseUri), previewPort);
+        if (url != null) await JS.InvokeVoidAsync("open", url, "_blank", "noopener");
+    }
+
+    private async Task OpenIdeTab()
+    {
+        var url = await Workspaces.EntryUrlAsync(PublicId, Me.Id, new Uri(Nav.BaseUri));
+        if (url != null) await JS.InvokeVoidAsync("open", url, "_blank", "noopener");
+    }
+
+    private async Task Stop()
+    {
+        var ok = await Dialogs.ShowMessageBoxAsync("Stop this workspace?",
+            "The container and everything in it is deleted. Push the work you want to keep first.", yesText: "Stop and delete", cancelText: "Cancel");
+        if (ok != true) return;
+        try { await Workspaces.StopAsync(PublicId, Me.Id); Snackbar.Add("Workspace stopped.", Severity.Success); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        await RefreshAsync();
+    }
+
+    private async Task Restart()
+    {
+        try { await Workspaces.RestartAsync(PublicId, Me.Id); Snackbar.Add("Workspace restarted.", Severity.Success); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        lastState = null;
+        await RefreshAsync();
+    }
+
+    private async Task OpenCommit()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        await Dialogs.ShowAsync<WorkspaceCommitDialog>("Commit & push", new DialogParameters { ["PublicId"] = PublicId, ["CanPush"] = view!.Workspace.CanPush, ["Ref"] = view.Workspace.Ref }, options);
+    }
+
+    private async Task SendAi()
+    {
+        var text = draft.Trim();
+        if (text.Length == 0 || aiBusy) return;
+        draft = "";
+        aiNote = null!;
+        toolLines.Clear();
+        var history = chat.ToList();
+        chat.Add(new EditorChatMessage(true, text));
+        var reply = new EditorChatMessage(false, "");
+        aiBusy = true;
+        aiCts = new CancellationTokenSource();
+        var sink = new PanelSink(async delta => { reply = reply with { Text = reply.Text + delta }; await InvokeAsync(StateHasChanged); },
+            async line => { toolLines.Add(line); await InvokeAsync(StateHasChanged); });
+        try
+        {
+            var result = await WorkspaceAi.RunAsync(PublicId, Me.Id, text, history, sink, aiCts.Token);
+            var body = result.Text.Length > 0 ? result.Text : reply.Text;
+            if (body.Length > 0) chat.Add(new EditorChatMessage(false, body));
+            aiNote = result.Error ?? result.StopNote!;
+        }
+        catch (OperationCanceledException) { }
+        catch (InvalidOperationException ex) { aiNote = ex.Message; }
+        finally { aiBusy = false; toolLines.Clear(); }
+    }
+
+    private sealed class PanelSink(Func<string, Task> text, Func<string, Task> tool) : IEditorAiSink
+    {
+        public Task TextAsync(string delta) => text(delta);
+        public Task ToolAsync(string name, string detail) => tool(detail);
+        public Task ProposalAsync(ProposedEdit edit) => Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+        aiCts?.Cancel();
+    }
+}

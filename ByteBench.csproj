@@ -32,6 +32,11 @@
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
+  <!-- The workspace image's build context (docker/workspace) ships with the app, so ByteBench can build the image itself on first use. -->
+  <ItemGroup>
+    <Content Include="docker/workspace/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!--
     One-time cleanup for a checkout that was built before the product was renamed from GitBench. The old bin/obj output makes the
     incremental build keep the previous component style ids, so every page loses its styling. The old project name leaves

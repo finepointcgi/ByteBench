@@ -365,6 +365,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureFlags(b);
         ConfigureAccounts(b);
         ConfigureTrackerImports(b);
+        ConfigureWorkspaces(b); // workspaces (Docker dev environments)
         ConfigureSamlScim(b);
         ConfigureInsights(b);
         ConfigurePrSigning(b);
