@@ -259,6 +259,7 @@ public static partial class CiFile
         public bool? AllowFailure { get; set; }
         public List<string>? Only { get; set; }
         public List<RuleDto?>? Rules { get; set; }
+        public ParallelDto? Parallel { get; set; }
         public int? Retry { get; set; }
         public string? Timeout { get; set; }
         public Dictionary<string, object?>? Variables { get; set; }
@@ -269,6 +270,11 @@ public static partial class CiFile
         public object? Pages { get; set; }
         /// <summary>Alias: <c>publish: dist</c> is <c>pages: { path: dist }</c>.</summary>
         public string? Publish { get; set; }
+    }
+
+    private sealed class ParallelDto
+    {
+        public List<Dictionary<string, List<object?>>?>? Matrix { get; set; }
     }
 
     private sealed class StepDto
@@ -341,6 +347,7 @@ public static partial class CiFile
         if (varsError != null) return Fail(varsError);
 
         var jobs = new List<CiJobDefinition>();
+        var matrices = new Dictionary<string, List<Dictionary<string, string>>>();
         foreach (var (name, job) in dto.Jobs)
         {
             if (!JobNamePattern().IsMatch(name ?? ""))
@@ -365,6 +372,9 @@ public static partial class CiFile
             if (extras.Error != null) return Fail(extras.Error);
             var (jobVars, jobVarsError) = ParseVariables(job.Variables, $"job '{name}' variables");
             if (jobVarsError != null) return Fail(jobVarsError);
+            var (combos, matrixError) = ParseMatrix(job.Parallel, name!);
+            if (matrixError != null) return Fail(matrixError);
+            if (combos.Count > 0) matrices[name!] = combos;
             var merged = new Dictionary<string, string>(globalVars, StringComparer.Ordinal);
             foreach (var (k, v) in jobVars) merged[k] = v;
             jobs.Add(new CiJobDefinition(name!, image, needs, steps)
@@ -382,11 +392,37 @@ public static partial class CiFile
             });
         }
 
+        foreach (var j in jobs)
+            if (j.Needs.Contains(j.Name)) return Fail($"Job '{j.Name}' can't need itself.");
+        if (matrices.Count > 0)
+        {
+            // parallel: matrix: one job per combination (named {job}-{value}-{value}), each with the combination as variables;
+            // a job that needs the matrix job needs every instance.
+            var instances = new Dictionary<string, List<string>>();
+            var expanded = new List<CiJobDefinition>();
+            foreach (var j in jobs)
+            {
+                if (!matrices.TryGetValue(j.Name, out var combos)) { expanded.Add(j); continue; }
+                var list = instances[j.Name] = [];
+                foreach (var combo in combos)
+                {
+                    var instanceName = j.Name + "-" + string.Join("-", combo.Values.Select(SanitizeForName));
+                    if (!JobNamePattern().IsMatch(instanceName)) return Fail($"Job '{j.Name}': the matrix instance name '{instanceName}' is too long (up to 64 characters).");
+                    if (jobs.Any(o => o.Name == instanceName) || list.Contains(instanceName)) return Fail($"Job '{j.Name}': the matrix makes the name '{instanceName}' twice.");
+                    var vars = new Dictionary<string, string>(j.Variables, StringComparer.Ordinal);
+                    foreach (var (k, v) in combo) vars[k] = v;
+                    list.Add(instanceName);
+                    expanded.Add(j with { Name = instanceName, Variables = vars });
+                }
+            }
+            jobs = expanded.Select(j => j with { Needs = j.Needs.SelectMany(n => instances.TryGetValue(n, out var inst) ? inst : [n]).Distinct().ToList() }).ToList();
+            if (jobs.Count > MaxJobs) return Fail($"Too many jobs after expanding 'parallel: matrix' ({jobs.Count}); the limit is {MaxJobs}.");
+        }
+
         var names = jobs.Select(j => j.Name).ToHashSet();
         foreach (var j in jobs)
             foreach (var need in j.Needs)
             {
-                if (need == j.Name) return Fail($"Job '{j.Name}' can't need itself.");
                 if (!names.Contains(need)) return Fail($"Job '{j.Name}' needs '{need}', which is not defined.");
             }
         if (FindCycle(jobs) is { } cycle) return Fail($"The 'needs' of these jobs form a cycle: {cycle}.");
@@ -590,6 +626,44 @@ public static partial class CiFile
         if (p.Contains('*') || p.Contains('?')) return (null, $"pages path '{p}' must name one folder, not a pattern.");
         if (CiArtifacts.ValidatePattern(p) is { } pe) return (null, $"pages path '{p}' {pe}");
         return (new CiPagesDefinition(p, review, expire), null);
+    }
+
+    private static string SanitizeForName(string value) =>
+        new(value.Select(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-' ? c : '_').ToArray());
+
+    /// <summary>
+    /// <c>parallel: { matrix: [ { A: [1, 2], B: [x] }, ... ] }</c>: the combinations of each entry's lists (an entry's variables
+    /// in the order written); several entries add up. Empty when the job has no <c>parallel</c>.
+    /// </summary>
+    private static (List<Dictionary<string, string>> Combos, string? Error) ParseMatrix(ParallelDto? parallel, string job)
+    {
+        var result = new List<Dictionary<string, string>>();
+        if (parallel == null) return (result, null);
+        string Err(string m) => $"Job '{job}': {m}";
+        if (parallel.Matrix == null || parallel.Matrix.Count == 0) return ([], Err("'parallel' needs 'matrix:' with at least one entry."));
+        foreach (var entry in parallel.Matrix)
+        {
+            if (entry == null || entry.Count == 0) return ([], Err("a matrix entry needs at least one variable with a list of values."));
+            IEnumerable<Dictionary<string, string>> combos = [new(StringComparer.Ordinal)];
+            foreach (var (name, values) in entry)
+            {
+                if (ValidateVariableName(name) is { } ne) return ([], Err("matrix " + ne));
+                if (values == null || values.Count == 0) return ([], Err($"matrix variable '{name}' needs at least one value."));
+                var texts = new List<string>();
+                foreach (var v in values)
+                {
+                    var text = v?.ToString() ?? "";
+                    if (v is IDictionary<object, object> or IList<object>) return ([], Err($"matrix variable '{name}' must list plain values."));
+                    if (ValidateVariableValue(name, text) is { } ve) return ([], Err("matrix " + ve));
+                    texts.Add(text);
+                }
+                combos = combos.SelectMany(c => texts.Select(t => new Dictionary<string, string>(c, StringComparer.Ordinal) { [name] = t })).ToList();
+                if (combos.Count() > MaxJobs) return ([], Err($"the matrix makes more than {MaxJobs} jobs."));
+            }
+            result.AddRange(combos);
+            if (result.Count > MaxJobs) return ([], Err($"the matrix makes more than {MaxJobs} jobs."));
+        }
+        return (result, null);
     }
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,63}$")]

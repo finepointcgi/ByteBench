@@ -101,6 +101,35 @@ public partial class PipelineService(IDbContextFactory<AppDbContext> dbFactory, 
         return result;
     }
 
+    /// <summary>
+    /// A commit's pipelines (newest first, at most 50): <paramref name="sha"/> is a full hash or a prefix of at least 7 hex
+    /// digits. Empty for anything else or without ViewProject.
+    /// </summary>
+    public async Task<List<Pipeline>> ForCommitAsync(Repository repo, string sha)
+    {
+        sha = (sha ?? "").Trim().ToLowerInvariant();
+        if (sha.Length is < 7 or > 40 || !sha.All(char.IsAsciiHexDigit) || !await access.CanAsync(repo.ProjectId, Permission.ViewProject)) return [];
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var items = await db.Pipelines.AsNoTracking().Include(p => p.TriggeredBy).Include(p => p.ApprovedBy)
+            .Where(p => p.RepositoryId == repo.Id && p.CommitSha.StartsWith(sha)).OrderByDescending(p => p.Id).Take(50).ToListAsync();
+        foreach (var p in items) p.Repository = repo;
+        return items;
+    }
+
+    /// <summary>
+    /// The combined state of a commit's pipelines, looking at the newest pipeline of each ref: <c>failure</c> if any failed,
+    /// errored or was canceled; else <c>pending</c> if any is queued, running or waiting for a manual job; <c>success</c> if all
+    /// passed; <c>none</c> without pipelines.
+    /// </summary>
+    public static string CombinedState(IEnumerable<Pipeline> pipelines)
+    {
+        var latest = pipelines.GroupBy(p => p.Ref).Select(g => g.MaxBy(p => p.Id)!).ToList();
+        if (latest.Count == 0) return "none";
+        if (latest.Any(p => p.Status is PipelineStatus.Failed or PipelineStatus.Error or PipelineStatus.Canceled)) return "failure";
+        if (latest.Any(p => p.Status is PipelineStatus.Queued or PipelineStatus.Running or PipelineStatus.Manual)) return "pending";
+        return "success";
+    }
+
     /// <summary>True if the branch's tip has a pipeline file (for showing the "Run pipeline" button).</summary>
     public async Task<bool> HasPipelineFileAsync(Repository repo, string branch)
     {

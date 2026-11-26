@@ -16,6 +16,9 @@ public record PipelineDto(int Id, string Ref, string CommitSha, string? CommitMe
     PipelineTrigger Trigger, UserDto? TriggeredBy, string? Error, bool ForkPullRequest, bool AwaitingApproval, UserDto? ApprovedBy,
     DateTimeOffset CreatedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, string WebUrl, IReadOnlyList<PipelineJobDto>? Jobs);
 
+/// <summary>A commit's combined pipeline state (<c>success</c>, <c>failure</c>, <c>pending</c> or <c>none</c>) and its pipelines, newest first.</summary>
+public record CommitStatusDto(string Sha, string State, IReadOnlyList<PipelineDto> Pipelines);
+
 public record PipelineArtifactDto(int Id, int JobId, string JobName, long SizeBytes, int FileCount, DateTimeOffset CreatedAt,
     DateTimeOffset? ExpiresAt, bool Keep, string DownloadUrl);
 
@@ -51,6 +54,9 @@ public static class PipelineEndpoints
         g.MapPost("/pipelines", RunPipeline).WithName("RunPipeline").WithSummary("Run a pipeline for a branch")
             .WithDescription("Needs Developer+. Runs the branch's current tip (or, with \"tag\", the commit of that tag, as a tag pipeline), ignoring the pipeline file's filters. \"variables\" (an object of NAME: value strings, not secret) are set for the run. 422 if CI is off, the branch or tag doesn't exist or has no pipeline file, or a variable name is reserved.")
             .WithJsonBody<RunPipelineRequest>(optional: true).Produces<PipelineDto>(StatusCodes.Status201Created);
+        g.MapGet("/commits/{sha}/status", CommitStatus).WithName("GetCommitPipelineStatus").WithSummary("The combined pipeline status of a commit")
+            .WithDescription("{sha} is a full hash or a prefix of at least 7 hex digits. state is failure if the newest pipeline of any ref failed, errored or was canceled, " +
+                             "else pending if one is queued, running or waiting for a manual job, else success; none if the commit has no pipelines. Includes tag pipelines.");
         g.MapGet("/pipelines/{id:int}", GetPipeline).WithName("GetPipeline").WithSummary("Get a pipeline with its jobs and steps (no logs)");
         g.MapPost("/pipelines/{id:int}/cancel", Cancel).WithName("CancelPipeline").WithSummary("Cancel a queued or running pipeline")
             .WithDescription("Needs Developer+. A running pipeline stops shortly after; poll GET for the final status.");
@@ -161,6 +167,14 @@ public static class PipelineEndpoints
 
     private static async Task<PipelineDto> GetPipeline(HttpContext http, RepositoryService repos, PipelineService pipelines, PublicBaseUrl url, string key, string slug, int id) =>
         await FullAsync(http, pipelines, url, await RequireRepoAsync(repos, key, slug), id);
+
+    private static async Task<CommitStatusDto> CommitStatus(HttpContext http, RepositoryService repos, PipelineService pipelines, PublicBaseUrl url, string key, string slug, string sha)
+    {
+        var repo = await RequireRepoAsync(repos, key, slug);
+        var items = await pipelines.ForCommitAsync(repo, sha);
+        var b = url.For(http.Request);
+        return new CommitStatusDto(sha.Trim().ToLowerInvariant(), PipelineService.CombinedState(items), items.Select(p => ToDto(repo, p, b, null, false)).ToList());
+    }
 
     private static async Task<IResult> RunPipeline(HttpContext http, RepositoryService repos, PipelineService pipelines, PublicBaseUrl url, string key, string slug)
     {
