@@ -23,7 +23,7 @@ public sealed record WorkspaceStatus(bool Enabled, bool SiteSwitchOn, string? Pr
 /// </summary>
 public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
     WorkspaceLifecycle lifecycle, WorkspaceUrls urls, IOptionsMonitor<WorkspaceOptions> options, ProjectAccess access, RepositoryService repos,
-    RepoStorage storage, WorkspaceImage image, SiteSettings siteSettings, AuditLog audit, WorkspaceLimitService limits, WorkspacePrebuildService prebuilds)
+    RepoStorage storage, WorkspaceImage image, SiteSettings siteSettings, AuditLog audit, WorkspaceTasks tasks, WorkspaceLimitService limits, WorkspacePrebuildService prebuilds)
 {
     public const string EnabledKey = "workspaces.enabled";
     public const string AiEnabledKey = "workspaces.ai.enabled";
@@ -120,7 +120,8 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         }
 
         var o = Opts;
-        var prebuild = await prebuilds.FindForStartAsync(repo, name); // a snapshot with setup already done, or null: a normal start
+        var plan = await PlanAsync(path, sha);
+        var prebuild = await prebuilds.FindForStartAsync(repo, name, plan); // a snapshot with setup already done, or null: a normal start
         var gitToken = WorkspaceTokens.NewGitToken();
         var connectionToken = WorkspaceTokens.NewConnectionToken();
         Workspace ws;
@@ -136,7 +137,7 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
             {
                 PublicId = WorkspaceTokens.NewPublicId(), OwnerId = userId, RepositoryId = repo.Id, ProjectId = repo.ProjectId, Ref = name, CommitSha = sha,
                 Source = source is { Length: > 0 } ? (source.Length > 100 ? source[..100] : source) : null,
-                State = WorkspaceState.Starting, Image = prebuild?.ImageTag ?? o.Image, EgressMode = o.EgressMode is "none" or "open" ? o.EgressMode : "public-only", CanPush = canPush,
+                State = WorkspaceState.Starting, Image = prebuild?.ImageTag ?? plan.Image, EnvironmentSummary = plan.Summary, EgressMode = o.EgressMode is "none" or "open" ? o.EgressMode : "public-only", CanPush = canPush,
                 ConnectionTokenHash = WorkspaceTokens.Hash(connectionToken), GitTokenHash = WorkspaceTokens.Hash(gitToken),
                 IdleTimeoutMinutes = await limits.IdleMinutesAsync(db, userId), ExpiresAt = DateTime.UtcNow.AddHours(Math.Max(1, o.MaxLifetimeHours)) + TimeSpan.FromSeconds(o.StartupTimeoutSeconds),
             };
@@ -146,8 +147,232 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         }
         finally { runtime.StartGate.Release(); }
 
-        runtime.Track(Task.Run(() => lifecycle.ProvisionAsync(ws.Id, gitToken, connectionToken)));
+        runtime.Session(ws.Id).ProvisionLog.Append("Queued…");
+        runtime.Track(Task.Run(() => lifecycle.ProvisionAsync(ws.Id, gitToken, connectionToken, plan)));
         return ws;
+    }
+
+    public const string CustomImagesKey = "workspaces.custom_images";
+
+    /// <summary>Whether repositories may choose their own base image (<c>image:</c>). Off unless an administrator turns it on.</summary>
+    public async Task<bool> AreCustomImagesAllowedAsync() => await siteSettings.GetAsync(CustomImagesKey) == "true";
+
+    public async Task SetCustomImagesAllowedAsync(bool on, int adminId)
+    {
+        await RequireAdminAsync(adminId);
+        await siteSettings.SetAsync(CustomImagesKey, on ? "true" : "false", adminId);
+        await audit.RecordAsync("workspace.admin_custom_images", "workspaces", null, details: new { enabled = on }, actorId: adminId);
+    }
+
+    private async Task<WorkspaceProvisionPlan> PlanAsync(string repoPath, string rev)
+    {
+        var load = await Task.Run(() => WorkspaceEnvironmentLoader.Load(repoPath, rev));
+        return WorkspacePlanner.Build(load, image, await AreCustomImagesAllowedAsync());
+    }
+
+    /// <summary>
+    /// What a workspace opened on this ref would get: its environment file (or the problems with it), a suggested file when there is none, and notes.
+    /// For the start page; needs the same access as starting.
+    /// </summary>
+    public async Task<(WorkspaceEnvLoad Load, WorkspaceProvisionPlan Plan)?> PreviewEnvironmentAsync(string projectKey, string slug, string? reference, int userId)
+    {
+        access.ActAs(userId);
+        var repo = await repos.GetRepositoryAsync(projectKey, slug);
+        if (repo == null) return null;
+        var name = string.IsNullOrWhiteSpace(reference) ? repo.DefaultBranch : reference.Trim();
+        if (!WorkspaceLifecycle.IsSafeRef(name)) return null;
+        var path = storage.PathFor(repo.Project.Key, repo.Slug);
+        var sha = await Task.Run(() => GitOps.ResolveSha(path, name));
+        if (sha == null) return null;
+        var load = await Task.Run(() => WorkspaceEnvironmentLoader.Load(path, sha));
+        return (load, WorkspacePlanner.Build(load, image, await AreCustomImagesAllowedAsync()));
+    }
+
+    // ---------- Resume & delete ----------
+
+    /// <summary>
+    /// Starts a stopped workspace again on its saved volumes: the checkout, installed dependencies and caches are all still there, so the setup
+    /// commands only run if they changed. New git and IDE tokens are issued; the same limits apply as for a new workspace.
+    /// </summary>
+    public async Task ResumeAsync(string publicId, int userId)
+    {
+        var info = await GetMineAsync(publicId, userId) ?? throw new InvalidOperationException("Workspace not found.");
+        var w = info.Workspace;
+        if (w.State is not (WorkspaceState.Stopped or WorkspaceState.Failed) || !w.VolumesKept)
+            throw new InvalidOperationException("Only a stopped workspace whose files were kept can be resumed. Start a new workspace instead.");
+        var status = await GetStatusAsync(w.ProjectId);
+        if (!status.Enabled) throw new InvalidOperationException(status.Problem ?? "Workspaces are not available.");
+        access.ActAs(userId);
+        var role = await access.GetRoleAsync(w.ProjectId, userId) ?? throw new InvalidOperationException("You no longer have access to this repository.");
+        var canPush = ProjectAccess.RoleHas(role, Permission.PushCode) && !info.Workspace.Repository.IsArchived;
+        var path = storage.PathFor(info.ProjectKey, info.RepoSlug);
+        var sha = await Task.Run(() => GitOps.ResolveSha(path, w.Ref)) ?? w.CommitSha ?? throw new InvalidOperationException($"'{w.Ref}' no longer exists in this repository.");
+        var plan = await PlanAsync(path, sha);
+        var gitToken = WorkspaceTokens.NewGitToken();
+        var connectionToken = WorkspaceTokens.NewConnectionToken();
+        var o = Opts;
+        await runtime.StartGate.WaitAsync();
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var live = await db.Workspaces.Where(x => x.State == WorkspaceState.Starting || x.State == WorkspaceState.Running || x.State == WorkspaceState.Stopping)
+                .Select(x => x.OwnerId).ToListAsync();
+            if (live.Count >= o.MaxTotal) throw new InvalidOperationException($"The server is at its limit of {o.MaxTotal} workspaces. Try again later.");
+            await limits.EnforceAsync(db, userId, w.Id); // running count, CPUs and memory; its volumes are already counted
+            var ws = await db.Workspaces.FirstAsync(x => x.Id == w.Id && x.OwnerId == userId);
+            ws.State = WorkspaceState.Starting;
+            ws.CanPush = canPush;
+            ws.Image = plan.Image;
+            ws.EnvironmentSummary = plan.Summary;
+            ws.ConnectionTokenHash = WorkspaceTokens.Hash(connectionToken);
+            ws.GitTokenHash = WorkspaceTokens.Hash(gitToken);
+            ws.StoppedAt = null; ws.StopReason = null; ws.Error = null; ws.StartedAt = null;
+            ws.LastActivityAt = DateTime.UtcNow;
+            ws.IdleTimeoutMinutes = await limits.IdleMinutesAsync(db, userId);
+            ws.ExpiresAt = DateTime.UtcNow.AddHours(Math.Max(1, o.MaxLifetimeHours)) + TimeSpan.FromSeconds(o.StartupTimeoutSeconds);
+            await db.SaveChangesAsync();
+        }
+        finally { runtime.StartGate.Release(); }
+        runtime.Session(w.Id).ProvisionLog.Append("Queued…");
+        runtime.Track(Task.Run(() => lifecycle.ProvisionAsync(w.Id, gitToken, connectionToken, plan, resume: true)));
+    }
+
+    /// <summary>The owner deletes a workspace for good: the container, its project and cache volumes and its row are removed.</summary>
+    public async Task DeleteAsync(string publicId, int userId)
+    {
+        var w = await GetMineAsync(publicId, userId) ?? throw new InvalidOperationException("Workspace not found.");
+        await lifecycle.DeleteAsync(w.Workspace.Id, userId);
+    }
+
+    // ---------- Environment, setup and tasks ----------
+
+    /// <summary>The session of a workspace of this user (its environment, logs and tasks), or an exception that doesn't tell "not yours" from "not there".</summary>
+    private async Task<(WorkspaceInfo Info, WorkspaceSession Session)> SessionOfAsync(string publicId, int userId)
+    {
+        var info = await GetMineAsync(publicId, userId) ?? throw new InvalidOperationException("Workspace not found.");
+        return (info, runtime.Session(info.Workspace.Id));
+    }
+
+    public sealed record WorkspaceEnvironmentView(string Summary, string Source, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings, string ProvisionLog, string SetupState,
+        string? SetupMessage, IReadOnlyList<TaskInfo> Tasks, IReadOnlyList<int> Ports, IReadOnlyList<string> Services, string SetupLog, long SetupLogNext);
+
+    /// <summary>Everything the workspace page and API show about the environment: file, problems, notes, setup state and log tail, tasks and ports.</summary>
+    public async Task<WorkspaceEnvironmentView> GetEnvironmentAsync(string publicId, int userId)
+    {
+        var (info, session) = await SessionOfAsync(publicId, userId);
+        var (lines, next) = session.SetupLog.Read(0, 300);
+        return new WorkspaceEnvironmentView(info.Workspace.EnvironmentSummary ?? "default image", session.Env.Source, session.EnvErrors, session.Warnings,
+            session.ProvisionLog.Text(60), session.Setup.ToString(), session.SetupMessage, session.Env.Tasks.Select(session.Describe).ToList(), session.Env.AllPorts,
+            session.Env.Services.Select(s => $"{s.Name} ({s.Image}) on port {string.Join(", ", s.Ports)}").ToList(), string.Join('\n', lines), next);
+    }
+
+    public async Task<List<TaskInfo>> ListTasksAsync(string publicId, int userId)
+    {
+        var (_, session) = await SessionOfAsync(publicId, userId);
+        return session.Env.Tasks.Select(session.Describe).ToList();
+    }
+
+    /// <summary>Starts a task in the workspace's container (the owner's own action; audited by name). A running task is left alone.</summary>
+    public async Task<TaskInfo> RunTaskAsync(string publicId, int userId, string taskName)
+    {
+        var (live, ws) = await RequireRunningAsync(publicId, userId);
+        var session = runtime.Session(ws.Id);
+        live.Touch();
+        var run = tasks.Start(live, session, WorkspaceLifecycle.WorkDir(ws.Repository.Slug), taskName, out var already);
+        if (!already) await audit.RecordAsync("workspace.task_started", "workspace", ws.PublicId, ws.ProjectId, new { task = taskName }, userId);
+        return session.Describe(session.Env.Tasks.First(t => t.Name == run.Name));
+    }
+
+    public async Task<TaskInfo> StopTaskAsync(string publicId, int userId, string taskName)
+    {
+        var (live, ws) = await RequireRunningAsync(publicId, userId);
+        var session = runtime.Session(ws.Id);
+        var def = session.Env.Tasks.FirstOrDefault(t => t.Name == taskName) ?? throw new InvalidOperationException($"There is no task named '{taskName}'.");
+        live.Touch();
+        if (await tasks.StopAsync(live, session, taskName)) await audit.RecordAsync("workspace.task_stopped", "workspace", ws.PublicId, ws.ProjectId, new { task = taskName }, userId);
+        return session.Describe(def);
+    }
+
+    /// <summary>A task's log after <paramref name="since"/> (0: from the start of what is kept) and the position to ask for next. Secret values are masked.</summary>
+    public async Task<(IReadOnlyList<string> Lines, long Next, TaskInfo Task)> TaskLogAsync(string publicId, int userId, string taskName, long since = 0, int max = 500)
+    {
+        var (_, session) = await SessionOfAsync(publicId, userId);
+        var def = session.Env.Tasks.FirstOrDefault(t => t.Name == taskName) ?? throw new InvalidOperationException($"There is no task named '{taskName}'.");
+        if (!session.Tasks.TryGetValue(taskName, out var run)) return ([], 0, session.Describe(def));
+        var (lines, next) = run.Log.Read(since, Math.Clamp(max, 1, 2000));
+        return (lines, next, session.Describe(def));
+    }
+
+    /// <summary>The setup log after <paramref name="since"/> and the setup state.</summary>
+    public async Task<(IReadOnlyList<string> Lines, long Next, string State, string? Message)> SetupLogAsync(string publicId, int userId, long since = 0)
+    {
+        var (_, session) = await SessionOfAsync(publicId, userId);
+        var (lines, next) = session.SetupLog.Read(since, 1000);
+        return (lines, next, session.Setup.ToString(), session.SetupMessage);
+    }
+
+    /// <summary>Runs the setup commands again now (after a failure, or after changing them), whether or not their hash changed.</summary>
+    public async Task RerunSetupAsync(string publicId, int userId)
+    {
+        var (live, ws) = await RequireRunningAsync(publicId, userId);
+        var session = runtime.Session(ws.Id);
+        if (session.Setup == SetupState.Running) throw new InvalidOperationException("Setup is already running.");
+        live.Touch();
+        await backend.ExecAsync(live.ContainerId, new ExecSpec(["rm", "-f", WorkspaceTasks.SetupMarker]), CancellationToken.None);
+        runtime.Track(Task.Run(() => tasks.RunSetupAsync(live, session, WorkspaceLifecycle.WorkDir(ws.Repository.Slug), session.Lifetime.Token)));
+    }
+
+    /// <summary>
+    /// Re-reads the environment file from the checkout in the container (after the user edited it in the IDE): new tasks, ports and setup commands apply
+    /// at once; the image and the services only change when the workspace is started again. Returns the problems with the file (empty when fine).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ReloadEnvironmentAsync(string publicId, int userId)
+    {
+        var (live, ws) = await RequireRunningAsync(publicId, userId);
+        var session = runtime.Session(ws.Id);
+        live.Touch();
+        var dir = WorkspaceLifecycle.WorkDir(ws.Repository.Slug);
+        foreach (var candidate in WorkspaceEnvFile.Candidates)
+        {
+            var r = await backend.ExecAsync(live.ContainerId, new ExecSpec(["sh", "-c", "[ -f \"$1\" ] && cat -- \"$1\"", "sh", candidate]) { WorkDir = dir, MaxOutputBytes = WorkspaceEnvFile.MaxFileBytes + 1024 }, CancellationToken.None);
+            if (!r.Ok) continue;
+            var result = WorkspaceEnvFile.Parse(candidate, r.Output);
+            session.ClearWarnings();
+            foreach (var n in result.Notes) session.Warn(n);
+            foreach (var e in result.Errors) session.Warn("Environment file: " + e);
+            session.EnvErrors = result.Errors;
+            if (result.Environment != null)
+            {
+                var changedSetup = result.Environment.SetupHash != session.Env.SetupHash;
+                session.Env = result.Environment;
+                if (changedSetup && session.Setup != SetupState.Running)
+                    runtime.Track(Task.Run(() => tasks.RunSetupAsync(live, session, dir, session.Lifetime.Token)));
+            }
+            return result.Errors;
+        }
+        session.EnvErrors = [];
+        return [];
+    }
+
+    // ---------- Admin ----------
+
+    public sealed record DiskUsage(string Name, int? WorkspaceId, string? Owner, string? Repository, long SizeBytes, string State);
+
+    /// <summary>The volumes ByteBench holds for workspaces (running, stopped and orphaned), with their sizes, for the admin page.</summary>
+    public async Task<List<DiskUsage>> GetDiskUsageAsync(int adminId)
+    {
+        await RequireAdminAsync(adminId);
+        var volumes = await backend.IsAvailableAsync() ? await backend.ListVolumesAsync(CancellationToken.None) : [];
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var rows = await WithRepo(db).Where(w => w.VolumesKept).ToListAsync();
+        var byPublic = rows.ToDictionary(w => w.PublicId);
+        var result = new List<DiskUsage>();
+        foreach (var v in volumes)
+        {
+            var w = byPublic.Values.FirstOrDefault(x => WorkspaceLifecycle.VolumeNames(x.PublicId) is var (a, b) && (v.Name == a || v.Name == b));
+            result.Add(new DiskUsage(v.Name, w?.Id, w?.Owner.UserName, w == null ? null : $"{w.Repository.Project.Key}/{w.Repository.Slug}", v.SizeBytes, w == null ? "orphaned" : w.State.ToString()));
+        }
+        return result.OrderByDescending(d => d.SizeBytes).ToList();
     }
 
     // ---------- Read ----------
@@ -198,6 +423,15 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         await using var db = await dbFactory.CreateDbContextAsync();
         var id = await db.Workspaces.Where(w => w.PublicId == publicId).Select(w => (int?)w.Id).FirstOrDefaultAsync() ?? throw new InvalidOperationException("Workspace not found.");
         await lifecycle.StopAsync(id, "stopped by an administrator", adminId);
+    }
+
+    /// <summary>A site admin deletes anyone's workspace and its volumes (the admin page's disk use table).</summary>
+    public async Task AdminDeleteAsync(string publicId, int adminId)
+    {
+        await RequireAdminAsync(adminId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var id = await db.Workspaces.Where(w => w.PublicId == publicId).Select(w => (int?)w.Id).FirstOrDefaultAsync() ?? throw new InvalidOperationException("Workspace not found.");
+        await lifecycle.DeleteAsync(id, adminId);
     }
 
     public async Task AdminStopAllAsync(int adminId)

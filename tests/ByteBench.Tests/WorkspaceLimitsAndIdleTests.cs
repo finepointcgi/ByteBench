@@ -111,7 +111,7 @@ public class WorkspaceLimitsTests(WorkspaceApp app) : IClassFixture<WorkspaceApp
         {
             await SetLimitsAsync(new WorkspaceLimitSettings { MaxRunning = 0, MaxTotal = 1, DefaultCpus = 2, DefaultMemoryMb = 4096, DefaultDiskMb = 10240 });
             var ws = await app.StartAsync(user, repo);
-            Assert.Equal("You already have 1 workspace (the limit is 1). Delete one first.", await StartErrorAsync(user, repo));
+            Assert.Equal("You already have 1 workspace, running or stopped with their files kept (the limit is 1). Delete one first.", await StartErrorAsync(user, repo));
 
             await SetLimitsAsync(new WorkspaceLimitSettings { MaxRunning = 9, MaxCpus = 3, DefaultCpus = 2, DefaultMemoryMb = 4096, DefaultDiskMb = 10240 });
             Assert.Equal("A new workspace needs 2 CPUs but you are using 2 CPUs of your 3 CPU limit. Stop a workspace first.", await StartErrorAsync(user, repo));
@@ -120,14 +120,50 @@ public class WorkspaceLimitsTests(WorkspaceApp app) : IClassFixture<WorkspaceApp
             Assert.Equal("A new workspace needs 4 GB of memory but you are using 4 GB of your 6 GB limit. Stop a workspace first.", await StartErrorAsync(user, repo));
 
             await SetLimitsAsync(new WorkspaceLimitSettings { MaxRunning = 9, MaxDiskMb = 15360, DefaultCpus = 2, DefaultMemoryMb = 4096, DefaultDiskMb = 10240 });
-            Assert.Equal("A new workspace needs 10 GB of disk but you are using 10 GB of your 15 GB limit. Delete a workspace first.", await StartErrorAsync(user, repo));
+            Assert.Equal("A new workspace needs 10 GB of disk but your workspaces (including stopped ones with their files kept) use 10 GB of your 15 GB limit. Delete a workspace first.", await StartErrorAsync(user, repo));
 
             var usage = await UsageAsync(user);
-            Assert.Equal((1, 1, 2000, 4096, 10240), (usage.Running, usage.Total, usage.CpuMillis, usage.MemoryMb, usage.DiskMb));
+            Assert.Equal((1, 1, 2000, 4096), (usage.Running, usage.Total, usage.CpuMillis, usage.MemoryMb));
 
             await SetLimitsAsync(Baseline()); // with room again the same user can start another
             Assert.Equal(WorkspaceState.Running, (await app.StartAsync(user, repo)).State);
             Assert.NotNull(ws);
+        }
+        finally { await SetLimitsAsync(Baseline()); }
+    }
+
+    [Fact]
+    public async Task Stopped_workspaces_with_kept_volumes_count_toward_the_total_and_the_disk_but_not_as_running_and_resuming_is_checked_as_running()
+    {
+        var (user, repo) = await UserAsync();
+        var id = app.UserId(user);
+        try
+        {
+            await SetLimitsAsync(new WorkspaceLimitSettings { MaxRunning = 1, MaxTotal = 2, MaxDiskMb = 25000, DefaultCpus = 2, DefaultMemoryMb = 4096, DefaultDiskMb = 10240 });
+            var a = await app.StartAsync(user, repo);
+            await using (var s = app.Scope(id)) await s.Get<WorkspaceService>().StopAsync(a.PublicId, id);
+            var usage = await UsageAsync(user);
+            Assert.Equal((0, 1, 0, 0), (usage.Running, usage.Total, usage.CpuMillis, usage.MemoryMb)); // stopped: nothing running, but it still exists
+            Assert.True(usage.DiskMb >= 10240); // its container limit and its volumes
+
+            var b = await app.StartAsync(user, repo); // total 2 of 2, disk 20 GB + volumes of 25 GB
+            Assert.Equal(2, (await UsageAsync(user)).Total);
+            await using (var s = app.Scope(id))
+            {
+                var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => s.Get<WorkspaceService>().ResumeAsync(a.PublicId, id));
+                Assert.Contains("running (the limit is 1)", ex.Message); // resuming is a second running workspace
+                await s.Get<WorkspaceService>().StopAsync(b.PublicId, id);
+                await s.Get<WorkspaceService>().ResumeAsync(a.PublicId, id); // the total limit doesn't block resuming what already exists
+            }
+            await app.WhenIdleAsync();
+            Assert.Equal(WorkspaceState.Running, (await app.ReloadAsync(a.PublicId)).State);
+            await using (var s = app.Scope(id)) await s.Get<WorkspaceService>().StopAsync(a.PublicId, id);
+            Assert.Contains("running or stopped with their files kept (the limit is 2)", await StartErrorAsync(user, repo)); // 2 of 2 existing
+            await using (var s = app.Scope(id)) await s.Get<WorkspaceService>().DeleteAsync(b.PublicId, id);
+            await SetLimitsAsync(new WorkspaceLimitSettings { MaxRunning = 5, MaxDiskMb = 12000, DefaultCpus = 2, DefaultMemoryMb = 4096, DefaultDiskMb = 10240 });
+            Assert.Contains("including stopped ones with their files kept", await StartErrorAsync(user, repo)); // a's kept disk fills the disk cap
+            await using (var s = app.Scope(id)) await s.Get<WorkspaceService>().DeleteAsync(a.PublicId, id);
+            Assert.Equal(0, (await UsageAsync(user)).Total);
         }
         finally { await SetLimitsAsync(Baseline()); }
     }
@@ -154,7 +190,8 @@ public class WorkspaceLimitsTests(WorkspaceApp app) : IClassFixture<WorkspaceApp
             Assert.Equal(new WorkspaceLimits("512m", "0.5", 2048, null), app.Backend.Started.Last(s => s.WorkspaceId == b.Id).Limits);
 
             var usage = await UsageAsync(user);
-            Assert.Equal((2, 2000, 1536, 2048), (usage.Running, usage.CpuMillis, usage.MemoryMb, usage.DiskMb)); // each counted with what it was given
+            Assert.Equal((2, 2000, 1536), (usage.Running, usage.CpuMillis, usage.MemoryMb));
+            Assert.InRange(usage.DiskMb, 2048, 2048 + 8); // the containers' limits plus what their volumes hold // each counted with what it was given
             await using var db = app.Db();
             Assert.Equal(1500, (await db.WorkspaceAllocations.FirstAsync(x => x.WorkspaceId == a.Id)).CpuMillis);
         }
@@ -319,6 +356,43 @@ public class WorkspaceIdleTests(WorkspaceApp app) : IClassFixture<WorkspaceApp>
         }
         await Reaper.SweepAsync(CancellationToken.None);
         Assert.Equal(WorkspaceState.Running, (await app.ReloadAsync(ws.PublicId)).State); // the task just ended: idle starts now, not hours ago
+        await AgeAsync(ws, TimeSpan.FromHours(3));
+        await Reaper.SweepAsync(CancellationToken.None);
+        Assert.Equal(WorkspaceState.Stopped, (await app.ReloadAsync(ws.PublicId)).State);
+    }
+
+    [Fact]
+    public async Task An_idle_stop_keeps_the_volumes_so_the_workspace_can_be_resumed()
+    {
+        var (user, ws) = await RunningAsync();
+        await AgeAsync(ws, TimeSpan.FromHours(2));
+        await Reaper.SweepAsync(CancellationToken.None);
+        var stopped = await app.ReloadAsync(ws.PublicId);
+        Assert.Equal(WorkspaceState.Stopped, stopped.State);
+        Assert.Equal("idle timeout", stopped.StopReason);
+        Assert.True(stopped.VolumesKept);
+        Assert.Contains(WorkspaceLifecycle.VolumeNames(ws.PublicId).Work, app.Backend.Volumes);
+        await using (var s = app.Scope(app.UserId(user))) await s.Get<WorkspaceService>().ResumeAsync(ws.PublicId, app.UserId(user));
+        await app.WhenIdleAsync();
+        Assert.Equal(WorkspaceState.Running, (await app.ReloadAsync(ws.PublicId)).State);
+    }
+
+    [Fact]
+    public async Task Setup_or_a_task_running_in_the_workspace_keeps_it_awake()
+    {
+        var (_, ws) = await RunningAsync();
+        var session = app.Runtime.Session(ws.Id);
+        await AgeAsync(ws, TimeSpan.FromHours(3));
+        session.Setup = SetupState.Running; // what the real setup runner reports while it works
+        await Reaper.SweepAsync(CancellationToken.None);
+        Assert.Equal(WorkspaceState.Running, (await app.ReloadAsync(ws.PublicId)).State);
+        session.Setup = SetupState.Succeeded;
+        session.Tasks["dev"] = new WorkspaceTaskRun("dev", "npm start", 3000, true, session.Redactor); // a task that is running
+        await AgeAsync(ws, TimeSpan.FromHours(3));
+        Assert.True(app.Runtime.HasRunningTask(ws.Id));
+        await Reaper.SweepAsync(CancellationToken.None);
+        Assert.Equal(WorkspaceState.Running, (await app.ReloadAsync(ws.PublicId)).State);
+        session.Tasks.Clear();
         await AgeAsync(ws, TimeSpan.FromHours(3));
         await Reaper.SweepAsync(CancellationToken.None);
         Assert.Equal(WorkspaceState.Stopped, (await app.ReloadAsync(ws.PublicId)).State);

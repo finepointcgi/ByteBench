@@ -93,6 +93,9 @@ public class TestApp : WebApplicationFactory<Program>
         foreach (var (k, v) in settings) builder.UseSetting(k, v);
         builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(settings));
         builder.ConfigureLogging(l => l.SetMinimumLevel(LogLevel.Warning));
+        // No fixture talks to the machine's real Docker unless it says so (WorkspaceDockerTests builds its own backend). Otherwise every app that starts
+        // runs the workspace reaper's startup cleanup against real Docker and removes the containers other tests are using.
+        builder.ConfigureTestServices(s => s.AddSingleton<ByteBench.Services.Workspaces.IWorkspaceBackend>(new FakeWorkspaceBackend { DockerAvailable = false }));
         builder.ConfigureTestServices(ConfigureServices);
     }
 

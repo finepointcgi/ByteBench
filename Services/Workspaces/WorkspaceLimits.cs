@@ -158,17 +158,19 @@ public sealed class WorkspaceIdlePolicy(IDbContextFactory<AppDbContext> dbFactor
 /// workspaces that already run; it applies to the next start.
 /// </summary>
 public sealed class WorkspaceLimitService(IDbContextFactory<AppDbContext> dbFactory, SiteSettings siteSettings, IOptionsMonitor<WorkspaceOptions> options,
-    WorkspaceIdlePolicy idle, ProjectAccess access, AuditLog audit)
+    WorkspaceIdlePolicy idle, ProjectAccess access, AuditLog audit, IWorkspaceBackend backend, ILogger<WorkspaceLimitService> log)
 {
     public const string LimitsKey = "workspaces.limits";
 
     /// <summary>
-    /// The workspaces that count toward a user's total and disk: everything that still has its container, which today is every live workspace.
-    /// A stopped workspace is deleted, so it doesn't count; when stopping starts to keep a workspace's volumes, include <see cref="WorkspaceState.Stopped"/> here
-    /// (and make <see cref="UsageAsync"/> count only the live ones as running).
+    /// The workspaces that count toward a user's total and disk: everything that still has a container or kept volumes (a stopped workspace can be resumed
+    /// until its volumes are deleted).
     /// </summary>
     public static IQueryable<Workspace> Existing(IQueryable<Workspace> workspaces) =>
-        workspaces.Where(w => w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running || w.State == WorkspaceState.Stopping);
+        workspaces.Where(w => w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running || w.State == WorkspaceState.Stopping || w.VolumesKept);
+
+    /// <summary>The workspaces that run now (and hold CPU and memory).</summary>
+    public static bool IsRunning(WorkspaceState s) => s is WorkspaceState.Starting or WorkspaceState.Running or WorkspaceState.Stopping;
 
     public async Task<WorkspaceLimitSettings> GetAsync()
     {
@@ -236,20 +238,39 @@ public sealed class WorkspaceLimitService(IDbContextFactory<AppDbContext> dbFact
         return await UsageAsync(db, userId, await GetAsync());
     }
 
-    private static async Task<WorkspaceUsage> UsageAsync(AppDbContext db, int userId, WorkspaceLimitSettings s)
+    private async Task<WorkspaceUsage> UsageAsync(AppDbContext db, int userId, WorkspaceLimitSettings s)
     {
-        var existing = await Existing(db.Workspaces.AsNoTracking().Where(w => w.OwnerId == userId)).Select(w => w.Id).ToListAsync();
-        var alloc = await db.WorkspaceAllocations.AsNoTracking().Where(a => existing.Contains(a.WorkspaceId)).ToDictionaryAsync(a => a.WorkspaceId);
+        var existing = await Existing(db.Workspaces.AsNoTracking().Where(w => w.OwnerId == userId)).Select(w => new { w.Id, w.PublicId, w.State }).ToListAsync();
+        var ids = existing.Select(w => w.Id).ToList();
+        var alloc = await db.WorkspaceAllocations.AsNoTracking().Where(a => ids.Contains(a.WorkspaceId)).ToDictionaryAsync(a => a.WorkspaceId);
         var fallback = new WorkspaceResources((int)Math.Round(s.DefaultCpus * 1000), s.DefaultMemoryMb, s.DefaultDiskMb);
-        int cpu = 0, mem = 0, disk = 0;
-        foreach (var id in existing)
+        var volumeMb = await VolumeSizesMbAsync(existing.Select(w => w.PublicId));
+        int running = 0, cpu = 0, mem = 0, disk = 0;
+        foreach (var w in existing)
         {
-            var a = alloc.TryGetValue(id, out var row) ? new WorkspaceResources(row.CpuMillis, row.MemoryMb, row.DiskMb) : fallback;
-            cpu += a.CpuMillis;
-            mem += a.MemoryMb;
-            disk += a.DiskMb;
+            var a = alloc.TryGetValue(w.Id, out var row) ? new WorkspaceResources(row.CpuMillis, row.MemoryMb, row.DiskMb) : fallback;
+            if (IsRunning(w.State)) { running++; cpu += a.CpuMillis; mem += a.MemoryMb; }
+            disk += a.DiskMb + volumeMb.GetValueOrDefault(w.PublicId); // the container's writable-layer limit plus what its project and cache volumes hold now
         }
-        return new WorkspaceUsage(existing.Count, existing.Count, cpu, mem, disk); // today every existing workspace is running (see Existing)
+        return new WorkspaceUsage(running, existing.Count, cpu, mem, disk);
+    }
+
+    /// <summary>What each workspace's volumes hold, in MB (best effort: Docker not answering means nothing is counted).</summary>
+    private async Task<Dictionary<string, int>> VolumeSizesMbAsync(IEnumerable<string> publicIds)
+    {
+        var result = new Dictionary<string, int>();
+        var wanted = publicIds.ToList();
+        if (wanted.Count == 0) return result;
+        try
+        {
+            if (!await backend.IsAvailableAsync()) return result;
+            var byName = new Dictionary<string, string>();
+            foreach (var id in wanted) { var (a, b) = WorkspaceLifecycle.VolumeNames(id); byName[a] = id; byName[b] = id; }
+            foreach (var v in await backend.ListVolumesAsync(CancellationToken.None))
+                if (byName.TryGetValue(v.Name, out var pid)) result[pid] = result.GetValueOrDefault(pid) + (int)Math.Min(int.MaxValue / 2, (v.SizeBytes + 1024 * 1024 - 1) / (1024 * 1024));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogDebug(ex, "Could not read workspace volume sizes"); }
+        return result;
     }
 
     public async Task<WorkspaceLimitsView> GetViewAsync(int userId)
@@ -263,22 +284,26 @@ public sealed class WorkspaceLimitService(IDbContextFactory<AppDbContext> dbFact
     /// <summary>
     /// Checks that a new workspace fits the user's limits and returns what it is given. Throws an <see cref="InvalidOperationException"/> whose message says
     /// which limit and how to get under it (it reaches the user in the UI and the REST API as a 422). Call it under <see cref="WorkspaceRuntime.StartGate"/>.
+    /// With <paramref name="resumeWorkspaceId"/> the workspace already exists (its volumes are counted): only what running adds is checked (running count, CPUs, memory).
     /// </summary>
-    public async Task<WorkspaceResources> EnforceAsync(AppDbContext db, int userId)
+    public async Task<WorkspaceResources> EnforceAsync(AppDbContext db, int userId, int? resumeWorkspaceId = null)
     {
         var s = await GetAsync();
         var res = new WorkspaceResources((int)Math.Round(s.DefaultCpus * 1000), s.DefaultMemoryMb, s.DefaultDiskMb);
+        if (resumeWorkspaceId is { } wid && await db.WorkspaceAllocations.AsNoTracking().FirstOrDefaultAsync(a => a.WorkspaceId == wid) is { } own)
+            res = new WorkspaceResources(own.CpuMillis, own.MemoryMb, own.DiskMb);
         var u = await UsageAsync(db, userId, s);
+        var resuming = resumeWorkspaceId != null;
         if (s.MaxRunning > 0 && u.Running >= s.MaxRunning)
             throw new InvalidOperationException($"You already have {u.Running} workspace{(u.Running == 1 ? "" : "s")} running (the limit is {s.MaxRunning}). Stop one first.");
-        if (s.MaxTotal > 0 && u.Total >= s.MaxTotal)
-            throw new InvalidOperationException($"You already have {u.Total} workspace{(u.Total == 1 ? "" : "s")} (the limit is {s.MaxTotal}). Delete one first.");
+        if (!resuming && s.MaxTotal > 0 && u.Total >= s.MaxTotal)
+            throw new InvalidOperationException($"You already have {u.Total} workspace{(u.Total == 1 ? "" : "s")}, running or stopped with their files kept (the limit is {s.MaxTotal}). Delete one first.");
         if (s.MaxCpus > 0 && u.CpuMillis + res.CpuMillis > s.MaxCpus * 1000 + 0.5)
-            throw new InvalidOperationException($"A new workspace needs {WorkspaceUnits.FormatCpu(res.CpuMillis)} but you are using {WorkspaceUnits.FormatCpu(u.CpuMillis)} of your {s.MaxCpus:0.##} CPU limit. Stop a workspace first.");
+            throw new InvalidOperationException($"{(resuming ? "Resuming this workspace" : "A new workspace")} needs {WorkspaceUnits.FormatCpu(res.CpuMillis)} but you are using {WorkspaceUnits.FormatCpu(u.CpuMillis)} of your {s.MaxCpus:0.##} CPU limit. Stop a workspace first.");
         if (s.MaxMemoryMb > 0 && u.MemoryMb + res.MemoryMb > s.MaxMemoryMb)
-            throw new InvalidOperationException($"A new workspace needs {WorkspaceUnits.FormatMb(res.MemoryMb)} of memory but you are using {WorkspaceUnits.FormatMb(u.MemoryMb)} of your {WorkspaceUnits.FormatMb(s.MaxMemoryMb)} limit. Stop a workspace first.");
-        if (s.MaxDiskMb > 0 && u.DiskMb + res.DiskMb > s.MaxDiskMb)
-            throw new InvalidOperationException($"A new workspace needs {WorkspaceUnits.FormatMb(res.DiskMb)} of disk but you are using {WorkspaceUnits.FormatMb(u.DiskMb)} of your {WorkspaceUnits.FormatMb(s.MaxDiskMb)} limit. Delete a workspace first.");
+            throw new InvalidOperationException($"{(resuming ? "Resuming this workspace" : "A new workspace")} needs {WorkspaceUnits.FormatMb(res.MemoryMb)} of memory but you are using {WorkspaceUnits.FormatMb(u.MemoryMb)} of your {WorkspaceUnits.FormatMb(s.MaxMemoryMb)} limit. Stop a workspace first.");
+        if (!resuming && s.MaxDiskMb > 0 && u.DiskMb + res.DiskMb > s.MaxDiskMb)
+            throw new InvalidOperationException($"A new workspace needs {WorkspaceUnits.FormatMb(res.DiskMb)} of disk but your workspaces (including stopped ones with their files kept) use {WorkspaceUnits.FormatMb(u.DiskMb)} of your {WorkspaceUnits.FormatMb(s.MaxDiskMb)} limit. Delete a workspace first.");
         return res;
     }
 

@@ -118,7 +118,7 @@ public sealed partial class WorkspacePrebuildManager(IDbContextFactory<AppDbCont
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         var sha = await Task.Run(() => GitOps.ResolveSha(path, "refs/heads/" + name)) ?? throw new InvalidOperationException($"There is no branch '{name}' in this repository.");
         var pb = await service.EnqueueAsync(repo.Id, name, sha, "manual", userId, force: true)
-            ?? throw new InvalidOperationException($"{name} has no {PrebuildConfigReader.FileName}, so there is nothing to prebuild.");
+            ?? throw new InvalidOperationException($"{name} has no environment file (.bytebench/workspace.yml), so there is nothing to prebuild.");
         return pb;
     }
 

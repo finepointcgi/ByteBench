@@ -30,8 +30,44 @@ else
 
     <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 720px">
         <MudStack Spacing="3">
-            <MudTextField T="string" Label="Branch, tag or commit" @bind-Value="reference" Variant="Variant.Outlined" Margin="Margin.Dense"
+            <MudTextField T="string" Label="Branch, tag or commit" @bind-Value="reference" @bind-Value:after="LoadPreviewAsync" Variant="Variant.Outlined" Margin="Margin.Dense"
                           HelperText="@Helper()" data-testid="ws-ref" />
+            @if (preview != null)
+            {
+                var (load, plan) = preview.Value;
+                <div data-testid="ws-env-preview">
+                    @if (load.HasFile && load.Result!.Ok)
+                    {
+                        <MudText Typo="Typo.subtitle2">Environment from <span class="mono">@load.Result.Source</span> · @plan.Summary</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            @(plan.Env.Setup.Count) setup command(s) run once@(plan.Env.Submodules ? ", submodules are fetched" : "")@(plan.Env.Services.Count > 0 ? $", services: {string.Join(", ", plan.Env.Services.Select(s => s.Name))}" : "").
+                            @if (plan.Env.Tasks.Count > 0) { <span> Tasks: @string.Join(", ", plan.Env.Tasks.Select(t => t.Name)).</span> }
+                        </MudText>
+                    }
+                    else if (load.HasFile)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true">
+                            <b>@load.Result!.Source can't be used</b>; the workspace opens with the default setup.
+                            @foreach (var e in load.Result.Errors) { <div>@e</div> }
+                        </MudAlert>
+                    }
+                    else if (load.SuggestedYaml != null)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            This repository has no <span class="mono">.bytebench/workspace.yml</span>, so you get the default image. It looks like a @(load.Suggestion?.Toolchain?.Split('@')[0]) project; this file would set it up:
+                            <pre class="mono" style="max-height:200px;overflow:auto;margin:6px 0 0;font-size:12px" data-testid="ws-suggested">@load.SuggestedYaml</pre>
+                            @if (canPush)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="mt-2" Href="@AddFileUrl()" StartIcon="@Icons.Material.Outlined.EditNote" data-testid="ws-add-file">Add .bytebench/workspace.yml</MudButton>
+                            }
+                        </MudAlert>
+                    }
+                    @foreach (var w in plan.Warnings.Where(w => !w.StartsWith("Environment file:", StringComparison.Ordinal) && !w.Contains("was not used because", StringComparison.Ordinal)))
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-1">@w</MudAlert>
+                    }
+                </div>
+            }
             @if (suggestions.Count > 0)
             {
                 <div class="d-flex flex-wrap gap-1">
@@ -85,7 +121,17 @@ else
     private List<string> suggestions = [];
     private PeriodicTimer? timer;
 
-    private string Helper() => "A branch, a tag or a commit id. The default branch is used when empty.";
+    private (WorkspaceEnvLoad Load, WorkspaceProvisionPlan Plan)? preview;
+
+    private async Task LoadPreviewAsync()
+    {
+        try { preview = await Workspaces.PreviewEnvironmentAsync(Key, Slug, reference, Me.Id); }
+        catch (Exception) { preview = null; }
+    }
+
+    private string AddFileUrl() => $"/p/{Key}/repos/{Slug}/edit/{Uri.EscapeDataString(reference)}/.bytebench/workspace.yml?suggest=workspace";
+
+    private string Helper() =>"A branch, a tag or a commit id. The default branch is used when empty.";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -102,6 +148,7 @@ else
         catch (Exception) { suggestions = []; }
         canPush = await Access.CanAsync(repo.ProjectId, Permission.PushCode) && !repo.IsArchived;
         status = await Workspaces.GetStatusAsync(repo.ProjectId);
+        await LoadPreviewAsync();
         if (Image.State == WorkspaceImageState.Building && timer == null) _ = PollAsync();
     }
 

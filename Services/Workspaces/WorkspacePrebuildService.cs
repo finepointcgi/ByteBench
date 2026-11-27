@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using ByteBench.Data;
@@ -11,8 +13,10 @@ namespace ByteBench.Services.Workspaces;
 
 /// <summary>
 /// Prebuilds (singleton, no permission checks: <see cref="WorkspacePrebuildManager"/> and the push listener call it after theirs). A prebuild
-/// is a Docker image committed from a container that cloned the repository, fetched its submodules and ran the setup commands of the
-/// repository's own <c>.bytebench/workspace.yml</c>. New workspaces on that branch start from the newest usable prebuild
+/// is a Docker image committed from a container that cloned the repository, fetched its submodules and ran the <c>setup</c> commands of the
+/// repository's own environment file (<see cref="WorkspaceEnvironmentLoader"/>: the same parser, validator and image rules as a workspace; <c>services</c> are not started, tasks are not run).
+/// The image is built on the environment's own image (default, toolchain, or an allowed <c>image:</c>). A new workspace's volumes are seeded from the image, and
+/// its setup marker says the setup is up to date; a workspace resumed from its own volumes never uses a prebuild. New workspaces on that branch start from the newest usable prebuild
 /// (<see cref="FindForStartAsync"/>); with none, or a stale or missing one, they start as before. A failing prebuild never blocks a start.
 ///
 /// What keeps secrets out of the image: the build container gets no environment beyond <c>BB_*</c> and no workspace secrets; its read-only git token
@@ -20,7 +24,8 @@ namespace ByteBench.Services.Workspaces;
 /// Builds run one at a time on a background worker, newest push first within a branch (an older queued build for the same branch is superseded).
 /// </summary>
 public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime, WorkspaceLifecycle lifecycle,
-    WorkspaceImage image, IOptionsMonitor<WorkspaceOptions> options, RepoStorage storage, IServiceScopeFactory scopes, ILogger<WorkspacePrebuildService> log) : BackgroundService
+    WorkspaceImage image, IOptionsMonitor<WorkspaceOptions> options, RepoStorage storage, IServiceScopeFactory scopes, SubmoduleResolver submodules, Api.PublicBaseUrl publicBase,
+    ILogger<WorkspacePrebuildService> log) : BackgroundService
 {
     private readonly Channel<int> queue = Channel.CreateUnbounded<int>(new UnboundedChannelOptions { SingleReader = true });
     private readonly SemaphoreSlim enqueueGate = new(1, 1);
@@ -43,28 +48,27 @@ public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbF
         var path = storage.PathFor(repo.Project.Key, repo.Slug);
         sha ??= await Task.Run(() => GitOps.ResolveSha(path, branch));
         if (sha == null) return null;
-        var blob = await Task.Run(() => GitOps.GetBlob(path, sha, PrebuildConfigReader.FileName));
-        if (blob == null) return null;
-
-        var parsed = blob.Text == null || blob.TooLarge || blob.IsBinary
-            ? new PrebuildConfigResult(null, PrebuildConfigReader.FileName + " is too large or isn't text.")
-            : PrebuildConfigReader.Parse(blob.Text);
+        var load = await Task.Run(() => WorkspaceEnvironmentLoader.Load(path, sha));
+        if (!load.HasFile) return null; // no environment file: nothing to prebuild
+        var plan = await PlanAsync(load);
+        var problems = load.Result!.Errors;
+        var hash = problems.Count == 0 ? HashOf(plan) : "";
 
         await enqueueGate.WaitAsync();
         try
         {
             var live = await db.WorkspacePrebuilds.Where(p => p.RepositoryId == repositoryId && p.Ref == branch && (p.State == PrebuildState.Queued || p.State == PrebuildState.Building || p.State == PrebuildState.Ready)).ToListAsync();
-            if (!force && parsed.Config != null && live.Any(p => p.CommitSha == sha && p.ConfigHash == parsed.Config.Hash)) return null;
+            if (!force && hash != "" && live.Any(p => p.CommitSha == sha && p.ConfigHash == hash)) return null;
 
             var pb = new WorkspacePrebuild
             {
                 RepositoryId = repositoryId, ProjectId = repo.ProjectId, Ref = branch, CommitSha = sha, Trigger = trigger, TriggeredById = userId,
-                BaseImage = Opts.Image, ConfigHash = parsed.Config?.Hash ?? "",
+                BaseImage = plan.Image, ConfigHash = hash,
             };
-            if (parsed.Config == null)
+            if (problems.Count > 0)
             {
                 pb.State = PrebuildState.Failed;
-                pb.Error = parsed.Error;
+                pb.Error = Clip("The environment file has problems: " + string.Join(" ", problems), 500);
                 pb.FinishedAt = DateTime.UtcNow;
                 db.WorkspacePrebuilds.Add(pb);
                 await db.SaveChangesAsync();
@@ -84,6 +88,21 @@ public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbF
         }
         finally { enqueueGate.Release(); }
     }
+
+    /// <summary>What a workspace opened on this environment would run on (default, toolchain or an allowed custom image) and the notes about it.</summary>
+    private async Task<WorkspaceProvisionPlan> PlanAsync(WorkspaceEnvLoad load)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var allowCustom = await db.SiteSettings.AsNoTracking().Where(x => x.Key == WorkspaceService.CustomImagesKey).Select(x => x.Value).FirstOrDefaultAsync() == "true";
+        return WorkspacePlanner.Build(load, image, allowCustom);
+    }
+
+    /// <summary>
+    /// What makes a prebuild reusable: the image it was built on, the setup commands (the environment's own <see cref="WorkspaceEnvironment.SetupHash"/>, so the marker a
+    /// prebuilt workspace finds matches) and whether submodules were fetched. Services, tasks, ports and variables don't take part.
+    /// </summary>
+    public static string HashOf(WorkspaceProvisionPlan plan) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"v1\n{plan.Image}\n{plan.Env.SetupHash}\n{(plan.Env.Submodules ? 1 : 0)}"))).ToLowerInvariant();
 
     /// <summary>Completes when the queue is empty and nothing is being built (tests and the UI's "wait for it").</summary>
     public async Task WhenIdleAsync(TimeSpan? timeout = null)
@@ -171,28 +190,44 @@ public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbF
         {
             if (!o.Prebuilds.Enabled) throw new PrebuildException("Prebuilds are turned off on this server.");
             if (!await backend.IsAvailableAsync(ct)) throw new PrebuildException("Docker isn't available on this server.");
-            if (image.State != WorkspaceImageState.Ready) await image.EnsureAsync(ct);
-            if (image.State != WorkspaceImageState.Ready) throw new PrebuildException(image.Problem ?? "The workspace image isn't ready yet.");
             var user = await db.Users.AsNoTracking().Where(u => u.Id == pb.TriggeredById).Select(u => new { u.UserName, u.DisplayName }).FirstOrDefaultAsync(ct)
                 ?? throw new PrebuildException("The user this prebuild runs for no longer exists.");
 
+            var slug = pb.Repository.Slug;
+            var path = storage.PathFor(pb.Repository.Project.Key, slug);
+            var workDir = WorkspaceLifecycle.WorkDir(slug);
+
+            // The environment at the commit being built decides the image and the commands.
+            var load = await Task.Run(() => WorkspaceEnvironmentLoader.Load(path, pb.CommitSha!), ct);
+            if (!load.HasFile) throw new PrebuildException($"{pb.Ref} no longer has an environment file.");
+            if (load.Result!.Errors.Count > 0) throw new PrebuildException("The environment file has problems: " + string.Join(" ", load.Result.Errors));
+            var plan = await PlanAsync(load);
+            var env = plan.Env;
+            pb.BaseImage = plan.Image;
+            pb.ConfigHash = HashOf(plan);
+            if (plan.BaseImage != null) await image.EnsureDerivedAsync(plan.Image, plan.BaseImage, text.Line, ct);
+            else if (!await backend.ImageExistsAsync(plan.Image, ct)) await image.EnsureAsync(ct);
+
+            var name = $"bb-pb-{Ci.CiDocker.InstanceKey}-{pb.Id}";
+            var containerEnv = new Dictionary<string, string> { ["BB_WORKDIR"] = workDir, ["BB_IDE_PORT"] = WorkspaceLifecycle.IdePort.ToString() }; // (what a container is started with is baked into the snapshot's image config, so only what a workspace sets again anyway)
+            text.Line($"Starting a build container from {plan.Image} ({plan.Summary})");
+            var container = await backend.StartAsync(new WorkspaceContainerSpec(-pb.Id, name, plan.Image, o.Network, "host.docker.internal", WorkspaceLifecycle.IdePort, containerEnv,
+                new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit)) { PublishIdePort = false }, ct); // no volumes: everything lands in the image layer that is committed
+            containerId = container.ContainerId;
+            await backend.WaitUntilWaitingAsync(containerId, ct);
+            await lifecycle.ApplyEgressAsync(containerId, plan.Image, o.EgressMode is "none" or "open" ? o.EgressMode : "public-only", ct);
+
+            // Clone with a read-only token that exists only for this build (and may read this server's submodule repositories the user can view).
+            var git = lifecycle.GitBase();
+            if (env.Submodules)
+            {
+                var resolution = await submodules.ResolveAsync(pb.Repository.Project.Key, slug, pb.CommitSha!, pb.TriggeredById!.Value, git, ct);
+                pb.SubmoduleRepoIdsJson = JsonSerializer.Serialize(resolution.RepositoryIds);
+                foreach (var n in resolution.Notes) text.Line("Note: " + n);
+            }
             var gitToken = WorkspaceTokens.NewGitToken();
             pb.GitTokenHash = WorkspaceTokens.Hash(gitToken);
             await db.SaveChangesAsync(CancellationToken.None);
-
-            var slug = pb.Repository.Slug;
-            var workDir = WorkspaceLifecycle.WorkDir(slug);
-            var name = $"bb-pb-{Ci.CiDocker.InstanceKey}-{pb.Id}";
-            var env = new Dictionary<string, string> { ["BB_WORKDIR"] = workDir, ["BB_IDE_PORT"] = WorkspaceLifecycle.IdePort.ToString() }; // (what a container is started with is baked into the snapshot's image config, so only what a workspace sets again anyway)
-            text.Line($"Starting a build container from {o.Image}");
-            var container = await backend.StartAsync(new WorkspaceContainerSpec(-pb.Id, name, o.Image, o.Network, "host.docker.internal", WorkspaceLifecycle.IdePort, env,
-                new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit)) { PublishIdePort = false }, ct);
-            containerId = container.ContainerId;
-            await backend.WaitUntilWaitingAsync(containerId, ct);
-            await lifecycle.ApplyEgressAsync(containerId, o.Image, o.EgressMode is "none" or "open" ? o.EgressMode : "public-only", ct);
-
-            // Clone with a read-only token that exists only for this build.
-            var git = lifecycle.GitBase();
             var credential = $"{git.Scheme}://{Uri.EscapeDataString(user.UserName!)}:{gitToken}@{git.Authority}\n";
             await RunAsync(containerId, new ExecSpec(["sh", "-c", "umask 077; cat > \"$HOME/.git-credentials\""]) { Stdin = credential }, "storing the git credential", text, ct);
             foreach (var args in new[]
@@ -204,41 +239,50 @@ public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbF
                 await RunAsync(containerId, new ExecSpec(args), "configuring git", text, ct);
 
             var repoUrl = new Uri(git, $"git/{pb.Repository.Project.Key}/{slug}.git").ToString();
-            text.Line($"== Cloning {pb.Ref}");
-            await RunAsync(containerId, new ExecSpec(["sh", "-c", WorkspaceLifecycle.CloneScript, "sh", repoUrl, workDir, pb.Ref])
-            { WorkDir = WorkspaceLifecycle.WorkspaceRoot, Timeout = TimeSpan.FromMinutes(10), MaxOutputBytes = 16 * 1024, Env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" } },
-                "checking out the repository", text, ct);
-            var head = await backend.ExecAsync(containerId, new ExecSpec(["git", "-C", workDir, "rev-parse", "HEAD"]), ct);
-            if (head.Ok && head.Output.Trim().Length == 40) pb.CommitSha = head.Output.Trim();
-
-            // The configuration of the commit that was actually checked out is the one that counts.
-            var path = storage.PathFor(pb.Repository.Project.Key, slug);
-            var blob = pb.CommitSha == null ? null : await Task.Run(() => GitOps.GetBlob(path, pb.CommitSha, PrebuildConfigReader.FileName), ct);
-            if (blob?.Text == null) throw new PrebuildException($"{PrebuildConfigReader.FileName} is no longer in {pb.Ref}.");
-            var parsed = PrebuildConfigReader.Parse(blob.Text);
-            if (parsed.Config == null) throw new PrebuildException(parsed.Error ?? "The environment file is invalid.");
-            var config = parsed.Config;
-            pb.ConfigHash = config.Hash;
-
-            if (config.Submodules)
+            string rewriteFrom = "", rewriteTo = "";
+            if (publicBase.Value is { Length: > 0 } pub && Uri.TryCreate(pub, UriKind.Absolute, out var pubUri) && !string.Equals(pubUri.Authority, git.Authority, StringComparison.OrdinalIgnoreCase))
             {
-                text.Line("== Submodules");
-                await RunAsync(containerId, new ExecSpec(["sh", "-c", "if [ -f .gitmodules ]; then git submodule update --init --recursive; else echo 'no submodules'; fi"])
-                { WorkDir = workDir, Timeout = TimeSpan.FromMinutes(10), Env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" } }, "fetching submodules", text, ct);
+                rewriteFrom = pub.TrimEnd('/') + "/git/";
+                rewriteTo = new Uri(git, "git/").ToString();
+            }
+            var perSubmodule = Math.Max(10, o.SubmoduleTimeoutSeconds);
+            text.Line($"== Cloning {pb.Ref}{(env.Submodules ? " (with submodules)" : "")}");
+            var clone = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", WorkspaceLifecycle.CloneScript, "sh", repoUrl, workDir, pb.Ref, env.Submodules ? "1" : "0",
+                rewriteFrom, rewriteTo, perSubmodule.ToString()])
+            {
+                WorkDir = WorkspaceLifecycle.WorkspaceRoot, Timeout = TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(perSubmodule * 8), MaxOutputBytes = 16 * 1024,
+                Env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" },
+            }, ct);
+            text.Block(clone.Output.Replace("BB-WARN:", "Warning:"));
+            if (clone.TimedOut) throw new PrebuildException("Timed out while checking out the repository.");
+            if (!clone.Ok) throw new PrebuildException("Failed while checking out the repository: " + Short(WorkspaceLifecycle.Safe(clone.Output.Replace("BB-WARN:", ""))));
+            var head = await backend.ExecAsync(containerId, new ExecSpec(["git", "-C", workDir, "rev-parse", "HEAD"]), ct);
+            if (head.Ok && head.Output.Trim().Length == 40 && head.Output.Trim() != pb.CommitSha)
+            {
+                // The branch moved between the push and the build: what was cloned is the newer tip, so its environment must be the one that was read.
+                var now = head.Output.Trim();
+                var again = await Task.Run(() => WorkspaceEnvironmentLoader.Load(path, now), ct);
+                if (again.Result is not { Errors.Count: 0 } || HashOf(await PlanAsync(again)) != pb.ConfigHash)
+                    throw new PrebuildException($"{pb.Ref} moved to {now[..8]} with a different environment while this prebuild was starting; the next prebuild will cover it.");
+                pb.CommitSha = now;
             }
 
             await ScrubAsync(containerId, workDir, text, ct); // no credential of any kind while the repository's own commands run
+            var cacheEnv = new Dictionary<string, string>(WorkspaceTasks.CacheEnvironment);
+            foreach (var (k, v) in env.Env) cacheEnv[k] = v; // the repository's own plain variables; never secrets
             var number = 0;
-            foreach (var command in config.Setup)
+            foreach (var command in env.Setup)
             {
                 number++;
-                text.Line($"== Setup {number}/{config.Setup.Count}");
+                text.Line($"== Setup {number}/{env.Setup.Count}");
                 text.Line("$ " + command);
-                var r = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", command]) { WorkDir = workDir, Timeout = TimeSpan.FromMinutes(Math.Max(1, o.Prebuilds.BuildTimeoutMinutes)), MaxOutputBytes = 256 * 1024 }, ct);
+                var r = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", command]) { WorkDir = workDir, Env = cacheEnv, Timeout = TimeSpan.FromMinutes(Math.Max(1, o.Prebuilds.BuildTimeoutMinutes)), MaxOutputBytes = 256 * 1024 }, ct);
                 text.Block(r.Output);
                 if (r.TimedOut) throw new PrebuildException($"Setup command {number} ran too long and was stopped.");
                 if (!r.Ok) throw new PrebuildException($"Setup command {number} failed (exit code {r.ExitCode}): {Short(command)}");
             }
+            if (env.Setup.Count > 0)
+                await RunAsync(containerId, new ExecSpec(["sh", "-c", "mkdir -p \"$(dirname \"$1\")\" && printf '%s' \"$2\" > \"$1\"", "sh", WorkspaceTasks.SetupMarker, env.SetupHash]), "recording the setup", text, ct); // a workspace seeded from this finds its setup up to date
             await ScrubAsync(containerId, workDir, text, ct);
 
             text.Line("== Saving the snapshot");
@@ -247,7 +291,6 @@ public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbF
 
             pb.State = PrebuildState.Ready;
             pb.ImageTag = tag;
-            pb.BaseImage = o.Image;
             pb.Error = null;
             text.Line("Done.");
         }
@@ -331,23 +374,19 @@ public sealed class WorkspacePrebuildService(IDbContextFactory<AppDbContext> dbF
     /// from the same setup configuration as the branch has now, not past its retention, and whose image still exists. Null (a normal start) otherwise,
     /// and for any problem finding one.
     /// </summary>
-    public async Task<WorkspacePrebuild?> FindForStartAsync(Repository repo, string refName)
+    public async Task<WorkspacePrebuild?> FindForStartAsync(Repository repo, string refName, WorkspaceProvisionPlan plan)
     {
         try
         {
             var o = Opts;
-            if (!o.Prebuilds.Enabled) return null;
+            if (!o.Prebuilds.Enabled || plan.EnvErrors.Count > 0 || plan.Env.IsEmpty) return null;
             await using var db = await dbFactory.CreateDbContextAsync();
             var settings = await db.RepositoryPrebuildSettings.AsNoTracking().FirstOrDefaultAsync(s => s.RepositoryId == repo.Id);
             if (settings is not { Enabled: true }) return null;
-            var path = storage.PathFor(repo.Project.Key, repo.Slug);
-            var sha = await Task.Run(() => GitOps.ResolveSha(path, refName));
-            if (sha == null) return null;
-            var blob = await Task.Run(() => GitOps.GetBlob(path, sha, PrebuildConfigReader.FileName));
-            if (blob?.Text == null || PrebuildConfigReader.Parse(blob.Text).Config is not { } config) return null;
+            var hash = HashOf(plan);
             var cutoff = DateTime.UtcNow.AddDays(-Math.Max(1, settings.RetentionDays));
             var candidates = await db.WorkspacePrebuilds.Where(p => p.RepositoryId == repo.Id && p.Ref == refName && p.State == PrebuildState.Ready && p.ImageTag != null
-                    && p.BaseImage == o.Image && p.ConfigHash == config.Hash && p.FinishedAt > cutoff)
+                    && p.BaseImage == plan.Image && p.ConfigHash == hash && p.FinishedAt > cutoff)
                 .OrderByDescending(p => p.FinishedAt).Take(5).ToListAsync();
             foreach (var c in candidates)
             {

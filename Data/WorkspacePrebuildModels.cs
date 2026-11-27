@@ -50,6 +50,8 @@ public class WorkspacePrebuild
     [MaxLength(500)] public string? Error { get; set; }
     /// <summary>SHA-256 of the read-only <c>gbw_…</c> token the build clones with; null once the build is over.</summary>
     [MaxLength(32)] public byte[]? GitTokenHash { get; set; }
+    /// <summary>JSON array of repository ids on this server the build token may additionally read (submodules; never write).</summary>
+    public string SubmoduleRepoIdsJson { get; set; } = "[]";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }

@@ -11,6 +11,9 @@ public partial class AppDbContext
     public DbSet<WorkspaceAllocation> WorkspaceAllocations => Set<WorkspaceAllocation>();
     public DbSet<UserWorkspacePreference> UserWorkspacePreferences => Set<UserWorkspacePreference>();
 
+    public DbSet<WorkspaceSecret> WorkspaceSecrets => Set<WorkspaceSecret>();
+    public DbSet<UserWorkspaceSettings> UserWorkspaceSettings => Set<UserWorkspaceSettings>();
+
     private static void ConfigureWorkspaces(ModelBuilder b)
     {
         b.Entity<Workspace>().HasIndex(w => w.PublicId).IsUnique();
@@ -19,6 +22,11 @@ public partial class AppDbContext
         b.Entity<Workspace>().HasOne(w => w.Owner).WithMany().HasForeignKey(w => w.OwnerId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<Workspace>().HasOne(w => w.Repository).WithMany().HasForeignKey(w => w.RepositoryId).OnDelete(DeleteBehavior.Cascade);
         b.Entity<ProjectWorkspaceSettings>().HasOne<Project>().WithMany().HasForeignKey(s => s.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<WorkspaceSecret>().HasIndex(x => new { x.UserId, x.Name });
+        b.Entity<WorkspaceSecret>().HasIndex(x => new { x.RepositoryId, x.Name });
+        b.Entity<WorkspaceSecret>().HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<WorkspaceSecret>().HasOne<Repository>().WithMany().HasForeignKey(x => x.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+        b.Entity<UserWorkspaceSettings>().HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         ConfigureWorkspacePrebuilds(b);
     }
 

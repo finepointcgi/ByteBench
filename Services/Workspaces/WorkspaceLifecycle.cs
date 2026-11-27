@@ -26,10 +26,17 @@ public sealed class WorkspaceAudit(IServiceScopeFactory scopes)
 /// separate helper, only then are credentials and the repository put in, and the IDE starts last.
 /// </summary>
 public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
-    IOptionsMonitor<WorkspaceOptions> options, WorkspaceAudit audit, WorkspaceUrls urls, IServer server, ILogger<WorkspaceLifecycle> log)
+    IOptionsMonitor<WorkspaceOptions> options, WorkspaceAudit audit, WorkspaceUrls urls, IServer server, WorkspaceImage image, WorkspaceSecretStore secretStore,
+    SubmoduleResolver submodules, WorkspaceTasks tasks, Api.PublicBaseUrl publicBase, ILogger<WorkspaceLifecycle> log)
 {
-    public const int IdePort = 3000;
+    /// <summary>The IDE's port inside the container. Deliberately unusual: 3000, 5000 and 8080 are what the apps people run there want.</summary>
+    public const int IdePort = 13370;
     public const string WorkspaceRoot = "/workspace";
+    public const string CacheRoot = "/home/coder/.bbcache";
+
+    /// <summary>The names of a workspace's two volumes: the project (<c>/workspace</c>) and the dependency caches.</summary>
+    public static (string Work, string Cache) VolumeNames(string publicId) =>
+        ($"bb-wsv-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{publicId}-work", $"bb-wsv-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{publicId}-cache");
 
     private WorkspaceOptions Opts => options.CurrentValue;
 
@@ -65,19 +72,37 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
     // ---------- start ----------
 
     /// <summary>Provisions a workspace row created by <see cref="WorkspaceService"/>: container, network policy, checkout, IDE. Never throws; failures are recorded.</summary>
-    public async Task ProvisionAsync(int workspaceId, string gitToken, string connectionToken)
+    public async Task ProvisionAsync(int workspaceId, string gitToken, string connectionToken, WorkspaceProvisionPlan plan, bool resume = false)
     {
         var gate = runtime.LockFor(workspaceId);
         await gate.WaitAsync();
         string? containerId = null;
+        WorkspaceSession? session = null;
+        var phase = "starting";
         try
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             var ws = await db.Workspaces.Include(w => w.Owner).Include(w => w.Repository).ThenInclude(r => r.Project).FirstOrDefaultAsync(w => w.Id == workspaceId);
             if (ws == null || ws.State != WorkspaceState.Starting) return;
             var o = Opts;
-            using var timeout = runtime.BeginProvisioning(workspaceId, TimeSpan.FromSeconds(Math.Max(30, o.StartupTimeoutSeconds)));
-            var ct = timeout.Token;
+            session = runtime.ResetSession(workspaceId);
+            session.Env = plan.Env;
+            session.EnvErrors = plan.EnvErrors;
+            foreach (var w in plan.Warnings) session.Warn(w);
+            var plog = session.ProvisionLog;
+            plog.Append(resume ? "Resuming the workspace with its saved files and dependencies…" : "Starting the workspace…");
+
+            // One cancellation scope for the whole start (a stop request cancels it); the startup time limit begins after the image exists,
+            // because building a toolchain image the first time can take many minutes.
+            using var timeout = runtime.BeginProvisioning(workspaceId, TimeSpan.FromMinutes(60));
+            phase = "preparing the image";
+            if (plan.BaseImage != null) await image.EnsureDerivedAsync(plan.Image, plan.BaseImage, plog.Append, timeout.Token);
+            else if (!await backend.ImageExistsAsync(plan.Image, timeout.Token)) await image.EnsureAsync(timeout.Token);
+            // Each step has its own time limit inside the overall (cancellable) scope: a first checkout with submodules is allowed far longer than the container start.
+            var startupSeconds = Math.Max(30, o.StartupTimeoutSeconds);
+            CancellationTokenSource Step(int seconds) { var c = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token); c.CancelAfter(TimeSpan.FromSeconds(seconds)); return c; }
+            using var startup = Step(startupSeconds);
+            var ct = startup.Token;
 
             var env = new Dictionary<string, string>
             {
@@ -86,17 +111,35 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             };
             if (urls.Mode == WorkspaceOriginMode.SharedPath) env["BB_IDE_BASE_PATH"] = $"/_ws/{ws.PublicId}/ide";
             var name = $"bb-ws-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{ws.PublicId[..10]}";
-            var alloc = await db.WorkspaceAllocations.FirstOrDefaultAsync(a => a.WorkspaceId == ws.Id, ct);
-            if (alloc?.PrebuildId != null && ws.Image != o.Image && !await backend.ImageExistsAsync(ws.Image, ct))
+            WorkspaceAllocation? alloc = null;
+            var fromPrebuild = false;
+            var (workVolume, cacheVolume) = VolumeNames(ws.PublicId);
+            phase = "creating the volumes";
+            await backend.CreateVolumeAsync(workVolume, ws.Id, ct);
+            await backend.CreateVolumeAsync(cacheVolume, ws.Id, ct);
+            ws.VolumesKept = true;
+            // A new workspace on a branch with a usable prebuild starts from its image (the volumes are then seeded from it); a resume never does: its own volumes win.
+            alloc = await db.WorkspaceAllocations.FirstOrDefaultAsync(a => a.WorkspaceId == ws.Id, ct);
+            if (!resume && alloc?.PrebuildId != null && ws.Image != plan.Image)
             {
-                // The prebuilt image went away between the start request and now: a normal start, never a failed one.
-                log.LogInformation("Workspace {Id}: prebuild image {Image} is gone, starting from the base image", ws.PublicId, ws.Image);
-                ws.Image = o.Image;
-                alloc.PrebuildId = null;
-                await db.SaveChangesAsync(CancellationToken.None);
+                if (await backend.ImageExistsAsync(ws.Image, ct)) { fromPrebuild = true; plog.Append("Starting from a prebuild: the repository is already cloned and its setup has run."); }
+                else
+                {
+                    // The prebuilt image went away between the start request and now: a normal start, never a failed one.
+                    log.LogInformation("Workspace {Id}: prebuild image {Image} is gone, starting from the base image", ws.PublicId, ws.Image);
+                    ws.Image = plan.Image;
+                    alloc.PrebuildId = null;
+                }
             }
-            var limits = alloc is { CpuMillis: > 0 } ? new WorkspaceResources(alloc.CpuMillis, alloc.MemoryMb, alloc.DiskMb).ToLimits(o.PidsLimit) : new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit);
-            var container = await backend.StartAsync(new WorkspaceContainerSpec(ws.Id, name, ws.Image, o.Network, "host.docker.internal", IdePort, env, limits) { PublishIdePort = !UseRelay() }, ct);
+            else ws.Image = plan.Image;
+            ws.EnvironmentSummary = plan.Summary;
+            await db.SaveChangesAsync(CancellationToken.None);
+
+            phase = "starting the container";
+            plog.Append($"Starting the container from {plan.Image}…");
+            var container = await backend.StartAsync(new WorkspaceContainerSpec(ws.Id, name, ws.Image, o.Network, "host.docker.internal", IdePort, env,
+                alloc is { CpuMillis: > 0 } ? new WorkspaceResources(alloc.CpuMillis, alloc.MemoryMb, alloc.DiskMb).ToLimits(o.PidsLimit) : new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit))
+            { PublishIdePort = !UseRelay(), Mounts = [new(workVolume, WorkspaceRoot), new(cacheVolume, CacheRoot)] }, ct);
             containerId = container.ContainerId;
             ws.ContainerId = containerId;
             ws.ContainerName = name;
@@ -105,10 +148,27 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             if (!container.DiskLimitApplied) log.LogWarning("Workspace {Id} runs without a disk limit (Docker refused --storage-opt)", ws.PublicId);
 
             await backend.WaitUntilWaitingAsync(containerId, ct);
-            await ApplyEgressAsync(containerId, ws.Image, ws.EgressMode, ct);
-            await CheckOutAsync(ws, containerId, gitToken, alloc?.PrebuildId != null, ct);
-            await WriteTokenAndStartAsync(containerId, connectionToken, ct);
-            await WaitHealthyAsync(containerId, ct);
+            phase = "starting the services";
+            List<SidecarAddress> allow;
+            using (var services = Step(startupSeconds + 600))
+            {
+                allow = await StartServicesAsync(ws, containerId, plan.Env, session, services.Token);
+                session.EgressAllow = allow.Select(a => $"{a.Ip}:{a.Port}").ToList();
+                phase = "applying the network policy";
+                await ApplyEgressAsync(containerId, ws.Image, ws.EgressMode, services.Token, allow.Select(a => $"{a.Ip}:{a.Port}").ToList());
+                phase = "waiting for the services";
+                await WaitForServicesAsync(containerId, allow, session, services.Token);
+            }
+
+            phase = "checking out the repository";
+            using (var checkout = Step(20 * 60)) await CheckOutAsync(ws, containerId, gitToken, plan, session, fromPrebuild, checkout.Token);
+            phase = "preparing the environment";
+            using (var prep = Step(120)) await WriteEnvironmentAsync(ws, containerId, plan, session, prep.Token);
+            phase = "starting the IDE";
+            plog.Append("Starting the IDE…");
+            using var ide = Step(startupSeconds);
+            await WriteTokenAndStartAsync(containerId, connectionToken, ide.Token);
+            await WaitHealthyAsync(containerId, ide.Token);
 
             if (!await StillStartingAsync(db, ws)) { await RemoveQuietlyAsync(containerId); return; } // stopped while starting
 
@@ -117,15 +177,96 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             ws.LastActivityAt = DateTime.UtcNow;
             ws.ExpiresAt = DateTime.UtcNow.AddHours(Math.Max(1, o.MaxLifetimeHours));
             await db.SaveChangesAsync(CancellationToken.None);
-            runtime.Register(new LiveWorkspace(ws.Id, ws.PublicId, ws.OwnerId, containerId, container.IdeHostPort, IdePort, connectionToken));
-            await audit.RecordAsync("workspace.started", ws, ws.OwnerId, new { repository = $"{ws.Repository.Project.Key}/{ws.Repository.Slug}", @ref = ws.Ref, canPush = ws.CanPush, egress = ws.EgressMode, image = ws.Image, source = ws.Source });
+            var live = new LiveWorkspace(ws.Id, ws.PublicId, ws.OwnerId, containerId, container.IdeHostPort, IdePort, connectionToken);
+            runtime.Register(live);
+            plog.Append("The workspace is ready.");
+            await audit.RecordAsync(resume ? "workspace.resumed" : "workspace.started", ws, ws.OwnerId, new
+            {
+                repository = $"{ws.Repository.Project.Key}/{ws.Repository.Slug}", @ref = ws.Ref, canPush = ws.CanPush, egress = ws.EgressMode, image = ws.Image, source = ws.Source,
+                environment = plan.Summary, services = plan.Env.Services.Count, tasks = plan.Env.Tasks.Count,
+            });
+
+            // The repository's setup commands run now, in the background: the IDE is already usable and the output is on the page.
+            session.Setup = plan.Env.Setup.Count > 0 ? SetupState.Pending : SetupState.None;
+            if (plan.Env.Setup.Count > 0)
+                runtime.Track(Task.Run(() => tasks.RunSetupAsync(live, session, WorkDir(ws.Repository.Slug), session.Lifetime.Token)));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             log.LogWarning(ex, "Workspace {Id} failed to start", workspaceId);
-            await FailAsync(workspaceId, containerId, ex is OperationCanceledException ? "The workspace did not become ready in time." : Safe(ex.Message));
+            var message = ex is OperationCanceledException ? $"The workspace did not become ready in time (while {phase})." : Safe(ex.Message);
+            session?.ProvisionLog.Append("Failed: " + message);
+            await FailAsync(workspaceId, containerId, message, keepVolumes: resume);
         }
         finally { runtime.EndProvisioning(workspaceId); gate.Release(); }
+    }
+
+    /// <summary>A sidecar's address as the workspace's network policy needs it.</summary>
+    private sealed record SidecarAddress(string Name, string Ip, int Port);
+
+    /// <summary>
+    /// Starts the repository's <c>services:</c> on a private internal network (no way out), attaches the workspace to it, and returns the addresses
+    /// the network policy must keep reachable. The workspace reaches each service by its name.
+    /// </summary>
+    private async Task<List<SidecarAddress>> StartServicesAsync(Workspace ws, string containerId, WorkspaceEnvironment env, WorkspaceSession session, CancellationToken ct)
+    {
+        var addresses = new List<SidecarAddress>();
+        if (env.Services.Count == 0) return addresses;
+        var o = Opts;
+        var network = $"bb-wsn-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{ws.PublicId[..10]}";
+        session.ProvisionLog.Append("Creating the private network for the services…");
+        await backend.CreateInternalNetworkAsync(network, ws.Id, ct);
+        await backend.ConnectNetworkAsync(containerId, network, ct);
+        var index = 0;
+        foreach (var s in env.Services)
+        {
+            session.ProvisionLog.Append($"Starting service '{s.Name}' ({s.Image})…");
+            var sidecar = await backend.StartSidecarAsync(new WorkspaceSidecarSpec(ws.Id, $"bb-wss-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{ws.PublicId[..10]}-{index++}", s.Image, network, s.Name, s.Env,
+                new WorkspaceLimits("1g", o.Cpus, 512, null)), session.ProvisionLog.Append, ct);
+            foreach (var port in s.Ports) addresses.Add(new SidecarAddress(s.Name, sidecar.IpAddress, port));
+        }
+        return addresses;
+    }
+
+    /// <summary>Waits (from inside the workspace, through its own network policy) until every service port accepts connections; a service that never does fails the start with its last output.</summary>
+    private async Task WaitForServicesAsync(string containerId, List<SidecarAddress> services, WorkspaceSession session, CancellationToken ct)
+    {
+        var limit = Math.Max(5, Opts.ServiceStartTimeoutSeconds);
+        foreach (var s in services)
+        {
+            session.ProvisionLog.Append($"Waiting for {s.Name}:{s.Port}…");
+            var r = await backend.ExecAsync(containerId, new ExecSpec(["bash", "-c",
+                "for i in $(seq 1 \"$3\"); do if (exec 3<>\"/dev/tcp/$1/$2\") 2>/dev/null; then exit 0; fi; sleep 1; done; exit 1", "bash", s.Name, s.Port.ToString(), limit.ToString()])
+            { Timeout = TimeSpan.FromSeconds(limit + 10) }, ct);
+            if (!r.Ok) throw new InvalidOperationException($"Service '{s.Name}' did not accept connections on port {s.Port} within {limit} seconds.");
+        }
+    }
+
+    /// <summary>
+    /// Writes what the container needs before the IDE starts: the environment file (dependency cache locations, the repository's plain
+    /// variables, secrets; mode 600 in the developer's home, unreadable to the AI assistant's user), the shell hook, and the user's own
+    /// VS Code settings and shell snippet. Secret values only travel through stdin.
+    /// </summary>
+    private async Task WriteEnvironmentAsync(Workspace ws, string containerId, WorkspaceProvisionPlan plan, WorkspaceSession session, CancellationToken ct)
+    {
+        // Repository secrets reach only people who can push: a read-only visitor opening a workspace must not get them.
+        var secrets = await secretStore.ResolveAsync(ws.OwnerId, ws.RepositoryId, includeRepository: ws.CanPush, ct);
+        session.Redactor.SetValues(secrets.Values);
+        var file = WorkspaceTasks.BuildEnvFile(plan.Env.Env, secrets);
+        await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c", "umask 077; cat > \"$HOME/.bb-env\""]) { Stdin = file }, "storing the environment", ct);
+        if (secrets.Count > 0) session.ProvisionLog.Append($"Injected {secrets.Count} secret(s) as environment variables: {string.Join(", ", secrets.Keys.Order(StringComparer.Ordinal))}");
+        await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c",
+            "touch \"$HOME/.bashrc\"; grep -q bb-env \"$HOME/.bashrc\" || printf '%s\\n' \"$1\" >> \"$HOME/.bashrc\"", "sh",
+            "[ -f ~/.bb-env ] && . ~/.bb-env; [ -f ~/.bb-user-rc ] && . ~/.bb-user-rc  # ByteBench"]), "configuring the shell", ct);
+
+        UserWorkspaceSettings? prefs;
+        await using (var db = await dbFactory.CreateDbContextAsync(ct))
+            prefs = await db.UserWorkspaceSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == ws.OwnerId, ct);
+        if (!string.IsNullOrWhiteSpace(prefs?.ShellSnippet))
+            await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c", "umask 077; cat > \"$HOME/.bb-user-rc\""]) { Stdin = prefs!.ShellSnippet }, "applying your shell snippet", ct);
+        else await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", "rm -f \"$HOME/.bb-user-rc\""]), ct);
+        if (!string.IsNullOrWhiteSpace(prefs?.SettingsJson))
+            await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c", "d=\"$HOME/.openvscode-server/data/Machine\"; mkdir -p \"$d\" && cat > \"$d/settings.json\""]) { Stdin = prefs!.SettingsJson }, "applying your VS Code settings", ct);
     }
 
     private static async Task<bool> StillStartingAsync(AppDbContext db, Workspace ws)
@@ -134,10 +275,10 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         return ws.State == WorkspaceState.Starting;
     }
 
-    internal async Task ApplyEgressAsync(string containerId, string image, string mode, CancellationToken ct)
+    internal async Task ApplyEgressAsync(string containerId, string image, string mode, CancellationToken ct, IReadOnlyList<string>? extraAllow = null)
     {
         var git = GitBase();
-        var allow = new List<string>();
+        var allow = new List<string>(extraAllow ?? []);
         var ip = git.HostNameType == UriHostNameType.Dns ? await ResolveInContainerAsync(containerId, git.Host, ct) : git.Host;
         if (ip != null) allow.Add($"{ip}:{git.Port}");
         else if (mode != "open") throw new InvalidOperationException($"The container can't resolve ByteBench's git host '{git.Host}' (Workspaces:GitBaseUrl).");
@@ -151,29 +292,78 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         return r.Ok && System.Net.IPAddress.TryParse(first, out _) ? first : null;
     }
 
-    internal const string CloneScript = """
+    /// <summary>
+    /// Clones (or, when the workspace's volume already holds the checkout, fetches) and fetches submodules one by one, so a submodule that can't be
+    /// fetched is reported by name with the reason (<c>BB-WARN:</c> lines) while the rest and the workspace carry on. Only http(s) transports are
+    /// allowed (no file:// or ext:: submodules), every command is time-limited and never prompts. <c>$1</c> repository URL, <c>$2</c> directory,
+    /// <c>$3</c> ref, <c>$4</c> 1 to fetch submodules, <c>$5</c>/<c>$6</c> an optional URL prefix rewrite (the server's public address → the
+    /// address containers use), <c>$7</c> seconds per submodule. The credential is the git credential store's, which only answers for the server's own host.
+    /// </summary>
+    public const string CloneScript = """
         set -e
         umask 002
-        git clone --no-checkout -- "$1" "$2"
-        cd "$2"
-        if git show-ref --verify --quiet "refs/remotes/origin/$3"; then git checkout -q -B "$3" --track "origin/$3"; else git checkout -q --detach "$3"; fi
+        export GIT_ALLOW_PROTOCOL=http:https GIT_TERMINAL_PROMPT=0
+        if [ -n "$5" ]; then git config --global "url.$6.insteadOf" "$5"; fi
+        if [ -d "$2/.git" ]; then
+            cd "$2"
+            git fetch --quiet origin || echo "BB-WARN: could not fetch from the server; the workspace keeps its previous checkout."
+        else
+            git clone --no-checkout -- "$1" "$2"
+            cd "$2"
+            if git show-ref --verify --quiet "refs/remotes/origin/$3"; then git checkout -q -B "$3" --track "origin/$3"; else git checkout -q --detach "$3"; fi
+        fi
+        if [ "$4" = 1 ] && [ -f .gitmodules ]; then
+            git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r key path; do
+                [ -n "$path" ] || continue
+                echo "Fetching submodule $path…"
+                err=$(timeout "$7" git -c protocol.file.allow=never submodule update --init --recursive --force -- "$path" 2>&1) || {
+                    reason=$(printf '%s' "$err" | grep -v '^[[:space:]]*$' | tail -n 3 | tr '\n' ' ' | cut -c1-400)
+                    echo "BB-WARN: submodule '$path' could not be fetched: $reason"
+                }
+            done
+        fi
         """;
 
-    /// <summary>Brings the clone inside a prebuilt image up to the requested ref (untracked files such as installed dependencies stay).</summary>
-    private const string UpdatePrebuiltScript = """
+    /// <summary>
+    /// After <see cref="CloneScript"/> fetched into a volume that a prebuild seeded: puts the checkout on the requested ref (<c>$1</c> directory, <c>$2</c> ref,
+    /// <c>$3</c> 1 to update submodules). Only for a brand-new workspace, so nothing of the user's can be lost; untracked files (installed dependencies) stay.
+    /// </summary>
+    private const string CheckoutPrebuiltScript = """
         set -e
         umask 002
-        cd "$2"
-        git remote set-url origin "$1"
-        git fetch -q --prune --tags origin
+        export GIT_ALLOW_PROTOCOL=http:https GIT_TERMINAL_PROMPT=0
+        cd "$1"
         git reset -q --hard
-        if git show-ref --verify --quiet "refs/remotes/origin/$3"; then git checkout -q -B "$3" --track "origin/$3"; git reset -q --hard "origin/$3"; else git checkout -q --detach "$3"; fi
-        if [ -f .gitmodules ]; then git submodule update -q --init --recursive; fi
+        if git show-ref --verify --quiet "refs/remotes/origin/$2"; then git checkout -q -B "$2" --track "origin/$2"; git reset -q --hard "origin/$2"; else git checkout -q --detach "$2"; fi
+        if [ "$3" = 1 ] && [ -f .gitmodules ]; then git submodule update -q --init --recursive --force || echo "BB-WARN: submodules could not be updated"; fi
         """;
 
-    private async Task CheckOutAsync(Workspace ws, string containerId, string gitToken, bool fromPrebuild, CancellationToken ct)
+    /// <summary>Turns git's raw message about a failed submodule into something that says what to do.</summary>
+    internal static string FriendlySubmoduleWarning(string line)
+    {
+        // The start of the line names the submodule: keep it, drop the end if it is long (Safe keeps the end, which suits other messages).
+        var s = Regex.Replace(Regex.Replace(line.Replace("BB-WARN:", "").Trim(), @"gbw_[A-Za-z0-9_-]+", "gbw_…"), @"://[^/@\s]+:[^/@\s]+@", "://…@");
+        if (s.Length > 600) s = s[..600] + "…";
+        if (s.Contains("terminal prompts disabled", StringComparison.OrdinalIgnoreCase) || s.Contains("Authentication failed", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("could not read Username", StringComparison.OrdinalIgnoreCase) || s.Contains("could not read Password", StringComparison.OrdinalIgnoreCase))
+            s += " (it needs credentials: this workspace's token only works for this repository and the submodules on this server you can view; a private submodule on another host can't be fetched)";
+        else if (s.Contains("timed out", StringComparison.OrdinalIgnoreCase) || s.Contains("exit status 124", StringComparison.OrdinalIgnoreCase)) s += " (it took too long)";
+        return s;
+    }
+
+    private async Task CheckOutAsync(Workspace ws, string containerId, string gitToken, WorkspaceProvisionPlan plan, WorkspaceSession session, bool fromPrebuild, CancellationToken ct)
     {
         var git = GitBase();
+        var fetchSubmodules = plan.Env.Submodules;
+        if (fetchSubmodules && ws.CommitSha is { Length: > 0 } sha)
+        {
+            // The token is limited to this repository; submodules on this server need the same grant, read-only, and only if the owner can view them.
+            var resolution = await submodules.ResolveAsync(ws.Repository.Project.Key, ws.Repository.Slug, sha, ws.OwnerId, git, ct);
+            ws.SubmoduleRepoIdsJson = JsonSerializer.Serialize(resolution.RepositoryIds);
+            foreach (var n in resolution.Notes) session.Warn(n);
+            await using var db = await dbFactory.CreateDbContextAsync(CancellationToken.None);
+            await db.Workspaces.Where(w => w.Id == ws.Id).ExecuteUpdateAsync(s => s.SetProperty(w => w.SubmoduleRepoIdsJson, ws.SubmoduleRepoIdsJson), CancellationToken.None);
+        }
         var credential = $"{git.Scheme}://{Uri.EscapeDataString(ws.Owner.UserName!)}:{gitToken}@{git.Authority}\n";
         // The token goes through stdin into a mode-600 file the developer's user owns; the AI assistant's user can't read it.
         await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c", "umask 077; cat > \"$HOME/.git-credentials\""]) { Stdin = credential }, "storing the git credential", ct);
@@ -187,25 +377,40 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             await RunOrThrowAsync(containerId, new ExecSpec(args), "configuring git", ct);
 
         var repoUrl = new Uri(git, $"git/{ws.Repository.Project.Key}/{ws.Repository.Slug}.git").ToString();
-        var gitEnv = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
-        if (fromPrebuild)
+        // URLs that name this server by its public address are rewritten to the address containers reach it on (a prefix rewrite: no credential involved).
+        string rewriteFrom = "", rewriteTo = "";
+        if (publicBase.Value is { Length: > 0 } pub && Uri.TryCreate(pub, UriKind.Absolute, out var pubUri) && !string.Equals(pubUri.Authority, git.Authority, StringComparison.OrdinalIgnoreCase))
         {
-            // The image already holds a clone with its setup done (a prebuild): bring it up to date. If that fails for any reason, start over with a clean clone.
-            var update = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", UpdatePrebuiltScript, "sh", repoUrl, WorkDir(ws.Repository.Slug), ws.Ref])
-            { WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(5), MaxOutputBytes = 16 * 1024, Env = gitEnv }, ct);
-            if (!update.Ok)
+            rewriteFrom = pub.TrimEnd('/') + "/git/";
+            rewriteTo = new Uri(git, "git/").ToString();
+        }
+        var perSubmodule = Math.Max(10, Opts.SubmoduleTimeoutSeconds);
+        session.ProvisionLog.Append($"Checking out {ws.Ref}{(fetchSubmodules ? " (with submodules)" : "")}…");
+        async Task<ExecResult> RunCloneAsync() => await backend.ExecStreamAsync(containerId, new ExecSpec(["sh", "-c", CloneScript, "sh", repoUrl, WorkDir(ws.Repository.Slug), ws.Ref, fetchSubmodules ? "1" : "0",
+            rewriteFrom, rewriteTo, perSubmodule.ToString()])
+        {
+            WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(perSubmodule * 8), MaxOutputBytes = 16 * 1024,
+            Env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" },
+        }, line =>
+        {
+            if (line.StartsWith("BB-WARN:", StringComparison.Ordinal)) { var w = FriendlySubmoduleWarning(line); session.Warn(w); session.ProvisionLog.Append("Warning: " + w); }
+            else session.ProvisionLog.Append(Safe(line));
+        }, ct);
+        var clone = await RunCloneAsync();
+        if (clone.Ok && fromPrebuild)
+        {
+            // The volume was seeded from a prebuild (a clone with its setup done): move it to the requested ref. If that fails, throw it away and clone afresh.
+            var move = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", CheckoutPrebuiltScript, "sh", WorkDir(ws.Repository.Slug), ws.Ref, fetchSubmodules ? "1" : "0"])
+            { WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(5), MaxOutputBytes = 16 * 1024, Env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" } }, ct);
+            if (!move.Ok)
             {
-                log.LogWarning("Workspace {Id}: updating the prebuilt checkout failed ({Output}); cloning afresh", ws.PublicId, Safe(update.Output));
-                await backend.ExecAsync(containerId, new ExecSpec(["rm", "-rf", WorkDir(ws.Repository.Slug)]) { Timeout = TimeSpan.FromMinutes(2) }, ct);
-                fromPrebuild = false;
+                log.LogWarning("Workspace {Id}: moving the prebuilt checkout to {Ref} failed ({Output}); cloning afresh", ws.PublicId, ws.Ref, Safe(move.Output));
+                session.ProvisionLog.Append("The prebuilt checkout could not be brought up to date; cloning afresh…");
+                await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", "rm -rf \"$1\" /workspace/.bb", "sh", WorkDir(ws.Repository.Slug)]) { Timeout = TimeSpan.FromMinutes(2) }, ct);
+                clone = await RunCloneAsync();
             }
         }
-        if (!fromPrebuild)
-        {
-            var clone = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", CloneScript, "sh", repoUrl, WorkDir(ws.Repository.Slug), ws.Ref])
-            { WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(5), MaxOutputBytes = 16 * 1024, Env = gitEnv }, ct);
-            if (!clone.Ok) throw new InvalidOperationException("Checking out the repository failed: " + Safe(clone.Output));
-        }
+        if (!clone.Ok) throw new InvalidOperationException("Checking out the repository failed: " + Safe(clone.Output.Replace("BB-WARN:", "")));
         ws.CommitSha = null;
         var head = await backend.ExecAsync(containerId, new ExecSpec(["git", "-C", WorkDir(ws.Repository.Slug), "rev-parse", "HEAD"]), ct);
         if (head.Ok && head.Output.Trim().Length == 40) ws.CommitSha = head.Output.Trim();
@@ -248,9 +453,11 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             runtime.Forget(workspaceId); // sessions are dropped, the IDE reconnects through a fresh ticket
             try
             {
+                var session = runtime.Session(workspaceId);
+                session.CancelAllTasks(); // the container's processes end with the restart
                 var container = await backend.RestartAsync(containerId, IdePort, ct);
                 await backend.WaitUntilWaitingAsync(containerId, ct);
-                await ApplyEgressAsync(containerId, ws.Image, ws.EgressMode, ct);
+                await ApplyEgressAsync(containerId, ws.Image, ws.EgressMode, ct, session.EgressAllow);
                 await WriteTokenAndStartAsync(containerId, live.ConnectionToken, ct);
                 await WaitHealthyAsync(containerId, ct);
                 ws.PortMapJson = JsonSerializer.Serialize(new Dictionary<string, int> { [IdePort.ToString()] = container.IdeHostPort });
@@ -263,7 +470,7 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 log.LogWarning(ex, "Workspace {Id} failed to restart", ws.PublicId);
-                await FailAsync(workspaceId, containerId, ex is OperationCanceledException ? "The workspace did not come back in time." : Safe(ex.Message));
+                await FailAsync(workspaceId, containerId, ex is OperationCanceledException ? "The workspace did not come back in time." : Safe(ex.Message), keepVolumes: true);
             }
         }
         finally { gate.Release(); }
@@ -288,8 +495,10 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         {
             await db.Entry(ws).ReloadAsync();
             if (ws.State is WorkspaceState.Stopped or WorkspaceState.Failed) return;
+            runtime.FindSession(workspaceId)?.Shutdown();
             if (ws.ContainerId != null) await RemoveQuietlyAsync(ws.ContainerId);
-            ws.State = WorkspaceState.Stopped;
+            await RemoveAuxiliaryQuietlyAsync(workspaceId);
+            ws.State = WorkspaceState.Stopped; // the volumes stay (Resume, or Delete / the retention period removes them)
             ws.StoppedAt = DateTime.UtcNow;
             ws.StopReason = reason.Length > 100 ? reason[..100] : reason;
             await db.SaveChangesAsync(CancellationToken.None);
@@ -298,10 +507,12 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         finally { gate.Release(); runtime.DropLock(workspaceId); }
     }
 
-    private async Task FailAsync(int workspaceId, string? containerId, string error)
+    private async Task FailAsync(int workspaceId, string? containerId, string error, bool keepVolumes = false)
     {
         runtime.Forget(workspaceId);
+        runtime.FindSession(workspaceId)?.Shutdown();
         if (containerId != null) await RemoveQuietlyAsync(containerId);
+        await RemoveAuxiliaryQuietlyAsync(workspaceId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var ws = await db.Workspaces.Include(w => w.Repository).ThenInclude(r => r.Project).FirstOrDefaultAsync(w => w.Id == workspaceId);
         if (ws == null || ws.State is WorkspaceState.Stopped or WorkspaceState.Failed or WorkspaceState.Stopping) return; // a stop in progress finishes the job
@@ -309,8 +520,49 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         ws.GitTokenHash = null;
         ws.StoppedAt = DateTime.UtcNow;
         ws.Error = error.Length > 500 ? error[..500] : error;
+        // A start that never got going leaves nothing worth keeping; a workspace that had been used keeps its files so it can be resumed.
+        if (!keepVolumes && ws.VolumesKept) { await RemoveVolumesQuietlyAsync(ws.PublicId); ws.VolumesKept = false; }
         await db.SaveChangesAsync(CancellationToken.None);
         await audit.RecordAsync("workspace.failed", ws, null, new { error = ws.Error, repository = $"{ws.Repository.Project.Key}/{ws.Repository.Slug}" });
+    }
+
+    private async Task RemoveAuxiliaryQuietlyAsync(int workspaceId)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            await backend.RemoveAuxiliaryAsync(workspaceId, cts.Token);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogWarning(ex, "Could not remove the services of workspace {Id}", workspaceId); }
+    }
+
+    public async Task RemoveVolumesQuietlyAsync(string publicId)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var (work, cache) = VolumeNames(publicId);
+            await backend.RemoveVolumesAsync([work, cache], cts.Token);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogWarning(ex, "Could not remove the volumes of workspace {Id}", publicId); }
+    }
+
+    /// <summary>
+    /// Deletes a workspace for good: stops it if it runs, removes its project and cache volumes and its row (the audit trail stays).
+    /// Idempotent.
+    /// </summary>
+    public async Task DeleteAsync(int workspaceId, int? actorId)
+    {
+        await StopAsync(workspaceId, "deleted", actorId);
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var ws = await db.Workspaces.Include(w => w.Repository).ThenInclude(r => r.Project).FirstOrDefaultAsync(w => w.Id == workspaceId);
+        if (ws == null) return;
+        if (ws.IsLive) throw new InvalidOperationException("The workspace is still stopping; try again in a moment.");
+        await RemoveVolumesQuietlyAsync(ws.PublicId);
+        db.Workspaces.Remove(ws);
+        await db.SaveChangesAsync(CancellationToken.None);
+        runtime.DropSession(workspaceId);
+        await audit.RecordAsync("workspace.deleted", ws, actorId, new { repository = $"{ws.Repository.Project.Key}/{ws.Repository.Slug}" });
     }
 
     private async Task RemoveQuietlyAsync(string containerId)

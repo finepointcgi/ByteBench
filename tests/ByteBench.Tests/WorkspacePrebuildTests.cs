@@ -15,28 +15,43 @@ namespace ByteBench.Tests;
 
 public class PrebuildConfigTests
 {
-    [Fact]
-    public void A_single_command_and_a_list_both_work_and_submodules_default_on()
+    private static WorkspaceProvisionPlan Plan(string yaml, bool allowImages = false)
     {
-        var one = PrebuildConfigReader.Parse("setup: npm ci").Config!;
-        Assert.Equal(["npm ci"], one.Setup);
-        Assert.True(one.Submodules);
-        var many = PrebuildConfigReader.Parse("setup:\n  - npm ci\n  - make\nprebuild:\n  submodules: false\n").Config!;
-        Assert.Equal(["npm ci", "make"], many.Setup);
-        Assert.False(many.Submodules);
-        Assert.NotEqual(one.Hash, many.Hash);
-        Assert.Equal(one.Hash, PrebuildConfigReader.Parse("# a comment\nsetup:   npm ci\nimage: ignored\n").Config!.Hash); // only what a prebuild runs counts
+        var result = WorkspaceEnvFile.Parse(WorkspaceEnvFile.Path, yaml);
+        return WorkspacePlanner.Build(new WorkspaceEnvLoad(result, null, null), new WorkspaceImage(new FakeWorkspaceBackend(), new StaticOptions(new WorkspaceOptions { Image = "base:1" }), new FakeHost(), Microsoft.Extensions.Logging.Abstractions.NullLogger<WorkspaceImage>.Instance), allowImages);
     }
 
     [Fact]
-    public void An_empty_file_is_a_clone_only_prebuild_and_bad_files_say_why()
+    public void The_hash_covers_the_image_the_setup_commands_and_submodules_and_nothing_else()
     {
-        Assert.Empty(PrebuildConfigReader.Parse("").Config!.Setup);
-        Assert.Contains("must be a mapping", PrebuildConfigReader.Parse("- a\n- b").Error);
-        Assert.Contains("setup must be", PrebuildConfigReader.Parse("setup: {a: 1}").Error);
-        Assert.Contains("isn't valid YAML", PrebuildConfigReader.Parse("setup: [unclosed").Error);
-        Assert.Contains("at most", PrebuildConfigReader.Parse("setup:\n" + string.Concat(Enumerable.Range(0, 51).Select(i => $"  - echo {i}\n"))).Error);
-        Assert.Contains("submodules", PrebuildConfigReader.Parse("prebuild:\n  submodules: maybe").Error);
+        var one = WorkspacePrebuildService.HashOf(Plan("setup:\n  - npm ci\n"));
+        Assert.Equal(one, WorkspacePrebuildService.HashOf(Plan("# comment\nsetup:\n  - npm ci\nports: [3000]\nenv: {A: b}\ntasks:\n  dev: npm start\n"))); // tasks, ports, variables don't matter
+        Assert.NotEqual(one, WorkspacePrebuildService.HashOf(Plan("setup:\n  - npm ci\n  - make\n")));
+        Assert.NotEqual(one, WorkspacePrebuildService.HashOf(Plan("setup:\n  - npm ci\nsubmodules: false\n")));
+        Assert.NotEqual(one, WorkspacePrebuildService.HashOf(Plan("toolchain: node@22\nsetup:\n  - npm ci\n"))); // another image
+    }
+
+    [Fact]
+    public void Services_are_not_part_of_a_prebuild()
+    {
+        var plain = WorkspacePrebuildService.HashOf(Plan("setup:\n  - make\n"));
+        var withService = WorkspacePrebuildService.HashOf(Plan("setup:\n  - make\nservices:\n  db:\n    image: postgres:16\n    ports: [5432]\n"));
+        Assert.Equal(plain, withService);
+    }
+
+    private sealed class StaticOptions(WorkspaceOptions value) : Microsoft.Extensions.Options.IOptionsMonitor<WorkspaceOptions>
+    {
+        public WorkspaceOptions CurrentValue => value;
+        public WorkspaceOptions Get(string? name) => value;
+        public IDisposable? OnChange(Action<WorkspaceOptions, string?> listener) => null;
+    }
+
+    private sealed class FakeHost : Microsoft.Extensions.Hosting.IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Test";
+        public string ApplicationName { get; set; } = "t";
+        public string ContentRootPath { get; set; } = "/nonexistent";
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
     }
 
     [Theory]
@@ -106,6 +121,7 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
         Assert.Null(pb.GitTokenHash);
         Assert.Contains("npm ci", pb.Log);
         Assert.Contains("make build", pb.Log);
+        Assert.Contains(ExecsOf(BuildContainerOf(pb)), e => e.Spec.Command.Contains(WorkspaceTasks.SetupMarker)); // so the workspace finds its setup up to date
         Assert.Contains(pb.ImageTag!, app.Backend.PrebuildImages.Keys);
         var container = BuildContainerOf(pb);
         Assert.Contains(container, app.Backend.Removed); // the build container is gone, the snapshot stays
@@ -118,8 +134,8 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
         await using var db = app.Db();
         Assert.Equal(pb.Id, (await db.WorkspaceAllocations.FirstAsync(a => a.WorkspaceId == ws.Id)).PrebuildId);
         var execs = ExecsOf(ws.ContainerId!);
-        Assert.Contains(execs, e => e.Spec.Command.Any(a => a.Contains("git fetch -q --prune")));  // brought up to date …
-        Assert.DoesNotContain(execs, e => e.Spec.Command.Any(a => a.Contains("git clone"))); // … not cloned again
+        Assert.Contains(execs, e => e.Spec.Command.Any(a => a.Contains("git reset -q --hard"))); // the seeded checkout is moved to the requested ref
+        Assert.Contains(execs, e => e.Spec.Command.Any(a => a.Contains("--no-checkout"))); // (the normal clone script runs first: it only fetches into an existing checkout)
         Assert.Contains(app.Backend.Ready, id => id == ws.ContainerId);
     }
 
@@ -144,7 +160,7 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
         Assert.Contains(scrubs, i => i > credentialWritten && i < firstSetup); // deleted before the repository's commands run
         Assert.Contains(scrubs, i => i > lastSetup); // and again before the snapshot
         Assert.Equal(execs.Count - 1, scrubs.Max()); // the last thing done in the container before the snapshot
-        Assert.All(execs.Skip(firstSetup), e => { Assert.Null(e.Spec.Stdin); Assert.DoesNotContain("gbw_", string.Join(' ', e.Spec.Command)); Assert.True(e.Spec.Env == null || e.Spec.Env.Count == 0); });
+        Assert.All(execs.Skip(firstSetup), e => { Assert.Null(e.Spec.Stdin); Assert.DoesNotContain("gbw_", string.Join(' ', e.Spec.Command)); Assert.All(e.Spec.Env?.Keys ?? [], k => Assert.Contains(k, WorkspaceTasks.CacheEnvironment.Keys)); }); // only dependency-cache locations
         Assert.DoesNotContain("gbw_", pb.Log);
         var token = Regex.Match(execs[credentialWritten].Spec.Stdin!, "gbw_[A-Za-z0-9_-]+").Value;
         Assert.DoesNotContain(token, pb.Log);
@@ -271,7 +287,7 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
         await PushAsync(broken, "main");
         var pb = Assert.Single(await PrebuildsAsync(broken));
         Assert.Equal(PrebuildState.Failed, pb.State);
-        Assert.Contains("setup must be", pb.Error);
+        Assert.Contains("environment file has problems", pb.Error);
         Assert.DoesNotContain(app.Backend.Started, s => s.WorkspaceId == -pb.Id); // no container for a file that can't be read
 
         var (nodocker, _) = await RepoAsync();
@@ -327,13 +343,59 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
             id = ws.Id;
         }
         app.Backend.PrebuildImages.TryRemove(pb.ImageTag!, out _); // removed after the start request chose it
-        await app.Services.GetRequiredService<WorkspaceLifecycle>().ProvisionAsync(id, gitToken, WorkspaceTokens.NewConnectionToken());
+        var plan = WorkspacePlanner.Build(new WorkspaceEnvLoad(null, null, null), app.Services.GetRequiredService<WorkspaceImage>(), false);
+        await app.Services.GetRequiredService<WorkspaceLifecycle>().ProvisionAsync(id, gitToken, WorkspaceTokens.NewConnectionToken(), plan);
         await using var check = app.Db();
         var after = await check.Workspaces.AsNoTracking().FirstAsync(w => w.Id == id);
         Assert.Equal(WorkspaceState.Running, after.State);
         Assert.Equal("test-image:1", after.Image);
         Assert.Null((await check.WorkspaceAllocations.AsNoTracking().FirstAsync(a => a.WorkspaceId == id)).PrebuildId);
         Assert.Contains(ExecsOf(after.ContainerId!), e => e.Spec.Command.Any(a => a.Contains("git clone")));
+    }
+
+    [Fact]
+    public async Task Resuming_a_stopped_workspace_uses_its_own_volumes_never_a_newer_prebuild()
+    {
+        var (repo, dev) = await RepoAsync();
+        await PushAsync(repo, "main");
+        var first = Assert.Single(await PrebuildsAsync(repo));
+        var ws = await app.StartAsync(dev, repo);
+        Assert.Equal(first.ImageTag, ws.Image);
+        await using (var s = app.Scope(app.UserId(dev))) await s.Get<WorkspaceService>().StopAsync(ws.PublicId, app.UserId(dev));
+        await using (var s = app.Scope(app.UserId("alice"))) await s.Get<WorkspacePrebuildManager>().RebuildAsync(app.ProjectKey(repo.ProjectId), repo.Slug, null, app.UserId("alice"));
+        await Service.WhenIdleAsync();
+        Assert.Equal(2, (await PrebuildsAsync(repo)).Count);
+
+        await using (var s = app.Scope(app.UserId(dev))) await s.Get<WorkspaceService>().ResumeAsync(ws.PublicId, app.UserId(dev));
+        await app.WhenIdleAsync();
+        var resumed = await app.ReloadAsync(ws.PublicId);
+        Assert.Equal(WorkspaceState.Running, resumed.State);
+        Assert.Equal("test-image:1", resumed.Image); // the base image over its existing volumes
+        Assert.DoesNotContain(ExecsOf(resumed.ContainerId!), e => e.Spec.Command.Any(a => a.Contains("git reset -q --hard"))); // nothing was moved or reset under the user's work
+    }
+
+    [Fact]
+    public async Task A_toolchain_prebuild_is_built_on_the_toolchain_image_and_only_used_for_it()
+    {
+        var (repo, dev) = await RepoAsync("toolchain: node@22\nsetup:\n  - npm ci\n");
+        await PushAsync(repo, "main");
+        var pb = Assert.Single(await PrebuildsAsync(repo));
+        Assert.Equal(PrebuildState.Ready, pb.State);
+        Assert.NotEqual("test-image:1", pb.BaseImage);
+        Assert.Contains(app.Backend.Started, s => s.WorkspaceId == -pb.Id && s.Image == pb.BaseImage);
+        Assert.Equal(pb.ImageTag, await ImageOfNewWorkspaceAsync(dev, repo));
+        app.Commit(repo, "main", ".bytebench/workspace.yml", "toolchain: node@20\nsetup:\n  - npm ci\n");
+        Assert.NotEqual(pb.ImageTag, await ImageOfNewWorkspaceAsync(dev, repo)); // another toolchain: not this prebuild
+    }
+
+    [Fact]
+    public async Task Services_are_not_started_for_a_prebuild()
+    {
+        var (repo, _) = await RepoAsync("setup:\n  - make\nservices:\n  db:\n    image: postgres:16\n    ports: [5432]\n");
+        var sidecarsBefore = app.Backend.Sidecars.Count;
+        await PushAsync(repo, "main");
+        Assert.Equal(PrebuildState.Ready, Assert.Single(await PrebuildsAsync(repo)).State);
+        Assert.Equal(sidecarsBefore, app.Backend.Sidecars.Count);
     }
 
     [Fact]

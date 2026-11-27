@@ -53,6 +53,39 @@ else
         <MudText Typo="Typo.body2" Class="mud-text-secondary">On by default once Docker is reachable; each project can also switch them off. Turning this off stops new workspaces; running ones keep going until you stop them.</MudText>
         <MudSwitch T="bool" Value="aiEnabled" ValueChanged="SetAi" Color="Color.Primary" Label="AI assistant in workspaces" data-testid="ws-ai-switch" />
         <MudText Typo="Typo.body2" Class="mud-text-secondary">Needs the Anthropic API (see AI). Per-user rate limit: @o.Ai.RequestsPerMinute requests per minute.</MudText>
+        <MudSwitch T="bool" Value="customImages" ValueChanged="SetCustomImages" Color="Color.Warning" Label="Let repositories choose their own base image" data-testid="ws-custom-images-switch" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            Off by default. Repositories can always pick a toolchain from the curated list (@string.Join(", ", WorkspaceToolchains.All.Select(t => t.Id + "@" + t.Version))); the images are built here from a pinned base. With this on,
+            <code>image:</code> in <code>.bytebench/workspace.yml</code> may name any public Debian/Ubuntu-based image, which is pulled and built into a workspace image (its build steps run on this server's Docker). A repository's own Dockerfile is never built.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+        <div class="d-flex align-center mb-2">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2">Disk use</MudText>
+            <span class="flex-grow-1"></span>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="LoadDisk" Disabled="diskLoading" data-testid="ws-disk-refresh">@(diskLoading ? "Measuring…" : "Refresh")</MudButton>
+        </div>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
+            Each workspace keeps a project volume and a dependency-cache volume that outlive its container; they are deleted @o.VolumeRetentionDays days after the workspace stopped, or when its owner deletes it.
+            Volumes that belong to no workspace are removed by the reaper.
+        </MudText>
+        @if (disk == null) { <MudText Typo="Typo.body2">Not measured yet.</MudText> }
+        else if (disk.Count == 0) { <MudText Typo="Typo.body2">No workspace volumes.</MudText> }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mb-1" data-testid="ws-disk-total">Total: @FormatBytes(disk.Where(d => d.SizeBytes > 0).Sum(d => d.SizeBytes)) in @disk.Count volume(s)</MudText>
+            <MudSimpleTable Dense="true" Elevation="0" data-testid="ws-disk-table">
+                <thead><tr><th>Volume</th><th>Owner</th><th>Repository</th><th>State</th><th>Size</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var d in disk)
+                {
+                    <tr><td class="mono" style="font-size:12px">@d.Name</td><td>@d.Owner</td><td>@d.Repository</td><td>@d.State</td><td>@(d.SizeBytes >= 0 ? FormatBytes(d.SizeBytes) : "?")</td>
+                        <td>@if (d.WorkspaceId != null && items?.FirstOrDefault(i => i.Workspace.Id == d.WorkspaceId) is { } w && !w.Workspace.IsLive) { <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text" OnClick="() => DeleteFiles(w)">Delete</MudButton> }</td></tr>
+                }
+                </tbody>
+            </MudSimpleTable>
+        }
     </MudPaper>
 
     <WorkspaceLimitsAdmin />
@@ -86,8 +119,29 @@ else
 
 @code {
     private bool? docker;
-    private bool enabled, aiEnabled;
+    private bool enabled, aiEnabled, customImages, diskLoading;
     private List<WorkspaceInfo>? items;
+    private List<WorkspaceService.DiskUsage>? disk;
+
+    private static string FormatBytes(long b) => b < 1024 ? $"{b} B" : b < 1024 * 1024 ? $"{b / 1024.0:0.#} kB" : b < 1024L * 1024 * 1024 ? $"{b / 1048576.0:0.#} MB" : $"{b / 1073741824.0:0.##} GB";
+
+    private async Task LoadDisk()
+    {
+        diskLoading = true;
+        try { disk = await Workspaces.GetDiskUsageAsync(Me.Id); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Snackbar.Add("Could not read the volumes: " + ex.Message, Severity.Warning); }
+        finally { diskLoading = false; }
+    }
+
+    private async Task SetCustomImages(bool on) { await Workspaces.SetCustomImagesAllowedAsync(on, Me.Id); customImages = on; Snackbar.Add(on ? "Repositories may choose their base image." : "Repositories can only use the curated toolchains.", Severity.Success); }
+
+    private async Task DeleteFiles(WorkspaceInfo w)
+    {
+        if (await Dialogs.ShowMessageBoxAsync("Delete this workspace's files?", $"{w.OwnerName}'s workspace on {w.RepositoryPath} and its saved files and dependencies are deleted for good.", yesText: "Delete", cancelText: "Cancel") != true) return;
+        await Workspaces.AdminDeleteAsync(w.Workspace.PublicId, Me.Id);
+        await Load();
+        await LoadDisk();
+    }
     private PeriodicTimer? timer;
 
     private string ImageText() => Image.State switch
@@ -117,6 +171,7 @@ else
         if (Me.User?.IsAdmin != true) return;
         await Load();
         _ = Image.EnsureAsync();
+        _ = LoadDiskInBackground();
         timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
         _ = LoopAsync();
     }
@@ -126,6 +181,7 @@ else
         docker = await Backend.IsAvailableAsync();
         enabled = await Workspaces.IsEnabledAsync();
         aiEnabled = await Workspaces.IsAiEnabledSiteAsync();
+        customImages = await Workspaces.AreCustomImagesAllowedAsync();
         items = await Workspaces.ListAllAsync(Me.Id);
     }
 
@@ -137,6 +193,8 @@ else
         }
         catch (ObjectDisposedException) { }
     }
+
+    private async Task LoadDiskInBackground() { await LoadDisk(); await InvokeAsync(StateHasChanged); }
 
     private async Task Recheck() { await Image.EnsureAsync(); await Load(); }
 

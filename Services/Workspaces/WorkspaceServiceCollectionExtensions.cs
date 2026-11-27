@@ -1,4 +1,5 @@
 using ByteBench.Services.Git;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteBench.Services.Workspaces;
 
@@ -13,6 +14,12 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddSingleton<WorkspaceUrls>();
         services.AddSingleton<WorkspaceAudit>();
         services.AddSingleton<WorkspaceImage>();
+        services.AddSingleton<WorkspaceTasks>();
+        services.AddSingleton<WorkspaceSecretStore>();
+        services.AddSingleton<SubmoduleResolver>();
+        services.AddScoped<WorkspaceSecretService>();
+        services.AddScoped<UserWorkspaceSettingsService>();
+        services.TryAddSingleton<Api.PublicBaseUrl>();
         services.AddSingleton<WorkspaceLifecycle>();
         services.AddSingleton<WorkspaceReaper>();
         services.AddHostedService(sp => sp.GetRequiredService<WorkspaceReaper>());

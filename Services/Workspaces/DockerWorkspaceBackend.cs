@@ -16,6 +16,7 @@ namespace ByteBench.Services.Workspaces;
 public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> options, ILogger<DockerWorkspaceBackend> log) : IWorkspaceBackend
 {
     public const string IdLabel = "bytebench-workspace-id";
+    private const string SidecarLabel = "bytebench-workspace-sidecar=1";
     private static readonly string InstanceLabel = "bytebench-workspaces=" + CiDocker.InstanceKey;
 
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -55,8 +56,13 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         return code == 0;
     }
 
-    public Task<int> BuildImageAsync(string contextDir, string image, Action<string> onLine, CancellationToken ct) =>
-        RunStreamingAsync(["build", "--progress=plain", "-t", image, contextDir], onLine, ct);
+    public Task<int> BuildImageAsync(string contextDir, string image, Action<string> onLine, CancellationToken ct, IReadOnlyDictionary<string, string>? buildArgs = null)
+    {
+        var args = new List<string> { "build", "--progress=plain", "-t", image };
+        if (buildArgs != null) foreach (var (k, v) in buildArgs) args.AddRange(["--build-arg", $"{k}={v}"]);
+        args.Add(contextDir);
+        return RunStreamingAsync(args, onLine, ct);
+    }
 
     public Task<int> PullImageAsync(string image, Action<string> onLine, CancellationToken ct) => RunStreamingAsync(["pull", image], onLine, ct);
 
@@ -102,6 +108,7 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         if (!string.IsNullOrWhiteSpace(l.Cpus)) args.AddRange(["--cpus", l.Cpus]);
         if (withDiskLimit && !string.IsNullOrWhiteSpace(l.DiskLimit)) args.AddRange(["--storage-opt", "size=" + l.DiskLimit]);
         foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
+        foreach (var m in spec.Mounts) args.AddRange(["-v", $"{m.Volume}:{m.Target}"]);
         args.Add(spec.Image);
         return args;
     }
@@ -182,15 +189,8 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
 
     public async Task<ExecResult> ExecAsync(string containerId, ExecSpec spec, CancellationToken ct)
     {
-        var seconds = Math.Max(1, (int)Math.Ceiling(spec.Timeout.TotalSeconds));
-        var args = new List<string> { "exec" };
-        if (spec.Stdin != null) args.Add("-i");
-        args.AddRange(["-u", spec.User == "bbai" ? "1001:1000" : "1000:1000"]);
-        if (spec.WorkDir != null) args.AddRange(["-w", spec.WorkDir]);
-        if (spec.Env != null) foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
         // timeout(1) inside the container is what actually ends a runaway command; killing the docker CLI alone would leave it running.
-        args.AddRange([containerId, "timeout", "-k", "3", seconds.ToString(), .. spec.Command]);
-
+        var args = ExecArguments(containerId, spec);
         using var p = new Process { StartInfo = StartInfo(args, redirectInput: spec.Stdin != null) };
         p.Start();
         var buffer = new CappedBuffer(spec.MaxOutputBytes);
@@ -217,6 +217,53 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         await pumps;
         // timeout(1) exits 124 when it had to stop the command, 137 if it had to kill it.
         return new ExecResult(p.ExitCode, buffer.Text, p.ExitCode is 124 or 137, buffer.Truncated);
+    }
+
+    private static List<string> ExecArguments(string containerId, ExecSpec spec)
+    {
+        var seconds = Math.Max(1, (int)Math.Ceiling(spec.Timeout.TotalSeconds));
+        var args = new List<string> { "exec" };
+        if (spec.Stdin != null) args.Add("-i");
+        args.AddRange(["-u", spec.User == "bbai" ? "1001:1000" : "1000:1000"]);
+        if (spec.WorkDir != null) args.AddRange(["-w", spec.WorkDir]);
+        if (spec.Env != null) foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
+        args.AddRange([containerId, "timeout", "-k", "3", seconds.ToString(), .. spec.Command]);
+        return args;
+    }
+
+    public async Task<ExecResult> ExecStreamAsync(string containerId, ExecSpec spec, Action<string> onLine, CancellationToken ct)
+    {
+        using var p = new Process { StartInfo = StartInfo(ExecArguments(containerId, spec), redirectInput: spec.Stdin != null) };
+        p.Start();
+        var tail = new CappedBuffer(spec.MaxOutputBytes);
+        var pumps = Task.WhenAll(PumpLines(p.StandardOutput, onLine, tail), PumpLines(p.StandardError, onLine, tail));
+        if (spec.Stdin != null)
+        {
+            try { await p.StandardInput.BaseStream.WriteAsync(Encoding.UTF8.GetBytes(spec.Stdin), ct); p.StandardInput.Close(); }
+            catch (IOException) { }
+        }
+        using var hard = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        hard.CancelAfter(spec.Timeout + TimeSpan.FromSeconds(15));
+        try { await p.WaitForExitAsync(hard.Token); }
+        catch (OperationCanceledException)
+        {
+            try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            if (ct.IsCancellationRequested) throw;
+            await pumps;
+            return new ExecResult(124, tail.Text, TimedOut: true, tail.Truncated);
+        }
+        await pumps;
+        return new ExecResult(p.ExitCode, tail.Text, p.ExitCode is 124 or 137, tail.Truncated);
+    }
+
+    private static async Task PumpLines(StreamReader reader, Action<string> onLine, CappedBuffer tail)
+    {
+        string? line;
+        while ((line = await reader.ReadLineAsync()) != null)
+        {
+            tail.Write(Encoding.UTF8.GetBytes(line + "\n"));
+            onLine(line);
+        }
     }
 
     public async Task MarkReadyAsync(string containerId, CancellationToken ct)
@@ -292,6 +339,137 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
     {
         var (code, output) = await RunAsync(["images", "--filter", $"label={PrebuildLabel}={CiDocker.InstanceKey}", "--format", "{{.Repository}}:{{.Tag}}"], null, ct);
         return code != 0 ? [] : output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(t => !t.Contains("<none>")).ToList();
+    }
+
+    // ---------- volumes, networks, sidecars ----------
+
+    private static string IdLabelArg(int workspaceId) => $"{IdLabel}={workspaceId}";
+
+    public async Task CreateVolumeAsync(string name, int workspaceId, CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["volume", "create", "--label", InstanceLabel, "--label", IdLabelArg(workspaceId), name], null, ct);
+        if (code != 0) throw new InvalidOperationException("Docker could not create the workspace volume: " + Tail(output));
+    }
+
+    public async Task RemoveVolumesAsync(IEnumerable<string> names, CancellationToken ct)
+    {
+        foreach (var name in names)
+        {
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                var (code, output) = await RunAsync(["volume", "rm", "-f", name], null, ct);
+                if (code == 0 || output.Contains("No such volume", StringComparison.OrdinalIgnoreCase)) break;
+                if (attempt == 3) log.LogWarning("docker volume rm {Name} failed: {Output}", name, Tail(output));
+                else await Task.Delay(500, ct); // a container that was just removed may still be releasing it
+            }
+        }
+    }
+
+    public async Task<IReadOnlyList<ManagedVolume>> ListVolumesAsync(CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["volume", "ls", "--filter", "label=" + InstanceLabel, "--format", "{{.Name}} {{.Label \"" + IdLabel + "\"}}"], null, ct);
+        var list = new List<ManagedVolume>();
+        if (code != 0) return list;
+        var sizes = await VolumeSizesAsync(ct);
+        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split(' ', 2, StringSplitOptions.TrimEntries);
+            list.Add(new ManagedVolume(parts[0], parts.Length > 1 && int.TryParse(parts[1], out var id) ? id : null, sizes.GetValueOrDefault(parts[0], -1)));
+        }
+        return list;
+    }
+
+    /// <summary><c>docker system df -v</c> reports each volume's size ("1.2GB"); parsed into bytes (best effort).</summary>
+    private async Task<Dictionary<string, long>> VolumeSizesAsync(CancellationToken ct)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            var (code, output) = await RunAsync(["system", "df", "-v", "--format", "{{range .Volumes}}{{.Name}}|{{.Size}}\n{{end}}"], null, timeout.Token);
+            if (code != 0) return sizes;
+            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var bar = line.IndexOf('|');
+                if (bar > 0 && ParseSize(line[(bar + 1)..]) is { } bytes) sizes[line[..bar]] = bytes;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested) { log.LogDebug(ex, "Could not read volume sizes"); }
+        return sizes;
+    }
+
+    /// <summary>"1.5GB", "300kB", "0B" (docker's units are decimal).</summary>
+    public static long? ParseSize(string text)
+    {
+        text = text.Trim();
+        var i = 0;
+        while (i < text.Length && (char.IsDigit(text[i]) || text[i] == '.')) i++;
+        if (i == 0 || !double.TryParse(text[..i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n)) return null;
+        var mult = text[i..].Trim().ToUpperInvariant() switch { "B" or "" => 1d, "KB" => 1e3, "MB" => 1e6, "GB" => 1e9, "TB" => 1e12, "KIB" => 1024d, "MIB" => 1048576d, "GIB" => 1073741824d, _ => 0 };
+        return mult == 0 ? null : (long)(n * mult);
+    }
+
+    public async Task CreateInternalNetworkAsync(string name, int workspaceId, CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["network", "create", "--driver", "bridge", "--internal", "--label", InstanceLabel, "--label", IdLabelArg(workspaceId), name], null, ct);
+        if (code != 0 && !output.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Docker could not create the services network: " + Tail(output));
+    }
+
+    public async Task ConnectNetworkAsync(string containerId, string network, CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["network", "connect", network, containerId], null, ct);
+        if (code != 0) throw new InvalidOperationException("Docker could not attach the workspace to its services network: " + Tail(output));
+    }
+
+    public async Task<WorkspaceSidecarContainer> StartSidecarAsync(WorkspaceSidecarSpec spec, Action<string> onLine, CancellationToken ct)
+    {
+        var pull = await RunStreamingAsync(["pull", "--quiet", spec.Image], onLine, ct);
+        if (pull != 0 && !await ImageExistsAsync(spec.Image, ct)) throw new InvalidOperationException($"Could not pull the image '{spec.Image}' for service '{spec.Alias}'.");
+        var l = spec.Limits;
+        var args = new List<string>
+        {
+            "run", "-d", "--name", spec.Name, "--label", InstanceLabel, "--label", IdLabelArg(spec.WorkspaceId), "--label", SidecarLabel,
+            "--security-opt", "no-new-privileges", "--cap-drop", "ALL",
+            // The minimum official database images need to chown their data directory and drop to their own user.
+            "--cap-add", "CHOWN", "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "DAC_OVERRIDE", "--cap-add", "FOWNER",
+            "--network", spec.Network, "--network-alias", spec.Alias,
+            "--pids-limit", l.PidsLimit > 0 ? l.PidsLimit.ToString() : "-1",
+        };
+        args.AddRange(["--memory", string.IsNullOrWhiteSpace(l.Memory) ? "1g" : l.Memory]);
+        foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
+        args.Add(spec.Image);
+        var (code, output) = await RunAsync(args, null, ct);
+        if (code != 0) throw new InvalidOperationException($"Service '{spec.Alias}' ({spec.Image}) could not be started: {Tail(output)}");
+        var id = output.Trim().Split('\n')[^1].Trim();
+        var (icode, ip) = await RunAsync(["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", id], null, ct);
+        var address = icode == 0 ? ip.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null;
+        if (address == null || !IPAddress.TryParse(address, out _)) throw new InvalidOperationException($"Service '{spec.Alias}' has no network address.");
+        return new WorkspaceSidecarContainer(id, address);
+    }
+
+    public async Task RemoveAuxiliaryAsync(int workspaceId, CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["ps", "-a", "-q", "--no-trunc", "--filter", "label=" + InstanceLabel, "--filter", "label=" + IdLabelArg(workspaceId), "--filter", "label=" + SidecarLabel], null, ct);
+        if (code == 0)
+        {
+            var ids = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            if (ids.Count > 0) await RunAsync(["rm", "-f", "-v", .. ids], null, ct);
+        }
+        var (ncode, networks) = await RunAsync(["network", "ls", "-q", "--filter", "label=" + InstanceLabel, "--filter", "label=" + IdLabelArg(workspaceId)], null, ct);
+        if (ncode == 0)
+            foreach (var n in networks.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var (rc, ro) = await RunAsync(["network", "rm", n], null, ct);
+                if (rc != 0 && !ro.Contains("No such network", StringComparison.OrdinalIgnoreCase)) log.LogDebug("docker network rm {Network}: {Output}", n, Tail(ro));
+            }
+    }
+
+    public async Task<string> SidecarLogsAsync(string containerId, CancellationToken ct)
+    {
+        var (_, output) = await RunAsync(["logs", "--tail", "20", containerId], null, ct);
+        return Tail(output);
     }
 
     // ---------- plumbing ----------
