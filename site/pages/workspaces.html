@@ -7,10 +7,52 @@
 
 <h2 id="set-up">Set-up: nothing to do</h2>
 <p>If Docker is reachable (the <code>docker</code> CLI and its daemon), workspaces are on, and ByteBench builds the workspace image from <code>docker/workspace/</code> in the background shortly after startup (or when the first workspace is requested). Progress and any error are shown on the start page and on <strong>Admin &rarr; Workspaces</strong>, whose health table lists: Docker reachable, image present, the reaper's last pass, how workspaces are reached and the limits in force. If Docker is missing the buttons explain it; nothing else breaks.</p>
-<p>The image (<code>bytebench-workspace:1</code>, set with <code>Workspaces:Image</code>) contains git, node, python, make and g++ and OpenVSCode Server <code>1.109.5</code>, downloaded in the Dockerfile and checked against a pinned SHA-256 (the build fails on a mismatch). For the .NET SDK build it on an SDK base: <code>docker build --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 -t bytebench-workspace:1 docker/workspace</code>.</p>
+<p>The image (<code>bytebench-workspace:2</code>, set with <code>Workspaces:Image</code>) contains git, node, python, make and g++ and OpenVSCode Server <code>1.109.5</code>, downloaded in the Dockerfile and checked against a pinned SHA-256 (the build fails on a mismatch). Repositories that name a <a href="#environment"><code>toolchain</code></a> get an image built from the same Dockerfile on the matching base (.NET, Node 22, Python 3.13, Go, Java 21, Rust), once, on first use. To make the default image the .NET one by hand: <code>docker build --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 -t bytebench-workspace:2 docker/workspace</code>.</p>
 
 <h3 id="on-by-default">On by default, bounded</h3>
 <p>The administrator switch (<strong>Admin &rarr; Workspaces</strong>) is on unless an administrator turns it off, and each project can turn workspaces and the assistant off in its settings (Maintainers and Owners). Being on by default is limited by: Docker having to be reachable, a per-user cap (<code>MaxPerUser</code>, 2) and a server cap (<code>MaxTotal</code>, 10), CPU, memory, process and disk limits, an idle timeout (30 minutes) and a maximum lifetime (8 hours). Workspaces can only be opened where a safe origin exists, see below.</p>
+
+<h2 id="environment">The repository's environment: <code>.bytebench/workspace.yml</code></h2>
+<p>A repository describes its own workspace in a file in the repository. Opening a workspace then gives a ready-to-run environment: the right toolchain, submodules, dependencies installed, one click to run the app and preview it. The start page shows what the file asks for (or what is wrong with it) before you open the workspace.</p>
+<pre><code># .bytebench/workspace.yml
+toolchain: node@22          # or: image: ... (admin must allow), dotnet@10, python@3.13, go, java@21, rust
+setup:                      # run once after the checkout; output is shown on the workspace page
+  - npm ci
+tasks:                      # Run / Stop buttons, logs, port links
+  run:
+    command: npm run dev
+    port: 5173
+    preview: true           # opens the preview next to the IDE when the port is up (one task at most)
+  test: npm test            # short form: name: command
+ports: [9229]               # extra ports listed in the Preview menu
+env:                        # plain variables (no secrets: use workspace secrets)
+  NODE_ENV: development
+submodules: true            # default true
+services:                   # sidecars on a private network, reachable by name
+  db:
+    image: postgres:17
+    env: { POSTGRES_PASSWORD: dev }
+    ports: [5432]           # optional for postgres, redis, mysql, mariadb, mongo, rabbitmq, memcached, ...
+</code></pre>
+<ul>
+  <li><strong>Toolchains</strong> come from a curated list that the server pins: <code>dotnet@10</code>, <code>node@22</code>, <code>python@3.13</code>, <code>go</code>, <code>java@21</code> (JDK and Maven) and <code>rust</code>. Each gets a workspace image built on demand from <code>docker/workspace</code> on the matching base image and cached (<code>bytebench-workspace:2-node22</code>); the first start of a toolchain takes a few minutes and the page shows the build output. <code>image:</code> names your own base image (it must be Debian or Ubuntu based) and is <strong>ignored, with a visible note,</strong> unless an administrator turns on <em>Let repositories choose their own base image</em> under Admin &rarr; Workspaces (off by default). A repository's own Dockerfile is never built.</li>
+  <li><strong>Setup</strong> runs after the IDE is up, one command at a time with <code>bash -c</code> inside the container, exactly as written. Output streams to the <em>Tasks &amp; setup</em> panel; a failing command is shown with its exit code, stops the setup and leaves the workspace usable; <em>Run again</em> repeats it. Setup runs <strong>again only when the setup block changes</strong> (a hash of the commands and toolchain is stored in the workspace's volume), so stopping and resuming keeps what was installed.</li>
+  <li><strong>Tasks</strong> run as processes inside the container as your user, from the repository directory, with the environment file sourced (cache locations, <code>env:</code> and your secrets). Output is capped (the newest 256 KB are kept) and secret values are masked. <em>Stop</em> ends the whole process tree. A task with <code>preview: true</code> opens the preview beside the IDE as soon as its port listens; every task <code>port</code> and <code>ports:</code> entry is in the Preview menu, served through the same proxy as before. <em>Reload</em> in the panel re-reads the file after you edit it in the IDE.</li>
+  <li><strong>Submodules</strong> are fetched recursively when <code>submodules</code> is on (the default). A relative URL (<code>../lib.git</code>) or one that names this ByteBench server is fetched with the workspace's token, <strong>read-only</strong>, for the submodules of repositories you can view; the credential is stored in git's credential store for ByteBench's own host only, so it is never sent anywhere else. A submodule on another host is fetched anonymously; if that fails (private, offline, slow), the page lists the submodule's path and the reason and the workspace still opens. Only http(s) transports are allowed, each submodule has a time limit (<code>Workspaces:SubmoduleTimeoutSeconds</code>).</li>
+  <li><strong>Services</strong> start before the checkout on a private per-workspace Docker network (<code>--internal</code>: no way out), with the workspace attached, reachable by their name (<code>postgres://db:5432</code>). The workspace's network policy allows only those addresses and ports in addition to the git endpoint. The start waits until each port accepts connections and fails with a clear message if not. Services are removed when the workspace stops; their data is not kept.</li>
+  <li><strong>devcontainer.json</strong> (<code>.devcontainer/devcontainer.json</code>, <code>.devcontainer.json</code> or <code>devcontainer.json</code>) is read when there is no <code>.bytebench/workspace.yml</code>: <code>image</code>, <code>forwardPorts</code>, <code>postCreateCommand</code> (also <code>onCreateCommand</code>, <code>updateContentCommand</code>), <code>containerEnv</code> and <code>remoteEnv</code>. <code>features</code>, <code>build</code>/Dockerfile and compose are not run, <code>runArgs</code>/<code>mounts</code> are ignored; each is listed as a note on the page.</li>
+  <li><strong>Validation</strong> is strict: unknown keys, bad image names, ports below 1024 or the IDE's own port, reserved variable names (<code>PATH</code>, <code>HOME</code>, <code>BB_*</code>, <code>GIT_*</code>, <code>LD_*</code>, <code>DOCKER_*</code>, …), too many or too long entries and files over 64 KB are refused with a message per problem. A refused file never stops the workspace from opening: it opens with the default setup and the errors on the page. Nothing from the file is placed in a host command or a Docker argument except validated image names, ports and variable names; commands only ever run inside the container.</li>
+  <li><strong>No file?</strong> The start page and <em>Repository settings &rarr; Workspaces</em> recognise .NET (<code>*.sln</code>/<code>*.csproj</code>), Node (<code>package.json</code>), Python, Go, Rust and Java (<code>pom.xml</code>/Gradle) repositories and suggest a file; <strong>Add .bytebench/workspace.yml</strong> opens the web editor with it ready to commit.</li>
+</ul>
+
+<h2 id="persistence">Stop, resume and delete: dependencies stay</h2>
+<p>Each workspace has two named Docker volumes: the project (<code>/workspace</code>) and the dependency caches (<code>~/.bbcache</code>, which NuGet, npm/yarn/corepack, pip, Cargo, Go modules and build cache, Gradle and Maven are pointed at). <strong>Stop</strong> removes the container, its services and its network but keeps the volumes, so <strong>Resume</strong> brings back the same checkout (uncommitted work included), <code>node_modules</code> and caches, and setup does not run again. The volumes are deleted when you <strong>Delete</strong> the workspace, or <code>Workspaces:VolumeRetentionDays</code> (14) after it stopped; volumes that belong to no workspace are removed by the reaper. A start that fails before it ever ran leaves nothing behind. <strong>Admin &rarr; Workspaces &rarr; Disk use</strong> lists every volume with its size and owner. (Prebuilds, ready-made environments shared between users, are not implemented.)</p>
+
+<h2 id="secrets">Secrets</h2>
+<p><strong>Account &rarr; Workspace settings</strong> holds your secrets; <strong>Repository settings &rarr; Workspaces</strong> holds the repository's (Maintainer and above). They are encrypted at rest (ASP.NET Core Data Protection, as CI variables), never shown after saving, never written to logs or the audit log (only the name), and masked as <code>***</code> in task output and in what the assistant sees. When a workspace starts they are written, with the file's plain <code>env:</code>, to <code>~/.bb-env</code> (mode 600, owned by your user, not readable by the assistant's user) through standard input, never a command line or <code>docker run -e</code>; tasks and terminals source it, so they are environment variables there. They are not in the repository, a URL or a preview. A user's secret overrides a repository secret of the same name. <strong>Repository secrets reach only users who can push</strong>: a read-only visitor gets their own secrets but not the repository's. Changes apply to workspaces that start afterwards. Anyone with a shell in the workspace can read its variables, so a secret is as private as the code you run in it.</p>
+
+<h2 id="preferences">Your settings and shell</h2>
+<p><strong>Account &rarr; Workspace settings</strong> also takes extra VS Code <code>settings.json</code> content (up to 16 KB, comments allowed) and a shell snippet (up to 8 KB, sourced by your terminals). Both are applied when one of your own workspaces starts and are never visible to anyone else.</p>
 
 <h2 id="using">Using the IDE</h2>
 <p>The toolbar above the IDE has:</p>
@@ -18,12 +60,13 @@
   <li><strong>Preview</strong>: lists ports something in the container is listening on (checked every few seconds); choosing one opens it in a panel next to the IDE, or in a new tab. Servers bound to <code>127.0.0.1</code> work too.</li>
   <li><strong>AI</strong>: the assistant panel (see below).</li>
   <li><strong>Commit &amp; push</strong>: shows <code>git status</code>, takes a message and commits everything as you; <strong>Commit &amp; push</strong> pushes to the workspace's branch or to a branch name you type. A protected branch refuses the push (server-side), so type a new branch name and open a pull request.</li>
-  <li><strong>New tab</strong>, <strong>Restart</strong> (restarts the container: files stay, running processes end; the network policy is applied again before the IDE returns) and <strong>Stop</strong> (deletes the container and everything in it: push first).</li>
+  <li><strong>Tasks</strong>: the tasks and setup panel (Run, Stop, status, live log tail, port links).</li>
+  <li><strong>New tab</strong>, <strong>Restart</strong> (restarts the container: files stay, running processes end; the network policy is applied again before the IDE returns) and <strong>Stop</strong> (removes the container; the files and dependencies are kept so you can <strong>Resume</strong> until they expire, see <a href="#persistence">above</a>; push what matters anyway).</li>
 </ul>
 <p>A workspace stops by itself after the idle timeout (no proxied request and no IDE traffic), at its maximum lifetime, or when ByteBench restarts. All stops are audited with the reason.</p>
 
 <h2 id="ai">The AI assistant</h2>
-<p>The panel next to the IDE uses ByteBench's AI (the Anthropic API with the editor's tool loop; Claude Code is not used here) with tools that run in the container through <code>docker exec</code>: <code>list_files</code>, <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, <code>search_code</code> and <code>run_command</code>.</p>
+<p>The panel next to the IDE uses ByteBench's AI (the Anthropic API with the editor's tool loop; Claude Code is not used here) with tools that run in the container through <code>docker exec</code>: <code>list_files</code>, <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, <code>search_code</code>, <code>run_command</code> and <code>run_task</code> (runs one of the repository's tasks, listed in its prompt, and returns its status and masked output).</p>
 <ul>
   <li><strong>It never commits or pushes.</strong> Its commands run as a separate unprivileged user (<code>bbai</code>) that cannot read your git credentials or git configuration, and commands that try <code>git commit</code>, <code>push</code>, <code>fetch</code>, <code>remote</code>, <code>config</code> and similar are refused before they run. You review the changes (the working tree and <code>git diff</code>) and commit them yourself.</li>
   <li><strong>Limits:</strong> paths must be relative and are checked twice (in ByteBench, then in the container after symlinks are resolved: no <code>..</code>, absolute paths, symlinks out of the checkout or anything under <code>.git</code>); commands have a time limit (60 s) enforced inside the container, and output, file reads and writes are capped. File contents, search results and command output are put in delimited <em>untrusted</em> blocks and the model is told they are data, not instructions.</li>
@@ -67,19 +110,24 @@
 </ul>
 
 <h3 id="git">Git access</h3>
-<p>The container clones from ByteBench's own git endpoint with a token <code>gbw_&hellip;</code> made for that workspace: valid for that one repository, only while the workspace is starting or running, only for its owner, and revoked when it stops, fails or ByteBench restarts (only its SHA-256 is stored). It is not a personal access token and the REST API, MCP and the package registry do not accept it. It is written to <code>~/.git-credentials</code> (mode 600) through standard input, never a command line or environment variable. Pushing needs a token that was created with write access <em>and</em> the owner's current <code>PushCode</code>, archived and mirror checks and branch protection, all enforced by the git endpoint on every push. No personal tokens or passwords are put in the container.</p>
+<p>The container clones from ByteBench's own git endpoint with a token <code>gbw_&hellip;</code> made for that workspace: valid for that one repository (and read-only for its <a href="#environment">submodules</a> on this server), only while the workspace is starting or running, only for its owner, and revoked when it stops, fails or ByteBench restarts (only its SHA-256 is stored). It is not a personal access token and the REST API, MCP and the package registry do not accept it. It is written to <code>~/.git-credentials</code> (mode 600) through standard input, never a command line or environment variable. Pushing needs a token that was created with write access <em>and</em> the owner's current <code>PushCode</code>, archived and mirror checks and branch protection, all enforced by the git endpoint on every push. No personal tokens or passwords are put in the container.</p>
 
 <h2 id="admin">Administration</h2>
 <ul>
   <li><strong>Admin &rarr; Workspaces</strong>: the health table, the workspaces switch, the assistant switch, every workspace (owner, repository, state, activity) with <strong>Stop</strong> and <strong>Stop all</strong>. Administrators can stop any workspace but cannot open one.</li>
   <li><strong>Project settings &rarr; Workspaces</strong> (Maintainer and Owner): allow workspaces and the assistant for the project.</li>
-  <li><strong>Audit log</strong>: <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
+  <li><strong>Admin &rarr; Workspaces &rarr; Disk use</strong>: every workspace volume with size, owner and state, and a switch for repository-chosen base images.</li>
+  <li><strong>Audit log</strong>: also <code>workspace.resumed</code>, <code>workspace.deleted</code>, <code>workspace.task_started</code>/<code>task_stopped</code> (task name), <code>workspace_secret.created</code>/<code>updated</code>/<code>deleted</code> (name only), <code>workspace.user_settings</code> and <code>workspace.admin_custom_images</code>. Earlier: <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
 </ul>
 
 <h2 id="configuration">Configuration</h2>
 <table>
   <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
-  <tr><td><code>Workspaces:Image</code></td><td><code>bytebench-workspace:1</code></td><td>The image; built from <code>docker/workspace</code> (or pulled when that directory is missing) if absent.</td></tr>
+  <tr><td><code>Workspaces:VolumeRetentionDays</code></td><td>14</td><td>How long a stopped workspace's files and dependencies are kept.</td></tr>
+  <tr><td><code>Workspaces:SetupTimeoutMinutes</code></td><td>20</td><td>Time limit per setup command.</td></tr>
+  <tr><td><code>Workspaces:SubmoduleTimeoutSeconds</code></td><td>180</td><td>Time limit per submodule.</td></tr>
+  <tr><td><code>Workspaces:ServiceStartTimeoutSeconds</code></td><td>120</td><td>How long a service may take to accept connections.</td></tr>
+  <tr><td><code>Workspaces:Image</code></td><td><code>bytebench-workspace:2</code></td><td>The image; built from <code>docker/workspace</code> (or pulled when that directory is missing) if absent.</td></tr>
   <tr><td><code>Workspaces:BuildContext</code></td><td>docker/workspace beside the app</td><td>Directory with the Dockerfile.</td></tr>
   <tr><td><code>Workspaces:BaseDomain</code></td><td>(<code>localhost</code> in Development)</td><td>Parent domain of the workspace origins.</td></tr>
   <tr><td><code>Workspaces:AllowSharedOrigin</code></td><td>false</td><td>Path mode on ByteBench's origin when there is no base domain (less safe).</td></tr>
@@ -101,12 +149,19 @@
   <tr><td><code>GET /api/v1/workspaces</code></td><td>Your workspaces (only yours).</td></tr>
   <tr><td><code>POST /api/v1/projects/{key}/repos/{slug}/workspaces</code></td><td>Start one: <code>{"ref": "main", "source": "pr:12"}</code>. Returns 202; poll until <code>state</code> is <code>Running</code> or <code>Failed</code>.</td></tr>
   <tr><td><code>GET /api/v1/workspaces/{id}</code></td><td>One of yours; 404 for anyone else's.</td></tr>
-  <tr><td><code>POST /api/v1/workspaces/{id}/stop</code>, <code>/restart</code></td><td>Stop (deletes the container) or restart.</td></tr>
   <tr><td><code>GET</code>/<code>PUT /api/v1/workspaces/{id}/ai/settings</code></td><td>Review first or apply directly (<code>{"mode": "reviewFirst", "scope": "workspace"}</code>; scope <code>default</code> for all your workspaces).</td></tr>
   <tr><td><code>GET /api/v1/workspaces/{id}/ai/changes[?pending=true]</code>, <code>…/changes/{set}</code></td><td>The AI's change sets with their hunks.</td></tr>
   <tr><td><code>POST …/changes/{set}/files/{file}/accept</code> (<code>{"hunks": [0, 2]}</code> optional), <code>/reject</code>, <code>…/changes/{set}/accept-all</code>, <code>/reject-all</code></td><td>Decide a file, some of its hunks, or everything.</td></tr>
   <tr><td><code>POST /api/v1/projects/{key}/issues/{n}/ai-runs</code></td><td>Let the AI work on the issue (202; 200 with the run already in flight). <code>GET</code> lists the issue's runs.</td></tr>
   <tr><td><code>GET /api/v1/ai-runs[?project=KEY]</code>, <code>/ai-runs/{id}</code>, <code>/ai-runs/{id}/events[?after=]</code>, <code>POST /ai-runs/{id}/cancel</code></td><td>Runs you can see, one run, its log, and cancel.</td></tr>
+  <tr><td><code>POST /api/v1/workspaces/{id}/stop</code>, <code>/restart</code></td><td>Stop (removes the container, keeps the volumes) or restart.</td></tr>
+  <tr><td><code>POST /api/v1/workspaces/{id}/resume</code></td><td>Start a stopped workspace again on its saved volumes (202).</td></tr>
+  <tr><td><code>DELETE /api/v1/workspaces/{id}</code></td><td>Delete it and its volumes (204).</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/environment</code></td><td>Problems with the environment file, notes, warnings (submodules that failed…), setup state, tasks, ports, services, start-up log.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/tasks</code></td><td>The tasks and their state (Idle, Running, Succeeded, Failed, Stopped).</td></tr>
+  <tr><td><code>POST /api/v1/workspaces/{id}/tasks/{name}/run</code>, <code>/stop</code></td><td>Start (202; a running task is left alone) or stop a task.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/tasks/{name}/logs?since=n</code></td><td>Output after position <code>n</code> and the next position; secrets masked.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/setup</code>, <code>POST …/setup/rerun</code></td><td>Setup state and output; run setup again.</td></tr>
 </table>
 <p>The API never returns an IDE link or a credential; the IDE is opened from the workspace page in a browser.</p>
 

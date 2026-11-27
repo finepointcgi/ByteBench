@@ -95,7 +95,34 @@ not a server-relative path opens `/notifications`; a link can never add a server
   subject to the allow-list; main-frame navigations and new-window requests are. Permissions on Windows: only notifications (server
   origin) and clipboard read (server and workspace origins); everything else denied.
 * No auto-update, installers, signing or release workflow. Workspace origins (`ide-*`, `p<port>-*`) stay in the same web view
-  (Electron opens an app window).
+  (Electron opens an app window); on Mac they replace the page, with the native workspace bar described below.
+
+## Workspaces on Mac (WKWebView)
+
+ByteBench's workspace page frames the IDE in an `<iframe>` on another origin (`http://ide-{id}.localhost:5108/_bb/enter?...`), whose
+session cookie the server sets `SameSite=None; Secure; Partitioned`. Chromium accepts that; WebKit's third-party-cookie blocking is
+expected not to, which would leave the framed IDE without its session (a blank or white frame). **That cause is not confirmed**, so the
+Mac app does two things:
+
+1. **Opens the IDE top-level.** When a ByteBench page tries to load a workspace origin (`ide-*` or `p<port>-*`, found by
+   `NavigationPolicy.ShouldPromoteFrame`) in a frame, the web view cancels that frame load and loads the same URL as the top-level
+   document, where the cookie is first-party. The server, its cookie flags and the Electron app are unchanged. While a workspace is the
+   top-level page a slim native bar shows **Back**, the workspace title (the ByteBench page's title) and **Reload**. Back goes to the page
+   before the ByteBench workspace page (that page would only re-open the IDE; `NavigationPolicy.WorkspaceBackSteps`), from a preview back to
+   the IDE, and to `/workspaces` when there is no earlier page. A back swipe onto the framing page is redirected the same way. Cmd+[ and
+   Cmd+] work from the View menu and when the web view has focus. The title is only as good as the page's `<title>`.
+2. **Diagnostics instead of a white page.** Everything goes to `~/Library/Logs/bytebench-desktop-webview.log` (rotated at 512 KB; URLs are
+   logged without their query, so tickets never reach it). View > Show Web View Log opens it, and a yellow bar shows the URL and reason
+   for: a frame answering HTTP 4xx/5xx, a Content-Security-Policy violation, and the web content process dying (the page is then reloaded);
+   a failed main-frame load shows the error panel with the URL. The log also records, per page: every frame navigation decision, the
+   HTTP status of every frame, `X-Frame-Options` / `frame-ancestors` on framed responses, page script errors, `console.error/warn`, the
+   list of iframes after load, and a check four seconds later of how much visible content the page has (`page-check textLength= elements=`).
+   In debug builds the web view is inspectable from Safari (Develop menu). Note WebKit never reports a failed load of a frame itself.
+
+If the IDE still appears white after this, open the log: a `workspace frame ... cancelled, opening it as the top-level page` line shows the workspace was opened top-level, `main-frame
+response` shows its status, and `page-check` with a tiny `elements` count means the page loaded but rendered nothing.
+
+Windows is unchanged (WebView2 is Chromium and keeps the iframe).
 
 ## What was verified, and what was not
 

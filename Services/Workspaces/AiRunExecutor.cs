@@ -67,7 +67,8 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
 
         Tools: list_files, read_file and search_code look at the checkout. write_file, edit_file and delete_file change files in the working tree
         right away. run_command runs a shell command in the repository directory as an unprivileged user, with a time limit: use it to build and to run
-        the tests (find out how the project builds and tests by reading its README, build files and CI configuration).
+        the tests. run_task runs one of the repository's named tasks (listed in the context; they have the project's environment): prefer a task such as test or
+        build over guessing commands, otherwise find out how the project builds and tests from its README, build files and CI configuration.
 
         You cannot commit or push and must not try. When you finish, ByteBench commits your changes, pushes the branch and opens a pull request for people
         to review. Your final message becomes the pull request description: write a short Markdown summary of what you changed and why, which tests or
@@ -151,9 +152,9 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         {
             if (workspaceId is { } id)
             {
-                try { await sp.GetRequiredService<WorkspaceLifecycle>().StopAsync(id, "ai run finished", run.RequestedById); }
+                try { await sp.GetRequiredService<WorkspaceLifecycle>().DeleteAsync(id, run.RequestedById); }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogWarning(ex, "Could not stop the workspace of AI run {Run}", run.PublicId); }
-                await AddEventAsync(run.Id, "status", "Workspace stopped");
+                await AddEventAsync(run.Id, "status", "Workspace and its volumes deleted");
             }
             queue.End(runId);
         }
@@ -196,11 +197,14 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         var (live, wsRow) = await workspaces.GetRunningAsync(ws.PublicId, botId);
         var dir = WorkspaceLifecycle.WorkDir(repo.Slug);
         var masker = new CiSecretMasker([live.ConnectionToken]);
+        var session = sp.GetRequiredService<WorkspaceRuntime>().Session(ws.Id);
+        await WaitForSetupAsync(session, ct);
+        string M(string s) => session.Redactor.Redact(AiRunMasking.Mask(s, masker)); // credentials and the workspace's secret values
 
         // ----- branch -----
         var branch = await PickBranchAsync(sp, run);
         var checkout = await backend.ExecAsync(live.ContainerId, new ExecSpec(["git", "checkout", "-q", "-b", branch]) { WorkDir = dir, Timeout = TimeSpan.FromSeconds(30) }, ct);
-        if (!checkout.Ok) return Fail("error", "Could not create the branch: " + AiRunMasking.Mask(checkout.Output, masker));
+        if (!checkout.Ok) return Fail("error", "Could not create the branch: " + M(checkout.Output));
         await UpdateRunAsync(run.Id, r => r.Branch = branch);
         await SetStatusAsync(run.Id, AiRunStatus.Running, $"Workspace ready; working on branch {branch}");
 
@@ -211,9 +215,9 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
             MaxFileReadBytes = ao.MaxFileReadBytes, MaxFileWriteBytes = ao.MaxFileWriteBytes, MaxOutputBytes = ao.MaxOutputBytes,
             CommandTimeoutSeconds = Math.Max(ao.CommandTimeoutSeconds, o.CommandTimeoutSeconds), MaxTokensPerTurn = ao.MaxTokensPerTurn,
         };
-        var tools = new WorkspaceAiTools(backend, live.ContainerId, repo.Slug, runAi);
+        var tools = new WorkspaceAiTools(backend, live.ContainerId, repo.Slug, runAi, new WorkspaceAiService.TaskAdapter(sp.GetRequiredService<WorkspaceTasks>(), live, session, dir));
         var boundary = EditorAiPrompts.NewBoundary();
-        var user = await BuildTaskMessageAsync(sp, current, repo, run.BaseBranch!, branch, tools.Root, boundary);
+        var user = await BuildTaskMessageAsync(sp, current, repo, run.BaseBranch!, branch, tools.Root, boundary, WorkspaceAiService.TaskContext(session));
         var conversation = model.Begin(new EditorChatSetup(SystemPrompt, WorkspaceAiTools.Definitions, [], user, runAi.MaxTokensPerTurn));
 
         var final = new StringBuilder();
@@ -247,15 +251,15 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
             foreach (var call in turn.ToolCalls)
             {
                 meter.ToolCalls++;
-                await AddEventAsync(run.Id, "tool", AiRunMasking.Mask(WorkspaceAiTools.Describe(call.Name, call.Input), masker));
+                await AddEventAsync(run.Id, "tool", M(WorkspaceAiTools.Describe(call.Name, call.Input)));
                 var (content, isError) = await tools.ExecuteAsync(call.Name, call.Input, ct);
-                results.Add(new EditorToolResult(call.Id, AiRunMasking.Mask(content, masker), isError));
+                results.Add(new EditorToolResult(call.Id, M(content), isError));
                 live.Touch();
             }
             conversation.AddToolResults(results);
         }
         await SaveMeterAsync(run.Id, meter, o);
-        var summary = AiRunMasking.Mask(final.ToString().Trim(), masker);
+        var summary = M(final.ToString().Trim());
 
         // ----- commit, push, pull request -----
         var status = await backend.ExecAsync(live.ContainerId, new ExecSpec(["git", "status", "--porcelain"]) { WorkDir = dir, Timeout = TimeSpan.FromSeconds(30) }, ct);
@@ -271,7 +275,7 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         var message = $"{Truncate(issue.Title, 150)}\n\nAI-generated by {AiBot.DisplayName} for {project.Key}-{issue.Number} (run {run.PublicId}).";
         await AddEventAsync(run.Id, "info", "Committing and pushing the changes");
         var commit = await workspaces.CommitAsync(ws.PublicId, botId, message, push: true, branch);
-        if (!commit.Ok) return Fail("push failed", "Committing or pushing failed: " + AiRunMasking.Mask(commit.Output, masker), branch);
+        if (!commit.Ok) return Fail("push failed", "Committing or pushing failed: " + M(commit.Output), branch);
 
         var draft = stopReason != null;
         var title = Truncate(issue.Title, 190);
@@ -288,7 +292,7 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         }
         catch (InvalidOperationException ex)
         {
-            return Fail("pull request failed", $"The changes were pushed to branch `{branch}` but the pull request could not be opened: " + AiRunMasking.Mask(ex.Message, masker), branch);
+            return Fail("pull request failed", $"The changes were pushed to branch `{branch}` but the pull request could not be opened: " + M(ex.Message), branch);
         }
         await AddEventAsync(run.Id, "info", $"Opened pull request #{pr.Number}{(draft ? " (draft)" : "")}");
         return stopReason != null
@@ -299,6 +303,16 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
     }
 
     // ---------- helpers: workspace, branch, prompt ----------
+
+    /// <summary>The repository's setup commands (from .bytebench/workspace.yml) run in the background after the workspace starts; the AI waits for them.</summary>
+    private static async Task WaitForSetupAsync(WorkspaceSession session, CancellationToken ct)
+    {
+        while (session.Setup is SetupState.Pending or SetupState.Running)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(500, ct);
+        }
+    }
 
     private async Task WaitUntilRunningAsync(string publicId, CancellationToken ct)
     {
@@ -332,7 +346,7 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         return name;
     }
 
-    private async Task<string> BuildTaskMessageAsync(IServiceProvider sp, Issue issue, Repository repo, string baseBranch, string branch, string root, string boundary)
+    private async Task<string> BuildTaskMessageAsync(IServiceProvider sp, Issue issue, Repository repo, string baseBranch, string branch, string root, string boundary, string taskContext)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var comments = await db.Comments.AsNoTracking().Include(c => c.Author).Where(c => c.IssueId == issue.Id).OrderByDescending(c => c.Id).Take(10).ToListAsync();
@@ -347,6 +361,7 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
             var c = string.Join("\n\n", Enumerable.Reverse(comments).Select(x => $"{x.Author?.UserName ?? "?"}: {Truncate(x.Body, 1500)}"));
             sb.AppendLine().AppendLine(EditorAiPrompts.Untrusted("ISSUE COMMENTS", "latest first-to-last", Truncate(c, 8000), boundary));
         }
+        if (taskContext.Length > 0) sb.AppendLine(taskContext);
         return sb.ToString().TrimEnd();
     }
 

@@ -1,0 +1,84 @@
+@page "/p/{Key}/repos/{Slug}/settings/workspaces"
+@inherits RepoPageBase
+@using ByteBench.Services.Workspaces
+@inject ProjectAccess Access
+
+<PageTitle>Workspaces · @Repo?.Name</PageTitle>
+
+@if (NotFound)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (Repo != null && !perms.Can(Permission.ManageRepositories))
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+    <Forbidden Message="Only Maintainers and Owners can manage workspace settings and secrets." BackHref="@RepoUrls.Base(Repo)" />
+}
+else if (Repo != null)
+{
+    <RepoHeader Repo="Repo" Active="settings" />
+
+    <div class="settings-layout">
+        <RepoSettingsNav Repo="Repo" Active="workspaces" />
+        <div class="gb-min0">
+            <div class="mb-4">
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="d-flex align-center gap-2 mb-1"><MudIcon Icon="@Icons.Material.Outlined.Terminal" /> Workspaces</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    How workspaces on this repository are set up lives in the repository itself: <code>.bytebench/workspace.yml</code> (toolchain, setup commands, tasks, ports,
+                    submodules, services). Secrets don't: they are kept here.
+                </MudText>
+            </div>
+            <MudPaper Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mb-1">Environment file</MudText>
+                @if (load == null) { <MudProgressCircular Indeterminate="true" Size="Size.Small" /> }
+                else if (!load.HasFile)
+                {
+                    <MudText Typo="Typo.body2" Class="mb-2">No <code>.bytebench/workspace.yml</code> on <code>@Repo.DefaultBranch</code>.@(load.SuggestedYaml != null ? " Based on what is in the repository, this would be a good start:" : " Nothing recognisable was found (.NET, Node, Python, Go, Rust or Java projects are detected).")</MudText>
+                    @if (load.SuggestedYaml != null)
+                    {
+                        <pre class="mono gb-pre" data-testid="ws-suggested">@load.SuggestedYaml</pre>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Href="@AddUrl()" StartIcon="@Icons.Material.Outlined.EditNote" data-testid="ws-add-file">Add .bytebench/workspace.yml</MudButton>
+                    }
+                }
+                else if (!load.Result!.Ok)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">
+                        @foreach (var e in load.Result.Errors) { <div>@e</div> }
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">Read from <code>@load.Result.Source</code>: @load.Environment.Tasks.Count task(s), @load.Environment.Setup.Count setup command(s)@(load.Environment.Toolchain != null ? ", toolchain " + load.Environment.Toolchain : "").</MudText>
+                    @foreach (var n in load.Result.Notes) { <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">@n</MudAlert> }
+                }
+            </MudPaper>
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" HtmlTag="h3" Class="mb-1">Repository secrets</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+                    Environment variables for every workspace opened on this repository by someone who can push to it (read-only visitors don't get them).
+                    Values are encrypted at rest, never shown again and masked in task output. They live in the container only, never in the repository or in a preview URL.
+                    A user's own secret with the same name wins. Changes apply to workspaces that start afterwards.
+                </MudText>
+                <WorkspaceSecretsEditor RepositoryId="Repo.Id" />
+            </MudPaper>
+        </div>
+    </div>
+}
+
+@code {
+    private WorkspaceEnvLoad? load;
+    private ProjectPermissions perms = ProjectPermissions.None;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!await LoadRepoAsync()) return;
+        perms = await Access.GetPermissionsAsync(Repo!.ProjectId);
+        if (!perms.Can(Permission.ManageRepositories)) return;
+        var path = Repos.PathOf(Repo);
+        var branch = Repo.DefaultBranch;
+        try { load = await Task.Run(() => WorkspaceEnvironmentLoader.Load(path, branch)); }
+        catch (Exception) { load = new WorkspaceEnvLoad(null, null, null); } // an empty repository has nothing to read
+    }
+
+    private string AddUrl() => $"/p/{Repo!.Project.Key}/repos/{Repo.Slug}/edit/{Uri.EscapeDataString(Repo.DefaultBranch)}/.bytebench/workspace.yml?suggest=workspace";
+}

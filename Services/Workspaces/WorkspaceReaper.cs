@@ -64,6 +64,9 @@ public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, I
             await backend.RemoveAsync(c.ContainerId, ct);
             removed++;
         }
+        // Sidecar services and their private networks go too; the volumes stay (a stopped workspace can be resumed with its dependencies).
+        foreach (var w in stale) await backend.RemoveAuxiliaryAsync(w.Id, ct);
+        foreach (var id in runtime.SessionIds) runtime.FindSession(id)?.Shutdown();
         if (stale.Count > 0 || removed > 0) log.LogInformation("Workspaces: {Rows} workspace(s) closed and {Containers} container(s) removed (startup or shutdown cleanup)", stale.Count, removed);
     }
 
@@ -102,5 +105,48 @@ public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, I
         var present = containers.Select(c => c.ContainerId).ToHashSet();
         foreach (var w in liveNow.Where(w => w.State == WorkspaceState.Running && w.ContainerId != null && !present.Contains(w.ContainerId)))
             await lifecycle.StopAsync(w.Id, "container disappeared", null);
+
+        await SweepVolumesAsync(db, now, ct);
+        PruneSessions(db, now);
+    }
+
+    /// <summary>
+    /// Volumes of stopped workspaces live for <c>Workspaces:VolumeRetentionDays</c>, then they are deleted (the workspace can no longer be resumed).
+    /// A volume that belongs to no workspace (its row is gone: the repository or the user was deleted) is removed too.
+    /// </summary>
+    private async Task SweepVolumesAsync(AppDbContext db, DateTime now, CancellationToken ct)
+    {
+        var days = Math.Max(1, options.CurrentValue.VolumeRetentionDays);
+        var expired = await db.Workspaces.Where(w => w.VolumesKept && (w.State == WorkspaceState.Stopped || w.State == WorkspaceState.Failed) && w.StoppedAt != null && w.StoppedAt < now.AddDays(-days)).ToListAsync(ct);
+        foreach (var w in expired)
+        {
+            await lifecycle.RemoveVolumesQuietlyAsync(w.PublicId);
+            w.VolumesKept = false;
+            log.LogInformation("Removed the volumes of workspace {Id} (stopped more than {Days} days ago)", w.PublicId, days);
+        }
+        if (expired.Count > 0) await db.SaveChangesAsync(ct);
+
+        // A start creates its volumes before it records them: anything still starting or running counts as known.
+        var known = await db.Workspaces.AsNoTracking().Where(w => w.VolumesKept || w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running || w.State == WorkspaceState.Stopping)
+            .Select(w => w.Id).ToListAsync(ct);
+        var knownSet = known.ToHashSet();
+        var orphans = (await backend.ListVolumesAsync(ct)).Where(v => v.WorkspaceId is not { } id || !knownSet.Contains(id)).Select(v => v.Name).ToList();
+        if (orphans.Count > 0)
+        {
+            log.LogInformation("Removing {Count} workspace volume(s) that belong to no workspace", orphans.Count);
+            await backend.RemoveVolumesAsync(orphans, ct);
+        }
+    }
+
+    /// <summary>Logs and task output of workspaces that stopped more than a day ago are dropped from memory.</summary>
+    private void PruneSessions(AppDbContext db, DateTime now)
+    {
+        foreach (var id in runtime.SessionIds)
+        {
+            if (runtime.Find(id) != null) continue;
+            var session = runtime.FindSession(id);
+            if (session != null && session.CreatedAt < now.AddHours(-24) && !db.Workspaces.Any(w => w.Id == id && (w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running)))
+                runtime.DropSession(id);
+        }
     }
 }

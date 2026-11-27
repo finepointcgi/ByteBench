@@ -101,10 +101,14 @@ public class AiRunApp : WorkspaceApp
         return await db.AiRunEvents.Where(e => e.RunId == runId).OrderBy(e => e.Id).Select(e => e.Kind + ": " + e.Message).ToListAsync();
     }
 
-    public async Task<Workspace> WorkspaceOfAsync(AiRun run)
+    /// <summary>AI run workspaces are ephemeral: the row, the container and the volumes are gone after the run.</summary>
+    public async Task AssertWorkspaceDeletedAsync(AiRun run)
     {
+        Assert.NotNull(run.WorkspaceId);
         await using var db = Db();
-        return await db.Workspaces.AsNoTracking().FirstAsync(w => w.Id == run.WorkspaceId);
+        Assert.False(await db.Workspaces.AnyAsync(w => w.Id == run.WorkspaceId), "the run's workspace row should be deleted");
+        Assert.NotEmpty(Backend.Removed);
+        Assert.NotEmpty(Backend.VolumesRemoved);
     }
 }
 
@@ -169,12 +173,9 @@ public class AiRunTests(AiRunApp app) : IClassFixture<AiRunApp>
         Assert.Contains($"pull request #{pr.Number}", comment);
         Assert.Contains($"/ai-runs/{run.PublicId}", comment);
 
-        // The workspace was the AI user's, ran the assistant's tools as bbai, committed and pushed as the workspace user, and was stopped.
-        var ws = await app.WorkspaceOfAsync(run);
-        Assert.Equal((app.BotId(), WorkspaceState.Stopped, "ai run finished"), (ws.OwnerId, ws.State, ws.StopReason));
-        Assert.Contains(ws.ContainerId!, app.Backend.Removed);
-        Assert.Null(ws.GitTokenHash);
-        var execs = app.Backend.Execs.Where(e => e.ContainerId == ws.ContainerId).Select(e => e.Spec).ToList();
+        // The workspace was the AI user's, ran the assistant's tools as bbai, committed and pushed as the workspace user, and was deleted with its volumes.
+        await app.AssertWorkspaceDeletedAsync(run);
+        var execs = app.Backend.Execs.Where(e => true).Select(e => e.Spec).ToList();
         Assert.Contains(execs, e => e.User == "bbai" && e.Stdin == "fixed\n");
         Assert.DoesNotContain(execs.Where(e => e.User == "bbai"), e => e.Command.Contains("push") || e.Command.Any(c => c.Contains("git commit")));
         Assert.Contains(execs, e => e.User == "coder" && e.Command.SequenceEqual(["git", "checkout", "-q", "-b", run.Branch!]));
@@ -304,8 +305,7 @@ public class AiRunTests(AiRunApp app) : IClassFixture<AiRunApp>
         var comment = Assert.Single(await app.CommentsAsync(issue.Id));
         Assert.Contains("couldn't finish", comment);
         Assert.Contains("the model service is down", comment);
-        var ws = await app.WorkspaceOfAsync(run);
-        Assert.Equal(WorkspaceState.Stopped, ws.State);
+        await app.AssertWorkspaceDeletedAsync(run);
         Assert.Contains("failed", string.Join("\n", await app.EventsAsync(run.Id)).ToLowerInvariant());
     }
 
@@ -341,7 +341,7 @@ public class AiRunTests(AiRunApp app) : IClassFixture<AiRunApp>
         Assert.Equal((AiRunStatus.Cancelled, "cancelled"), (done.Status, done.StopReason));
         Assert.Empty(pushed);
         Assert.Null(done.PullRequestId);
-        Assert.Equal(WorkspaceState.Stopped, (await app.WorkspaceOfAsync(done)).State);
+        await app.AssertWorkspaceDeletedAsync(done);
         Assert.Contains("cancelled", Assert.Single(await app.CommentsAsync(issue.Id)));
         Assert.True(done.Steps <= 2);
 
@@ -482,7 +482,7 @@ public class AiRunStepLimitTests(AiRunStepsApp app) : IClassFixture<AiRunStepsAp
         var comment = Assert.Single(await app.CommentsAsync(issue.Id));
         Assert.Contains("step limit", comment);
         Assert.Contains("draft", comment);
-        Assert.Equal(WorkspaceState.Stopped, (await app.WorkspaceOfAsync(run)).State);
+        await app.AssertWorkspaceDeletedAsync(run);
     }
 }
 
@@ -539,7 +539,7 @@ public class AiRunTimeLimitTests(AiRunTimeApp app) : IClassFixture<AiRunTimeApp>
         var run = await app.WaitAsync((await app.RequestAsync(issue)).PublicId);
         Assert.Equal((AiRunStatus.Failed, "time limit"), (run.Status, run.StopReason));
         Assert.Contains("time limit", Assert.Single(await app.CommentsAsync(issue.Id)));
-        Assert.Equal(WorkspaceState.Stopped, (await app.WorkspaceOfAsync(run)).State);
+        await app.AssertWorkspaceDeletedAsync(run);
     }
 }
 
@@ -602,5 +602,25 @@ public class AiRunCancelQueuedTests(AiRunOffApp app) : IClassFixture<AiRunOffApp
         Assert.Empty(app.Backend.Started);
         // And with them off nobody can ask for a new one.
         Assert.Contains("configuration", (await Assert.ThrowsAsync<InvalidOperationException>(() => app.RequestAsync(issue))).Message);
+    }
+}
+
+public class AiRunEnvironmentTests(AiRunApp app) : IClassFixture<AiRunApp>
+{
+    [Fact]
+    public async Task A_run_honors_the_repos_workspace_file_offers_its_tasks_and_deletes_the_workspace_and_volumes_afterwards()
+    {
+        var (_, repo, issue) = await app.SetupAsync();
+        app.Commit(repo, "main", ".bytebench/workspace.yml", "tasks:\n  test: dotnet test\n");
+        app.ScriptGit(repo, status: "");
+        app.Model.Reset((turn, _) => turn == 0 ? FakeEditorChatModel.Tool("run_task", new { name = "test", wait_seconds = 5 }) : FakeEditorChatModel.Text("Ran the tests."));
+        var run = await app.WaitAsync((await app.RequestAsync(issue)).PublicId);
+        Assert.Equal(AiRunStatus.Succeeded, run.Status);
+        Assert.Contains("run_task", app.Model.Setups.Last().System);
+        Assert.Contains("- test: dotnet test", app.Model.Setups.Last().UserMessage);
+        Assert.DoesNotContain("no task named", app.Model.Results[0][0].Content);
+        Assert.Contains("TASK OUTPUT", app.Model.Results[0][0].Content);
+        await app.AssertWorkspaceDeletedAsync(run);
+        Assert.Contains("deleted", string.Join('\n', await app.EventsAsync(run.Id)));
     }
 }
