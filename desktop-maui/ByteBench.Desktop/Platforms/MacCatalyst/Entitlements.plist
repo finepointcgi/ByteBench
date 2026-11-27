@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Default (ad-hoc / local) build. Not sandboxed: "Clone with ByteBench" starts git and writes to a folder the user names, which a
+	  sandboxed app may not do. Without a signing identity the keychain is not available to the app, so API tokens cannot be stored
+	  (notifications and authenticated clone then stay off). For a signed build use Entitlements.Signed.plist (see README).
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+</dict>
+</plist>

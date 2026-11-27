@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- For a build signed with your Apple team (needs a matching provisioning profile): enables Keychain-backed token storage. -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.bytebench.desktop</string>
+	</array>
+</dict>
+</plist>
