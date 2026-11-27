@@ -21,6 +21,9 @@ public sealed record WorkspaceEnvironment(string Source, string? Toolchain, stri
     IReadOnlyList<WorkspaceTaskDefinition> Tasks, IReadOnlyList<int> Ports, IReadOnlyDictionary<string, string> Env, bool Submodules,
     IReadOnlyList<WorkspaceSidecar> Services, IReadOnlyList<string> Notes)
 {
+    /// <summary>The repository's <c>egress:</c> request (it can only narrow the server's network policy, see <see cref="WorkspaceEgressPolicy.Narrow"/>).</summary>
+    public RepoEgressSpec? Egress { get; init; }
+
     public static readonly WorkspaceEnvironment Empty = new("", null, null, [], [], [], new Dictionary<string, string>(), true, [], []);
 
     public bool IsEmpty => Source == "";
@@ -157,6 +160,7 @@ public static partial class WorkspaceEnvFile
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
         var submodules = true;
         var services = new List<WorkspaceSidecar>();
+        RepoEgressSpec? egressSpec = null;
 
         foreach (var (rawKey, value) in map)
         {
@@ -198,8 +202,12 @@ public static partial class WorkspaceEnvFile
                 case "services":
                     ParseServices(value, services, errors);
                     break;
+                case "egress":
+                    egressSpec = WorkspaceEgressPolicy.ParseSection(value);
+                    errors.AddRange(egressSpec.Errors.Select(e => "egress: " + e));
+                    break;
                 default:
-                    errors.Add($"Unknown key '{key}'. Use toolchain, image, setup, tasks, ports, env, submodules or services.");
+                    errors.Add($"Unknown key '{key}'. Use toolchain, image, setup, tasks, ports, env, submodules, services or egress.");
                     break;
             }
         }
@@ -207,7 +215,7 @@ public static partial class WorkspaceEnvFile
         var seenPorts = new HashSet<int>();
         ports = ports.Where(p => seenPorts.Add(p)).ToList();
         if (errors.Count > 0) return new WorkspaceEnvResult(null, Path, errors, notes);
-        return new WorkspaceEnvResult(new WorkspaceEnvironment(Path, toolchain, image, setup, tasks, ports, env, submodules, services, notes), Path, [], notes);
+        return new WorkspaceEnvResult(new WorkspaceEnvironment(Path, toolchain, image, setup, tasks, ports, env, submodules, services, notes) { Egress = egressSpec }, Path, [], notes);
     }
 
     private static void ParseSetup(object? value, List<string> setup, List<string> errors)

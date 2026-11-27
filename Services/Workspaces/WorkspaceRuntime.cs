@@ -64,6 +64,8 @@ public sealed class WorkspaceRuntime
     private readonly ConcurrentDictionary<Task, byte> background = new();
     private readonly ConcurrentDictionary<int, SemaphoreSlim> locks = new();
 
+    /// <summary>Who besides the owner may use each running workspace, and who is connected (sharing).</summary>
+    public WorkspaceAccessRegistry Access { get; } = new();
     private readonly ConcurrentDictionary<int, WorkspaceSession> envSessions = new();
 
     /// <summary>The environment state of a workspace (logs, setup, tasks), created on first use.</summary>
@@ -145,6 +147,13 @@ public sealed class WorkspaceRuntime
         if (byId.TryRemove(workspaceId, out var w)) byPublicId.TryRemove(w.PublicId, out _);
         foreach (var (k, g) in tickets) if (g.WorkspaceId == workspaceId) tickets.TryRemove(k, out _);
         foreach (var (k, g) in sessions) if (g.WorkspaceId == workspaceId) sessions.TryRemove(k, out _);
+    }
+
+    /// <summary>Drops one person's tickets and sessions for a workspace (their share was revoked or downgraded).</summary>
+    public void RevokeUser(int workspaceId, int userId)
+    {
+        foreach (var (k, g) in tickets) if (g.WorkspaceId == workspaceId && g.UserId == userId) tickets.TryRemove(k, out _);
+        foreach (var (k, g) in sessions) if (g.WorkspaceId == workspaceId && g.UserId == userId) sessions.TryRemove(k, out _);
     }
 
     private readonly ConcurrentDictionary<int, CancellationTokenSource> provisioning = new();

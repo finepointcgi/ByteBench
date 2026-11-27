@@ -59,8 +59,10 @@ public class WorkspaceOptions
     /// <summary>Writable-layer size (<c>docker run --storage-opt size=</c>). Needs overlay2 on xfs with pquota (or btrfs/zfs); where the daemon refuses it, the container starts without and a warning is logged.</summary>
     public string? DiskLimit { get; set; } = "10g";
 
-    /// <summary><c>public-only</c> (default: the internet yes, private networks and ByteBench's host no), <c>none</c> or <c>open</c>.</summary>
+    /// <summary>The default network mode until an admin sets one: <c>public-only</c> (default: the internet yes, private networks and ByteBench's host no), <c>allowlist</c>, <c>none</c> or <c>open</c>.</summary>
     public string EgressMode { get; set; } = "public-only";
+    /// <summary>The filtering proxy behind the <c>allowlist</c> egress mode (the admin's mode and allow-list are set under Admin → Workspaces).</summary>
+    public WorkspaceEgressOptions Egress { get; set; } = new();
 
     public int ReaperIntervalSeconds { get; set; } = 30;
 

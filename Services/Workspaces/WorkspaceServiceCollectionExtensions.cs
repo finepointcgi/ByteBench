@@ -14,6 +14,9 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddSingleton<WorkspaceUrls>();
         services.AddSingleton<WorkspaceAudit>();
         services.AddSingleton<WorkspaceImage>();
+        services.AddSingleton<IEgressConnector, DnsEgressConnector>();
+        services.AddSingleton<WorkspaceEgress>();
+        services.AddSingleton<WorkspaceShareStore>();
         services.AddSingleton<WorkspaceTasks>();
         services.AddSingleton<WorkspaceSecretStore>();
         services.AddSingleton<SubmoduleResolver>();
@@ -36,6 +39,12 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddScoped<WorkspaceEditorService>(); // local editors over an SSH tunnel (VS Code Remote-SSH, JetBrains Gateway)
         services.AddScoped<WorkspaceGitService>(); // commit, push and open a pull request from the workspace bar
         services.AddScoped<WorkspaceLaunchService>(); // start a workspace from an issue or a pull request
+        services.AddScoped<WorkspaceSharingService>();
+        services.AddScoped<WorkspaceAuditService>();
+        services.AddScoped<WorkspaceEgressReader>();
+        services.AddScoped<WorkspaceEgressAdmin>();
+        services.AddSingleton<WorkspaceMaintenanceService>();
+        services.AddHostedService(sp => sp.GetRequiredService<WorkspaceMaintenanceService>());
         return services;
     }
 }

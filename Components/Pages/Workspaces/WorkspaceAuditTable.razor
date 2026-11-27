@@ -1,0 +1,141 @@
+@* Workspace audit events, filterable and paged. With PublicId: that workspace's history (owner or admin). Without: every workspace (site admins). *@
+@using System.Text.Json
+@using ByteBench.Services.Audit
+@using ByteBench.Services.Workspaces
+@inject WorkspaceAuditService Audit
+@inject CurrentUser Me
+
+<div data-testid="ws-audit">
+    <form class="d-flex flex-wrap gap-2 align-center mb-3" @onsubmit="Search" @onsubmit:preventDefault>
+        @if (PublicId == null)
+        {
+            <MudTextField T="string" @bind-Value="workspace" Label="Workspace id" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Style="width:190px" />
+        }
+        <MudTextField T="string" @bind-Value="actor" Label="Actor" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Style="width:140px" />
+        <MudAutocomplete T="string" @bind-Value="action" Label="Action" Placeholder="workspace.secret" Variant="Variant.Outlined" Margin="Margin.Dense"
+                         SearchFunc="SearchActions" CoerceValue="true" CoerceText="false" ResetValueOnEmptyText="true" Clearable="true" Style="width:210px" />
+        <MudTextField T="string" @bind-Value="text" Label="Contains" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Style="width:160px" />
+        <MudDatePicker Date="fromDate" DateChanged="d => fromDate = d" Label="From (UTC)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="width:150px" />
+        <MudDatePicker Date="toDate" DateChanged="d => toDate = d" Label="To (UTC)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="width:150px" />
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" data-testid="ws-audit-filter">Filter</MudButton>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="Reset">Reset</MudButton>
+        <MudSpacer />
+        <MudButton Href="@ExportHref" download Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.FileDownload" data-testid="ws-audit-export">Export CSV</MudButton>
+    </form>
+
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+    @if (result != null)
+    {
+        <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary mb-2">
+            @(result.Total == 0 ? "No events match." : $"Showing {Skip + 1}-{Skip + result.Events.Count} of {result.Total} events (newest first, UTC). Secrets are recorded by name, never by value.")
+        </MudText>
+        @if (result.Events.Count > 0)
+        {
+            <MudSimpleTable Dense="true" Hover="true" Outlined="true">
+                <thead><tr><th style="width:150px">Time (UTC)</th><th>Actor</th><th>Action</th>@if (PublicId == null) { <th>Workspace</th> }<th>Details</th></tr></thead>
+                <tbody>
+                @foreach (var e in result.Events)
+                {
+                    <tr @key="e.Id">
+                        <td class="mono" style="font-size:12px;white-space:nowrap">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@(e.ActorName ?? "system")</td>
+                        <td><code>@e.Action</code></td>
+                        @if (PublicId == null) { <td class="mono" style="font-size:12px">@(e.TargetType == "workspace" ? e.TargetId : "")</td> }
+                        <td class="mono" style="font-size:12px;word-break:break-all">@Compact(e.Details)</td>
+                    </tr>
+                }
+                </tbody>
+            </MudSimpleTable>
+            <div class="d-flex align-center mt-2 gap-2">
+                <MudPagination Count="PageCount" Selected="pageNumber" SelectedChanged="Go" Size="Size.Small" Variant="Variant.Outlined" MiddleCount="3" BoundaryCount="1" />
+                <MudText Class="mud-text-secondary" Typo="Typo.caption">Page @pageNumber of @PageCount</MudText>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>One workspace's history (null: every workspace, for site admins).</summary>
+    [Parameter] public string? PublicId { get; set; }
+
+    private const int PageSize = 25;
+    private string? workspace, actor, action, text, error;
+    private DateTime? fromDate, toDate;
+    private int pageNumber = 1;
+    private AuditPage? result;
+    private List<string> actions = [];
+
+    private int Skip => (pageNumber - 1) * PageSize;
+    private int PageCount => Math.Max(1, ((result?.Total ?? 0) + PageSize - 1) / PageSize);
+
+    private Task<IEnumerable<string>> SearchActions(string? t, CancellationToken _) =>
+        Task.FromResult<IEnumerable<string>>(string.IsNullOrWhiteSpace(t) ? actions : actions.Where(a => a.Contains(t.Trim(), StringComparison.OrdinalIgnoreCase)));
+
+    private string ExportHref
+    {
+        get
+        {
+            var q = new List<string>();
+            void Add(string k, string? v) { if (!string.IsNullOrWhiteSpace(v)) q.Add($"{k}={Uri.EscapeDataString(v.Trim())}"); }
+            if (PublicId == null) Add("workspace", workspace);
+            Add("actor", actor);
+            Add("action", action);
+            Add("q", text);
+            Add("from", fromDate?.ToString("yyyy-MM-dd"));
+            Add("to", toDate?.ToString("yyyy-MM-dd"));
+            var path = PublicId == null ? "/admin/workspaces/audit/export.csv" : $"/workspaces/{PublicId}/audit/export.csv";
+            return path + (q.Count > 0 ? "?" + string.Join("&", q) : "");
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (PublicId == null)
+        {
+            try { actions = await Audit.ActionNamesAsync(Me.Id); }
+            catch (InvalidOperationException ex) { error = ex.Message; return; }
+        }
+        else actions = typeof(WorkspaceAuditActions).GetFields().Where(f => f.IsLiteral && f.GetValue(null) is string s && s.Contains('.') && f.Name != nameof(WorkspaceAuditActions.Prefix))
+            .Select(f => (string)f.GetValue(null)!).Order().ToList();
+        await Load();
+    }
+
+    private async Task Search() { pageNumber = 1; await Load(); }
+
+    private async Task Reset()
+    {
+        workspace = actor = action = text = null;
+        fromDate = toDate = null;
+        await Search();
+    }
+
+    private async Task Go(int n) { pageNumber = n; await Load(); }
+
+    public Task RefreshAsync() => Load();
+
+    private async Task Load()
+    {
+        error = null;
+        var q = new WorkspaceAuditQuery
+        {
+            Workspace = workspace, Actor = actor, Action = action, Text = text, Page = pageNumber, PageSize = PageSize,
+            FromUtc = fromDate?.Date is { } f ? DateTime.SpecifyKind(f, DateTimeKind.Utc) : null,
+            ToUtc = toDate?.Date.AddDays(1) is { } t ? DateTime.SpecifyKind(t, DateTimeKind.Utc) : null,
+        };
+        try { result = PublicId == null ? await Audit.SearchAsync(Me.Id, q) : await Audit.HistoryAsync(PublicId, Me.Id, q); }
+        catch (InvalidOperationException ex) { error = ex.Message; result = null; }
+    }
+
+    private static string Compact(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return json;
+            return string.Join(", ", doc.RootElement.EnumerateObject().Select(p => $"{p.Name}={(p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString() : p.Value.ToString())}"));
+        }
+        catch (JsonException) { return json; }
+    }
+}

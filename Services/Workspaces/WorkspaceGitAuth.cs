@@ -26,13 +26,15 @@ public static class WorkspaceGitAuth
         await using var db = await factory.CreateDbContextAsync();
         var ws = await db.Workspaces.AsNoTracking()
             .Where(w => w.OwnerId == userId && w.GitTokenHash == hash && (w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running))
-            .Select(w => new { w.RepositoryId, w.CanPush, w.GitTokenHash, w.SubmoduleRepoIdsJson }).FirstOrDefaultAsync();
+            .Select(w => new { w.Id, w.RepositoryId, w.CanPush, w.GitTokenHash, w.SubmoduleRepoIdsJson }).FirstOrDefaultAsync();
         // The lookup compared hashes in the database; compare again in constant time before trusting it.
         if (ws?.GitTokenHash != null && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ws.GitTokenHash, hash))
         {
             IReadOnlyList<int> extra = [];
             try { extra = System.Text.Json.JsonSerializer.Deserialize<List<int>>(ws.SubmoduleRepoIdsJson) ?? []; } catch (System.Text.Json.JsonException) { }
-            return (TokenScopes.ReadRepository | (ws.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId, extra);
+            // Collaborators share the container's credentials: unless the owner allowed them to push, the token stays read-only while they are invited.
+            var paused = ws.CanPush && await db.WorkspaceShares.AnyAsync(s => s.WorkspaceId == ws.Id && s.EndedAt == null && s.Role == WorkspaceShareRole.Collaborator && !s.AllowPush);
+            return (TokenScopes.ReadRepository | (ws.CanPush && !paused ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId, extra);
         }
 
         // A prebuild's token: read-only, one repository (its submodule repositories are added by the build), only while that build runs.

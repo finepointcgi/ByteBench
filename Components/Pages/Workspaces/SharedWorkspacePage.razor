@@ -1,0 +1,82 @@
+@page "/workspaces/shared/{PublicId}"
+@using ByteBench.Data
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceSharingService Sharing
+@inject WorkspaceService Workspaces
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>@(info?.RepoSlug ?? "Shared workspace") · ByteBench</PageTitle>
+
+@if (info == null)
+{
+    <ProjectNotFound Message="This workspace isn't shared with you, or sharing has ended." />
+}
+else
+{
+    <div class="ws-bar">
+        <div class="ws-title">
+            <MudText Typo="Typo.subtitle1" HtmlTag="h1"><b>@info.ProjectKey/@info.RepoSlug</b> <span class="mono">@info.Workspace.Ref</span> · @info.OwnerName's workspace</MudText>
+            <MudChip T="string" Size="Size.Small" Color="@(info.Role == WorkspaceShareRole.Collaborator ? Color.Primary : Color.Default)" data-testid="shared-role">@info.Role</MudChip>
+        </div>
+        <div class="ws-actions">
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="Leave" data-testid="shared-leave">Leave</MudButton>
+        </div>
+    </div>
+    @if (info.Role == WorkspaceShareRole.Collaborator)
+    {
+        @if (ideUrl != null) { <iframe class="ws-ide" src="@ideUrl" title="Workspace IDE" allow="clipboard-read; clipboard-write" data-testid="shared-ide" style="width:100%;height:calc(100vh - 140px);border:0"></iframe> }
+        else { <MudAlert Severity="Severity.Info" Class="mt-3">The IDE isn't available right now.</MudAlert> }
+    }
+    else
+    {
+        <WorkspaceViewerPanel PublicId="@PublicId" />
+    }
+}
+
+@code {
+    [Parameter] public string PublicId { get; set; } = "";
+
+    private SharedWorkspaceInfo? info;
+    private string? ideUrl;
+    private PeriodicTimer? timer;
+    private WorkspaceShareRole? lastRole;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await Refresh();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync()) { await Refresh(); await InvokeAsync(StateHasChanged); }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task Refresh()
+    {
+        info = await Sharing.GetSharedAsync(PublicId, Me.Id);
+        if (info?.Role != lastRole)
+        {
+            lastRole = info?.Role;
+            ideUrl = info?.Role == WorkspaceShareRole.Collaborator ? await Workspaces.EntryUrlAsync(PublicId, Me.Id, new Uri(Nav.BaseUri)) : null;
+        }
+    }
+
+    private async Task Leave()
+    {
+        try { await Sharing.LeaveAsync(PublicId, Me.Id); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+        Nav.NavigateTo("/workspaces");
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

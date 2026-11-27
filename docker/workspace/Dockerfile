@@ -31,7 +31,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git ca-certificates curl wget less nano vim-tiny jq unzip zip procps openssh-client openssh-server \
         nodejs npm python3 python3-pip python3-venv make g++ \
-        socat iptables \
+        socat iptables tmux \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; \

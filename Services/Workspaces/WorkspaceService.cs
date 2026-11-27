@@ -147,6 +147,7 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         }
         finally { runtime.StartGate.Release(); }
 
+        await audit.RecordAsync(WorkspaceAuditActions.Created, "workspace", ws.PublicId, ws.ProjectId, new { repository = $"{repo.Project.Key}/{repo.Slug}", @ref = name, source = ws.Source, canPush }, userId);
         runtime.Session(ws.Id).ProvisionLog.Append("Queued…");
         runtime.Track(Task.Run(() => lifecycle.ProvisionAsync(ws.Id, gitToken, connectionToken, plan)));
         return ws;
@@ -459,9 +460,9 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
     {
         if (!WorkspaceTokens.PublicIdPattern.IsMatch(publicId)) return null;
         var live = runtime.Find(publicId);
-        if (live == null || live.OwnerId != userId) return null;
+        if (live == null || runtime.Access.RoleOf(live.Id, live.OwnerId, userId) < WorkspaceRole.Collaborator) return null; // owner or collaborator; viewers never get an IDE
         await using var db = await dbFactory.CreateDbContextAsync();
-        if (!await db.Workspaces.AnyAsync(w => w.Id == live.Id && w.OwnerId == userId && w.State == WorkspaceState.Running)) return null;
+        if (!await db.Workspaces.AnyAsync(w => w.Id == live.Id && w.State == WorkspaceState.Running)) return null;
         var audience = port is { } p ? WorkspaceUrls.PreviewAudience(p) : WorkspaceUrls.IdeAudience;
         if (port is < 1 or > 65535) return null;
         live.Touch();
