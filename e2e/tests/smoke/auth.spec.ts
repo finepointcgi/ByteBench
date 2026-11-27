@@ -36,7 +36,10 @@ test.describe('sign in and access control', () => {
     await expect(page.locator('body')).not.toContainText('Terraform and deployment scripts');
     await expect(page.getByText(/not found|don't have access|no access/i).first()).toBeVisible();
     // Found by the AI explorer: the not-found page of an inaccessible project has a title like "Issues · " (nothing after the separator). Advisory, not failing.
-    if (/·\s*$/.test(await page.title())) test.info().annotations.push({ type: 'ux-advisory', description: `/p/OPS/ has an incomplete title: "${await page.title()}"` });
+    for (const sub of ['issues', 'members']) {
+      const resp = await page.goto(`/p/OPS/${sub}`);
+      if (/·\s*$/.test(await page.title()) || resp?.status() === 200) test.info().annotations.push({ type: 'ux-advisory', description: `/p/OPS/${sub} for a non-member: HTTP ${resp?.status()}, title "${await page.title()}"` });
+    }
     // ...and the API says the same thing
     const r = await page.request.get('/api/v1/projects/OPS/issues');
     expect([401, 403, 404]).toContain(r.status());
