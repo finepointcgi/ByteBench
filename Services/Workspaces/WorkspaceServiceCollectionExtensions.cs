@@ -17,6 +17,12 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddHostedService<WorkspaceImageStartup>();
         services.AddScoped<WorkspaceService>();
         services.AddScoped<WorkspaceAiService>();
+        services.AddScoped<AiChangeService>(); // review mode: pending change sets, accept/reject, the per-user/workspace setting
+        services.AddScoped<AiRunService>(); // task-driven AI runs: request, read, cancel
+        services.AddSingleton<AiRunQueue>();
+        services.AddSingleton<AiRunExecutor>();
+        services.AddSingleton<AiRunWorker>();
+        services.AddHostedService(sp => sp.GetRequiredService<AiRunWorker>());
         return services;
     }
 }

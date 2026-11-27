@@ -225,7 +225,10 @@ public static class GitHttpEndpoints
                 logger.LogInformation("Git auth failed: unknown user {Login} from {Ip}", shown, ctx.Connection.RemoteIpAddress);
                 return (null, null, null);
             }
-            if (await users.IsLockedOutAsync(user) || user.DeactivatedAt != null)
+            // The AI user is permanently locked out so nobody can sign in as it; its own workspace's git token (valid only for one repository while
+            // that workspace runs, see WorkspaceGitAuth) is the one credential it may use, for task-driven AI runs.
+            var aiWorkspaceToken = ByteBench.Services.Ai.AiBot.IsBot(user) && password.StartsWith(ByteBench.Services.Workspaces.WorkspaceTokens.GitPrefix, StringComparison.Ordinal);
+            if ((!aiWorkspaceToken && await users.IsLockedOutAsync(user)) || user.DeactivatedAt != null)
             {
                 logger.LogWarning("Git auth rejected: user {User} is locked out", user.UserName);
                 return (null, null, null);

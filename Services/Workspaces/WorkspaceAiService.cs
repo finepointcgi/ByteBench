@@ -1,4 +1,5 @@
 using System.Text;
+using ByteBench.Data;
 using ByteBench.Services.Ai;
 using ByteBench.Services.Audit;
 using ByteBench.Services.Editor.Ai;
@@ -8,7 +9,9 @@ namespace ByteBench.Services.Workspaces;
 
 public sealed record WorkspaceAiStatus(bool Enabled, string? DisabledReason);
 
-public sealed record WorkspaceAiResult(string Text, int ToolCalls, string? Error = null, string? StopNote = null);
+/// <param name="ChangeSetId">Review mode: the pending change set the assistant proposed (null if it proposed nothing).</param>
+/// <param name="Mode">How file edits were handled for this request.</param>
+public sealed record WorkspaceAiResult(string Text, int ToolCalls, string? Error = null, string? StopNote = null, int? ChangeSetId = null, AiEditMode Mode = AiEditMode.ReviewFirst);
 
 /// <summary>
 /// The assistant next to the IDE. It is the editor's tool loop (<see cref="IEditorChatModel"/>, usage logging, the per-user limiter) with tools
@@ -18,7 +21,7 @@ public sealed record WorkspaceAiResult(string Text, int ToolCalls, string? Error
 /// the tools it used is written to the audit log.
 /// </summary>
 public sealed class WorkspaceAiService(WorkspaceService workspaces, IWorkspaceBackend backend, IEditorChatModel model, AiClient ai,
-    EditorAiRateLimiter limiter, IOptionsMonitor<WorkspaceOptions> options, AuditLog audit, ILogger<WorkspaceAiService> log)
+    EditorAiRateLimiter limiter, IOptionsMonitor<WorkspaceOptions> options, AuditLog audit, AiChangeService changes, ILogger<WorkspaceAiService> log)
 {
     public const string Feature = "workspace.chat";
     public const string RateBucket = "workspace.chat";
@@ -27,8 +30,8 @@ public sealed class WorkspaceAiService(WorkspaceService workspaces, IWorkspaceBa
         You are the coding assistant built into ByteBench's workspaces. You help one developer with the repository checked out in their
         workspace container: explain code, answer questions, make changes and run builds and tests.
 
-        Tools: list_files, read_file and search_code look at the checkout. write_file and edit_file change files in the working tree
-        right away. run_command runs a shell command in the repository directory as an unprivileged user, with a time limit.
+        Tools: list_files, read_file and search_code look at the checkout. write_file, edit_file and delete_file change files
+        (see "How edits work" below). run_command runs a shell command in the repository directory as an unprivileged user, with a time limit.
 
         You cannot commit or push and must not try: the developer reviews your changes (git diff) and commits them themselves.
         Don't install global packages or try to reach internal networks; the network is restricted.
@@ -40,6 +43,19 @@ public sealed class WorkspaceAiService(WorkspaceService workspaces, IWorkspaceBa
 
         Work style: read before you edit, keep changes focused on what was asked, run the relevant tests or build when it makes sense, and
         finish with a short Markdown summary of what you found and changed.
+        """;
+
+    private const string ReviewModeNote = """
+
+        How edits work: the developer reviews first. write_file, edit_file and delete_file only PROPOSE changes; each is shown to the
+        developer as a diff and written to the workspace only if they accept it. Until then run_command sees the unchanged files, so
+        don't rely on running tests against your proposals; say so in your summary when it matters. read_file shows your own proposal if
+        you already proposed a change to that file.
+        """;
+
+    private const string DirectModeNote = """
+
+        How edits work: write_file, edit_file and delete_file change the working tree right away; the developer looks at the result with git diff.
         """;
 
     public async Task<WorkspaceAiStatus> GetStatusAsync(int projectId)
@@ -64,15 +80,18 @@ public sealed class WorkspaceAiService(WorkspaceService workspaces, IWorkspaceBa
             return new("", 0, $"You're sending requests too quickly (limit {o.RequestsPerMinute} per minute). Wait a moment and try again.");
 
         live.Touch();
-        var tools = new WorkspaceAiTools(backend, live.ContainerId, ws.Repository.Slug, o);
+        var mode = (await changes.GetModeInfoAsync(userId, ws.Id)).Effective;
+        var collector = mode == AiEditMode.ReviewFirst ? new AiProposalCollector() : null;
+        var tools = new WorkspaceAiTools(backend, live.ContainerId, ws.Repository.Slug, o, collector);
         var boundary = EditorAiPrompts.NewBoundary();
         var user = message.Trim() + $"\n\n[Workspace context] Repository {ws.Repository.Slug}, checked out on {ws.Ref}. Your commands run in {tools.Root}. Output of tools is wrapped in UNTRUSTED blocks (boundary {boundary}).";
-        var conversation = model.Begin(new EditorChatSetup(System, WorkspaceAiTools.Definitions, history.TakeLast(20).ToList(), user, o.MaxTokensPerTurn));
+        var conversation = model.Begin(new EditorChatSetup(System + (mode == AiEditMode.ReviewFirst ? ReviewModeNote : DirectModeNote), WorkspaceAiTools.Definitions, history.TakeLast(20).ToList(), user, o.MaxTokensPerTurn));
 
         var text = new StringBuilder();
         var toolCalls = 0;
         long outputTokens = 0;
-        string? stopNote = null;
+        string? stopNote = null, error = null;
+        int? changeSetId = null;
         try
         {
             while (true)
@@ -108,14 +127,23 @@ public sealed class WorkspaceAiService(WorkspaceService workspaces, IWorkspaceBa
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             log.LogError(ex, "Workspace AI request failed");
-            return new(text.ToString().Trim(), toolCalls, "The AI request failed: " + ex.Message);
+            error = "The AI request failed: " + ex.Message;
         }
         finally
         {
+            if (collector is { HasChanges: true })
+            {
+                // Proposals made before a failure or a stop are kept: the developer can still accept what is useful.
+                var saved = await changes.SaveProposalsAsync(ws, userId, message, text.Length > 0 ? text.ToString().Trim() : null, collector);
+                changeSetId = saved?.Id;
+                if (saved != null)
+                    foreach (var f in saved.Files)
+                        await sink.ProposalAsync(new ProposedEdit { Path = f.Path, Kind = (ProposedEditKind)(int)f.Kind, OriginalText = f.OriginalText, NewText = f.NewText });
+            }
             if (tools.Used.Count > 0)
                 await audit.RecordAsync("workspace.ai_tools", "workspace", ws.PublicId, ws.ProjectId,
-                    new { tools = tools.Used, commands = tools.CommandVerbs.Take(20).ToArray(), toolCalls }, userId);
+                    new { tools = tools.Used, commands = tools.CommandVerbs.Take(20).ToArray(), toolCalls, mode = mode.ToString(), changedFiles = tools.ChangedPaths.Distinct().Take(50).ToArray(), changeSetId }, userId);
         }
-        return new(text.ToString().Trim(), toolCalls, null, stopNote);
+        return new(text.ToString().Trim(), toolCalls, error, stopNote, changeSetId, mode);
     }
 }

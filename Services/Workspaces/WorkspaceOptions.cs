@@ -62,6 +62,9 @@ public class WorkspaceOptions
 
     /// <summary>The AI assistant next to the IDE.</summary>
     public WorkspaceAiOptions Ai { get; set; } = new();
+
+    /// <summary>Task-driven AI runs on issues.</summary>
+    public AiRunOptions AiRuns { get; set; } = new();
 }
 
 /// <summary>Configuration section <c>Workspaces:Ai</c>. The assistant also needs the Anthropic API (<c>Ai:Enabled</c> and a key).</summary>
@@ -78,4 +81,42 @@ public class WorkspaceAiOptions
     public int MaxOutputBytes { get; set; } = 32 * 1024;
     public int MaxFileReadBytes { get; set; } = 200 * 1024;
     public int MaxFileWriteBytes { get; set; } = 1024 * 1024;
+}
+
+/// <summary>
+/// Configuration section <c>Workspaces:AiRuns</c>: task-driven AI runs (the AI user works an issue in its own workspace and opens a pull request).
+/// Every limit is enforced by the executor; a run that hits one stops, says so on the issue and, if it already changed files, opens a draft pull
+/// request so the work isn't lost.
+/// </summary>
+public class AiRunOptions
+{
+    /// <summary>Turns task-driven runs on (also needs a site admin's switch, the workspace assistant and the AI user as a member of the project).</summary>
+    public bool Enabled { get; set; } = true;
+    /// <summary>Runs working at once across the server (each holds one workspace container).</summary>
+    public int MaxConcurrent { get; set; } = 2;
+    /// <summary>Runs waiting in the queue before new requests are refused.</summary>
+    public int MaxQueued { get; set; } = 20;
+    /// <summary>Runs started per project per 24 hours.</summary>
+    public int MaxRunsPerProjectPerDay { get; set; } = 30;
+    /// <summary>A run is stopped after this long, however far it got (includes the workspace start).</summary>
+    public double MaxDurationMinutes { get; set; } = 30;
+    /// <summary>Model turns (requests to the model) per run.</summary>
+    public int MaxSteps { get; set; } = 40;
+    /// <summary>Tool calls per run.</summary>
+    public int MaxToolCalls { get; set; } = 150;
+    /// <summary>Input plus output tokens per run (cache reads count a tenth).</summary>
+    public long MaxTokens { get; set; } = 1_500_000;
+    /// <summary>Cost cap per run in US dollars, from the token prices below. 0 turns the cost cap off.</summary>
+    public decimal MaxCostUsd { get; set; } = 5m;
+    /// <summary>Token prices per million tokens, for the cost cap and the cost shown on the run (set them for your model).</summary>
+    public decimal InputUsdPerMTok { get; set; } = 3m;
+    public decimal OutputUsdPerMTok { get; set; } = 15m;
+    public decimal CacheReadUsdPerMTok { get; set; } = 0.30m;
+    public decimal CacheWriteUsdPerMTok { get; set; } = 3.75m;
+    /// <summary>How often the worker looks for queued runs (they are also picked up at once when one is requested).</summary>
+    public int PollSeconds { get; set; } = 10;
+    /// <summary>A command the AI runs during a run (a build or a test suite) is stopped after this long (the chat assistant's limit is Workspaces:Ai:CommandTimeoutSeconds).</summary>
+    public int CommandTimeoutSeconds { get; set; } = 600;
+    /// <summary>Branch prefix for the AI's branches.</summary>
+    public string BranchPrefix { get; set; } = "ai/";
 }

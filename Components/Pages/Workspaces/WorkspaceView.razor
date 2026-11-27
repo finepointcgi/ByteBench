@@ -92,6 +92,7 @@ else
                             @if (aiBusy) { <MudProgressLinear Indeterminate="true" Size="Size.Small" /> }
                             @if (aiNote != null) { <MudAlert Severity="Severity.Warning" Dense="true">@aiNote</MudAlert> }
                         </div>
+                        <WorkspaceReviewPanel PublicId="@PublicId" />
                         <div class="ws-input">
                             <MudTextField T="string" @bind-Value="draft" Immediate="true" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="Ask about the code, or ask for a change…"
                                           Disabled="aiBusy" data-testid="ws-ai-input" />

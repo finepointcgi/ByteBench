@@ -103,6 +103,7 @@ public class AuthorizationSweepTests(AuthorizationSweepApp app, ITestOutputHelpe
         ["GET /api/v1/groups/{group}/roadmap"] = "an internal group's roadmap, filtered by project visibility",
         ["GET /api/v1/groups/{group}/subgroups"] = "an internal group's subgroups",
         ["GET /api/v1/dashboards"] = "the caller's own and shared dashboards",
+        ["GET /api/v1/ai-runs"] = "AI runs of the projects the caller can see (a non-member gets an empty list)",
         ["GET /api/v1/workspaces/"] = "the caller's own workspaces (never anyone else's)",
         ["GET /api/v1/notifications/"] = "the caller's own notifications",
         ["POST /api/v1/notifications/{id:int}/read"] = "marks the caller's own notification read; anyone else's id is a no-op",
