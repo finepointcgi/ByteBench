@@ -359,6 +359,7 @@ Scrum-style sprints per project (`Sprint` in `Data/Models.cs`, `Issue.SprintId`;
   - **Burndown:** remaining work per day from the start date to the end date, against an ideal line. History is rebuilt from issue `Activity` rows by `Services/SprintHistory.cs`: starting from each issue's current state, it undoes status changes to/from Done, estimate changes and sprint membership changes, newest first. Sprint activities link to the sprint (`…/backlog#sprint-{id}`), so renaming a sprint doesn't break history. Estimate changes record the old value ("changed the estimate from **3** to **5** story points"). Unestimated issues count as 0 points.
   - **Velocity:** committed vs completed for the last 8 completed sprints, with the average completed.
 - **Live updates:** sprint changes publish `SprintChanged` (plus `BoardChanged`, and `IssueChanged` for moved issues), so open backlogs, boards, reports and issue pages refresh. Moving an issue also fires the `issue.updated` webhook with the activity text.
+- **API (management):** `POST /api/v1/projects/{key}/sprints`, `PATCH …/sprints/{id}`, `POST …/sprints/{id}/start|complete`, `DELETE …/sprints/{id}`; boards `POST/PATCH/DELETE …/boards[/{id}]`, `PUT …/boards/{id}/columns|quick-filters`, `POST …/boards/{id}/reset-columns|make-default`; workflow `POST/PATCH/DELETE …/workflow/statuses`, `PUT …/workflow/transitions` (Maintainer+, Owner for the workflow; unknown JSON properties are 400, duplicates 409). Everything else that can be managed (projects, members, labels, repositories, branch protection, webhooks, …) is in `site/pages/api.html#api-manage`.
 - **API:** `GET /api/v1/projects/{key}/sprints` (`?state=`) and `/sprints/{id}`; issues carry `sprintId` and can be filtered with `?sprint={id}`, `none` or `active`.
 - **Seed:** WEB has six completed sprints, an active one (WEB Sprint 7) and a planned one, with backdated activity so the charts have data (`Data/SprintSeeder.cs`; runs once, on a database whose WEB project has no sprints).
 
@@ -465,6 +466,7 @@ Implementation: `Services/Ai/IssueAiService.cs` (data gathering and Claude calls
 | `Services/MemberService.cs` / `Services/AccessTokenService.cs` | Project membership; personal access tokens |
 | `Services/GroupService.cs` / `Services/ProjectAccess.Groups.cs` | Groups: subgroups, members, group labels/milestones, transfers; group permissions |
 | `Api/` | REST API (`/api/v1`): endpoints, DTOs, auth filter, paging, OpenAPI |
+| `Api/*ManagementEndpoints.cs` | write API for project structure (projects, members, labels, components, versions, fields, workflow, groups, repositories, imports, mirrors, branch protection, releases, webhooks, sprints, boards); strict bodies via `Api/ManagementSupport.cs` |
 | `Services/Webhooks/` | Outgoing webhooks: dispatcher, worker, sender (SSRF guard), push capture, notifier |
 | `Components/Account/` | Login, register and profile pages (static SSR), `RedirectToLogin` |
 | `Services/Display.cs` | Formatting helpers and safe Markdown rendering (Markdig, raw HTML disabled) |

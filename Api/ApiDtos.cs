@@ -45,7 +45,7 @@ public record WorkflowDto(IReadOnlyList<WorkflowStatusDto> Statuses, IReadOnlyLi
 public record CommentDto(int Id, string Body, UserDto Author, DateTimeOffset CreatedAt, DateTimeOffset? EditedAt);
 
 public record RepositoryDto(int Id, string Slug, string Name, string? Description, string DefaultBranch,
-    DateTimeOffset CreatedAt, string CloneUrl, string WebUrl);
+    DateTimeOffset CreatedAt, string CloneUrl, string WebUrl, bool IsArchived = false);
 
 public record CommitDto(string Sha, string Message, string AuthorName, string AuthorEmail, DateTimeOffset Timestamp,
     IReadOnlyList<string> Parents);
@@ -150,7 +150,7 @@ public static class Dto
     /// <summary>Requires Project to be loaded.</summary>
     public static RepositoryDto Repository(Repository r, string baseUrl) => new(
         r.Id, r.Slug, r.Name, r.Description, r.DefaultBranch, Utc(r.CreatedAt),
-        RepoUrls.CloneUrl(baseUrl, r), baseUrl + RepoUrls.Base(r));
+        RepoUrls.CloneUrl(baseUrl, r), baseUrl + RepoUrls.Base(r), r.IsArchived);
 
     public static CommitDto Commit(CommitInfo c) => new(c.Sha, c.Message, c.AuthorName, c.AuthorEmail, c.When.ToUniversalTime(), c.ParentShas);
 

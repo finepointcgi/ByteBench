@@ -392,7 +392,11 @@ public partial class IssueService(IDbContextFactory<AppDbContext> dbFactory, Pro
         label.GroupId = null;
         if (label.Id != 0 && await access.ProjectOf(d => d.Labels.Where(l => l.Id == label.Id).Select(l => (int?)l.ProjectId)) != label.ProjectId)
             throw new ForbiddenException("Label not found in this project.");
+        label.Name = (label.Name ?? "").Trim();
+        if (label.Name.Length is 0 or > 40) throw new InvalidOperationException("A label needs a name (at most 40 characters).");
         await using var db = await dbFactory.CreateDbContextAsync();
+        if (await db.Labels.AnyAsync(l => l.ProjectId == label.ProjectId && l.Id != label.Id && l.Name.ToLower() == label.Name.ToLower()))
+            throw new InvalidOperationException("A label with that name already exists.");
         if (label.Id == 0) db.Labels.Add(label); else db.Labels.Update(label);
         await db.SaveChangesAsync();
         return label;

@@ -55,9 +55,9 @@ public static class SprintEndpoints
         return ToDto(sprint, await StatsAsync(dbFactory, [sprint.Id]), project.Key, url.For(http.Request));
     }
 
-    private record Stats(int Count, int Done, int Points, int DonePoints);
+    internal record Stats(int Count, int Done, int Points, int DonePoints);
 
-    private static async Task<Dictionary<int, Stats>> StatsAsync(IDbContextFactory<AppDbContext> dbFactory, List<int> sprintIds)
+    internal static async Task<Dictionary<int, Stats>> StatsAsync(IDbContextFactory<AppDbContext> dbFactory, List<int> sprintIds)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var rows = await db.Issues.Where(i => i.SprintId != null && sprintIds.Contains(i.SprintId.Value))
@@ -65,7 +65,7 @@ public static class SprintEndpoints
         return rows.GroupBy(r => r.Sprint).ToDictionary(g => g.Key, g => new Stats(g.Count(), g.Count(r => r.Done), g.Sum(r => r.Points), g.Where(r => r.Done).Sum(r => r.Points)));
     }
 
-    private static SprintDto ToDto(Sprint s, Dictionary<int, Stats> stats, string projectKey, string baseUrl)
+    internal static SprintDto ToDto(Sprint s, Dictionary<int, Stats> stats, string projectKey, string baseUrl)
     {
         var st = stats.GetValueOrDefault(s.Id) ?? new Stats(0, 0, 0, 0);
         return new SprintDto(s.Id, s.Name, s.Goal, s.State, Dto.Date(s.StartDate), Dto.Date(s.EndDate), Dto.Utc(s.StartedAt), Dto.Utc(s.CompletedAt),

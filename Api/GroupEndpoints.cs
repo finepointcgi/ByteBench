@@ -28,7 +28,7 @@ public static class GroupEndpoints
             .WithDescription("Issues in every project of the group and its subgroups that you can view. Filters: status (open [default], closed, all), q (text or issue key), sort (updated [default], created, priority, due).");
     }
 
-    private static GroupDto ToDto(Group g, ProjectRole? role, string baseUrl) =>
+    internal static GroupDto ToDto(Group g, ProjectRole? role, string baseUrl) =>
         new(g.Id, g.Name, g.Path, g.FullPath, g.Description, g.Visibility, g.Color, g.ParentId,
             new DateTimeOffset(DateTime.SpecifyKind(g.CreatedAt, DateTimeKind.Utc)), role, $"{baseUrl}/g/{g.FullPath}");
 
