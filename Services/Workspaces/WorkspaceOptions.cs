@@ -113,6 +113,8 @@ public class WorkspacePrebuildOptions
     public int KeepHistory { get; set; } = 30;
     /// <summary>How often old prebuilds are cleaned up.</summary>
     public int CleanupIntervalMinutes { get; set; } = 30;
+}
+
 /// <summary>
 /// Configuration section <c>Workspaces:AiRuns</c>: task-driven AI runs (the AI user works an issue in its own workspace and opens a pull request).
 /// Every limit is enforced by the executor; a run that hits one stops, says so on the issue and, if it already changed files, opens a draft pull
