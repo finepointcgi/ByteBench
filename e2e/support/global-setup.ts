@@ -49,7 +49,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       writeFileSync(path.join(out, 'server-errors.txt'), errs.join('\n\n'));
     } catch { /* best effort */ }
     await server!.stop();
-    if (docker) await cleanupDockerTier(docker);
+    if (docker && process.env.E2E_KEEP_DOCKER !== '1') await cleanupDockerTier(docker);
+    else if (docker) console.log(`[e2e] E2E_KEEP_DOCKER=1: containers of instance ${docker.instanceKey} and network ${docker.network} left running; remove with: e2e/run.sh docker-clean`);
     if (errs.length && process.env.E2E_ALLOW_SERVER_ERRORS !== '1') {
       throw new Error(`The server logged ${errs.length} error(s) (fail:/crit:) during the run; see test-results/server-errors.txt.\n\n${errs.slice(0, 5).join('\n\n')}`);
     }

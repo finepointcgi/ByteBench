@@ -56,6 +56,7 @@ export const test = base.extend<{
 });
 
 export { expect };
+export type { Page } from '@playwright/test';
 
 /** Waits for the Blazor Server circuit: its WebSocket is open and has received the server's first frames. */
 export async function openReady(page: Page, url: string): Promise<void> {

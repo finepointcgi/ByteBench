@@ -1,0 +1,15 @@
+# Environment of the e2e fixture repository (see docs/testing.md).
+setup:
+  - npm install --no-audit --no-fund --loglevel=error is-odd@3.0.1
+  - echo setup-ran >> .setup-marker
+  # Deliberately slow, so "a prebuild makes the second start faster" is measurable and not noise.
+  - sleep 12 && echo slow-setup-done >> .slow-marker
+tasks:
+  hello: echo hello-from-task
+  serve:
+    command: python3 -m http.server 8088 --bind 0.0.0.0
+    port: 8088
+    preview: true
+env:
+  E2E_PLAIN: plain-value
+submodules: true
