@@ -11,6 +11,8 @@ public sealed class ParsedArgs
         ["description"] = true, ["description-file"] = true, ["body"] = true, ["body-file"] = true, ["type"] = true,
         ["priority"] = true, ["assignee"] = true, ["label"] = true, ["to"] = true, ["state"] = true, ["branch"] = true,
         ["step"] = true, ["tail"] = true, ["key"] = true,
+        ["name"] = true, ["visibility"] = true, ["group"] = true, ["confirm"] = true, ["role"] = true, ["color"] = true, ["start"] = true, ["end"] = true,
+        ["goal"] = true, ["slug"] = true, ["url"] = true, ["pattern"] = true, ["approvals"] = true,
     };
 
     public List<string> Words { get; } = [];

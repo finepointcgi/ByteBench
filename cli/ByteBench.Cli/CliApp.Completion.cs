@@ -23,10 +23,16 @@ public sealed partial class CliApp
     /// <summary>The words completion offers: commands and their subcommands.</summary>
     public static readonly IReadOnlyDictionary<string, string[]> CompletionCommands = new Dictionary<string, string[]>
     {
-        ["login"] = [], ["logout"] = [], ["whoami"] = [], ["projects"] = [], ["open"] = [],
+        ["login"] = [], ["logout"] = [], ["whoami"] = [], ["projects"] = ["create", "update", "delete"], ["open"] = [],
         ["issues"] = ["list", "show", "create", "comment", "move", "assign"],
         ["prs"] = ["list", "show"],
-        ["repos"] = ["list"],
+        ["repos"] = ["list", "create", "update", "archive", "unarchive", "delete"],
+        ["members"] = ["list", "add", "role", "remove"],
+        ["labels"] = ["list", "create", "delete"],
+        ["versions"] = ["list", "create", "release", "unrelease"],
+        ["sprints"] = ["list", "create", "start", "complete", "delete"],
+        ["protection"] = ["list", "set", "delete"],
+        ["webhooks"] = ["list", "create", "delete"],
         ["pipelines"] = ["list", "logs"],
         ["workspace"] = ["connect", "tunnel"],
         ["completion"] = ["bash", "zsh", "fish"],

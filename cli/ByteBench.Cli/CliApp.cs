@@ -28,6 +28,19 @@ public sealed partial class CliApp(CliEnvironment env)
           prs list [--project KEY] [--state open|merged|declined|all]
           prs show <KEY/slug> <number>
           repos list [--project KEY]
+          repos create --project KEY --name TEXT [--slug S] [--description TEXT]
+          repos update <KEY/slug> [--name TEXT] [--description TEXT] [--branch DEFAULT] [--slug NEW]
+          repos archive|unarchive <KEY/slug>
+          repos delete <KEY/slug> --confirm "<repository name>"
+          projects create --key KEY --name TEXT [--description TEXT] [--visibility private|internal] [--group ID]
+          projects update <KEY> [--name TEXT] [--description TEXT] [--visibility private|internal]
+          projects delete <KEY> --confirm KEY
+          members list <KEY> | add <KEY> <user> --role R | role <KEY> <user> --role R | remove <KEY> <user>
+          labels list <KEY> | create <KEY> --name N [--color #rrggbb] | delete <KEY> <id>
+          versions list <KEY> | create <KEY> --name N [--start D] [--end D] | release|unrelease <KEY> <id>
+          sprints list <KEY> | create <KEY> [--name N] [--goal G] | start <KEY> <id> --start D --end D | complete <KEY> <id> [--to backlog|new|<id>] | delete <KEY> <id>
+          protection list <KEY/slug> | set <KEY/slug> --pattern P [--approvals N] [--type block-pushes|require-checks|require-signed]... | delete <KEY/slug> <id>
+          webhooks list <KEY> | create <KEY> --url U --type EVENT... | delete <KEY> <id>
           pipelines list <KEY/slug> [--branch B] [--status S]
           pipelines logs <KEY/slug> <pipeline-id> [--step ID] [--tail CHARS]
           workspace connect <id> [--key FILE.pub]   Allow your SSH public key in a workspace; print the SSH config for VS Code / JetBrains
@@ -89,7 +102,21 @@ public sealed partial class CliApp(CliEnvironment env)
             case ("login", _): return await LoginAsync(ct);
             case ("logout", _): return Logout();
             case ("whoami", _): return await WhoAmIAsync(ct);
+            case ("projects", "create"): return await ProjectsCreateAsync(ct);
+            case ("projects", "update"): return await ProjectsUpdateAsync(ct);
+            case ("projects", "delete"): return await ProjectsDeleteAsync(ct);
             case ("projects", _): return await ProjectsAsync(ct);
+            case ("members", not null): return await MembersAsync(ct);
+            case ("labels", not null): return await LabelsAsync(ct);
+            case ("versions", not null): return await VersionsAsync(ct);
+            case ("sprints", not null): return await SprintsAsync(ct);
+            case ("protection", not null): return await ProtectionAsync(ct);
+            case ("webhooks", not null): return await WebhooksAsync(ct);
+            case ("repos", "create"): return await ReposCreateAsync(ct);
+            case ("repos", "update"): return await ReposUpdateAsync(ct);
+            case ("repos", "archive"): return await ReposArchiveAsync(true, ct);
+            case ("repos", "unarchive"): return await ReposArchiveAsync(false, ct);
+            case ("repos", "delete"): return await ReposDeleteAsync(ct);
             case ("open", _): return Open();
             case ("completion", _): return Completion();
             case ("issues", "list"): return await IssuesListAsync(ct);
@@ -105,12 +132,18 @@ public sealed partial class CliApp(CliEnvironment env)
             case ("pipelines", "logs"): return await PipelinesLogsAsync(ct);
             case ("workspace", "connect"): return await WorkspaceConnectAsync(ct);
             case ("workspace", "tunnel"): return await WorkspaceTunnelAsync(ct);
-            case ("issues" or "prs" or "repos" or "pipelines" or "workspace", _):
+            case ("issues" or "prs" or "repos" or "pipelines" or "workspace" or "members" or "labels" or "versions" or "sprints" or "protection" or "webhooks", _):
                 throw CliException.Usage($"'{command}' needs a subcommand: " + command switch
                 {
                     "issues" => "list, show, create, comment, move or assign.",
                     "prs" => "list or show.",
-                    "repos" => "list.",
+                    "repos" => "list, create, update, archive, unarchive or delete.",
+                    "members" => "list, add, role or remove.",
+                    "labels" => "list, create or delete.",
+                    "versions" => "list, create, release or unrelease.",
+                    "sprints" => "list, create, start, complete or delete.",
+                    "protection" => "list, set or delete.",
+                    "webhooks" => "list, create or delete.",
                     "workspace" => "connect or tunnel.",
                     _ => "list or logs.",
                 });

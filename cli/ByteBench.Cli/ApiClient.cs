@@ -55,6 +55,8 @@ public sealed class ApiClient : IDisposable
 
     public Task<ApiResponse> GetAsync(string path, CancellationToken ct = default) => SendAsync(HttpMethod.Get, path, null, ct);
     public Task<ApiResponse> PostAsync(string path, object body, CancellationToken ct = default) => SendAsync(HttpMethod.Post, path, body, ct);
+    public Task<ApiResponse> PutAsync(string path, object body, CancellationToken ct = default) => SendAsync(HttpMethod.Put, path, body, ct);
+    public Task<ApiResponse> DeleteAsync(string path, CancellationToken ct = default) => SendAsync(HttpMethod.Delete, path, null, ct);
     public Task<ApiResponse> PatchAsync(string path, object body, CancellationToken ct = default) => SendAsync(HttpMethod.Patch, path, body, ct);
 
     public async Task<ApiResponse> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct)
@@ -99,6 +101,7 @@ public sealed class ApiClient : IDisposable
                 CliException.Auth("The access token doesn't have the scope this needs (" + detail + ") Create a token with read_api/write_api."),
             HttpStatusCode.Forbidden => CliException.Failure("Not allowed: " + detail),
             HttpStatusCode.NotFound => CliException.Failure("Not found: " + detail),
+            HttpStatusCode.Conflict => CliException.Failure("Conflict: " + detail),
             HttpStatusCode.TooManyRequests => CliException.Failure("Rate limited by the server: " + detail),
             _ => CliException.Failure($"The server answered {(int)status}: {detail}"),
         };

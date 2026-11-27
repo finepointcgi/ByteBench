@@ -136,6 +136,22 @@ bytebench logout</code></pre>
   <tr><td><code>bytebench pipelines logs KEY/slug ID [--step ID] [--tail CHARS]</code></td><td>The end of a step's log (the first failed step unless you pick one).</td></tr>
   <tr><td><code>bytebench open KEY-N</code></td><td>Prints the issue's web address.</td></tr>
 </table>
+<h3 id="cli-manage">Managing projects from the command line</h3>
+<p>These commands need a token with <code>write_api</code>. Each is one call to the <a href="api.html#api-manage">management API</a>, so your role decides what works and the server's message is printed when it refuses (a duplicate exits 1 with <code>Conflict: …</code>). Dates are <code>yyyy-MM-dd</code>.</p>
+<table>
+  <tr><td><code>bytebench projects create --key KEY --name T [--description D] [--visibility private|internal] [--group ID]</code></td><td>Create a project (you become Owner).</td></tr>
+  <tr><td><code>bytebench projects update KEY [--name T] [--description D] [--visibility V]</code>, <code>projects delete KEY --confirm KEY</code></td><td>Change settings (Owner), or delete the project for good.</td></tr>
+  <tr><td><code>bytebench members list KEY</code>, <code>add KEY USER --role R</code>, <code>role KEY USER --role R</code>, <code>remove KEY USER</code></td><td>Project members; roles are viewer, developer, maintainer, owner.</td></tr>
+  <tr><td><code>bytebench labels list|create|delete KEY …</code></td><td><code>create KEY --name N [--color #rrggbb]</code>, <code>delete KEY ID</code>.</td></tr>
+  <tr><td><code>bytebench versions list|create|release|unrelease KEY …</code></td><td><code>create KEY --name N [--start D] [--end D]</code>, <code>release KEY ID</code>.</td></tr>
+  <tr><td><code>bytebench sprints list|create|start|complete|delete KEY …</code></td><td><code>create KEY [--name N] [--goal G]</code>, <code>start KEY ID --start D --end D</code>, <code>complete KEY ID [--to backlog|new|SPRINT_ID]</code>.</td></tr>
+  <tr><td><code>bytebench repos create --project KEY --name T [--slug S] [--description D]</code></td><td>Create a repository with an initial README.</td></tr>
+  <tr><td><code>bytebench repos update KEY/slug [--name] [--description] [--branch DEFAULT] [--slug NEW]</code>, <code>archive</code>, <code>unarchive</code>, <code>delete KEY/slug --confirm "NAME"</code></td><td>Repository settings; deleting needs the repository's name.</td></tr>
+  <tr><td><code>bytebench protection list KEY/slug</code>, <code>set KEY/slug --pattern P [--approvals N] [--type block-pushes|require-checks|require-signed|allow-force-push|allow-delete]…</code>, <code>delete KEY/slug ID</code></td><td>Branch protection rules; <code>set</code> creates the rule or updates the one for that pattern.</td></tr>
+  <tr><td><code>bytebench webhooks list KEY</code>, <code>create KEY --url U --type EVENT…</code>, <code>delete KEY ID</code></td><td>Project webhooks; <code>create</code> prints the signing secret once.</td></tr>
+</table>
+<p>Boards, workflow statuses, custom fields, components, groups, imports and mirrors are in the API only (use <code>curl</code> or any HTTP client).</p>
+
 <p><code>bytebench completion bash|zsh|fish</code> prints a shell completion script (see <a href="#cli-install">Installing a release</a>).</p>
 <p>Every command takes <code>--json</code> for machine-readable output (the API's JSON, unchanged) and <code>--help</code>. Text output is plain. Colour is used only when standard output is a terminal and <code>NO_COLOR</code> is not set. Text that came from the server (titles, comments, logs) has terminal control characters replaced with <code>?</code>, so an issue cannot rewrite your screen.</p>
 

@@ -115,6 +115,9 @@ public static class ApiEndpoints
         api.MapTestEndpoints(); // test management: cases, plans, runs, results, report upload
         api.MapReleaseHubEndpoints(); // release hub: everything for a tag, auto-attach rules
         api.MapNotificationApiEndpoints(); // your notifications (desktop app polling)
+        api.MapProjectManagementEndpoints(); // create/update/delete projects, members, labels, components, versions, custom fields, workflow, groups
+        api.MapRepoManagementEndpoints(); // create/edit/archive/delete/import/mirror repositories, branch protection, release editing, webhooks
+        api.MapPlanningManagementEndpoints(); // sprints (create/start/complete) and boards (columns, quick filters)
 
         app.MapServerInfo(); // GET /api/v1/server-info (anonymous): name, version, capabilities
 
