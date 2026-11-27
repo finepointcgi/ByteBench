@@ -11,6 +11,9 @@ public enum NavDecision { Internal, Workspace, External, Blocked }
 /// <summary>Which kind of workspace origin a URL is: the IDE (<c>ide-{id}.{base}</c>) or a forwarded-port preview (<c>p{port}-{id}.{base}</c>).</summary>
 public enum WorkspaceKind { None, Ide, Preview }
 
+/// <param name="Port">The forwarded port, for a preview.</param>
+public sealed record WorkspaceOrigin(WorkspaceKind Kind, int? Port, string WorkspaceId);
+
 /// <param name="ServerOrigin">The profile's origin (scheme://host[:port]).</param>
 /// <param name="AdvertisedWorkspaceBase">Workspace base domain from server-info, if any.</param>
 public sealed record NavContext(string ServerOrigin, string? AdvertisedWorkspaceBase = null);
@@ -59,6 +62,52 @@ public static partial class NavigationPolicy
         Uri.TryCreate(raw, UriKind.Absolute, out var target) && Uri.TryCreate(ctx.ServerOrigin, UriKind.Absolute, out var server) && target.UserInfo.Length == 0
             ? KindOf(target, server, ctx.AdvertisedWorkspaceBase)
             : WorkspaceKind.None;
+
+    /// <summary>The exact labels ByteBench mints: ide-{id} and p{port}-{id}, an id being 20 characters of [a-z2-7].</summary>
+    [GeneratedRegex(@"^(?:(?<ide>ide)|p(?<port>[0-9]{1,5}))-(?<id>[a-z2-7]{20})$")]
+    private static partial Regex StrictLabel();
+
+    /// <summary>Which workspace (and port) a URL on one of the server's workspace origins belongs to; null for anything else, including look-alike labels.</summary>
+    public static WorkspaceOrigin? ParseWorkspaceOrigin(string? raw, NavContext ctx)
+    {
+        if (WorkspaceKindOf(raw, ctx) == WorkspaceKind.None) return null;
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var target) || !Uri.TryCreate(ctx.ServerOrigin, UriKind.Absolute, out var server)) return null;
+        var host = target.IdnHost.ToLowerInvariant();
+        foreach (var b in WorkspaceBases(server.IdnHost, ctx.AdvertisedWorkspaceBase))
+        {
+            if (!host.EndsWith("." + b, StringComparison.Ordinal)) continue;
+            var m = StrictLabel().Match(host[..(host.Length - b.Length - 1)]);
+            if (!m.Success) continue;
+            if (m.Groups["ide"].Success) return new WorkspaceOrigin(WorkspaceKind.Ide, null, m.Groups["id"].Value);
+            if (int.TryParse(m.Groups["port"].Value, out var port) && port is >= 1 and <= 65535) return new WorkspaceOrigin(WorkspaceKind.Preview, port, m.Groups["id"].Value);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Whether a URL the server handed back for "open port {port} of workspace {workspaceId}" is exactly that: the single-use entry link
+    /// (/_bb/enter?ticket=...&amp;next=/) on that workspace's own preview origin for that port. A server (or a middlebox) can't use this call to make
+    /// the app load another page, another workspace, the IDE or another port.
+    /// </summary>
+    public static bool IsPortEntryUrl(string? raw, NavContext ctx, string workspaceId, int port)
+    {
+        var o = ParseWorkspaceOrigin(raw, ctx);
+        if (o is not { Kind: WorkspaceKind.Preview } || o.WorkspaceId != workspaceId || o.Port != port) return false;
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var u) || u.AbsolutePath != "/_bb/enter" || u.Fragment.Length > 0) return false;
+        string? ticket = null, next = null;
+        foreach (var pair in u.Query.TrimStart('?').Split('&'))
+        {
+            var kv = pair.Split('=', 2);
+            var value = kv.Length > 1 ? Uri.UnescapeDataString(kv[1].Replace('+', ' ')) : "";
+            switch (kv[0])
+            {
+                case "ticket" when ticket is null: ticket = value; break;
+                case "next" when next is null: next = value; break;
+                default: return false; // an extra or repeated parameter
+            }
+        }
+        return !string.IsNullOrEmpty(ticket) && next is not null && next.StartsWith('/') && !next.StartsWith("//", StringComparison.Ordinal) && !next.Contains('\\');
+    }
 
     /// <summary>
     /// A page of ByteBench (the server's own origin, not a workspace) is framing a workspace origin in an iframe. WebKit gives such a frame no

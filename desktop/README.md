@@ -53,6 +53,12 @@ stored an API token for the server it is passed to git through environment confi
 Workspace pages (`/workspaces`) work as in the browser. The IDE and previews live on `ide-*.{base}` and `p<port>-*.{base}` origins
 of the same server; those open in an app window that shares the server's session. Other sites open in your default browser.
 
+**Go → Workspace Ports…** (Ctrl/Cmd+Shift+P) lists the ports your running workspaces are serving (`GET /api/v1/workspaces/{id}/ports`, needs the
+`workspace-ports` capability and a saved access token or a signed-in session) and opens one in an app window or your browser. The app asks the
+server for a single-use entry link and opens it only if it is exactly the preview origin of that workspace and port on this server
+(`isPortEntryUrl`: right host label, `/_bb/enter`, only `ticket` and a local `next`, no credentials or fragment). The address shown is the
+workspace origin (for a local server `p5173-<id>.localhost:5108`); the app does not bind a local TCP port.
+
 ### Self-signed certificates and single sign-on
 
 * **Self-signed:** tick "Trust a self-signed certificate" for a server. On the first failed connection the error page shows the

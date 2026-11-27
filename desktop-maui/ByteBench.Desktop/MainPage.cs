@@ -216,6 +216,7 @@ public sealed class MainPage : ContentPage
             using var res = await _http.GetAsync(new Uri(new Uri(profile.Origin), "/api/v1/server-info"), _cts.Token);
             var compat = ServerApi.EvaluateServerInfo((int)res.StatusCode, await res.Content.ReadAsStringAsync(_cts.Token));
             view.AdvertisedWorkspaceBase = compat.Info?.WorkspaceBaseDomain;
+            if (compat.Info is { } info) _capabilities[profile.Id] = info.Capabilities;
             if (compat.Level is CompatLevel.Legacy or CompatLevel.Newer && compat.Message is { } m)
                 MainThread.BeginInvokeOnMainThread(() => { _banner.Text = m; _bannerFor = profile.Id; _banner.IsVisible = _activeId == profile.Id; });
         }
@@ -429,6 +430,9 @@ public sealed class MainPage : ContentPage
         }
         if (profiles.Count == 0) serversMenu.Add(new MenuFlyoutItem { Text = "No servers yet", IsEnabled = false });
 
+        var workspaces = new MenuBarItem { Text = "Workspaces" };
+        workspaces.Add(Item("Workspace Ports...", () => _ = ShowWorkspacePortsAsync(), "P", shift: true));
+
         var notes = new MenuBarItem { Text = "Notifications" };
         notes.Add(Item("Check Now", _poller.PollSoon));
         notes.Add(Item(_store.Settings().NotificationsEnabled ? "Turn Notifications Off" : "Turn Notifications On", () => { _store.SetNotificationsEnabled(!_store.Settings().NotificationsEnabled); _poller.PollSoon(); RebuildMenu(); }));
@@ -437,6 +441,7 @@ public sealed class MainPage : ContentPage
         MenuBarItems.Add(file);
         MenuBarItems.Add(view);
         MenuBarItems.Add(serversMenu);
+        MenuBarItems.Add(workspaces);
         MenuBarItems.Add(notes);
     }
 
@@ -454,6 +459,71 @@ public sealed class MainPage : ContentPage
     {
         var error = LinkRegistration.Register();
         await DisplayAlert("bytebench:// links", error is null ? "Registered for your Windows user. Links open the newest copy of the app you start from this location." : "Could not register: " + error, "OK");
+    }
+
+    // ---------------------------------------------------------------- workspace ports
+
+    private readonly Dictionary<string, IReadOnlyList<string>> _capabilities = [];
+
+    private async Task<(int? Status, string? Body)> ApiAsync(HttpMethod method, ServerProfile p, string path, string token)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(method, new Uri(new Uri(p.Origin), path));
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (method == HttpMethod.Post) req.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            using var res = await _http.SendAsync(req, _cts.Token);
+            return ((int)res.StatusCode, await res.Content.ReadAsStringAsync(_cts.Token));
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return (null, null); }
+    }
+
+    /// <summary>
+    /// Workspaces → Workspace Ports: lists the running workspaces' forwarded ports and opens one in the app (the window navigates to the workspace's own
+    /// origin) or in the system browser. The list and the single-use entry link are validated in <see cref="WorkspacePorts"/> before anything is opened.
+    /// </summary>
+    private async Task ShowWorkspacePortsAsync()
+    {
+        var profile = _activeId is { } id ? _store.Get(id) : null;
+        var view = ActiveView();
+        if (profile is null || view is null) { await DisplayAlert("Open a server first", "Workspace ports belong to a ByteBench server. Open one, then choose this command again.", "OK"); return; }
+        if (!_capabilities.TryGetValue(profile.Id, out var caps) || !WorkspacePorts.ServerSupportsPorts(caps))
+        {
+            await DisplayAlert("Workspace ports", "This server is too old to list workspace ports, or it could not be reached. Update ByteBench on the server.", "OK");
+            return;
+        }
+        var token = await _tokens.GetAsync(profile.Id);
+        if (token is null)
+        {
+            await DisplayAlert("Workspace ports", "Add an access token for this server (Servers... > Save token) so the app can list your workspaces' ports.", "OK");
+            return;
+        }
+
+        var ctx = view.Context;
+        var (status, body) = await ApiAsync(HttpMethod.Get, profile, "/api/v1/workspaces", token);
+        if (status is not 200) { await DisplayAlert("Workspace ports", status is 401 or 403 ? "The server did not accept the saved access token." : "The workspaces could not be loaded.", "OK"); return; }
+
+        var entries = new List<(WorkspaceSummary W, ForwardedPort P)>();
+        foreach (var w in WorkspacePorts.ParseWorkspaces(body))
+        {
+            var (ps, pb) = await ApiAsync(HttpMethod.Get, profile, $"/api/v1/workspaces/{w.Id}/ports", token);
+            if (ps is 200) entries.AddRange(WorkspacePorts.ParsePorts(pb, ctx, w.Id).Select(p => (w, p)));
+        }
+        if (entries.Count == 0) { await DisplayAlert("Workspace ports", "No running workspace is serving a port. Start your app in a workspace and its ports are listed here.", "OK"); return; }
+
+        var labels = entries.Select(e => WorkspacePorts.Label(e.W, e.P)).ToArray();
+        var choice = await DisplayActionSheet("Open a workspace port", "Cancel", null, labels);
+        var index = Array.IndexOf(labels, choice);
+        if (index < 0) return;
+        var (workspace, port) = entries[index];
+        var inApp = await DisplayAlert("Open port " + port.Port, "Open it in this window, or in your web browser?", "In the app", "In the browser");
+
+        var (openStatus, openBody) = await ApiAsync(HttpMethod.Post, profile, $"/api/v1/workspaces/{workspace.Id}/ports/{port.Port}/open", token);
+        if (openStatus is not 200) { await DisplayAlert("Could not open the port", openStatus == 422 ? "The workspace is not running any more." : "The port could not be opened.", "OK"); return; }
+        var url = WorkspacePorts.ParseOpenResponse(openBody, ctx, workspace.Id, port.Port);
+        if (url is null) { await DisplayAlert("Could not open the port", "The server answered with an address the app does not trust, so it was not opened.", "OK"); return; }
+        if (inApp) view.Navigate(url);
+        else ExternalLauncher.Open(url);
     }
 
     // ---------------------------------------------------------------- deep links

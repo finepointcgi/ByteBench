@@ -50,6 +50,10 @@ else if (pr != null)
                 @if (pr.State == PullRequestState.Open && (pr.IsCrossFork ? pr.SourceRepository?.Project : repo.Project) != null)
                 {
                     var wsRepo = pr.IsCrossFork ? pr.SourceRepository! : repo;
+                    @if (!pr.IsCrossFork)
+                    {
+                        <ByteBench.Components.Pages.Workspaces.StartWorkspaceButton ProjectKey="@Key" RepoSlug="@Slug" Number="pr.Number" WorkId="pr.Id" ProjectId="repo.ProjectId" />
+                    }
                     <MudButton Href="@($"/p/{wsRepo.Project.Key}/repos/{wsRepo.Slug}/workspace?ref={Uri.EscapeDataString(pr.SourceBranch)}&source=pr:{pr.Number}")" Variant="Variant.Outlined" Size="Size.Small"
                                StartIcon="@Icons.Material.Outlined.Terminal" title="Open the source branch in a workspace (VS Code, terminal, previews)">Open in workspace</MudButton>
                 }

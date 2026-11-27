@@ -24,11 +24,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # git: clone/commit/push to ByteBench. nodejs/npm, python3: the usual toolbox. socat: lets ByteBench's preview proxy reach
 # servers that only listen on 127.0.0.1. iptables: applied once from a throw-away helper container sharing this container's
-# network namespace (the workspace itself never has NET_ADMIN), see bb-apply-egress.
+# network namespace (the workspace itself never has NET_ADMIN), see bb-apply-egress. openssh-server: not started with the container; ByteBench starts an
+# unprivileged sshd on 127.0.0.1:2222 (key authentication only) when the owner connects a local editor, and only if the administrator allowed that.
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        git ca-certificates curl wget less nano vim-tiny jq unzip zip procps openssh-client \
+        git ca-certificates curl wget less nano vim-tiny jq unzip zip procps openssh-client openssh-server \
         nodejs npm python3 python3-pip python3-venv make g++ \
         socat iptables \
     && rm -rf /var/lib/apt/lists/*

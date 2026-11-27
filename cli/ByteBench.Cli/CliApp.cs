@@ -30,6 +30,8 @@ public sealed partial class CliApp(CliEnvironment env)
           repos list [--project KEY]
           pipelines list <KEY/slug> [--branch B] [--status S]
           pipelines logs <KEY/slug> <pipeline-id> [--step ID] [--tail CHARS]
+          workspace connect <id> [--key FILE.pub]   Allow your SSH public key in a workspace; print the SSH config for VS Code / JetBrains
+          workspace tunnel <id>        SSH ProxyCommand: relays stdin/stdout to the workspace's SSH server (used from ~/.ssh/config)
           open <KEY-N>                 Print the issue's web address
           completion bash|zsh|fish     Print a shell completion script
 
@@ -101,12 +103,15 @@ public sealed partial class CliApp(CliEnvironment env)
             case ("repos", "list"): return await ReposListAsync(ct);
             case ("pipelines", "list"): return await PipelinesListAsync(ct);
             case ("pipelines", "logs"): return await PipelinesLogsAsync(ct);
-            case ("issues" or "prs" or "repos" or "pipelines", _):
+            case ("workspace", "connect"): return await WorkspaceConnectAsync(ct);
+            case ("workspace", "tunnel"): return await WorkspaceTunnelAsync(ct);
+            case ("issues" or "prs" or "repos" or "pipelines" or "workspace", _):
                 throw CliException.Usage($"'{command}' needs a subcommand: " + command switch
                 {
                     "issues" => "list, show, create, comment, move or assign.",
                     "prs" => "list or show.",
                     "repos" => "list.",
+                    "workspace" => "connect or tunnel.",
                     _ => "list or logs.",
                 });
             default: throw CliException.Usage($"Unknown command '{Text.Line(command)}'.");

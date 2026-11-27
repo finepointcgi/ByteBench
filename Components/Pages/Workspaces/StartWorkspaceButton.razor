@@ -1,0 +1,55 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceLaunchService Launch
+@inject WorkspaceService Workspaces
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+@* One-click "Start workspace" for an issue (branch KEY-12-fix-login) or a pull request (its source branch). Resumes a live workspace linked to the same work. *@
+
+@if (available)
+{
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.PlayArrow" Disabled="busy" OnClick="Go"
+               title="@Hint" data-testid="start-workspace">@(existing != null ? "Resume workspace" : "Start workspace")</MudButton>
+}
+
+@code {
+    /// <summary>The issue (<c>Number</c> is its number) or the pull request (<c>RepoSlug</c> is set).</summary>
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter, EditorRequired] public int Number { get; set; }
+    [Parameter] public int WorkId { get; set; }
+    /// <summary>Set for a pull request; empty for an issue.</summary>
+    [Parameter] public string? RepoSlug { get; set; }
+    [Parameter] public int ProjectId { get; set; }
+
+    private bool available, busy;
+    private WorkspaceInfo? existing;
+
+    private bool IsPullRequest => !string.IsNullOrEmpty(RepoSlug);
+
+    private string Hint => IsPullRequest ? "Open the pull request's source branch in a workspace"
+        : $"Open a workspace on a branch named from the issue ({ProjectKey.ToUpperInvariant()}-{Number}-…); it is created from the default branch if it doesn't exist";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User == null) { available = false; return; }
+        available = (await Workspaces.GetStatusAsync(ProjectId == 0 ? null : ProjectId)).Enabled;
+        if (!available || WorkId == 0) return;
+        var linked = IsPullRequest ? await Launch.ListForPullRequestAsync(WorkId, Me.Id) : await Launch.ListForIssueAsync(WorkId, Me.Id);
+        existing = linked.FirstOrDefault(w => w.Workspace.IsLive || w.Workspace.VolumesKept);
+    }
+
+    private async Task Go()
+    {
+        busy = true;
+        try
+        {
+            var r = IsPullRequest ? await Launch.StartForPullRequestAsync(ProjectKey, RepoSlug!, Number, Me.Id) : await Launch.StartForIssueAsync(ProjectKey, Number, null, Me.Id);
+            if (r.BranchCreated) Snackbar.Add($"Created branch {r.Branch}.", Severity.Info);
+            Nav.NavigateTo($"/workspaces/{r.Workspace.PublicId}");
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+    }
+}

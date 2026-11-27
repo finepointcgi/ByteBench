@@ -41,6 +41,10 @@ else
         <div class="ws-actions">
             @if (ws.State == WorkspaceState.Running)
             {
+                <WorkspaceGitBar PublicId="@PublicId" Ref="@ws.Ref" />
+                <MudTooltip Text="Open in your own editor (VS Code, JetBrains Gateway)">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Laptop" Size="Size.Small" OnClick="OpenEditorPanel" aria-label="Open in local editor" data-testid="ws-editor" />
+                </MudTooltip>
                 <MudMenu Label="Preview" Dense="true" StartIcon="@Icons.Material.Outlined.Preview" Size="Size.Small" Variant="Variant.Outlined" data-testid="ws-preview-menu">
                     @if (ports == null) { <MudMenuItem Disabled="true">Looking for ports…</MudMenuItem> }
                     else if (AllPorts().Count == 0) { <MudMenuItem Disabled="true">Nothing is listening yet. Start your app in the terminal, or run a task.</MudMenuItem> }
@@ -52,7 +56,6 @@ else
                 </MudMenu>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.PlayArrow" OnClick="() => showTasks = !showTasks" data-testid="ws-tasks-toggle">Tasks@(RunningCount() > 0 ? $" ({RunningCount()} running)" : "")</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="() => showAi = !showAi" data-testid="ws-ai-toggle">AI</MudButton>
-                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="OpenCommit" data-testid="ws-commit">Commit &amp; push</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.OpenInNew" OnClick="OpenIdeTab">New tab</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.RestartAlt" OnClick="Restart" data-testid="ws-restart">Restart</MudButton>
             }
@@ -394,6 +397,9 @@ else
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
         await Dialogs.ShowAsync<WorkspaceCommitDialog>("Commit & push", new DialogParameters { ["PublicId"] = PublicId, ["CanPush"] = view!.Workspace.CanPush, ["Ref"] = view.Workspace.Ref }, options);
     }
+
+    private Task OpenEditorPanel() =>
+        Dialogs.ShowAsync<WorkspaceEditorDialog>("Connect from your editor", new DialogParameters { ["PublicId"] = PublicId }, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
 
     private async Task SendAi()
     {

@@ -44,6 +44,7 @@ else if (issue != null && project != null)
             <div class="id-actions">
                 <WatchButton Watching="watching" Count="watcherCount" OnToggle="ToggleWatch" IssueId="issue.Id" />
                 <ByteBench.Components.Automation.AutomationMenu IssueId="issue.Id" />
+                <ByteBench.Components.Pages.Workspaces.StartWorkspaceButton ProjectKey="@Key" Number="issue.Number" WorkId="issue.Id" ProjectId="issue.ProjectId" />
                 <MudButton Href="@($"/p/{Key}/workspace?source=issue:{issue.Key}")" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Terminal"
                            title="Open a workspace (VS Code, terminal, previews) on one of this project's repositories">Open in workspace</MudButton>
                 <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Edit" OnClick="StartEditTitle">Edit title</MudButton>

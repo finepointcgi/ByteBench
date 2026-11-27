@@ -196,6 +196,7 @@ ByteBench.Services.Accounts.AccountSecurityExtensions.UseMustChangePassword(app)
 // Pages serves /pages/... and Pages:BaseDomain hosts only. It sits before UseAuthorization, which would otherwise challenge the
 // app's own endpoints that a site's "/" matches (Home); it does its own access checks. Before rate limiting, antiforgery and static assets.
 ByteBench.Services.Workspaces.WorkspaceProxyExtensions.UseWorkspaceProxy(app); // /_bb/enter and the workspace origins (ide-*.{BaseDomain}); before authorization, rate limiting and antiforgery
+app.UseWebSockets(); // the workspace editor tunnel (/api/v1/workspaces/{id}/editor/tunnel); the workspace proxy upgrades raw connections itself
 ByteBench.Services.Pages.PagesServiceCollectionExtensions.UsePages(app);
 app.UseAuthorization();
 app.UseRateLimiter(); // after authentication, so API limits can key on the signed-in user

@@ -42,15 +42,61 @@ export function workspaceBases(serverHost: string, advertised?: string | null): 
   return [...bases];
 }
 
-export function isWorkspaceUrl(target: URL, server: URL, advertised?: string | null): boolean {
-  if (target.protocol !== server.protocol || target.port !== server.port) return false;
+/** The single label in front of a workspace base domain (ide-… / p3000-…), or null if the host is not directly under one. */
+function workspaceLabel(target: URL, server: URL, advertised?: string | null): string | null {
+  if (target.protocol !== server.protocol || target.port !== server.port) return null;
   const host = target.hostname.toLowerCase();
   for (const base of workspaceBases(server.hostname, advertised)) {
     if (!host.endsWith('.' + base)) continue;
     const label = host.slice(0, host.length - base.length - 1);
-    if (WORKSPACE_LABEL.test(label)) return true; // exactly one label in front of the base, no dots
+    if (WORKSPACE_LABEL.test(label)) return label; // exactly one label in front of the base, no dots
   }
-  return false;
+  return null;
+}
+
+export function isWorkspaceUrl(target: URL, server: URL, advertised?: string | null): boolean {
+  return workspaceLabel(target, server, advertised) !== null;
+}
+
+/** The exact shape of the labels ByteBench mints: ide-{id} and p{port}-{id}, where an id is 20 characters of [a-z2-7]. */
+const STRICT_LABEL = /^(?:(ide)|p([0-9]{1,5}))-([a-z2-7]{20})$/;
+
+export interface WorkspaceOrigin {
+  kind: 'ide' | 'preview';
+  /** The forwarded port, for a preview. */
+  port?: number;
+  workspaceId: string;
+}
+
+/** Which workspace (and port) a URL on one of the server's workspace origins belongs to; null for anything else, including look-alike labels. */
+export function parseWorkspaceOrigin(raw: string, ctx: NavContext): WorkspaceOrigin | null {
+  const target = parse(raw);
+  const server = parse(ctx.serverOrigin);
+  if (!target || !server || classifyUrl(raw, ctx) !== 'workspace') return null;
+  const label = workspaceLabel(target, server, ctx.advertisedWorkspaceBase);
+  const m = label ? STRICT_LABEL.exec(label) : null;
+  if (!m) return null;
+  if (m[1]) return { kind: 'ide', workspaceId: m[3]! };
+  const port = Number(m[2]);
+  return port >= 1 && port <= 65535 ? { kind: 'preview', port, workspaceId: m[3]! } : null;
+}
+
+/**
+ * Whether a URL the server handed back for "open port {port} of workspace {workspaceId}" is exactly that: a single-use entry link
+ * (/_bb/enter?ticket=…&next=/) on that workspace's own preview origin for that port. A server (or a middlebox) can't use this call to make the
+ * app load some other page, another workspace, the IDE or another port.
+ */
+export function isPortEntryUrl(raw: string, ctx: NavContext, workspaceId: string, port: number): boolean {
+  const o = parseWorkspaceOrigin(raw, ctx);
+  if (!o || o.kind !== 'preview' || o.workspaceId !== workspaceId || o.port !== port) return false;
+  const u = parse(raw);
+  if (!u || u.pathname !== '/_bb/enter' || u.hash) return false;
+  const names = [...u.searchParams.keys()].sort();
+  const next = u.searchParams.get('next');
+  return (
+    names.length === 2 && names[0] === 'next' && names[1] === 'ticket' && (u.searchParams.get('ticket') ?? '').length > 0 &&
+    next !== null && next.startsWith('/') && !next.startsWith('//') && !next.includes('\\')
+  );
 }
 
 export function classifyUrl(raw: string, ctx: NavContext): NavDecision {
