@@ -34,7 +34,35 @@ public sealed class FakeWorkspaceBackend : IWorkspaceBackend, IDisposable
     public Upstream Server => upstream;
 
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(DockerAvailable);
-    public Task<bool> ImageExistsAsync(string image, CancellationToken ct) => Task.FromResult(ImageExists);
+    public Task<bool> ImageExistsAsync(string image, CancellationToken ct) =>
+        Task.FromResult(image.StartsWith(PrebuildPrefix, StringComparison.Ordinal) ? PrebuildImages.ContainsKey(image) : ImageExists);
+
+    private const string PrebuildPrefix = "bytebench-prebuild";
+    /// <summary>Prebuild images committed (tag → how many execs had run in the container when it was committed).</summary>
+    public ConcurrentDictionary<string, int> PrebuildImages { get; } = new();
+    public List<(string ContainerId, string Tag)> Commits { get; } = [];
+    public List<string> ImagesRemoved { get; } = [];
+    public bool FailCommit { get; set; }
+    /// <summary>Image tags Docker refuses to remove (a container still uses them).</summary>
+    public HashSet<string> ImagesInUse { get; } = [];
+
+    public Task<bool> CommitAsync(string containerId, string imageTag, CancellationToken ct)
+    {
+        if (FailCommit) return Task.FromResult(false);
+        Commits.Add((containerId, imageTag));
+        PrebuildImages[imageTag] = Execs.Count;
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> RemoveImageAsync(string imageTag, CancellationToken ct)
+    {
+        if (ImagesInUse.Contains(imageTag)) return Task.FromResult(false);
+        ImagesRemoved.Add(imageTag);
+        PrebuildImages.TryRemove(imageTag, out _);
+        return Task.FromResult(true);
+    }
+
+    public Task<IReadOnlyList<string>> ListPrebuildImagesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(PrebuildImages.Keys.ToList());
 
     public Task<int> BuildImageAsync(string contextDir, string image, Action<string> onLine, CancellationToken ct)
     {

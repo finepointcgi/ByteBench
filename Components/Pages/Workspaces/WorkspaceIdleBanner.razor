@@ -1,0 +1,57 @@
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceIdlePolicy Idle
+
+@* In the last minutes before an idle workspace is stopped: says so, with a button to keep it. Shown only then (and while a task keeps it awake, nothing). *@
+
+@if (status is { Warning: true })
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" data-testid="ws-idle-warning">
+        This workspace has been idle and will be stopped @Remaining(). Its files stay.
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="ml-3" OnClick="KeepAsync" data-testid="ws-idle-keep">Keep it running</MudButton>
+    </MudAlert>
+}
+
+@code {
+    [Parameter, EditorRequired] public string PublicId { get; set; } = "";
+
+    private WorkspaceIdleStatus? status;
+    private PeriodicTimer? timer;
+
+    private string Remaining()
+    {
+        var left = status?.StopsAt is { } at ? at - DateTime.UtcNow : TimeSpan.Zero;
+        if (left <= TimeSpan.Zero) return "in a moment";
+        return left.TotalMinutes >= 1.5 ? $"in about {Math.Round(left.TotalMinutes)} minutes" : $"in {Math.Max(1, (int)left.TotalSeconds)} seconds";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        status = await Idle.StatusAsync(PublicId, Me.Id);
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                status = await Idle.StatusAsync(PublicId, Me.Id);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task KeepAsync()
+    {
+        await Idle.KeepAliveAsync(PublicId, Me.Id);
+        status = await Idle.StatusAsync(PublicId, Me.Id);
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

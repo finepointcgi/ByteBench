@@ -58,6 +58,7 @@ else
     }
     else if (ws.State == WorkspaceState.Running)
     {
+        <WorkspaceIdleBanner PublicId="@PublicId" />
         <div class="ws-body">
             @if (ideUrl != null)
             {

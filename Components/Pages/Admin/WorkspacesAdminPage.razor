@@ -24,7 +24,7 @@ else
     var o = Options.CurrentValue;
     <div class="page-header mb-4">
         <MudText Typo="Typo.h5" HtmlTag="h1">Workspaces</MudText>
-        <MudText Class="mud-text-secondary" Typo="Typo.body2">Per-user Docker development environments (VS Code in the browser). Limits and the image are set in <code>Workspaces:*</code> and need a restart.</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">Per-user Docker development environments (VS Code in the browser). The image and server-wide settings are in <code>Workspaces:*</code> (restart to change); per-user limits and idle periods are below.</MudText>
     </div>
 
     <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
@@ -36,7 +36,7 @@ else
                 <tr><td>Reaper</td><td data-testid="ws-health-reaper">@(Runtime.ReaperLastRun is { } r ? $"running, last pass {r.ToLocalTime():T}" : "not started yet")</td></tr>
                 <tr><td>Instances</td><td data-testid="ws-health-instances">@InstancesText()</td></tr>
                 <tr><td>Origins</td><td>@OriginText()</td></tr>
-                <tr><td>Limits</td><td>@o.MaxPerUser per user, @o.MaxTotal in total · @o.Memory memory, @o.Cpus CPUs, @o.PidsLimit processes, @(o.DiskLimit ?? "no") disk · idle @o.IdleTimeoutMinutes min, lifetime @o.MaxLifetimeHours h · network: @o.EgressMode</td></tr>
+                <tr><td>Limits</td><td>@o.MaxTotal on the server in total, @o.PidsLimit processes per workspace · lifetime @o.MaxLifetimeHours h · network: @o.EgressMode (per-user limits, what a workspace gets and idle periods: below)</td></tr>
             </tbody>
         </MudSimpleTable>
         @if (Image.LogTail.Count > 0 && Image.State is WorkspaceImageState.Building or WorkspaceImageState.Failed)
@@ -54,6 +54,8 @@ else
         <MudSwitch T="bool" Value="aiEnabled" ValueChanged="SetAi" Color="Color.Primary" Label="AI assistant in workspaces" data-testid="ws-ai-switch" />
         <MudText Typo="Typo.body2" Class="mud-text-secondary">Needs the Anthropic API (see AI). Per-user rate limit: @o.Ai.RequestsPerMinute requests per minute.</MudText>
     </MudPaper>
+
+    <WorkspaceLimitsAdmin />
 
     <div class="d-flex align-center mb-2">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2">Workspaces</MudText>

@@ -1,3 +1,5 @@
+using ByteBench.Services.Git;
+
 namespace ByteBench.Services.Workspaces;
 
 public static class WorkspaceServiceCollectionExtensions
@@ -15,6 +17,12 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddSingleton<WorkspaceReaper>();
         services.AddHostedService(sp => sp.GetRequiredService<WorkspaceReaper>());
         services.AddHostedService<WorkspaceImageStartup>();
+        services.AddSingleton<WorkspaceIdlePolicy>();
+        services.AddSingleton<WorkspacePrebuildService>();
+        services.AddHostedService(sp => sp.GetRequiredService<WorkspacePrebuildService>());
+        services.AddScoped<WorkspacePrebuildManager>();
+        services.AddScoped<IGitPushListener, PrebuildPushListener>();
+        services.AddScoped<WorkspaceLimitService>();
         services.AddScoped<WorkspaceService>();
         services.AddScoped<WorkspaceAiService>();
         return services;

@@ -26,8 +26,16 @@ public static class WorkspaceGitAuth
             .Where(w => w.OwnerId == userId && w.GitTokenHash == hash && (w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running))
             .Select(w => new { w.RepositoryId, w.CanPush, w.GitTokenHash }).FirstOrDefaultAsync();
         // The lookup compared hashes in the database; compare again in constant time before trusting it.
-        if (ws?.GitTokenHash == null || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ws.GitTokenHash, hash)) return null;
-        return (TokenScopes.ReadRepository | (ws.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId);
+        if (ws?.GitTokenHash != null && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ws.GitTokenHash, hash))
+            return (TokenScopes.ReadRepository | (ws.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId);
+
+        // A prebuild's token: read-only, one repository, only while that build runs.
+        var build = await db.WorkspacePrebuilds.AsNoTracking()
+            .Where(p => p.TriggeredById == userId && p.GitTokenHash == hash && p.State == PrebuildState.Building)
+            .Select(p => new { p.RepositoryId, p.GitTokenHash }).FirstOrDefaultAsync();
+        if (build?.GitTokenHash != null && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(build.GitTokenHash, hash))
+            return (TokenScopes.ReadRepository, build.RepositoryId);
+        return null;
     }
 
     /// <summary>True when the request carried a workspace token for a different repository than <paramref name="repositoryId"/>.</summary>

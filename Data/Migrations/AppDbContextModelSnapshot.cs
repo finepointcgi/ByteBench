@@ -4619,6 +4619,33 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("RepositoryMirrors");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryPrebuildSettings", b =>
+                {
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Branches")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("KeepLast")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RetentionDays")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RepositoryId");
+
+                    b.ToTable("RepositoryPrebuildSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryRedirect", b =>
                 {
                     b.Property<int>("Id")
@@ -6115,6 +6142,22 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("UserNotificationSettings");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.UserWorkspacePreference", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("IdleTimeoutMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserWorkspacePreferences");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Watch", b =>
                 {
                     b.Property<int>("Id")
@@ -6762,6 +6805,102 @@ namespace ByteBench.Data.Migrations
                     b.HasIndex("OwnerId", "State");
 
                     b.ToTable("Workspaces");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceAllocation", b =>
+                {
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CpuMillis")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DiskMb")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("MemoryMb")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PrebuildId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("WorkspaceId");
+
+                    b.ToTable("WorkspaceAllocations");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspacePrebuild", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BaseImage")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConfigHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("GitTokenHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("ImageTag")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Log")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Ref")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("TriggeredById")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Ref", "State");
+
+                    b.ToTable("WorkspacePrebuilds");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>
@@ -8437,6 +8576,17 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Repository");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.RepositoryPrebuildSettings", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Repository");
+                });
+
             modelBuilder.Entity("ByteBench.Data.RepositoryRedirect", b =>
                 {
                     b.HasOne("ByteBench.Data.Repository", "Repository")
@@ -8818,6 +8968,17 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.UserWorkspacePreference", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Watch", b =>
                 {
                     b.HasOne("ByteBench.Data.Issue", null)
@@ -8964,6 +9125,28 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Owner");
+
+                    b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceAllocation", b =>
+                {
+                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
+                        .WithOne()
+                        .HasForeignKey("ByteBench.Data.WorkspaceAllocation", "WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspacePrebuild", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", "Repository")
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Repository");
                 });

@@ -11,7 +11,7 @@ namespace ByteBench.Services.Workspaces;
 /// orphan containers (labelled for this instance but without a live row).
 /// </summary>
 public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
-    WorkspaceLifecycle lifecycle, IOptionsMonitor<WorkspaceOptions> options, ILogger<WorkspaceReaper> log) : BackgroundService
+    WorkspaceLifecycle lifecycle, WorkspaceIdlePolicy idle, IOptionsMonitor<WorkspaceOptions> options, ILogger<WorkspaceReaper> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -74,9 +74,14 @@ public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, I
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var live = await db.Workspaces.Where(w => w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running).ToListAsync(ct);
 
+        var idleByOwner = new Dictionary<int, int>();
         foreach (var w in live)
         {
             if (runtime.Find(w.Id) is { } l && l.LastActivity > w.LastActivityAt) w.LastActivityAt = l.LastActivity; // activity lives in memory
+            if (runtime.HasRunningTask(w.Id)) w.LastActivityAt = now; // a task is running: not idle
+            // The idle period is the owner's current one (their choice within the administrator's maximum), so a change applies to running workspaces too.
+            if (!idleByOwner.TryGetValue(w.OwnerId, out var minutes)) idleByOwner[w.OwnerId] = minutes = await idle.EffectiveAsync(db, w.OwnerId);
+            w.IdleTimeoutMinutes = minutes;
         }
         await db.SaveChangesAsync(ct);
 
@@ -96,6 +101,7 @@ public sealed class WorkspaceReaper(IDbContextFactory<AppDbContext> dbFactory, I
         foreach (var c in containers)
         {
             if (c.WorkspaceId is { } id && liveIds.Contains(id)) continue;
+            if (c.WorkspaceId is int building and < 0 && runtime.IsPrebuilding(-building)) continue; // the build container of a prebuild in progress
             log.LogInformation("Removing orphan workspace container {Id}", c.ContainerId[..Math.Min(12, c.ContainerId.Length)]);
             await backend.RemoveAsync(c.ContainerId, ct);
         }

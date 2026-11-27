@@ -82,6 +82,34 @@ public sealed class WorkspaceRuntime
         byId[ws.Id] = ws;
     }
 
+    private readonly ConcurrentDictionary<int, int> runningTasks = new();
+    private readonly ConcurrentDictionary<int, byte> activePrebuilds = new();
+
+    /// <summary>Marks a task (a run of a workspace task, a long command) as running in a workspace until the returned handle is disposed: such a workspace is never stopped for being idle.</summary>
+    public IDisposable BeginTask(int workspaceId)
+    {
+        runningTasks.AddOrUpdate(workspaceId, 1, (_, n) => n + 1);
+        Find(workspaceId)?.Touch();
+        return new TaskHandle(this, workspaceId);
+    }
+
+    public bool HasRunningTask(int workspaceId) => runningTasks.TryGetValue(workspaceId, out var n) && n > 0;
+
+    private sealed class TaskHandle(WorkspaceRuntime owner, int workspaceId) : IDisposable
+    {
+        private int done;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref done, 1) != 0) return;
+            owner.runningTasks.AddOrUpdate(workspaceId, 0, (_, n) => Math.Max(0, n - 1));
+            owner.Find(workspaceId)?.Touch(); // finishing a task is activity too: the idle period starts now
+        }
+    }
+
+    /// <summary>Prebuilds being built right now (their build containers are not orphans for the reaper).</summary>
+    public bool IsPrebuilding(int prebuildId) => activePrebuilds.ContainsKey(prebuildId);
+    public void SetPrebuilding(int prebuildId, bool on) { if (on) activePrebuilds[prebuildId] = 0; else activePrebuilds.TryRemove(prebuildId, out _); }
+
     public LiveWorkspace? Find(string publicId) => byPublicId.TryGetValue(publicId, out var w) ? w : null;
     public LiveWorkspace? Find(int id) => byId.TryGetValue(id, out var w) ? w : null;
     public IReadOnlyCollection<LiveWorkspace> All => byId.Values.ToList();

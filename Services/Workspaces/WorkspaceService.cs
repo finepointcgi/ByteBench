@@ -23,7 +23,7 @@ public sealed record WorkspaceStatus(bool Enabled, bool SiteSwitchOn, string? Pr
 /// </summary>
 public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
     WorkspaceLifecycle lifecycle, WorkspaceUrls urls, IOptionsMonitor<WorkspaceOptions> options, ProjectAccess access, RepositoryService repos,
-    RepoStorage storage, WorkspaceImage image, SiteSettings siteSettings, AuditLog audit)
+    RepoStorage storage, WorkspaceImage image, SiteSettings siteSettings, AuditLog audit, WorkspaceLimitService limits, WorkspacePrebuildService prebuilds)
 {
     public const string EnabledKey = "workspaces.enabled";
     public const string AiEnabledKey = "workspaces.ai.enabled";
@@ -120,6 +120,7 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         }
 
         var o = Opts;
+        var prebuild = await prebuilds.FindForStartAsync(repo, name); // a snapshot with setup already done, or null: a normal start
         var gitToken = WorkspaceTokens.NewGitToken();
         var connectionToken = WorkspaceTokens.NewConnectionToken();
         Workspace ws;
@@ -130,17 +131,17 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
             var live = await db.Workspaces.Where(w => w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running || w.State == WorkspaceState.Stopping)
                 .Select(w => w.OwnerId).ToListAsync();
             if (live.Count >= o.MaxTotal) throw new InvalidOperationException($"The server is at its limit of {o.MaxTotal} workspaces. Try again later.");
-            if (live.Count(id => id == userId) >= o.MaxPerUser)
-                throw new InvalidOperationException($"You already have {o.MaxPerUser} workspaces running (the limit). Stop one first.");
+            var resources = await limits.EnforceAsync(db, userId); // the per-user caps (running, total, CPU, memory, disk), with a message that says which
             ws = new Workspace
             {
                 PublicId = WorkspaceTokens.NewPublicId(), OwnerId = userId, RepositoryId = repo.Id, ProjectId = repo.ProjectId, Ref = name, CommitSha = sha,
                 Source = source is { Length: > 0 } ? (source.Length > 100 ? source[..100] : source) : null,
-                State = WorkspaceState.Starting, Image = o.Image, EgressMode = o.EgressMode is "none" or "open" ? o.EgressMode : "public-only", CanPush = canPush,
+                State = WorkspaceState.Starting, Image = prebuild?.ImageTag ?? o.Image, EgressMode = o.EgressMode is "none" or "open" ? o.EgressMode : "public-only", CanPush = canPush,
                 ConnectionTokenHash = WorkspaceTokens.Hash(connectionToken), GitTokenHash = WorkspaceTokens.Hash(gitToken),
-                IdleTimeoutMinutes = o.IdleTimeoutMinutes, ExpiresAt = DateTime.UtcNow.AddHours(Math.Max(1, o.MaxLifetimeHours)) + TimeSpan.FromSeconds(o.StartupTimeoutSeconds),
+                IdleTimeoutMinutes = await limits.IdleMinutesAsync(db, userId), ExpiresAt = DateTime.UtcNow.AddHours(Math.Max(1, o.MaxLifetimeHours)) + TimeSpan.FromSeconds(o.StartupTimeoutSeconds),
             };
             db.Workspaces.Add(ws);
+            db.WorkspaceAllocations.Add(new WorkspaceAllocation { Workspace = ws, PrebuildId = prebuild?.Id, CpuMillis = resources.CpuMillis, MemoryMb = resources.MemoryMb, DiskMb = resources.DiskMb });
             await db.SaveChangesAsync();
         }
         finally { runtime.StartGate.Release(); }

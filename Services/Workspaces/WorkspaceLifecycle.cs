@@ -86,8 +86,17 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             };
             if (urls.Mode == WorkspaceOriginMode.SharedPath) env["BB_IDE_BASE_PATH"] = $"/_ws/{ws.PublicId}/ide";
             var name = $"bb-ws-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{ws.PublicId[..10]}";
-            var container = await backend.StartAsync(new WorkspaceContainerSpec(ws.Id, name, ws.Image, o.Network, "host.docker.internal", IdePort, env,
-                new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit)) { PublishIdePort = !UseRelay() }, ct);
+            var alloc = await db.WorkspaceAllocations.FirstOrDefaultAsync(a => a.WorkspaceId == ws.Id, ct);
+            if (alloc?.PrebuildId != null && ws.Image != o.Image && !await backend.ImageExistsAsync(ws.Image, ct))
+            {
+                // The prebuilt image went away between the start request and now: a normal start, never a failed one.
+                log.LogInformation("Workspace {Id}: prebuild image {Image} is gone, starting from the base image", ws.PublicId, ws.Image);
+                ws.Image = o.Image;
+                alloc.PrebuildId = null;
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            var limits = alloc is { CpuMillis: > 0 } ? new WorkspaceResources(alloc.CpuMillis, alloc.MemoryMb, alloc.DiskMb).ToLimits(o.PidsLimit) : new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit);
+            var container = await backend.StartAsync(new WorkspaceContainerSpec(ws.Id, name, ws.Image, o.Network, "host.docker.internal", IdePort, env, limits) { PublishIdePort = !UseRelay() }, ct);
             containerId = container.ContainerId;
             ws.ContainerId = containerId;
             ws.ContainerName = name;
@@ -97,7 +106,7 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
 
             await backend.WaitUntilWaitingAsync(containerId, ct);
             await ApplyEgressAsync(containerId, ws.Image, ws.EgressMode, ct);
-            await CheckOutAsync(ws, containerId, gitToken, ct);
+            await CheckOutAsync(ws, containerId, gitToken, alloc?.PrebuildId != null, ct);
             await WriteTokenAndStartAsync(containerId, connectionToken, ct);
             await WaitHealthyAsync(containerId, ct);
 
@@ -125,7 +134,7 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         return ws.State == WorkspaceState.Starting;
     }
 
-    private async Task ApplyEgressAsync(string containerId, string image, string mode, CancellationToken ct)
+    internal async Task ApplyEgressAsync(string containerId, string image, string mode, CancellationToken ct)
     {
         var git = GitBase();
         var allow = new List<string>();
@@ -142,7 +151,7 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         return r.Ok && System.Net.IPAddress.TryParse(first, out _) ? first : null;
     }
 
-    private const string CloneScript = """
+    internal const string CloneScript = """
         set -e
         umask 002
         git clone --no-checkout -- "$1" "$2"
@@ -150,7 +159,19 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         if git show-ref --verify --quiet "refs/remotes/origin/$3"; then git checkout -q -B "$3" --track "origin/$3"; else git checkout -q --detach "$3"; fi
         """;
 
-    private async Task CheckOutAsync(Workspace ws, string containerId, string gitToken, CancellationToken ct)
+    /// <summary>Brings the clone inside a prebuilt image up to the requested ref (untracked files such as installed dependencies stay).</summary>
+    private const string UpdatePrebuiltScript = """
+        set -e
+        umask 002
+        cd "$2"
+        git remote set-url origin "$1"
+        git fetch -q --prune --tags origin
+        git reset -q --hard
+        if git show-ref --verify --quiet "refs/remotes/origin/$3"; then git checkout -q -B "$3" --track "origin/$3"; git reset -q --hard "origin/$3"; else git checkout -q --detach "$3"; fi
+        if [ -f .gitmodules ]; then git submodule update -q --init --recursive; fi
+        """;
+
+    private async Task CheckOutAsync(Workspace ws, string containerId, string gitToken, bool fromPrebuild, CancellationToken ct)
     {
         var git = GitBase();
         var credential = $"{git.Scheme}://{Uri.EscapeDataString(ws.Owner.UserName!)}:{gitToken}@{git.Authority}\n";
@@ -166,12 +187,25 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             await RunOrThrowAsync(containerId, new ExecSpec(args), "configuring git", ct);
 
         var repoUrl = new Uri(git, $"git/{ws.Repository.Project.Key}/{ws.Repository.Slug}.git").ToString();
-        var clone = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", CloneScript, "sh", repoUrl, WorkDir(ws.Repository.Slug), ws.Ref])
+        var gitEnv = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" };
+        if (fromPrebuild)
         {
-            WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(5), MaxOutputBytes = 16 * 1024,
-            Env = new Dictionary<string, string> { ["GIT_TERMINAL_PROMPT"] = "0" },
-        }, ct);
-        if (!clone.Ok) throw new InvalidOperationException("Checking out the repository failed: " + Safe(clone.Output));
+            // The image already holds a clone with its setup done (a prebuild): bring it up to date. If that fails for any reason, start over with a clean clone.
+            var update = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", UpdatePrebuiltScript, "sh", repoUrl, WorkDir(ws.Repository.Slug), ws.Ref])
+            { WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(5), MaxOutputBytes = 16 * 1024, Env = gitEnv }, ct);
+            if (!update.Ok)
+            {
+                log.LogWarning("Workspace {Id}: updating the prebuilt checkout failed ({Output}); cloning afresh", ws.PublicId, Safe(update.Output));
+                await backend.ExecAsync(containerId, new ExecSpec(["rm", "-rf", WorkDir(ws.Repository.Slug)]) { Timeout = TimeSpan.FromMinutes(2) }, ct);
+                fromPrebuild = false;
+            }
+        }
+        if (!fromPrebuild)
+        {
+            var clone = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", CloneScript, "sh", repoUrl, WorkDir(ws.Repository.Slug), ws.Ref])
+            { WorkDir = WorkspaceRoot, Timeout = TimeSpan.FromMinutes(5), MaxOutputBytes = 16 * 1024, Env = gitEnv }, ct);
+            if (!clone.Ok) throw new InvalidOperationException("Checking out the repository failed: " + Safe(clone.Output));
+        }
         ws.CommitSha = null;
         var head = await backend.ExecAsync(containerId, new ExecSpec(["git", "-C", WorkDir(ws.Repository.Slug), "rev-parse", "HEAD"]), ct);
         if (head.Ok && head.Output.Trim().Length == 40) ws.CommitSha = head.Output.Trim();
