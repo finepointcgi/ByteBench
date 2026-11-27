@@ -6,7 +6,7 @@ using WebKit;
 
 namespace ByteBench.Desktop.Services;
 
-// NOT COMPILED OR RUN when this was written (the maui-maccatalyst workload was not installable). See desktop-maui/README.md.
+// Compiled with Xcode 27.2 and launched once; see desktop-maui/README.md for what is still unverified.
 
 public static partial class ProfileData
 {
@@ -18,9 +18,13 @@ public static partial class ProfileData
     public static WKWebsiteDataStore DataStoreFor(string profileId)
     {
         if (OperatingSystem.IsMacCatalystVersionAtLeast(17))
-            return WKWebsiteDataStore.GetDataStore(new NSUuid(Guid.ParseExact(profileId, "N").ToString("D")));
+            return ObjCRuntime.Runtime.GetNSObject<WKWebsiteDataStore>(MsgSend(new ObjCRuntime.Class(typeof(WKWebsiteDataStore)).Handle, new ObjCRuntime.Selector("dataStoreForIdentifier:").Handle, new NSUuid(Guid.ParseExact(profileId, "N").ToString("D")).Handle))!;
         return NonPersistent(profileId);
     }
+
+    // The binding has no static for dataStoreForIdentifier:, so the selector is sent directly.
+    [System.Runtime.InteropServices.DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr MsgSend(IntPtr receiver, IntPtr selector, IntPtr arg);
 
     private static readonly Dictionary<string, WKWebsiteDataStore> Ephemeral = [];
 
@@ -36,7 +40,7 @@ public static partial class ProfileData
         if (!OperatingSystem.IsMacCatalystVersionAtLeast(17)) return Task.CompletedTask;
         var done = new TaskCompletionSource();
         // Fails (harmlessly) while a web view still uses the store; the page drops its view first.
-        WKWebsiteDataStore.RemoveDataStore(new NSUuid(Guid.ParseExact(profileId, "N").ToString("D")), _ => done.TrySetResult());
+        WKWebsiteDataStore.Remove(new NSUuid(Guid.ParseExact(profileId, "N").ToString("D")), _ => done.TrySetResult());
         return done.Task;
     }
 }
