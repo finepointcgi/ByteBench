@@ -12,6 +12,8 @@
                          Class="@ItemClass("ai-review")" aria-current="@(Active == "ai-review" ? "page" : null)">AI review</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/ci-variables")" Icon="@Icons.Material.Outlined.Key"
                          Class="@ItemClass("ci-variables")" aria-current="@(Active == "ci-variables" ? "page" : null)">CI variables</MudListItem>
+            <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/workspaces")" Icon="@Icons.Material.Outlined.Terminal"
+                         Class="@ItemClass("workspaces")" aria-current="@(Active == "workspaces" ? "page" : null)">Workspaces</MudListItem>
             <MudListItem T="string" Href="@RepoUrls.DeployKeys(Repo)" Icon="@Icons.Material.Outlined.VpnKey"
                          Class="@ItemClass("deploy-keys")" aria-current="@(Active == "deploy-keys" ? "page" : null)">Deploy keys</MudListItem>
             <MudListItem T="string" Href="@(RepoUrls.Base(Repo) + "/settings/tags")" Icon="@Icons.Material.Outlined.Sell"

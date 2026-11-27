@@ -6361,6 +6361,27 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("UserNotificationSettings");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.UserWorkspaceSettings", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ShellSnippet")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserWorkspaceSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Watch", b =>
                 {
                     b.Property<int>("Id")
@@ -6958,6 +6979,10 @@ namespace ByteBench.Data.MigrationsPostgres
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("EnvironmentSummary")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<string>("Error")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -7020,6 +7045,13 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Property<DateTime?>("StoppedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("SubmoduleRepoIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("VolumesKept")
+                        .HasColumnType("boolean");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PublicId")
@@ -7032,6 +7064,47 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.HasIndex("OwnerId", "State");
 
                     b.ToTable("Workspaces");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceSecret", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedValue")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("RepositoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedById")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RepositoryId", "Name");
+
+                    b.HasIndex("UserId", "Name");
+
+                    b.ToTable("WorkspaceSecrets");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>
@@ -9094,6 +9167,15 @@ namespace ByteBench.Data.MigrationsPostgres
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.UserWorkspaceSettings", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ByteBench.Data.Watch", b =>
                 {
                     b.HasOne("ByteBench.Data.Issue", null)
@@ -9242,6 +9324,19 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Owner");
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceSecret", b =>
+                {
+                    b.HasOne("ByteBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("IssueComponents", b =>
