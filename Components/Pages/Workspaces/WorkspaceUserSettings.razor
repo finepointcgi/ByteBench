@@ -1,0 +1,58 @@
+@page "/account/workspace"
+@attribute [Authorize]
+@using ByteBench.Services.Workspaces
+@inject UserWorkspaceSettingsService Prefs
+@inject CurrentUser Me
+@inject ISnackbar Snackbar
+
+<PageTitle>Workspace settings · ByteBench</PageTitle>
+
+<div class="page-header">
+    <div class="gb-min0">
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="d-flex align-center gap-2"><MudIcon Icon="@Icons.Material.Outlined.Terminal" /> Workspace settings</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Your secrets, editor settings and shell snippet for your own workspaces. Nobody else sees them.</MudText>
+    </div>
+    <MudButton Href="/account/profile" Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack">Profile</MudButton>
+</div>
+
+<MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mb-1">My secrets</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Environment variables for every workspace you open (API keys for your own accounts, tokens). Encrypted at rest, never shown again after saving, never written to the repository,
+        and masked in task output. A repository's own secret with the same name is overridden by yours. They reach workspaces that start after you save.
+    </MudText>
+    <WorkspaceSecretsEditor />
+</MudPaper>
+
+<MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="gb-bold mb-1">Editor settings and shell</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        Applied when one of your workspaces starts. The settings are VS Code's <code>settings.json</code> (JSON, comments allowed, up to @(UserWorkspaceSettingsService.MaxSettingsChars / 1024) KB);
+        the snippet is sourced by your terminals (up to @(UserWorkspaceSettingsService.MaxSnippetChars / 1024) KB), for aliases, <code>PS1</code> and the like. They only run in your own workspaces.
+    </MudText>
+    @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@error</MudAlert> }
+    <MudTextField T="string" Label="settings.json" @bind-Value="settings" Lines="8" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input mb-3"
+                  Placeholder='{ "editor.fontSize": 14, "workbench.colorTheme": "Default Dark Modern" }' data-testid="ws-user-settings" />
+    <MudTextField T="string" Label="Shell snippet" @bind-Value="snippet" Lines="5" Variant="Variant.Outlined" Margin="Margin.Dense" Class="gb-mono-input mb-3"
+                  Placeholder="alias gs='git status'" data-testid="ws-user-snippet" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Save" data-testid="ws-user-save">Save</MudButton>
+</MudPaper>
+
+@code {
+    private string settings = "", snippet = "";
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        var p = await Prefs.GetAsync(Me.Id);
+        settings = p.SettingsJson;
+        snippet = p.ShellSnippet;
+    }
+
+    private async Task Save()
+    {
+        try { await Prefs.SaveAsync(Me.Id, settings, snippet); error = null; Snackbar.Add("Saved. They apply to workspaces that start after this.", Severity.Success); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

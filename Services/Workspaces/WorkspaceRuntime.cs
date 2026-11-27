@@ -64,6 +64,25 @@ public sealed class WorkspaceRuntime
     private readonly ConcurrentDictionary<Task, byte> background = new();
     private readonly ConcurrentDictionary<int, SemaphoreSlim> locks = new();
 
+    private readonly ConcurrentDictionary<int, WorkspaceSession> envSessions = new();
+
+    /// <summary>The environment state of a workspace (logs, setup, tasks), created on first use.</summary>
+    public WorkspaceSession Session(int workspaceId) => envSessions.GetOrAdd(workspaceId, id => new WorkspaceSession(id));
+    public WorkspaceSession? FindSession(int workspaceId) => envSessions.TryGetValue(workspaceId, out var s) ? s : null;
+    public IReadOnlyCollection<int> SessionIds => envSessions.Keys.ToList();
+
+    public void DropSession(int workspaceId)
+    {
+        if (envSessions.TryRemove(workspaceId, out var s)) s.Shutdown();
+    }
+
+    /// <summary>A fresh session for a (re)start: empty logs, no tasks.</summary>
+    public WorkspaceSession ResetSession(int workspaceId)
+    {
+        DropSession(workspaceId);
+        return Session(workspaceId);
+    }
+
     /// <summary>When the reaper last finished a pass (admin health).</summary>
     public DateTime? ReaperLastRun { get; set; }
 
