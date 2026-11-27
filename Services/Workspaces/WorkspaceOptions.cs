@@ -44,6 +44,10 @@ public class WorkspaceOptions
     public int MaxTotal { get; set; } = 10;
     /// <summary>A workspace nobody has used (no proxied request, no IDE connection traffic) for this long is stopped.</summary>
     public int IdleTimeoutMinutes { get; set; } = 30;
+    /// <summary>The longest idle period a user may choose for themselves (an administrator can change both under Admin → Workspaces).</summary>
+    public int IdleMaxMinutes { get; set; } = 480;
+    /// <summary>The workspace page warns this many minutes before it stops an idle workspace.</summary>
+    public int IdleWarningMinutes { get; set; } = 5;
     /// <summary>A workspace is stopped this long after it started, whatever it is doing.</summary>
     public int MaxLifetimeHours { get; set; } = 8;
     public int StartupTimeoutSeconds { get; set; } = 180;
@@ -71,6 +75,9 @@ public class WorkspaceOptions
 
     /// <summary>The AI assistant next to the IDE.</summary>
     public WorkspaceAiOptions Ai { get; set; } = new();
+
+    /// <summary>Prebuilt snapshots of repositories (section <c>Workspaces:Prebuilds</c>).</summary>
+    public WorkspacePrebuildOptions Prebuilds { get; set; } = new();
 }
 
 /// <summary>Configuration section <c>Workspaces:Ai</c>. The assistant also needs the Anthropic API (<c>Ai:Enabled</c> and a key).</summary>
@@ -87,4 +94,19 @@ public class WorkspaceAiOptions
     public int MaxOutputBytes { get; set; } = 32 * 1024;
     public int MaxFileReadBytes { get; set; } = 200 * 1024;
     public int MaxFileWriteBytes { get; set; } = 1024 * 1024;
+}
+
+/// <summary>Configuration section <c>Workspaces:Prebuilds</c>. Prebuilds are switched on per repository by a maintainer.</summary>
+public class WorkspacePrebuildOptions
+{
+    /// <summary>Server-wide switch: false stops all prebuilding (workspaces start normally).</summary>
+    public bool Enabled { get; set; } = true;
+    /// <summary>A prebuild that runs longer than this is cancelled and fails.</summary>
+    public int BuildTimeoutMinutes { get; set; } = 30;
+    /// <summary>Output kept per prebuild (the end of it when longer).</summary>
+    public int MaxLogBytes { get; set; } = 64 * 1024;
+    /// <summary>Failed and expired prebuild rows (with their logs) kept per repository, newest first.</summary>
+    public int KeepHistory { get; set; } = 30;
+    /// <summary>How often old prebuilds are cleaned up.</summary>
+    public int CleanupIntervalMinutes { get; set; } = 30;
 }

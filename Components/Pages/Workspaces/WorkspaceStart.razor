@@ -101,6 +101,7 @@ else
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || status is not { Enabled: true })" OnClick="StartAsync"
                            StartIcon="@Icons.Material.Outlined.Terminal" data-testid="ws-start">Open in workspace</MudButton>
                 <MudButton Href="/workspaces" Variant="Variant.Text">My workspaces</MudButton>
+                <MudButton Href="@($"/p/{Key}/repos/{Slug}/prebuilds")" Variant="Variant.Text" data-testid="ws-prebuilds-link">Prebuilds</MudButton>
             </div>
         </MudStack>
     </MudPaper>

@@ -1,0 +1,168 @@
+@page "/p/{Key}/repos/{Slug}/prebuilds"
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspacePrebuildManager Prebuilds
+@inject ProjectAccess Access
+@inject RepositoryService Repos
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Prebuilds · ByteBench</PageTitle>
+
+@if (repo == null)
+{
+    <ProjectNotFound Message="This repository does not exist." />
+}
+else if (!canView)
+{
+    <Forbidden Message="Prebuilds are visible to developers and maintainers of this project." />
+}
+else
+{
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">Prebuilds · @repo.Project.Key/@repo.Slug</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            After a push to a prebuilt branch, ByteBench clones the repository, fetches submodules and runs the <code>setup</code> commands of <code>.bytebench/workspace.yml</code> once,
+            and saves the result. New workspaces on that branch start from it; if there is none, or it is out of date, they start as usual. Secrets are never part of a prebuild.
+        </MudText>
+    </div>
+
+    @if (settings is { ServerEnabled: false })
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">Prebuilds are turned off on this server (Workspaces:Prebuilds:Enabled).</MudAlert>
+    }
+
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px" data-testid="prebuild-settings">
+        <MudSwitch T="bool" @bind-Value="enabled" Disabled="@(!canManage)" Color="Color.Primary" Label="Prebuild this repository" data-testid="prebuild-enabled" />
+        <MudTextField T="string" @bind-Value="branches" Disabled="@(!canManage)" Label="Branches" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2"
+                      HelperText="@($"Comma separated names or patterns such as release/*. Empty: the default branch ({settings?.DefaultBranch}).")" data-testid="prebuild-branches" />
+        <div class="d-flex flex-wrap mt-2" style="gap:12px">
+            <MudNumericField T="int" @bind-Value="keepLast" Min="1" Max="20" Disabled="@(!canManage)" Label="Keep last (per branch)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:200px" data-testid="prebuild-keep" />
+            <MudNumericField T="int" @bind-Value="retention" Min="1" Max="90" Disabled="@(!canManage)" Label="Retention (days)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:200px" data-testid="prebuild-retention" />
+        </div>
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2" data-testid="prebuild-error">@error</MudAlert> }
+        @if (canManage)
+        {
+            <div class="mt-3 d-flex flex-wrap" style="gap:8px">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" data-testid="prebuild-save">Save</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="RebuildAsync" Disabled="@(!enabled)" StartIcon="@Icons.Material.Outlined.Replay" data-testid="prebuild-rebuild">Rebuild now</MudButton>
+                <MudButton Variant="Variant.Text" OnClick="CleanupAsync" data-testid="prebuild-cleanup">Clean up old prebuilds</MudButton>
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Only maintainers can change these.</MudText>
+        }
+    </MudPaper>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">History</MudText>
+    @if (items == null) { <MudProgressCircular Indeterminate="true" Size="Size.Small" /> }
+    else if (items.Count == 0) { <div class="empty">No prebuilds yet. They are built after a push to a prebuilt branch that has a <code>.bytebench/workspace.yml</code>, or with Rebuild now.</div> }
+    else
+    {
+        <MudSimpleTable Dense="true" Hover="true" Outlined="true" data-testid="prebuild-table">
+            <thead><tr><th>Branch</th><th>Commit</th><th>State</th><th>Trigger</th><th>Started</th><th>Took</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var p in items)
+            {
+                <tr data-testid="prebuild-row">
+                    <td class="mono">@p.Ref</td>
+                    <td class="mono">@(p.CommitSha is { Length: >= 8 } sha ? sha[..8] : "")</td>
+                    <td>@p.State@(p.State == PrebuildState.Ready && p.ImageTag != null ? " (in use for new workspaces)" : "")@(p.Error != null ? ": " + p.Error : "")</td>
+                    <td>@p.Trigger</td>
+                    <td>@p.CreatedAt.ToLocalTime().ToString("g")</td>
+                    <td>@(p.StartedAt != null && p.FinishedAt != null ? ((int)(p.FinishedAt.Value - p.StartedAt.Value).TotalSeconds) + " s" : "")</td>
+                    <td>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ShowLog(p)">Log</MudButton>
+                        @if (canManage && p.State != PrebuildState.Building)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => DeleteAsync(p)">Delete</MudButton>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </MudSimpleTable>
+    }
+
+    @if (logOf != null)
+    {
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">Log of prebuild #@logOf.Id (@logOf.Ref)</MudText>
+        <pre class="mono" style="max-height:420px;overflow:auto;font-size:12px;white-space:pre-wrap" data-testid="prebuild-log">@(string.IsNullOrEmpty(logOf.Log) ? "(no output yet)" : logOf.Log)</pre>
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+    [Parameter] public string Slug { get; set; } = "";
+
+    private Repository? repo;
+    private PrebuildSettingsView? settings;
+    private List<WorkspacePrebuild>? items;
+    private WorkspacePrebuild? logOf;
+    private bool canView, canManage, enabled;
+    private string branches = "", error = null!;
+    private int keepLast = 3, retention = 14;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        repo = await Repos.GetRepositoryAsync(Key, Slug);
+        if (repo == null) return;
+        var role = await Access.GetRoleAsync(repo.ProjectId, Me.Id);
+        canView = role >= ProjectRole.Developer;
+        canManage = role >= ProjectRole.Maintainer;
+        if (!canView) return;
+        settings = await Prebuilds.GetSettingsAsync(Key, Slug, Me.Id);
+        (enabled, branches, keepLast, retention) = (settings.Enabled, settings.BranchesText, settings.KeepLast, settings.RetentionDays);
+        items = await Prebuilds.ListAsync(Key, Slug, Me.Id);
+        timer ??= new PeriodicTimer(TimeSpan.FromSeconds(3));
+        if (timer != null && items.Any(p => p.State is PrebuildState.Queued or PrebuildState.Building)) _ = LoopAsync();
+    }
+
+    private bool looping;
+
+    private async Task LoopAsync()
+    {
+        if (looping) return;
+        looping = true;
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                items = await Prebuilds.ListAsync(Key, Slug, Me.Id);
+                if (logOf != null) logOf = await Prebuilds.GetAsync(Key, Slug, logOf.Id, Me.Id) ?? logOf;
+                await InvokeAsync(StateHasChanged);
+                if (!items.Any(p => p.State is PrebuildState.Queued or PrebuildState.Building)) break;
+            }
+        }
+        catch (ObjectDisposedException) { }
+        finally { looping = false; }
+    }
+
+    private async Task Run(Func<Task> action, string? done = null)
+    {
+        error = null!;
+        try { await action(); if (done != null) Snackbar.Add(done, Severity.Success); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        items = await Prebuilds.ListAsync(Key, Slug, Me.Id);
+        if (items.Any(p => p.State is PrebuildState.Queued or PrebuildState.Building)) _ = LoopAsync();
+    }
+
+    private Task SaveAsync() => Run(async () => { await Prebuilds.SetSettingsAsync(Key, Slug, enabled, branches, keepLast, retention, Me.Id); settings = await Prebuilds.GetSettingsAsync(Key, Slug, Me.Id); branches = settings.BranchesText; }, "Prebuild settings saved.");
+    private Task RebuildAsync() => Run(async () => { await Prebuilds.RebuildAsync(Key, Slug, null, Me.Id); }, "Prebuild queued.");
+    private Task CleanupAsync() => Run(() => Prebuilds.CleanupAsync(Key, Slug, Me.Id), "Old prebuilds removed.");
+
+    private async Task DeleteAsync(WorkspacePrebuild p)
+    {
+        if (await Dialogs.ShowMessageBoxAsync("Delete this prebuild?", "Its snapshot is removed. Workspaces already started from it keep running.", yesText: "Delete", cancelText: "Cancel") != true) return;
+        await Run(() => Prebuilds.DeleteAsync(Key, Slug, p.Id, Me.Id));
+        if (logOf?.Id == p.Id) logOf = null;
+    }
+
+    private async Task ShowLog(WorkspacePrebuild p) => logOf = await Prebuilds.GetAsync(Key, Slug, p.Id, Me.Id);
+
+    public void Dispose() => timer?.Dispose();
+}

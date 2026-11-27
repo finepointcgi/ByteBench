@@ -102,4 +102,10 @@ public interface IWorkspaceBackend
     Task RemoveAsync(string containerId, CancellationToken ct);
     /// <summary>Every container this ByteBench instance created (running or not).</summary>
     Task<IReadOnlyList<ManagedContainer>> ListManagedAsync(CancellationToken ct);
+    /// <summary>Snapshots the container's filesystem as an image with this tag, labelled as one of this instance's prebuilds. False if Docker refused.</summary>
+    Task<bool> CommitAsync(string containerId, string imageTag, CancellationToken ct);
+    /// <summary>Removes an image (idempotent: a missing image is success). False when it can't go, for instance because a workspace still runs from it.</summary>
+    Task<bool> RemoveImageAsync(string imageTag, CancellationToken ct);
+    /// <summary>The tags of every prebuild image this instance committed.</summary>
+    Task<IReadOnlyList<string>> ListPrebuildImagesAsync(CancellationToken ct);
 }

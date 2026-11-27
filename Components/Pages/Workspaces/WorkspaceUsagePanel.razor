@@ -1,0 +1,80 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceLimitService Limits
+@inject ISnackbar Snackbar
+
+@* Your workspaces' usage next to the administrator's limits, and your own idle period. *@
+
+@if (view != null)
+{
+    var l = view.Limits;
+    var u = view.Usage;
+    <MudPaper Outlined="true" Class="pa-4 mb-4" Style="max-width: 820px" data-testid="ws-usage">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Usage and limits</MudText>
+        <MudStack Spacing="2">
+            @Meter("Running workspaces", Count(u.Running, l.MaxRunning), Pct(u.Running, l.MaxRunning), "ws-usage-running")
+            @Meter("Workspaces in total", Count(u.Total, l.MaxTotal), Pct(u.Total, l.MaxTotal), "ws-usage-total")
+            @Meter("CPUs", $"{WorkspaceUnits.FormatCpu(u.CpuMillis)} of {(l.MaxCpus > 0 ? l.MaxCpus.ToString("0.##") + " CPUs" : "no limit")}", Pct(u.CpuMillis, l.MaxCpus * 1000), "ws-usage-cpu")
+            @Meter("Memory", $"{WorkspaceUnits.FormatMb(u.MemoryMb)} of {(l.MaxMemoryMb > 0 ? WorkspaceUnits.FormatMb(l.MaxMemoryMb) : "no limit")}", Pct(u.MemoryMb, l.MaxMemoryMb), "ws-usage-memory")
+            @Meter("Disk", $"{WorkspaceUnits.FormatMb(u.DiskMb)} of {(l.MaxDiskMb > 0 ? WorkspaceUnits.FormatMb(l.MaxDiskMb) : "no limit")}", Pct(u.DiskMb, l.MaxDiskMb), "ws-usage-disk")
+        </MudStack>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+            Each new workspace gets @WorkspaceUnits.FormatCpu((int)Math.Round(l.DefaultCpus * 1000)), @WorkspaceUnits.FormatMb(l.DefaultMemoryMb) of memory@(l.DefaultDiskMb > 0 ? " and " + WorkspaceUnits.FormatMb(l.DefaultDiskMb) + " of disk" : "").
+            A workspace that would go over a limit isn't started; stop one first.
+        </MudText>
+        <MudDivider Class="my-3" />
+        <div class="d-flex align-center flex-wrap" style="gap:12px">
+            <MudNumericField T="int" @bind-Value="idleMinutes" Min="1" Max="@view.IdleMaxMinutes" Label="Stop my idle workspaces after (minutes)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Style="max-width:280px" data-testid="ws-idle-input" />
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="SaveIdle" data-testid="ws-idle-save">Save</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ResetIdle" Disabled="@(view.IdleOverrideMinutes == null)">Use the default (@view.IdleDefaultMinutes min)</MudButton>
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            A workspace with no IDE or preview traffic and no running task for this long is stopped (its volumes stay). Up to @view.IdleMaxMinutes minutes; the page warns before it stops.
+        </MudText>
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert> }
+    </MudPaper>
+}
+
+@code {
+    private WorkspaceLimitsView? view;
+    private int idleMinutes;
+    private string? error;
+
+    private RenderFragment Meter(string label, string text, double percent, string testId) => @<div data-testid="@testId">
+        <div class="d-flex"><span>@label</span><span class="flex-grow-1"></span><span class="mono">@text</span></div>
+        <MudProgressLinear Value="percent" Color="@(percent >= 100 ? Color.Error : percent >= 80 ? Color.Warning : Color.Primary)" Size="Size.Small" />
+    </div>;
+
+    /// <summary>Reloads the numbers (the page calls it on its refresh timer).</summary>
+    public async Task RefreshAsync()
+    {
+        view = await Limits.GetViewAsync(Me.Id);
+        if (idleMinutes == 0) idleMinutes = view.IdleTimeoutMinutes;
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await RefreshAsync();
+    }
+
+    private static string Count(int used, int max) => $"{used} of {(max > 0 ? max.ToString() : "no limit")}";
+    private static double Pct(double used, double max) => max <= 0 ? 0 : Math.Min(100, used * 100 / max);
+
+    private async Task SaveIdle()
+    {
+        error = null;
+        try { await Limits.SetMyIdleAsync(Me.Id, idleMinutes); Snackbar.Add("Saved.", Severity.Success); view = await Limits.GetViewAsync(Me.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task ResetIdle()
+    {
+        error = null;
+        await Limits.SetMyIdleAsync(Me.Id, null);
+        view = await Limits.GetViewAsync(Me.Id);
+        idleMinutes = view.IdleTimeoutMinutes;
+    }
+}

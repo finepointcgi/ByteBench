@@ -1,0 +1,71 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceLimitService Limits
+@inject WorkspaceIdlePolicy Idle
+@inject ISnackbar Snackbar
+
+@* Admin → Workspaces: per-user caps, what a workspace gets by default, and the idle period. Applies to the next start; running workspaces are untouched. *@
+
+@if (s != null)
+{
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px" data-testid="ws-limits">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-1">Limits per user</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">0 means no limit. A user whose next workspace would go over any of these gets a message saying which one.</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="s.MaxRunning" Min="0" Label="Running workspaces" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-lim-running" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="s.MaxTotal" Min="0" Label="Workspaces in total" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-lim-total" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="s.MaxCpus" Min="0" Label="CPUs (running)" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-lim-cpus" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="maxMemGb" Min="0" Label="Memory, GB (running)" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-lim-mem" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="maxDiskGb" Min="0" Label="Disk, GB (all workspaces)" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-lim-disk" /></MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Each new workspace gets</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="s.DefaultCpus" Min="0.25" Label="CPUs" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-def-cpus" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="defMemGb" Min="0.25" Label="Memory, GB" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-def-mem" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="double" @bind-Value="defDiskGb" Min="0" Label="Disk, GB (0: no limit)" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-def-disk" /></MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Idle auto-stop</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="idleDefault" Min="1" Label="Default idle period (minutes)" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-idle-default" /></MudItem>
+            <MudItem xs="12" sm="6" md="4"><MudNumericField T="int" @bind-Value="idleMax" Min="1" Label="Longest a user may choose (minutes)" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-idle-max" /></MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">A workspace with no IDE or preview traffic and no running task for this long is stopped (volumes stay). Users see a warning on the workspace page before it happens.</MudText>
+        @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3" data-testid="ws-limits-error">@error</MudAlert> }
+        <div class="mt-3"><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" data-testid="ws-limits-save">Save limits</MudButton></div>
+    </MudPaper>
+}
+
+@code {
+    private WorkspaceLimitSettings? s;
+    private int maxMemGb, maxDiskGb, idleDefault, idleMax;
+    private double defMemGb, defDiskGb;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        if (Me.User?.IsAdmin != true) return;
+        s = await Limits.GetAsync();
+        maxMemGb = (int)Math.Ceiling(s.MaxMemoryMb / 1024.0);
+        maxDiskGb = (int)Math.Ceiling(s.MaxDiskMb / 1024.0);
+        defMemGb = s.DefaultMemoryMb / 1024.0;
+        defDiskGb = s.DefaultDiskMb / 1024.0;
+        (idleDefault, idleMax) = await Idle.GetSiteAsync();
+    }
+
+    private async Task Save()
+    {
+        error = null;
+        s!.MaxMemoryMb = maxMemGb * 1024;
+        s.MaxDiskMb = maxDiskGb * 1024;
+        s.DefaultMemoryMb = (int)Math.Round(defMemGb * 1024);
+        s.DefaultDiskMb = (int)Math.Round(defDiskGb * 1024);
+        try
+        {
+            await Limits.SetAsync(s, Me.Id);
+            await Limits.SetIdleAsync(idleDefault, idleMax, Me.Id);
+            Snackbar.Add("Workspace limits saved. They apply to the next workspace that is started.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+}

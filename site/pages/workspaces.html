@@ -111,6 +111,23 @@ services:                   # sidecars on a private network, reachable by name
 <h3 id="git">Git access</h3>
 <p>The container clones from ByteBench's own git endpoint with a token <code>gbw_&hellip;</code> made for that workspace: valid for that one repository (and read-only for its <a href="#environment">submodules</a> on this server), only while the workspace is starting or running, only for its owner, and revoked when it stops, fails or ByteBench restarts (only its SHA-256 is stored). It is not a personal access token and the REST API, MCP and the package registry do not accept it. It is written to <code>~/.git-credentials</code> (mode 600) through standard input, never a command line or environment variable. Pushing needs a token that was created with write access <em>and</em> the owner's current <code>PushCode</code>, archived and mirror checks and branch protection, all enforced by the git endpoint on every push. No personal tokens or passwords are put in the container.</p>
 
+<h2 id="prebuilds">Prebuilds</h2>
+<p>A prebuild is a snapshot of a repository with the slow part already done: cloned, submodules fetched and the <code>setup</code> commands run. After a push to a prebuilt branch, ByteBench builds one in the background; a new workspace on that branch then starts from the newest prebuild and only has to fetch what changed since. With no prebuild, or a stale one, it starts exactly as before, and a failing prebuild never blocks a start.</p>
+<ul>
+  <li><strong>Turn it on</strong> under <em>Open in workspace &rarr; Prebuilds</em> (Maintainer and Owner): enable it, pick the branches (names or patterns such as <code>release/*</code>; empty means the default branch), how many prebuilds to keep per branch (default 3) and for how many days (default 14). A branch is only prebuilt when it has a <code>.bytebench/workspace.yml</code>.</li>
+  <li><strong>What runs</strong>: only the repository's own environment file at the pushed commit, with the same validation and image rules as a workspace (<code>toolchain</code>, or <code>image</code> when the administrator allows it). The <code>setup</code> commands run in the checkout and stop at the first failure; submodules are fetched unless <code>submodules: false</code>. <code>services</code>, <code>tasks</code> and secrets are not part of a prebuild.</li>
+  <li><strong>Secrets are not baked in.</strong> The build container gets no workspace secrets and no environment beyond <code>BB_*</code>. Its read-only git token (one repository, only while the build runs) is deleted from the container before the setup commands run and again before the snapshot is taken.</li>
+  <li><strong>History</strong>: every prebuild with its state (Queued, Building, Ready, Failed, Superseded, Expired), commit, trigger and full log. <strong>Rebuild now</strong> queues one at the branch's current tip; <strong>Clean up</strong> applies the keep-last and retention settings at once. A newer push replaces a queued build of the same branch.</li>
+  <li><strong>Stale means ignored</strong>: a prebuild is not used when the setup, submodules or image changed since, it is older than the retention, or its image is gone. A workspace you resume from its saved files never uses a prebuild.</li>
+</ul>
+
+<h2 id="limits">Resource limits and idle auto-stop</h2>
+<ul>
+  <li><strong>Limits per user</strong> (Admin &rarr; Workspaces): running workspaces, workspaces in total, CPUs and memory across running ones, and disk across all of them; 0 means no limit. The same page sets what each new workspace gets by default (CPUs, memory, disk). Stopped workspaces whose files are kept count toward the total and the disk. A start that would go over a limit is refused with a message that says which one and what to do (in the UI, and as <code>422</code> from the API). Changes apply to the next start. Never set, the limits come from <code>Workspaces:MaxPerUser</code>, <code>Cpus</code>, <code>Memory</code> and <code>DiskLimit</code>.</li>
+  <li><strong>Your usage</strong> is on the <em>Workspaces</em> page next to the limits.</li>
+  <li><strong>Idle auto-stop</strong>: a workspace with no IDE or preview traffic and no running task for the idle period is stopped (Stop keeps its files and volumes; resume it later). The administrator sets a default and a maximum; you can choose your own period on the Workspaces page, up to that maximum. The workspace page warns a few minutes before and has <strong>Keep it running</strong>.</li>
+</ul>
+
 <h2 id="admin">Administration</h2>
 <ul>
   <li><strong>Admin &rarr; Workspaces</strong>: the health table, the workspaces switch, the assistant switch, every workspace (owner, repository, state, activity) with <strong>Stop</strong> and <strong>Stop all</strong>. Administrators can stop any workspace but cannot open one.</li>
@@ -134,8 +151,9 @@ services:                   # sidecars on a private network, reachable by name
   <tr><td><code>Workspaces:AllowSharedOrigin</code></td><td>false</td><td>Path mode on ByteBench's origin when there is no base domain (less safe).</td></tr>
   <tr><td><code>Workspaces:GitBaseUrl</code></td><td><code>http://host.docker.internal:{port}</code></td><td>How containers reach ByteBench's git endpoint.</td></tr>
   <tr><td><code>Workspaces:IdeTransport</code></td><td>Auto</td><td>Published, Relay or Auto.</td></tr>
-  <tr><td><code>MaxPerUser</code> / <code>MaxTotal</code></td><td>2 / 10</td><td>Concurrent workspaces.</td></tr>
-  <tr><td><code>IdleTimeoutMinutes</code> / <code>MaxLifetimeHours</code></td><td>30 / 8</td><td>Automatic stops.</td></tr>
+  <tr><td><code>MaxPerUser</code> / <code>MaxTotal</code></td><td>2 / 10</td><td>Concurrent workspaces per user (until an administrator sets limits) and on the server.</td></tr>
+  <tr><td><code>IdleTimeoutMinutes</code> / <code>IdleMaxMinutes</code> / <code>IdleWarningMinutes</code> / <code>MaxLifetimeHours</code></td><td>30 / 480 / 5 / 8</td><td>Idle default and the longest a user may choose (both changeable under Admin &rarr; Workspaces), the warning time, and the maximum lifetime.</td></tr>
+  <tr><td><code>Workspaces:Prebuilds:*</code></td><td>enabled, 30 min build timeout, 64 KB log</td><td>Server-wide prebuild switch and limits.</td></tr>
   <tr><td><code>Memory</code>, <code>Cpus</code>, <code>PidsLimit</code>, <code>DiskLimit</code></td><td>4g, 2, 2048, 10g</td><td>Container limits.</td></tr>
   <tr><td><code>EgressMode</code></td><td>public-only</td><td>public-only, none or open.</td></tr>
   <tr><td><code>Workspaces:Ai:*</code></td><td>6 requests/min, 25 tool calls, 60 s commands</td><td>Assistant limits.</td></tr>
@@ -165,6 +183,12 @@ services:                   # sidecars on a private network, reachable by name
   <tr><td><code>POST /api/v1/workspaces/{id}/tasks/{name}/run</code>, <code>/stop</code></td><td>Start (202; a running task is left alone) or stop a task.</td></tr>
   <tr><td><code>GET /api/v1/workspaces/{id}/tasks/{name}/logs?since=n</code></td><td>Output after position <code>n</code> and the next position; secrets masked.</td></tr>
   <tr><td><code>GET /api/v1/workspaces/{id}/setup</code>, <code>POST …/setup/rerun</code></td><td>Setup state and output; run setup again.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/limits</code></td><td>Your usage next to the limits and your idle period. <code>PUT</code> (administrators): <code>maxRunning</code>, <code>maxTotal</code>, <code>maxCpus</code>, <code>maxMemoryMb</code>, <code>maxDiskMb</code>, <code>defaultCpus</code>, <code>defaultMemoryMb</code>, <code>defaultDiskMb</code>, <code>idleDefaultMinutes</code>, <code>idleMaxMinutes</code>.</td></tr>
+  <tr><td><code>PUT /api/v1/workspaces/me/idle</code></td><td>Your own idle period: <code>{"minutes": 20}</code>, or <code>null</code> for the default.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/idle</code>, <code>POST …/keepalive</code></td><td>When it will be stopped (and whether a warning is due); count as activity.</td></tr>
+  <tr><td><code>GET</code>/<code>PUT /api/v1/projects/{key}/repos/{slug}/prebuild-settings</code></td><td>Enabled, branches, keepLast, retentionDays (Maintainer to change).</td></tr>
+  <tr><td><code>GET …/prebuilds</code>, <code>GET …/prebuilds/{id}</code> (with log)</td><td>History (Developer and up).</td></tr>
+  <tr><td><code>POST …/prebuilds</code>, <code>DELETE …/prebuilds/{id}</code>, <code>POST …/prebuilds/cleanup</code></td><td>Rebuild now (202), delete, clean up (Maintainer).</td></tr>
 </table>
 <p>The API never returns an IDE link or a credential; the IDE is opened from the workspace page in a browser.</p>
 

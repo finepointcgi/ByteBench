@@ -84,6 +84,7 @@ else
     else if (ws.State == WorkspaceState.Running)
     {
         <div class="ws-notices">
+        <WorkspaceIdleBanner PublicId="@PublicId" />
         @if (env != null)
         {
             foreach (var e in env.Errors)

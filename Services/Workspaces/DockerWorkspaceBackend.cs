@@ -318,6 +318,29 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         return list;
     }
 
+    public const string PrebuildLabel = "bytebench-workspace-prebuild";
+
+    public async Task<bool> CommitAsync(string containerId, string imageTag, CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["commit", "--pause=true", "--change", $"LABEL {PrebuildLabel}={CiDocker.InstanceKey}", containerId, imageTag], null, ct);
+        if (code != 0) log.LogWarning("docker commit {Id} failed: {Output}", containerId, Tail(output));
+        return code == 0;
+    }
+
+    public async Task<bool> RemoveImageAsync(string imageTag, CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["image", "rm", imageTag], null, ct);
+        if (code != 0 && output.Contains("No such image", StringComparison.OrdinalIgnoreCase)) return true;
+        if (code != 0) log.LogInformation("docker image rm {Tag} failed: {Output}", imageTag, Tail(output));
+        return code == 0;
+    }
+
+    public async Task<IReadOnlyList<string>> ListPrebuildImagesAsync(CancellationToken ct)
+    {
+        var (code, output) = await RunAsync(["images", "--filter", $"label={PrebuildLabel}={CiDocker.InstanceKey}", "--format", "{{.Repository}}:{{.Tag}}"], null, ct);
+        return code != 0 ? [] : output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(t => !t.Contains("<none>")).ToList();
+    }
+
     // ---------- volumes, networks, sidecars ----------
 
     private static string IdLabelArg(int workspaceId) => $"{IdLabel}={workspaceId}";

@@ -49,6 +49,7 @@ public static class WorkspaceEndpoints
             .WithSummary("Start a workspace on a branch, tag or commit")
             .WithDescription("Needs ViewProject. 202: the container comes up in the background; poll the workspace until its state is Running (or Failed). 422 when workspaces are off, Docker or the image isn't ready, or a limit is reached. Audited.")
             .WithJsonBody<StartWorkspaceRequest>(optional: true);
+        api.MapWorkspacePolicyEndpoints(); // limits, idle auto-stop, prebuilds (WorkspacePolicyEndpoints.cs)
     }
 
     internal static WorkspaceDto ToDto(WorkspaceInfo v) => new(v.Workspace.PublicId, v.ProjectKey, v.RepoSlug, v.Workspace.Ref, v.Workspace.CommitSha, v.Workspace.Source,

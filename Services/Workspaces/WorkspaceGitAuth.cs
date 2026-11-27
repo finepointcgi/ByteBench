@@ -28,10 +28,24 @@ public static class WorkspaceGitAuth
             .Where(w => w.OwnerId == userId && w.GitTokenHash == hash && (w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running))
             .Select(w => new { w.RepositoryId, w.CanPush, w.GitTokenHash, w.SubmoduleRepoIdsJson }).FirstOrDefaultAsync();
         // The lookup compared hashes in the database; compare again in constant time before trusting it.
-        if (ws?.GitTokenHash == null || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ws.GitTokenHash, hash)) return null;
-        IReadOnlyList<int> extra = [];
-        try { extra = System.Text.Json.JsonSerializer.Deserialize<List<int>>(ws.SubmoduleRepoIdsJson) ?? []; } catch (System.Text.Json.JsonException) { }
-        return (TokenScopes.ReadRepository | (ws.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId, extra);
+        if (ws?.GitTokenHash != null && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(ws.GitTokenHash, hash))
+        {
+            IReadOnlyList<int> extra = [];
+            try { extra = System.Text.Json.JsonSerializer.Deserialize<List<int>>(ws.SubmoduleRepoIdsJson) ?? []; } catch (System.Text.Json.JsonException) { }
+            return (TokenScopes.ReadRepository | (ws.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId, extra);
+        }
+
+        // A prebuild's token: read-only, one repository (its submodule repositories are added by the build), only while that build runs.
+        var build = await db.WorkspacePrebuilds.AsNoTracking()
+            .Where(p => p.TriggeredById == userId && p.GitTokenHash == hash && p.State == PrebuildState.Building)
+            .Select(p => new { p.RepositoryId, p.GitTokenHash, p.SubmoduleRepoIdsJson }).FirstOrDefaultAsync();
+        if (build?.GitTokenHash != null && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(build.GitTokenHash, hash))
+        {
+            IReadOnlyList<int> extra = [];
+            try { extra = System.Text.Json.JsonSerializer.Deserialize<List<int>>(build.SubmoduleRepoIdsJson) ?? []; } catch (System.Text.Json.JsonException) { }
+            return (TokenScopes.ReadRepository, build.RepositoryId, extra);
+        }
+        return null;
     }
 
     /// <summary>
