@@ -25,6 +25,9 @@ public sealed class CliEnvironment
     public TextWriter Out { get; init; } = Console.Out;
     public TextWriter Err { get; init; } = Console.Error;
     public TextReader In { get; init; } = Console.In;
+    /// <summary>Raw (binary) standard input and output, for commands that relay bytes (<c>workspace tunnel</c>). Tests pass their own streams.</summary>
+    public Func<Stream> OpenRawInput { get; init; } = Console.OpenStandardInput;
+    public Func<Stream> OpenRawOutput { get; init; } = Console.OpenStandardOutput;
     public bool InputRedirected { get; init; } = Console.IsInputRedirected;
     public bool OutputIsTerminal { get; init; } = !Console.IsOutputRedirected;
     public Func<string, string?> GetVariable { get; init; } = Environment.GetEnvironmentVariable;

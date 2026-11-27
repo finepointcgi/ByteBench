@@ -33,7 +33,7 @@ public static class WorkspaceEndpoints
             .WithJsonBody<StartWorkspaceRequest>(optional: true);
     }
 
-    private static WorkspaceDto ToDto(WorkspaceInfo v) => new(v.Workspace.PublicId, v.ProjectKey, v.RepoSlug, v.Workspace.Ref, v.Workspace.CommitSha, v.Workspace.Source,
+    internal static WorkspaceDto ToDto(WorkspaceInfo v) => new(v.Workspace.PublicId, v.ProjectKey, v.RepoSlug, v.Workspace.Ref, v.Workspace.CommitSha, v.Workspace.Source,
         v.Workspace.State.ToString(), v.Workspace.CanPush, v.Workspace.EgressMode, Dto.Utc(v.Workspace.CreatedAt), Dto.Utc(v.Workspace.StartedAt), Dto.Utc(v.Workspace.LastActivityAt),
         Dto.Utc(v.Workspace.ExpiresAt), Dto.Utc(v.Workspace.StoppedAt), v.Workspace.StopReason, v.Workspace.Error, $"/workspaces/{v.Workspace.PublicId}");
 

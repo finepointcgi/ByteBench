@@ -1,0 +1,91 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceEditorService Editor
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" data-testid="ws-editor-panel">
+            @if (info == null) { <MudProgressLinear Indeterminate="true" /> }
+            else if (info.Problem != null) { <MudAlert Severity="Severity.Info" Dense="true">@info.Problem</MudAlert> }
+            else if (connection == null)
+            {
+                <MudText Typo="Typo.body2">
+                    Use VS Code (Remote - SSH) or JetBrains Gateway on your own computer with this workspace. Your editor connects over SSH through a tunnel on this
+                    server (no extra port is opened). Paste your SSH <b>public</b> key: it is installed in this workspace only and expires after 8 hours or when the
+                    workspace stops. Never paste a private key.
+                </MudText>
+                <MudTextField T="string" @bind-Value="publicKey" Immediate="true" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Label="SSH public key"
+                              Placeholder="ssh-ed25519 AAAA… (the contents of ~/.ssh/id_ed25519.pub)" data-testid="ws-editor-key" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">No key yet? Run <span class="mono">ssh-keygen -t ed25519</span> on your computer.</MudText>
+                @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">
+                    Key <span class="mono">@connection.KeyFingerprint</span> is allowed until @connection.KeyExpiresAt.ToLocalTime().ToString("g").
+                </MudAlert>
+                <MudText Typo="Typo.subtitle2">1. Command line (once)</MudText>
+                <MudText Typo="Typo.body2">Install the <span class="mono">bytebench</span> command line and sign in with a personal access token that has the write_api scope:</MudText>
+                <pre class="mono" style="margin:0;font-size:12px">bytebench login --server @ServerAddress</pre>
+                <MudText Typo="Typo.subtitle2">2. Add this to <span class="mono">~/.ssh/config</span></MudText>
+                <pre class="mono" style="margin:0;font-size:12px;overflow:auto" data-testid="ws-editor-config">@connection.SshConfig</pre>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="CopyConfig" StartIcon="@Icons.Material.Outlined.ContentCopy">Copy</MudButton>
+                @if (connection.HostKeyFingerprint != null)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">The workspace's SSH host key is <span class="mono">@connection.HostKeyFingerprint</span>; the first connection records it.</MudText>
+                }
+                <MudText Typo="Typo.subtitle2">VS Code</MudText>
+                <ol style="margin:0;padding-left:20px">@foreach (var s in connection.VsCodeSteps) { <li><MudText Typo="Typo.body2">@s</MudText></li> }</ol>
+                <MudText Typo="Typo.subtitle2">JetBrains Gateway</MudText>
+                <ol style="margin:0;padding-left:20px">@foreach (var s in connection.JetBrainsSteps) { <li><MudText Typo="Typo.body2">@s</MudText></li> }</ol>
+                @foreach (var n in connection.Notes) { <MudText Typo="Typo.caption" Class="mud-text-secondary">@n</MudText> }
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Close()">Close</MudButton>
+        @if (info is { Problem: null } && connection == null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || string.IsNullOrWhiteSpace(publicKey))" OnClick="Connect" data-testid="ws-editor-connect">Allow my key</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public string PublicId { get; set; } = "";
+
+    private EditorInfo? info;
+    private EditorConnection? connection;
+    private string publicKey = "";
+    private string? error;
+    private bool busy;
+
+    private string ServerAddress => new Uri(Nav.BaseUri).GetLeftPart(UriPartial.Authority);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        try { info = await Editor.GetInfoAsync(PublicId, Me.Id, ServerAddress); }
+        catch (InvalidOperationException ex) { info = new EditorInfo(false, "", "", "", "", "", ex.Message); }
+    }
+
+    private async Task Connect()
+    {
+        busy = true;
+        error = null;
+        try { connection = await Editor.ConnectAsync(PublicId, Me.Id, publicKey, ServerAddress); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task CopyConfig()
+    {
+        if (connection == null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", connection.SshConfig); Snackbar.Add("Copied.", Severity.Success); }
+        catch (JSException) { Snackbar.Add("Couldn't copy: select the text instead.", Severity.Warning); }
+    }
+}

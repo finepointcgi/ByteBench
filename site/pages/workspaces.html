@@ -18,9 +18,23 @@
   <li><strong>Preview</strong>: lists ports something in the container is listening on (checked every few seconds); choosing one opens it in a panel next to the IDE, or in a new tab. Servers bound to <code>127.0.0.1</code> work too.</li>
   <li><strong>AI</strong>: the assistant panel (see below).</li>
   <li><strong>Commit &amp; push</strong>: shows <code>git status</code>, takes a message and commits everything as you; <strong>Commit &amp; push</strong> pushes to the workspace's branch or to a branch name you type. A protected branch refuses the push (server-side), so type a new branch name and open a pull request.</li>
+  <li><strong>The git bar</strong>: the branch (with how far it is ahead of or behind its remote, or "not pushed"), the number of changed files and, when the workspace was opened for an issue, that issue. <strong>Commit</strong> opens the commit dialog, <strong>Push</strong> pushes the current branch with the workspace's own git token, and <strong>Open PR</strong> pushes and opens a pull request into the default branch (or a branch you type) with a title and description. If the workspace was opened for an issue, the description names it (<code>Fixes KEY-12</code>, or <code>Related to KEY-12</code> if you untick "close when merged"), which links the pull request to the issue. An open pull request for the same branch is shown instead of a duplicate. Uncommitted changes are refused (a pull request only contains commits).</li>
+  <li><strong>Open in local editor</strong>: connect VS Code (Remote - SSH) or JetBrains Gateway on your own computer (below).</li>
   <li><strong>New tab</strong>, <strong>Restart</strong> (restarts the container: files stay, running processes end; the network policy is applied again before the IDE returns) and <strong>Stop</strong> (deletes the container and everything in it: push first).</li>
 </ul>
 <p>A workspace stops by itself after the idle timeout (no proxied request and no IDE traffic), at its maximum lifetime, or when ByteBench restarts. All stops are audited with the reason.</p>
+
+<h2 id="from-work">Start a workspace from an issue or a pull request</h2>
+<p><strong>Start workspace</strong> on an issue page opens (or resumes) a workspace on a branch named from the issue: <code>KEY-12-fix-login</code> (the key, then the title as a lower-case slug of at most 40 characters). The branch is reused if it exists; otherwise it is created from the repository's default branch (this needs push permission and follows branch protection). A project with several repositories asks which one (<code>repo</code> in the API). <strong>Start workspace</strong> on a pull request page opens the source branch (pull requests from forks aren't supported). If you already have a live workspace on that branch you get that one back instead of a second. The workspace is linked to the issue or pull request: its git bar shows the issue, the issue page offers <strong>Resume workspace</strong>, and the pull request opened from the workspace names the issue.</p>
+
+<h2 id="local-editor">Connect your own editor (VS Code, JetBrains Gateway)</h2>
+<p>Off by default: an administrator switches <em>Local editors</em> on under Admin &rarr; Workspaces. <strong>Open in local editor</strong> on the workspace page then explains the steps.</p>
+<ul>
+  <li><strong>How it works.</strong> Both editors speak SSH. An OpenSSH server is started <em>inside your workspace</em> on demand, as the unprivileged <code>coder</code> user, listening on <code>127.0.0.1:2222</code> of the container only, with key login only (no passwords, no root). Nothing is published on the server. Your editor reaches it through ByteBench over a WebSocket (<code>/api/v1/workspaces/{id}/editor/tunnel</code>, so it passes the same TLS and reverse proxy as the web UI) using the <code>bytebench workspace tunnel</code> command as its SSH <code>ProxyCommand</code>.</li>
+  <li><strong>Steps.</strong> Install the <code>bytebench</code> command line and sign in with a personal access token that has the <code>write_api</code> scope. In the panel (or with <code>bytebench workspace connect &lt;id&gt; --key ~/.ssh/id_ed25519.pub</code>) allow your <em>public</em> key, add the printed block to <code>~/.ssh/config</code>, then in VS Code run "Remote-SSH: Connect to Host…" or in Gateway choose SSH &rarr; OpenSSH config.</li>
+  <li><strong>Credentials.</strong> Your public key is installed in that workspace only, for at most 8 hours and never past the workspace's own end (<code>expiry-time</code>); the line is rebuilt from the key so no options can be smuggled in. The page never shows a token or a private key. The tunnel only accepts a personal access token (not a browser session), only for the workspace's owner, and at most 8 tunnels per workspace at a time. Audited: <code>workspace.editor_key_added</code>, <code>workspace.admin_editor_switch</code>.</li>
+  <li><strong>Limits.</strong> The editors download their remote components inside the workspace, so the server's network mode must allow the internet (<code>public-only</code>, not <code>none</code>). The workspace image needs <code>openssh-server</code> (rebuild it from <code>docker/workspace</code> if yours is older).</li>
+</ul>
 
 <h2 id="ai">The AI assistant</h2>
 <p>The panel next to the IDE uses ByteBench's AI (the Anthropic API with the editor's tool loop; Claude Code is not used here) with tools that run in the container through <code>docker exec</code>: <code>list_files</code>, <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, <code>search_code</code> and <code>run_command</code>.</p>
@@ -57,7 +71,8 @@
 <ul>
   <li><strong>Admin &rarr; Workspaces</strong>: the health table, the workspaces switch, the assistant switch, every workspace (owner, repository, state, activity) with <strong>Stop</strong> and <strong>Stop all</strong>. Administrators can stop any workspace but cannot open one.</li>
   <li><strong>Project settings &rarr; Workspaces</strong> (Maintainer and Owner): allow workspaces and the assistant for the project.</li>
-  <li><strong>Audit log</strong>: <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
+  <li><strong>Local editors</strong> switch (off by default): see above.</li>
+  <li><strong>Audit log</strong>: <code>workspace.push</code>, <code>workspace.pull_request_opened</code>, <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
 </ul>
 
 <h2 id="configuration">Configuration</h2>
@@ -86,6 +101,12 @@
   <tr><td><code>POST /api/v1/projects/{key}/repos/{slug}/workspaces</code></td><td>Start one: <code>{"ref": "main", "source": "pr:12"}</code>. Returns 202; poll until <code>state</code> is <code>Running</code> or <code>Failed</code>.</td></tr>
   <tr><td><code>GET /api/v1/workspaces/{id}</code></td><td>One of yours; 404 for anyone else's.</td></tr>
   <tr><td><code>POST /api/v1/workspaces/{id}/stop</code>, <code>/restart</code></td><td>Stop (deletes the container) or restart.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/ports</code>, <code>POST …/ports/{port}/open</code></td><td>The ports something is listening on (with each port's own origin), and a single-use 60-second entry URL for one. Used by the desktop apps.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/git</code></td><td>Branch, changed files, ahead/behind, last commit subject, linked issue.</td></tr>
+  <tr><td><code>POST …/{id}/git/commit</code>, <code>/git/push</code>, <code>/git/pull-request</code></td><td>Commit (<code>{"message","push","branch"}</code>), push the current branch, open a pull request (<code>{"title","description","target","closeIssue","draft"}</code>).</td></tr>
+  <tr><td><code>POST /api/v1/projects/{key}/issues/{number}/workspace</code>, <code>POST …/repos/{slug}/pull-requests/{number}/workspace</code></td><td>Start (or resume) a workspace on the issue's branch or the pull request's source branch. 202, <code>{workspace, branch, branchCreated, reused}</code>.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/links</code></td><td>The issue and pull request a workspace was opened for.</td></tr>
+  <tr><td><code>GET …/{id}/editor</code>, <code>POST …/editor/connect</code>, <code>GET …/editor/tunnel</code> (WebSocket)</td><td>Local editor status, allow your public key (<code>{"publicKey"}</code>), and the SSH tunnel (token with <code>write_api</code> only).</td></tr>
 </table>
 <p>The API never returns an IDE link or a credential; the IDE is opened from the workspace page in a browser.</p>
 

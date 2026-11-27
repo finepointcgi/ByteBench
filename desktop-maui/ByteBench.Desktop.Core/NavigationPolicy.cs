@@ -12,6 +12,11 @@ public enum NavDecision { Internal, Workspace, External, Blocked }
 /// <param name="AdvertisedWorkspaceBase">Workspace base domain from server-info, if any.</param>
 public sealed record NavContext(string ServerOrigin, string? AdvertisedWorkspaceBase = null);
 
+public enum WorkspaceOriginKind { Ide, Preview }
+
+/// <param name="Port">The forwarded port, for a preview.</param>
+public sealed record WorkspaceOrigin(WorkspaceOriginKind Kind, int? Port, string WorkspaceId);
+
 /// <summary>Navigation allow-list (mirrors desktop/src/main/allowlist.ts). The WebView hooks only act on the decision.</summary>
 public static partial class NavigationPolicy
 {
@@ -35,17 +40,63 @@ public static partial class NavigationPolicy
         return bases;
     }
 
-    public static bool IsWorkspaceUrl(Uri target, Uri server, string? advertised)
+    /// <summary>The single label in front of a workspace base domain (ide-... / p3000-...), or null when the host is not directly under one.</summary>
+    private static string? WorkspaceLabelOf(Uri target, Uri server, string? advertised)
     {
-        if (target.Scheme != server.Scheme || target.Port != server.Port) return false;
+        if (target.Scheme != server.Scheme || target.Port != server.Port) return null;
         var host = target.IdnHost.ToLowerInvariant();
         foreach (var b in WorkspaceBases(server.IdnHost, advertised))
         {
             if (!host.EndsWith("." + b, StringComparison.Ordinal)) continue;
             var label = host[..(host.Length - b.Length - 1)];
-            if (WorkspaceLabel().IsMatch(label)) return true; // exactly one label in front of the base
+            if (WorkspaceLabel().IsMatch(label)) return label; // exactly one label in front of the base
         }
-        return false;
+        return null;
+    }
+
+    public static bool IsWorkspaceUrl(Uri target, Uri server, string? advertised) => WorkspaceLabelOf(target, server, advertised) is not null;
+
+    /// <summary>The exact labels ByteBench mints: ide-{id} and p{port}-{id}, an id being 20 characters of [a-z2-7].</summary>
+    [GeneratedRegex(@"^(?:(?<ide>ide)|p(?<port>[0-9]{1,5}))-(?<id>[a-z2-7]{20})$")]
+    private static partial Regex StrictLabel();
+
+    /// <summary>Which workspace (and port) a URL on one of the server's workspace origins belongs to; null for anything else, including look-alike labels.</summary>
+    public static WorkspaceOrigin? ParseWorkspaceOrigin(string? raw, NavContext ctx)
+    {
+        if (Classify(raw, ctx) != NavDecision.Workspace) return null;
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var target) || !Uri.TryCreate(ctx.ServerOrigin, UriKind.Absolute, out var server)) return null;
+        var label = WorkspaceLabelOf(target, server, ctx.AdvertisedWorkspaceBase);
+        var m = label is null ? null : StrictLabel().Match(label);
+        if (m is null || !m.Success) return null;
+        if (m.Groups["ide"].Success) return new WorkspaceOrigin(WorkspaceOriginKind.Ide, null, m.Groups["id"].Value);
+        return int.TryParse(m.Groups["port"].Value, out var port) && port is >= 1 and <= 65535
+            ? new WorkspaceOrigin(WorkspaceOriginKind.Preview, port, m.Groups["id"].Value)
+            : null;
+    }
+
+    /// <summary>
+    /// Whether a URL the server handed back for "open port {port} of workspace {workspaceId}" is exactly that: the single-use entry link
+    /// (/_bb/enter?ticket=...&amp;next=/) on that workspace's own preview origin for that port. A server (or a middlebox) can't use this call to make
+    /// the app load another page, another workspace, the IDE or another port.
+    /// </summary>
+    public static bool IsPortEntryUrl(string? raw, NavContext ctx, string workspaceId, int port)
+    {
+        var o = ParseWorkspaceOrigin(raw, ctx);
+        if (o is not { Kind: WorkspaceOriginKind.Preview } || o.WorkspaceId != workspaceId || o.Port != port) return false;
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var u) || u.AbsolutePath != "/_bb/enter" || u.Fragment.Length > 0) return false;
+        string? ticket = null, next = null;
+        foreach (var pair in u.Query.TrimStart('?').Split('&'))
+        {
+            var kv = pair.Split('=', 2);
+            var value = kv.Length > 1 ? Uri.UnescapeDataString(kv[1].Replace('+', ' ')) : "";
+            switch (kv[0])
+            {
+                case "ticket" when ticket is null: ticket = value; break;
+                case "next" when next is null: next = value; break;
+                default: return false; // an extra or repeated parameter
+            }
+        }
+        return !string.IsNullOrEmpty(ticket) && next is not null && next.StartsWith('/') && !next.StartsWith("//", StringComparison.Ordinal) && !next.Contains('\\');
     }
 
     public static NavDecision Classify(string? raw, NavContext ctx)

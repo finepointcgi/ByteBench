@@ -4,6 +4,7 @@
 @implements IDisposable
 @inject CurrentUser Me
 @inject WorkspaceService Workspaces
+@inject WorkspaceEditorService EditorAccess
 @inject WorkspaceImage Image
 @inject WorkspaceRuntime Runtime
 @inject IWorkspaceBackend Backend
@@ -53,6 +54,8 @@ else
         <MudText Typo="Typo.body2" Class="mud-text-secondary">On by default once Docker is reachable; each project can also switch them off. Turning this off stops new workspaces; running ones keep going until you stop them.</MudText>
         <MudSwitch T="bool" Value="aiEnabled" ValueChanged="SetAi" Color="Color.Primary" Label="AI assistant in workspaces" data-testid="ws-ai-switch" />
         <MudText Typo="Typo.body2" Class="mud-text-secondary">Needs the Anthropic API (see AI). Per-user rate limit: @o.Ai.RequestsPerMinute requests per minute.</MudText>
+        <MudSwitch T="bool" Value="editorEnabled" ValueChanged="SetEditor" Color="Color.Primary" Label="Local editors (VS Code Remote-SSH, JetBrains Gateway)" data-testid="ws-editor-switch" />
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">Off by default. When on, an owner can start an SSH server inside their own running workspace (key login only, loopback only) and reach it through a WebSocket tunnel on ByteBench's own address with a personal access token. No port is opened on the server. Only the owner can use it.</MudText>
     </MudPaper>
 
     <div class="d-flex align-center mb-2">
@@ -84,7 +87,7 @@ else
 
 @code {
     private bool? docker;
-    private bool enabled, aiEnabled;
+    private bool enabled, aiEnabled, editorEnabled;
     private List<WorkspaceInfo>? items;
     private PeriodicTimer? timer;
 
@@ -124,6 +127,7 @@ else
         docker = await Backend.IsAvailableAsync();
         enabled = await Workspaces.IsEnabledAsync();
         aiEnabled = await Workspaces.IsAiEnabledSiteAsync();
+        editorEnabled = await EditorAccess.IsEnabledAsync();
         items = await Workspaces.ListAllAsync(Me.Id);
     }
 
@@ -140,6 +144,8 @@ else
 
     private async Task SetEnabled(bool on) { await Workspaces.SetEnabledAsync(on, Me.Id); enabled = on; Snackbar.Add(on ? "Workspaces are on." : "Workspaces are off.", Severity.Success); }
     private async Task SetAi(bool on) { await Workspaces.SetAiEnabledSiteAsync(on, Me.Id); aiEnabled = on; Snackbar.Add(on ? "The workspace assistant is on." : "The workspace assistant is off.", Severity.Success); }
+
+    private async Task SetEditor(bool on) { await EditorAccess.SetEnabledAsync(on, Me.Id); editorEnabled = on; Snackbar.Add(on ? "Local editors can connect to workspaces." : "Local editor connections are off.", Severity.Success); }
 
     private async Task Stop(WorkspaceInfo w)
     {

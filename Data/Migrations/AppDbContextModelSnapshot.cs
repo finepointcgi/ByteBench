@@ -6764,6 +6764,35 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("Workspaces");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.WorkspaceLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("IssueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PullRequestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId");
+
+                    b.HasIndex("PullRequestId");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("WorkspaceLinks");
+                });
+
             modelBuilder.Entity("IssueComponents", b =>
                 {
                     b.Property<int>("ComponentsId")
@@ -8966,6 +8995,31 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Owner");
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceLink", b =>
+                {
+                    b.HasOne("ByteBench.Data.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ByteBench.Data.PullRequest", "PullRequest")
+                        .WithMany()
+                        .HasForeignKey("PullRequestId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Issue");
+
+                    b.Navigation("PullRequest");
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>

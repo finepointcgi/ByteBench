@@ -28,6 +28,8 @@ else
         <div class="ws-actions">
             @if (ws.State == WorkspaceState.Running)
             {
+                <WorkspaceGitBar PublicId="@PublicId" Ref="@ws.Ref" />
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Laptop" OnClick="OpenEditorPanel" data-testid="ws-editor">Open in local editor</MudButton>
                 <MudMenu Label="Preview" Dense="true" StartIcon="@Icons.Material.Outlined.Preview" Size="Size.Small" Variant="Variant.Outlined" data-testid="ws-preview-menu">
                     @if (ports == null) { <MudMenuItem Disabled="true">Looking for ports…</MudMenuItem> }
                     else if (ports.Count == 0) { <MudMenuItem Disabled="true">Nothing is listening yet. Start your app in the terminal.</MudMenuItem> }
@@ -217,6 +219,9 @@ else
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
         await Dialogs.ShowAsync<WorkspaceCommitDialog>("Commit & push", new DialogParameters { ["PublicId"] = PublicId, ["CanPush"] = view!.Workspace.CanPush, ["Ref"] = view.Workspace.Ref }, options);
     }
+
+    private Task OpenEditorPanel() =>
+        Dialogs.ShowAsync<WorkspaceEditorDialog>("Connect from your editor", new DialogParameters { ["PublicId"] = PublicId }, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
 
     private async Task SendAi()
     {

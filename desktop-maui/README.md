@@ -96,6 +96,10 @@ not a server-relative path opens `/notifications`; a link can never add a server
   origin) and clipboard read (server and workspace origins); everything else denied.
 * No auto-update, installers, signing or release workflow. Workspace origins (`ide-*`, `p<port>-*`) stay in the same web view
   (Electron opens an app window).
+* **Workspaces → Workspace Ports...** lists the running workspaces' forwarded ports (needs the `workspace-ports` capability and a saved access
+  token) and opens one in the app's web view or the system browser. The single-use entry link is validated in Core
+  (`NavigationPolicy.IsPortEntryUrl`, `WorkspacePorts`, tested in `WorkspacePortsTests`) before it is opened. The menu code compiles (Mac Catalyst
+  build) but has not been clicked through; no local TCP port is bound.
 
 ## What was verified, and what was not
 

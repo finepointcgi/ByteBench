@@ -13,12 +13,26 @@ export interface JsonResponse {
  * With a token, the cookie jar is not used. Never throws.
  */
 export async function getJson(ses: Session, origin: string, pathAndQuery: string, opts: { token?: string; timeoutMs?: number } = {}): Promise<JsonResponse> {
+  return requestJson(ses, origin, 'GET', pathAndQuery, opts);
+}
+
+/** POST an empty JSON object (an action endpoint such as "open this port"). Same rules as {@link getJson}; a cookie session also sends a JSON content type, which the API requires for cookie writes. */
+export async function postJson(ses: Session, origin: string, pathAndQuery: string, opts: { token?: string; timeoutMs?: number } = {}): Promise<JsonResponse> {
+  return requestJson(ses, origin, 'POST', pathAndQuery, opts);
+}
+
+async function requestJson(ses: Session, origin: string, method: 'GET' | 'POST', pathAndQuery: string, opts: { token?: string; timeoutMs?: number }): Promise<JsonResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 8000);
   try {
     const res = await ses.fetch(new URL(pathAndQuery, origin).toString(), {
-      method: 'GET',
-      headers: { Accept: 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
+      method,
+      body: method === 'POST' ? '{}' : undefined,
+      headers: {
+        Accept: 'application/json',
+        ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+        ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
+      },
       credentials: opts.token ? 'omit' : 'include',
       redirect: 'manual', // a server must not redirect an API call somewhere else (e.g. to a login page on another origin)
       signal: controller.signal,

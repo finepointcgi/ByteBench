@@ -2,6 +2,7 @@ import { Menu, app, dialog, shell, type MenuItemConstructorOptions } from 'elect
 import { repoFromPath } from './clone';
 import type { Controller } from './controller';
 import { openFind, openPalette } from './overlays';
+import { showWorkspacePortsMenu } from './ports-menu';
 import { checkForUpdates, updatesEnabled } from './updater';
 
 const isMac = process.platform === 'darwin';
@@ -124,6 +125,7 @@ export function buildMenu(c: Controller): void {
         { label: 'Home', accelerator: 'CommandOrControl+Shift+H', click: goto('/') },
         { label: 'Notifications', click: goto('/notifications') },
         { label: 'Workspaces', click: goto('/workspaces') },
+        { label: 'Workspace Ports…', accelerator: 'CommandOrControl+Shift+P', click: () => void showWorkspacePortsMenu(c) },
         { label: 'Search', click: goto('/search') },
         { type: 'separator' },
         {

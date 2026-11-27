@@ -85,8 +85,50 @@ public sealed class FakeWorkspaceBackend : IWorkspaceBackend, IDisposable
     {
         lock (Connections) Connections.Add((endpoint, port));
         var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, upstream.Port, ct);
+        await client.ConnectAsync(IPAddress.Loopback, RawPorts.TryGetValue(port, out var local) ? local.Port : upstream.Port, ct);
         return client.GetStream();
+    }
+
+    /// <summary>Container ports that answer with a raw TCP banner and then echo (a stand-in for the SSH server): port → local listener.</summary>
+    public ConcurrentDictionary<int, RawEcho> RawPorts { get; } = new();
+
+    /// <summary>Makes <paramref name="containerPort"/> a raw echo server that first sends <paramref name="banner"/>.</summary>
+    public RawEcho ServeRaw(int containerPort, string banner) => RawPorts[containerPort] = new RawEcho(banner);
+
+    /// <summary>A TCP server: sends a banner on connect, then echoes every byte.</summary>
+    public sealed class RawEcho : IDisposable
+    {
+        private readonly TcpListener listener = new(IPAddress.Loopback, 0);
+        private readonly string banner;
+        public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        public RawEcho(string banner)
+        {
+            this.banner = banner;
+            listener.Start();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        var c = await listener.AcceptTcpClientAsync();
+                        _ = Task.Run(async () =>
+                        {
+                            using var _ = c;
+                            var s = c.GetStream();
+                            await s.WriteAsync(Encoding.ASCII.GetBytes(this.banner));
+                            var buf = new byte[4096];
+                            int n;
+                            while ((n = await s.ReadAsync(buf)) > 0) await s.WriteAsync(buf.AsMemory(0, n));
+                        });
+                    }
+                }
+                catch (Exception) { /* stopped */ }
+            });
+        }
+
+        public void Dispose() => listener.Stop();
     }
 
     public Task RemoveAsync(string containerId, CancellationToken ct)
@@ -124,7 +166,11 @@ public sealed class FakeWorkspaceBackend : IWorkspaceBackend, IDisposable
 
     public string? ConnectionToken(string? containerId = null) => Execs.Where(e => containerId == null || e.ContainerId == containerId).Select(e => e.Spec).FirstOrDefault(s => s.Command.Any(a => a.Contains("/tmp/.bb-token")))?.Stdin;
 
-    public void Dispose() => upstream.Dispose();
+    public void Dispose()
+    {
+        upstream.Dispose();
+        foreach (var r in RawPorts.Values) r.Dispose();
+    }
 
     /// <summary>A tiny HTTP/1.1 server: /echo returns the request head as text, /ws upgrades and echoes bytes, anything else 404.</summary>
     public sealed class Upstream : IDisposable

@@ -21,7 +21,7 @@ public static class DesktopEndpoints
 {
     /// <summary>Bump when the desktop app's required endpoints change incompatibly. Capabilities name optional features.</summary>
     public const int ApiVersion = 1;
-    public static readonly string[] Capabilities = ["notifications"];
+    public static readonly string[] Capabilities = ["notifications", "workspace-ports"];
 
     public static IEndpointRouteBuilder MapServerInfo(this IEndpointRouteBuilder app)
     {

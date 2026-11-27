@@ -1,0 +1,115 @@
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceGitService Git
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+@* The git part of the workspace top bar: branch and changed files, commit, push, open a pull request. *@
+
+<div class="d-flex align-center gap-2 flex-wrap" data-testid="ws-gitbar">
+    @if (status == null)
+    {
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">git…</MudChip>
+    }
+    else
+    {
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Outlined.CallSplit" data-testid="ws-git-branch" title="The branch checked out in the workspace">
+            @(status.Branch ?? "detached HEAD")@(status.RemoteBranchExists && (status.Ahead > 0 || status.Behind > 0) ? $" ↑{status.Ahead} ↓{status.Behind}" : "")@(!status.RemoteBranchExists && status.Branch != null ? " (not pushed)" : "")
+        </MudChip>
+        <MudChip T="string" Size="Size.Small" Color="@(status.ChangedFiles > 0 ? Color.Warning : Color.Default)" Variant="Variant.Outlined" data-testid="ws-git-changes"
+                 title="Files changed since the last commit">@status.ChangedFiles changed</MudChip>
+        @if (status.IssueKey != null)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Href="@($"/p/{status.IssueKey[..status.IssueKey.LastIndexOf('-')]}/issues/{status.IssueKey[(status.IssueKey.LastIndexOf('-') + 1)..]}")"
+                     title="@status.IssueTitle" data-testid="ws-git-issue">@status.IssueKey</MudChip>
+        }
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Check" Disabled="@(busy || status.ChangedFiles == 0)" OnClick="OpenCommit"
+                   data-testid="ws-git-commit">Commit</MudButton>
+        @if (status.CanPush)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Upload" Disabled="@(busy || status.Branch == null || (status.RemoteBranchExists && status.Ahead == 0))"
+                       OnClick="Push" data-testid="ws-git-push">Push</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CallMerge" Disabled="@(busy || status.Branch == null)" OnClick="OpenPr"
+                       data-testid="ws-git-pr">Open PR</MudButton>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string PublicId { get; set; } = "";
+    [Parameter] public string Ref { get; set; } = "";
+    /// <summary>Raised after a commit or push so the page can refresh anything that depends on it.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private WorkspaceGitStatus? status;
+    private bool busy;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await Refresh();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(8));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync(cts!.Token))
+            {
+                if (!busy) await Refresh();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or OperationCanceledException) { }
+    }
+
+    private async Task Refresh()
+    {
+        try { status = await Git.GetStatusAsync(PublicId, Me.Id); }
+        catch (InvalidOperationException) { /* not running (any more): keep the last status */ }
+    }
+
+    private async Task OpenCommit()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await Dialogs.ShowAsync<WorkspaceCommitDialog>("Commit", new DialogParameters { ["PublicId"] = PublicId, ["CanPush"] = status?.CanPush ?? false, ["Ref"] = Ref }, options);
+        await dialog.Result;
+        await Refresh();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task Push()
+    {
+        busy = true;
+        try
+        {
+            var r = await Git.PushAsync(PublicId, Me.Id);
+            Snackbar.Add(r.Ok ? $"Pushed {status?.Branch}." : r.Output, r.Ok ? Severity.Success : Severity.Error);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { busy = false; }
+        await Refresh();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task OpenPr()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        await Dialogs.ShowAsync<WorkspacePrDialog>("Open a pull request", new DialogParameters { ["PublicId"] = PublicId, ["Status"] = status }, options);
+        await Refresh();
+    }
+
+    public void Dispose()
+    {
+        cts?.Cancel();
+        timer?.Dispose();
+        cts?.Dispose();
+        cts = null;
+    }
+}

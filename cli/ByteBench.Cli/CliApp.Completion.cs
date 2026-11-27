@@ -28,6 +28,7 @@ public sealed partial class CliApp
         ["prs"] = ["list", "show"],
         ["repos"] = ["list"],
         ["pipelines"] = ["list", "logs"],
+        ["workspace"] = ["connect", "tunnel"],
         ["completion"] = ["bash", "zsh", "fish"],
     };
 

@@ -1,0 +1,63 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceGitService Git
+@inject NavigationManager Nav
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2">
+            @if (Status is { ChangedFiles: > 0 })
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">You have @Status.ChangedFiles uncommitted file(s). Commit them first: a pull request only contains commits.</MudAlert>
+            }
+            <MudText Typo="Typo.body2">Pushes <span class="mono">@(Status?.Branch ?? "the branch")</span>, then opens a pull request into the repository's default branch@(target.Length > 0 ? $" (or {target})" : "").</MudText>
+            <MudTextField T="string" @bind-Value="title" Immediate="true" Label="Title" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200"
+                          Placeholder="@DefaultTitle" data-testid="ws-pr-title" />
+            <MudTextField T="string" @bind-Value="description" Immediate="true" Label="Description" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField T="string" @bind-Value="target" Immediate="true" Label="Target branch" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Leave empty for the default branch." />
+            @if (Status?.IssueKey != null)
+            {
+                <MudCheckBox T="bool" @bind-Value="closeIssue" Dense="true" Label="@($"Close {Status.IssueKey} when this is merged (adds “Fixes {Status.IssueKey}”)")" />
+            }
+            <MudCheckBox T="bool" @bind-Value="draft" Dense="true" Label="Open as a draft" />
+            @if (result != null)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true" data-testid="ws-pr-result">
+                    @(result.AlreadyExisted ? "A pull request for this branch is already open: " : "Pull request opened: ")
+                    <MudLink Href="@result.Url" Target="_blank">#@result.Number @result.Title</MudLink>
+                </MudAlert>
+            }
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true">@error</MudAlert> }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Close()">Close</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(busy || result != null || Status is { ChangedFiles: > 0 })" OnClick="Open" data-testid="ws-pr-open">Push and open</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [Parameter] public string PublicId { get; set; } = "";
+    [Parameter] public WorkspaceGitStatus? Status { get; set; }
+
+    private string title = "", description = "", target = "";
+    private bool closeIssue = true, draft, busy;
+    private string? error;
+    private WorkspacePullRequestResult? result;
+
+    private string DefaultTitle => Status?.IssueKey != null ? $"{Status.IssueKey}: {Status.IssueTitle}" : Status?.LastSubject ?? Status?.Branch ?? "";
+
+    private async Task Open()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await Me.EnsureLoadedAsync();
+            result = await Git.OpenPullRequestAsync(PublicId, Me.Id, title, description, target, closeIssue, draft);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+}

@@ -17,6 +17,10 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddHostedService<WorkspaceImageStartup>();
         services.AddScoped<WorkspaceService>();
         services.AddScoped<WorkspaceAiService>();
+        services.AddSingleton<WorkspaceEditorTunnels>();
+        services.AddScoped<WorkspaceEditorService>(); // local editors over an SSH tunnel (VS Code Remote-SSH, JetBrains Gateway)
+        services.AddScoped<WorkspaceGitService>(); // commit, push and open a pull request from the workspace bar
+        services.AddScoped<WorkspaceLaunchService>(); // start a workspace from an issue or a pull request
         return services;
     }
 }

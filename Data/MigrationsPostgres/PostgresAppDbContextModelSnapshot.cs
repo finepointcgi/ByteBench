@@ -7034,6 +7034,37 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("Workspaces");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.WorkspaceLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("IssueId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("PullRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId");
+
+                    b.HasIndex("PullRequestId");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("WorkspaceLinks");
+                });
+
             modelBuilder.Entity("IssueComponents", b =>
                 {
                     b.Property<int>("ComponentsId")
@@ -9242,6 +9273,31 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Owner");
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceLink", b =>
+                {
+                    b.HasOne("ByteBench.Data.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ByteBench.Data.PullRequest", "PullRequest")
+                        .WithMany()
+                        .HasForeignKey("PullRequestId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Issue");
+
+                    b.Navigation("PullRequest");
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>

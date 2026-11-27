@@ -10,12 +10,13 @@ import { cloneArgs, cloneEnv, cloneUrl, editorFromEnvironment, findOnPath, repoF
 import type { Compat } from './compat';
 import { partitionFor, wcContexts } from './context';
 import { parseDeepLink } from './deeplink';
-import { describeNetError, getJson, isCertError, probeServer } from './net';
+import { describeNetError, getJson, isCertError, postJson, probeServer } from './net';
 import { Notifier } from './notifier';
 import { ProfileStore } from './profiles';
 import { SecretStore } from './secrets';
 import { hardenSession, type SecurityHost } from './security';
 import { AppWindow, type WindowHost } from './windows';
+import { parseOpenResponse, parsePorts, parseWorkspaceList, serverSupportsPorts, type WorkspacePorts } from './workspace-ports';
 
 interface PendingCert {
   fingerprint: string;
@@ -186,6 +187,50 @@ export class Controller implements WindowHost, SecurityHost {
     });
     this.sessionFor(p);
     void win.loadURL(url);
+  }
+
+  // ---------------------------------------------------------------- workspace ports
+
+  /** The running workspaces of a server and the ports each one is serving, read with the profile's own session (or its stored token). */
+  async workspacePorts(profileId: string): Promise<{ ok: true; items: WorkspacePorts[] } | { ok: false; message: string }> {
+    const p = this.store.get(profileId);
+    const nav = this.navContext(profileId);
+    if (!p || !nav) return { ok: false, message: 'Unknown server.' };
+    const ses = this.sessionFor(p);
+    const compat = this.compatCache.get(p.id) ?? (await probeServer(ses, p.origin)).compat;
+    if (!('info' in compat) || !serverSupportsPorts(compat.info.capabilities)) {
+      return { ok: false, message: 'This server is too old to list workspace ports. Update ByteBench on the server.' };
+    }
+    const token = this.secrets.get(p.id);
+    const list = await getJson(ses, p.origin, '/api/v1/workspaces', { token });
+    if (list.status === 401 || list.status === 403) return { ok: false, message: 'Sign in to this server first (or add an access token to the server entry).' };
+    if (list.status !== 200) return { ok: false, message: 'The workspaces could not be loaded.' };
+    const items: WorkspacePorts[] = [];
+    for (const workspace of parseWorkspaceList(list.body)) {
+      const r = await getJson(ses, p.origin, `/api/v1/workspaces/${workspace.id}/ports`, { token });
+      if (r.status === 200) items.push({ workspace, ports: parsePorts(r.body, nav, workspace.id) });
+    }
+    return { ok: true, items };
+  }
+
+  /**
+   * Opens one forwarded port: asks the server for a single-use entry link, checks that it is exactly that (this workspace, this port, this server)
+   * and only then opens it in an app window, or in the default browser. The link is never stored or logged.
+   */
+  async openWorkspacePort(profileId: string, workspaceId: string, port: number, where: 'window' | 'browser'): Promise<{ ok: true } | { ok: false; message: string }> {
+    const p = this.store.get(profileId);
+    const nav = this.navContext(profileId);
+    if (!p || !nav || !/^[a-z2-7]{20}$/.test(workspaceId) || !Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, message: 'Unknown workspace or port.' };
+    const r = await postJson(this.sessionFor(p), p.origin, `/api/v1/workspaces/${workspaceId}/ports/${port}/open`, { token: this.secrets.get(p.id) });
+    if (r.status !== 200) return { ok: false, message: r.status === 422 ? 'The workspace is not running any more.' : 'The port could not be opened.' };
+    const url = parseOpenResponse(r.body, nav, workspaceId, port);
+    if (!url) return { ok: false, message: 'The server answered with an address the app does not trust, so it was not opened.' };
+    if (where === 'browser') {
+      void shell.openExternal(url);
+    } else {
+      this.openWorkspace(p.id, url);
+    }
+    return { ok: true };
   }
 
   // ---------------------------------------------------------------- WindowHost

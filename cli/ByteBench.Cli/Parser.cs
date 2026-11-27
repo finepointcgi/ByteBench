@@ -10,7 +10,7 @@ public sealed class ParsedArgs
         ["server"] = true, ["project"] = true, ["query"] = true, ["status"] = true, ["limit"] = true, ["title"] = true,
         ["description"] = true, ["description-file"] = true, ["body"] = true, ["body-file"] = true, ["type"] = true,
         ["priority"] = true, ["assignee"] = true, ["label"] = true, ["to"] = true, ["state"] = true, ["branch"] = true,
-        ["step"] = true, ["tail"] = true,
+        ["step"] = true, ["tail"] = true, ["key"] = true,
     };
 
     public List<string> Words { get; } = [];

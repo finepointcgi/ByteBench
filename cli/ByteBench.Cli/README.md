@@ -23,6 +23,8 @@ bytebench issues list --project WEB
 bytebench --help
 ```
 
+Local editors (an administrator must switch them on): `bytebench workspace connect <id> --key ~/.ssh/id_ed25519.pub` allows your public key in a running workspace and prints the `~/.ssh/config` block; `bytebench workspace tunnel <id>` is that block's `ProxyCommand` (needs a token with `write_api`), for VS Code Remote-SSH and JetBrains Gateway.
+
 Shell completion: `bytebench completion bash|zsh|fish`.
 
 Full documentation: the "AI tools (MCP) and the command line" page of the ByteBench documentation.
