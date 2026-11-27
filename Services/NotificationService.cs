@@ -19,7 +19,7 @@ public record NotificationPage(List<Notification> Items, int Total, int Page, in
 /// publishes. Domain services call one <c>On…Async</c> hook at the end of a mutating method, after saving.
 /// Every recipient list goes through <see cref="FilterRecipientsAsync"/>.
 /// </summary>
-public partial class NotificationService(IDbContextFactory<AppDbContext> dbFactory, LiveEvents live, ProjectAccess access, ILogger<NotificationService> log)
+public partial class NotificationService(IDbContextFactory<AppDbContext> dbFactory, LiveEvents live, ProjectAccess access, ILogger<NotificationService> log, IServiceProvider services)
 {
     public const int DropdownSize = 10;
 
@@ -56,6 +56,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
         if (issue.AssigneeId is { } assignee) r.Add(assignee, NotificationKind.Assigned);
         r.Add(await ResolveMentionsAsync(db, issue.Description), NotificationKind.Mentioned);
         await NotifyAsync(db, r, actorId, issue.ProjectId, IssueTitle(issue), IssueUrl(issue), issue.Description);
+        if (issue.AssigneeId is { } assignedTo) await Workspaces.AiRunTrigger.OnAssignedAsync(services, issue, assignedTo, actorId);
 
         live.Publish(new IssueChanged(issue.ProjectId, issueId), new BoardChanged(issue.ProjectId), new ActivityChanged());
     }
@@ -86,6 +87,7 @@ public partial class NotificationService(IDbContextFactory<AppDbContext> dbFacto
             r.Add(await IssueWatchersAsync(db, issueId), kind);
         }
         await NotifyAsync(db, r, actorId, issue.ProjectId, IssueTitle(issue), IssueUrl(issue));
+        if (issue.AssigneeId is { } assignedTo && assignedTo != before.AssigneeId) await Workspaces.AiRunTrigger.OnAssignedAsync(services, issue, assignedTo, actorId); // assigned to the AI user: start a run
 
         live.Publish(new IssueChanged(issue.ProjectId, issueId), new BoardChanged(issue.ProjectId), new ActivityChanged());
     }

@@ -1,0 +1,14 @@
+.rv { overflow: auto; border-top: 1px solid var(--mud-palette-lines-default); max-height: 55%; }
+.rv-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; }
+.rv-set { margin: 6px; padding: 4px; }
+.rv-set-head, .rv-file-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rv-file { border-top: 1px solid var(--mud-palette-lines-default); padding: 4px 0; }
+.rv-path { font-size: 12px; word-break: break-all; }
+.rv-add { color: var(--mud-palette-success); font-size: 12px; }
+.rv-del { color: var(--mud-palette-error); font-size: 12px; }
+.rv-note { font-size: 12px; color: var(--mud-palette-error); }
+.rv-diff { margin: 0; font-size: 12px; overflow: auto; max-height: 220px; background: var(--mud-palette-background-gray); padding: 4px; }
+.rv-diff .add { background: rgba(46, 160, 67, 0.2); }
+.rv-diff .del { background: rgba(248, 81, 73, 0.2); }
+.rv-diff .ctx { color: var(--mud-palette-text-secondary); }
+.rv-done { font-size: 12px; color: var(--mud-palette-text-secondary); padding: 2px 8px; }

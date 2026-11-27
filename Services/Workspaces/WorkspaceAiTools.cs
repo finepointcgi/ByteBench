@@ -21,7 +21,7 @@ public interface IWorkspaceTaskRunner
 /// resolved; every command has a timeout and its output is capped. Output is untrusted data and is wrapped as such. The tools can't commit
 /// or push: there are no credentials for <c>bbai</c>, and commands that try (<c>git commit/push/…</c>) are refused up front.
 /// </summary>
-public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string containerId, string slug, WorkspaceAiOptions options, IWorkspaceTaskRunner? taskRunner = null)
+public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string containerId, string slug, WorkspaceAiOptions options, IWorkspaceTaskRunner? taskRunner = null, AiProposalCollector? proposals = null)
 {
     public const int MaxListed = 1000;
     public const int MaxCommandChars = 4000;
@@ -32,6 +32,10 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
     public Dictionary<string, int> Used { get; } = [];
     /// <summary>The first word of each command that was run (for the audit summary).</summary>
     public List<string> CommandVerbs { get; } = [];
+    /// <summary>Paths written or deleted straight in the working tree (apply-directly mode; for the audit summary).</summary>
+    public List<string> ChangedPaths { get; } = [];
+    /// <summary>In review mode: where write_file, edit_file and delete_file put their changes instead of the working tree.</summary>
+    public AiProposalCollector? Proposals { get; } = proposals;
 
     public static readonly IReadOnlyList<EditorToolDefinition> Definitions =
     [
@@ -41,13 +45,15 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
             Props(("path", new { type = "string", description = "File path relative to the repository root." }),
                   ("start_line", new { type = "integer", description = "First line to return (1-based). Optional." }),
                   ("end_line", new { type = "integer", description = "Last line to return. Optional." })), ["path"]),
-        new("write_file", "Create or overwrite a file in the workspace with the given complete content. The change is made in the workspace right away; the user reviews and commits.",
+        new("write_file", "Create or overwrite a file in the workspace with the given complete content. In review mode the change is proposed to the developer and applied only when they accept it; otherwise it is made right away.",
             Props(("path", new { type = "string", description = "File path relative to the repository root." }),
                   ("content", new { type = "string", description = "The complete new content of the file." })), ["path", "content"]),
         new("edit_file", "Replace one exact, unique occurrence of `find` with `replace` in a file.",
             Props(("path", new { type = "string", description = "File path relative to the repository root." }),
                   ("find", new { type = "string", description = "Exact text to replace; must occur exactly once." }),
                   ("replace", new { type = "string", description = "Replacement text." })), ["path", "find", "replace"]),
+        new("delete_file", "Delete one file from the workspace (or propose its deletion in review mode).",
+            Props(("path", new { type = "string", description = "File path relative to the repository root." })), ["path"]),
         new("search_code", "Search the workspace's files for text (git grep). Returns matching lines as path:line: text.",
             Props(("query", new { type = "string", description = "The text to look for (max 200 characters)." }),
                   ("regex", new { type = "boolean", description = "Treat query as an extended regular expression. Default false." })), ["query"]),
@@ -71,6 +77,7 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
                 "read_file" => await ReadFileAsync(ReqString(input, "path"), OptInt(input, "start_line"), OptInt(input, "end_line"), ct),
                 "write_file" => await WriteFileAsync(ReqString(input, "path"), ReqString(input, "content"), ct),
                 "edit_file" => await EditFileAsync(ReqString(input, "path"), ReqString(input, "find"), ReqString(input, "replace"), ct),
+                "delete_file" => await DeleteFileAsync(ReqString(input, "path"), ct),
                 "search_code" => await SearchAsync(ReqString(input, "query"), OptBool(input, "regex") ?? false, ct),
                 "run_command" => await RunCommandAsync(ReqString(input, "command"), OptInt(input, "timeout_seconds"), ct),
                 "run_task" => await RunTaskAsync(ReqString(input, "name"), OptInt(input, "wait_seconds"), ct),
@@ -90,6 +97,7 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
             "read_file" => $"Reading {S("path")}",
             "write_file" => $"Writing {S("path")}",
             "edit_file" => $"Editing {S("path")}",
+            "delete_file" => $"Deleting {S("path")}",
             "search_code" => $"Searching for \"{S("query")}\"",
             "run_command" => "Running: " + Trim(S("command") ?? "", 120),
             "run_task" => "Running task " + Trim(S("name") ?? "", 60),
@@ -117,6 +125,26 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
         [ -f "$t" ] || { echo "Not a regular file: $2" >&2; exit 5; }
         if [ -s "$t" ] && ! grep -Iq . "$t"; then echo "Binary file: $2" >&2; exit 6; fi
         awk -v s="$3" -v e="$4" 'NR>=s && NR<=e { print NR "\t" $0 }' "$t"
+        """;
+
+    private const string RawReadScript = """
+        umask 002
+        root=$(realpath -e -- "$1") || exit 3
+        t=$(realpath -e -- "$root/$2" 2>/dev/null) || { echo "No such file: $2" >&2; exit 3; }
+        case "$t" in "$root"/*) ;; *) echo "Path escapes the workspace: $2" >&2; exit 4 ;; esac
+        [ -f "$t" ] || { echo "Not a regular file: $2" >&2; exit 5; }
+        if [ -s "$t" ] && ! grep -Iq . "$t"; then echo "Binary file: $2" >&2; exit 6; fi
+        cat -- "$t"
+        """;
+
+    private const string DeleteScript = """
+        umask 002
+        root=$(realpath -e -- "$1") || exit 3
+        t=$(realpath -e -- "$root/$2" 2>/dev/null) || { echo "No such file: $2" >&2; exit 3; }
+        case "$t" in "$root"/*) ;; *) echo "Path escapes the workspace: $2" >&2; exit 4 ;; esac
+        case "$t" in "$root"/.git|"$root"/.git/*) echo "Refusing to touch .git" >&2; exit 4 ;; esac
+        [ -f "$t" ] || { echo "Not a regular file: $2" >&2; exit 5; }
+        rm -f -- "$t"
         """;
 
     private const string WriteScript = """
@@ -160,6 +188,13 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
         var from = Math.Max(1, start ?? 1);
         var to = Math.Min(int.MaxValue, end ?? int.MaxValue);
         if (from > to) return ("start_line is after end_line.", true);
+        if (Proposals?.Find(p) is { } pending)
+        {
+            // Review mode: what the assistant itself proposed for this file is what it sees when it reads it again.
+            if (pending.NewText == null) return ($"{p} is proposed for deletion (pending review).", true);
+            var numbered = string.Concat(LineDiff.Split(pending.NewText).Select((l, i) => (n: i + 1, l)).Where(x => x.n >= from && x.n <= to).Select(x => $"{x.n}\t{x.l.TrimEnd('\n')}\n"));
+            return (EditorAiPrompts.Untrusted("FILE (proposed, not applied yet)", p, numbered.TrimEnd('\n'), EditorAiPrompts.NewBoundary()), false);
+        }
         var r = await backend.ExecAsync(containerId, Spec(["sh", "-c", ReadScript, "sh", Root, p, from.ToString(), to.ToString()]), ct);
         if (!r.Ok) return (Trim(r.Output, 400), true);
         var text = r.Output;
@@ -167,24 +202,92 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
         return (EditorAiPrompts.Untrusted("FILE", p, text.TrimEnd('\n'), EditorAiPrompts.NewBoundary()), false);
     }
 
+    /// <summary>The file's exact text, or <c>Exists = false</c> if there is no such file; an error for binary, escaping or oversized files.</summary>
+    public async Task<(bool Exists, string? Text, string? Error)> ReadRawAsync(string path, CancellationToken ct)
+    {
+        var p = ValidatePath(path);
+        var r = await backend.ExecAsync(containerId, Spec(["sh", "-c", RawReadScript, "sh", Root, p]), ct);
+        if (r.ExitCode == 3) return (false, null, null);
+        if (!r.Ok) return (true, null, Trim(r.Output, 400));
+        if (r.Truncated) return (true, null, "The file is too large to handle here.");
+        return (true, r.Output, null);
+    }
+
+    /// <summary>Writes a file in the working tree (path validated here and again in the container): direct edits and accepted changes.</summary>
+    public async Task<(bool Ok, string Message)> WriteTextAsync(string path, string content, CancellationToken ct)
+    {
+        var p = ValidatePath(path);
+        if (Encoding.UTF8.GetByteCount(content) > options.MaxFileWriteBytes)
+            return (false, $"The file is larger than the {options.MaxFileWriteBytes / 1024:N0} KB limit.");
+        var r = await backend.ExecAsync(containerId, Spec(["sh", "-c", WriteScript, "sh", Root, p], content), ct);
+        return r.Ok ? (true, $"Wrote {p} ({Encoding.UTF8.GetByteCount(content):N0} bytes).") : (false, Trim(r.Output, 400));
+    }
+
+    /// <summary>Deletes a regular file from the working tree.</summary>
+    public async Task<(bool Ok, string Message)> DeleteAsync(string path, CancellationToken ct)
+    {
+        var p = ValidatePath(path);
+        var r = await backend.ExecAsync(containerId, Spec(["sh", "-c", DeleteScript, "sh", Root, p]), ct);
+        return r.Ok ? (true, $"Deleted {p}.") : (false, Trim(r.Output, 400));
+    }
+
     private async Task<(string, bool)> WriteFileAsync(string path, string content, CancellationToken ct)
     {
         var p = ValidatePath(path);
         if (Encoding.UTF8.GetByteCount(content) > options.MaxFileWriteBytes)
             return ($"The file is larger than the {options.MaxFileWriteBytes / 1024:N0} KB limit.", true);
-        var r = await backend.ExecAsync(containerId, Spec(["sh", "-c", WriteScript, "sh", Root, p], content), ct);
-        return r.Ok ? ($"Wrote {p} ({Encoding.UTF8.GetByteCount(content):N0} bytes).", false) : (Trim(r.Output, 400), true);
+        if (Proposals != null) return await ProposeAsync(p, content, ct);
+        var (ok, message) = await WriteTextAsync(p, content, ct);
+        if (ok) ChangedPaths.Add(p);
+        return (message, !ok);
+    }
+
+    private async Task<(string, bool)> ProposeAsync(string p, string? newText, CancellationToken ct)
+    {
+        var collector = Proposals!;
+        string? original;
+        if (collector.Find(p) is { } known) original = known.OriginalText;
+        else
+        {
+            var (exists, text, error) = await ReadRawAsync(p, ct);
+            if (error != null) return (error, true);
+            original = exists ? text : null;
+            if (newText == null && !exists) return ($"No such file: {p}", true);
+        }
+        var problem = collector.Set(p, original, newText);
+        if (problem != null) return (problem, true);
+        return (newText == null
+            ? $"Proposed deleting {p}. It is applied only if the developer accepts it."
+            : $"Proposed the change to {p}. It is applied only if the developer accepts it; until then the workspace is unchanged and run_command does not see it.", false);
+    }
+
+    private async Task<(string, bool)> DeleteFileAsync(string path, CancellationToken ct)
+    {
+        var p = ValidatePath(path);
+        if (Proposals != null) return await ProposeAsync(p, null, ct);
+        var (ok, message) = await DeleteAsync(p, ct);
+        if (ok) ChangedPaths.Add(p);
+        return (message, !ok);
     }
 
     private async Task<(string, bool)> EditFileAsync(string path, string find, string replace, CancellationToken ct)
     {
         var p = ValidatePath(path);
         if (find.Length == 0) return ("`find` can't be empty.", true);
-        // Read the raw file (no line numbers) through the same checked script path.
-        var read = await backend.ExecAsync(containerId, Spec(["sh", "-c", ReadScript.Replace("print NR \"\\t\" $0", "print $0"), "sh", Root, p, "1", int.MaxValue.ToString()]), ct);
-        if (!read.Ok) return (Trim(read.Output, 400), true);
-        if (read.Truncated) return ("The file is too large to edit with edit_file; use write_file or a command.", true);
-        var current = read.Output.EndsWith('\n') ? read.Output : read.Output + "\n";
+        string current;
+        if (Proposals?.Find(p) is { } pending)
+        {
+            if (pending.NewText == null) return ($"{p} is proposed for deletion.", true);
+            current = pending.NewText;
+        }
+        else
+        {
+            // Read the raw file (no line numbers) through the same checked script path.
+            var read = await backend.ExecAsync(containerId, Spec(["sh", "-c", ReadScript.Replace("print NR \"\\t\" $0", "print $0"), "sh", Root, p, "1", int.MaxValue.ToString()]), ct);
+            if (!read.Ok) return (Trim(read.Output, 400), true);
+            if (read.Truncated) return ("The file is too large to edit with edit_file; use write_file or a command.", true);
+            current = read.Output.EndsWith('\n') ? read.Output : read.Output + "\n";
+        }
         var first = current.IndexOf(find, StringComparison.Ordinal);
         if (first < 0) return ("`find` text was not found. Read the file again and copy the text exactly.", true);
         if (current.IndexOf(find, first + 1, StringComparison.Ordinal) >= 0) return ("`find` text occurs more than once; include more context.", true);

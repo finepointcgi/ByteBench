@@ -368,6 +368,7 @@ public partial class AppDbContext : IdentityDbContext<User, IdentityRole<int>, i
         ConfigureWorkspaces(b); // workspaces (Docker dev environments)
         ConfigureWorkspaceLinks(b); // workspace <-> issue / pull request
         ConfigureWorkspaceSharing(b); // shares, egress records
+        ConfigureAiWorkspace(b); // AI review mode change sets and task-driven AI runs
         ConfigureSamlScim(b);
         ConfigureInsights(b);
         ConfigurePrSigning(b);

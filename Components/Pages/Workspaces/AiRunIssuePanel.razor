@@ -1,0 +1,124 @@
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject AiRunService Runs
+@inject ISnackbar Snackbar
+
+@* On the issue page: "Let AI work on this" and the status of the latest AI runs. Starting needs EditIssues; the AI user needs to be a Developer in the project. *@
+@if (availability != null)
+{
+    <MudPaper Outlined="true" Class="pa-3 mt-3" data-testid="ai-run-panel">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">AI</MudText>
+            @if (error != null) { <MudAlert Severity="Severity.Warning" Dense="true">@error</MudAlert> }
+            @if (active == null)
+            {
+                @if (availability.Available)
+                {
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="Start" Disabled="@(!CanEdit || busy)" data-testid="ai-run-start">Let AI work on this</MudButton>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">It works in its own workspace on a new branch and opens a pull request. You can also assign the issue to @ByteBench.Services.Ai.AiBot.DisplayName.</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary" data-testid="ai-run-unavailable">@availability.Reason</MudText>
+                    @if (CanManage && !availability.BotIsMember)
+                    {
+                        <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="AddBot" Disabled="busy" data-testid="ai-run-add-bot">Add @ByteBench.Services.Ai.AiBot.DisplayName as a Developer</MudButton>
+                    }
+                }
+            }
+            else
+            {
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                    <span data-testid="ai-run-active">@active.Run.Status: @(active.Run.Branch ?? "waiting to start")</span>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => Cancel(active.Run.PublicId)" data-testid="ai-run-cancel">Cancel</MudButton>
+                </MudStack>
+            }
+            @foreach (var v in runs.Take(3))
+            {
+                <div class="d-flex align-center gap-2" data-testid="ai-run-row">
+                    <MudChip T="string" Size="Size.Small" Color="@(v.Run.Status == AiRunStatus.Succeeded ? Color.Success : v.Run.Status == AiRunStatus.Failed ? Color.Error : Color.Default)">@v.Run.Status</MudChip>
+                    <MudLink Href="@($"/ai-runs/{v.Run.PublicId}")" Typo="Typo.caption">@v.Run.CreatedAt.ToLocalTime().ToString("g")@(v.Run.StopReason != null ? " · " + v.Run.StopReason : "")</MudLink>
+                    @if (v.PullRequestNumber is { } n) { <MudLink Href="@($"/p/{v.ProjectKey}/repos/{v.RepoSlug}/pull-requests/{n}")" Typo="Typo.caption">PR #@n</MudLink> }
+                </div>
+            }
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public int IssueId { get; set; }
+    [Parameter, EditorRequired] public int ProjectId { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+    /// <summary>Raised after the AI user was added to the project (the issue page can add it to the assignee list).</summary>
+    [Parameter] public EventCallback OnBotAdded { get; set; }
+
+    private AiRunAvailability? availability;
+    private List<AiRunView> runs = [];
+    private AiRunView? active => runs.FirstOrDefault(r => r.Run.IsActive);
+    private bool busy;
+    private string? error;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await RefreshAsync();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            availability = await Runs.GetAvailabilityAsync(ProjectId);
+            runs = await Runs.ListForIssueAsync(IssueId, Me.Id);
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task Start()
+    {
+        busy = true;
+        error = null;
+        try { await Runs.RequestAsync(IssueId, Me.Id, "button"); Snackbar.Add("The AI will start shortly.", Severity.Success); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+        await RefreshAsync();
+    }
+
+    private async Task Cancel(string publicId)
+    {
+        try { await Runs.CancelAsync(publicId, Me.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await RefreshAsync();
+    }
+
+    private async Task AddBot()
+    {
+        busy = true;
+        error = null;
+        try { await Runs.EnableForProjectAsync(ProjectId, Me.Id); await OnBotAdded.InvokeAsync(); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+        await RefreshAsync();
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

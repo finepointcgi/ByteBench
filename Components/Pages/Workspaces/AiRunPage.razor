@@ -1,0 +1,102 @@
+@page "/ai-runs/{PublicId}"
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject AiRunService Runs
+@inject ISnackbar Snackbar
+
+<PageTitle>AI run · ByteBench</PageTitle>
+
+@if (loaded && view == null)
+{
+    <ProjectNotFound Message="This AI run doesn't exist." />
+}
+else if (view != null)
+{
+    var r = view.Run;
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">AI run on <MudLink Href="@($"/p/{view.ProjectKey}/issues/{view.IssueNumber}")">@view.IssueKey</MudLink></MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">@view.IssueTitle</MudText>
+    </div>
+    <MudStack Row="true" Spacing="2" Class="mb-3" AlignItems="AlignItems.Center">
+        <MudChip T="string" Color="@StatusColor(r.Status)" data-testid="run-status">@r.Status</MudChip>
+        @if (r.StopReason != null) { <MudChip T="string" Variant="Variant.Outlined">@r.StopReason</MudChip> }
+        @if (r.IsActive)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" OnClick="CancelRun" Disabled="r.CancelRequested" data-testid="run-cancel">
+                @(r.CancelRequested ? "Cancelling…" : "Cancel run")
+            </MudButton>
+        }
+    </MudStack>
+    @if (r.Error != null) { <MudAlert Severity="Severity.Error" Class="mb-3" data-testid="run-error">@r.Error</MudAlert> }
+    <MudSimpleTable Dense="true" Outlined="true" Class="mb-4" Style="max-width:720px">
+        <tbody>
+            <tr><td>Repository</td><td>@view.ProjectKey/@view.RepoSlug</td></tr>
+            <tr><td>Requested by</td><td>@view.RequestedBy (@r.Trigger)</td></tr>
+            <tr><td>Branch</td><td class="mono">@(r.Branch ?? "-")@(r.BaseBranch != null ? $" (from {r.BaseBranch})" : "")</td></tr>
+            <tr><td>Pull request</td><td>@if (view.PullRequestNumber is { } n) { <MudLink Href="@($"/p/{view.ProjectKey}/repos/{view.RepoSlug}/pull-requests/{n}")">#@n</MudLink> } else { <span>-</span> }</td></tr>
+            <tr><td>Steps / tool calls</td><td>@r.Steps / @r.ToolCalls</td></tr>
+            <tr><td>Tokens</td><td>@((r.InputTokens + r.OutputTokens).ToString("N0")) (about $@r.CostUsd.ToString("0.00"))</td></tr>
+            <tr><td>Started / finished</td><td>@(r.StartedAt?.ToLocalTime().ToString("g") ?? "-") / @(r.FinishedAt?.ToLocalTime().ToString("g") ?? "-")</td></tr>
+        </tbody>
+    </MudSimpleTable>
+    @if (r.Summary != null)
+    {
+        <MudText Typo="Typo.subtitle2">Summary</MudText>
+        <MudPaper Outlined="true" Class="pa-3 mb-4" Style="max-width:720px;white-space:pre-wrap">@r.Summary</MudPaper>
+    }
+    <MudText Typo="Typo.subtitle2">Log</MudText>
+    <pre class="mono" style="max-width:900px;overflow:auto;font-size:12px" data-testid="run-log">@string.Join("\n", events.Select(e => $"{e.At.ToLocalTime():HH:mm:ss}  {e.Kind,-6} {e.Message}"))</pre>
+}
+
+@code {
+    [Parameter] public string PublicId { get; set; } = "";
+
+    private AiRunView? view;
+    private List<AiRunEvent> events = [];
+    private bool loaded;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await RefreshAsync();
+        loaded = true;
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                if (view is { Run.IsActive: false } && events.Count > 0) continue; // finished: nothing changes any more
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RefreshAsync()
+    {
+        view = await Runs.GetAsync(PublicId, Me.Id);
+        if (view != null) events = await Runs.GetEventsAsync(PublicId, Me.Id);
+    }
+
+    private async Task CancelRun()
+    {
+        try { await Runs.CancelAsync(PublicId, Me.Id); Snackbar.Add("Cancelling the run.", Severity.Info); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        await RefreshAsync();
+    }
+
+    private static Color StatusColor(AiRunStatus s) => s switch
+    {
+        AiRunStatus.Succeeded => Color.Success, AiRunStatus.Failed => Color.Error, AiRunStatus.Cancelled => Color.Default, _ => Color.Info,
+    };
+
+    public void Dispose() => timer?.Dispose();
+}

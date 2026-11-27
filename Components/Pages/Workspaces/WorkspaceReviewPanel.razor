@@ -1,0 +1,165 @@
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject AiChangeService Changes
+@inject ISnackbar Snackbar
+
+@* The AI's proposed edits for a workspace (review mode): a diff per file, accept or reject per file or hunk, accept all.
+   Also the choice between "review first" and "apply directly". Everything here goes through AiChangeService (owner only, audited). *@
+<div class="rv" data-testid="ws-review-panel">
+    <div class="rv-mode">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">When the AI edits files:</MudText>
+        <MudRadioGroup T="AiEditMode" Value="mode?.Effective ?? AiEditMode.ReviewFirst" ValueChanged="SetMode">
+            <MudRadio T="AiEditMode" Value="AiEditMode.ReviewFirst" Size="Size.Small" data-testid="ws-mode-review">Review first</MudRadio>
+            <MudRadio T="AiEditMode" Value="AiEditMode.ApplyDirectly" Size="Size.Small" data-testid="ws-mode-direct">Apply directly</MudRadio>
+        </MudRadioGroup>
+        <MudCheckBox T="bool" @bind-Value="forAll" Size="Size.Small" Label="Use this for all my workspaces" Dense="true" />
+    </div>
+
+    @if (error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="ma-1">@error</MudAlert> }
+
+    @foreach (var set in sets.Where(s => s.State == AiChangeSetState.Pending))
+    {
+        <MudPaper Outlined="true" Class="rv-set" data-testid="ws-changeset">
+            <div class="rv-set-head">
+                <b>@Cap(set.Prompt, 60)</b>
+                <span class="flex-grow-1"></span>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="() => AcceptAll(set)" Disabled="busy" data-testid="ws-accept-all">Accept all</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => RejectAll(set)" Disabled="busy" data-testid="ws-reject-all">Reject all</MudButton>
+            </div>
+            @foreach (var f in set.Files)
+            {
+                var file = f;
+                <div class="rv-file" data-testid="ws-change-file">
+                    <div class="rv-file-head">
+                        <span class="mono rv-path">@file.Path</span>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@file.Kind.ToString().ToLowerInvariant()</MudChip>
+                        <span class="rv-add">+@file.AddedLines</span> <span class="rv-del">-@file.RemovedLines</span>
+                        <span class="flex-grow-1"></span>
+                        @if (file.Decision == AiChangeDecision.Pending)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => AcceptFile(set, file)" Disabled="busy" data-testid="ws-accept-file">Accept@(PartialSelection(file) ? " selected" : "")</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => RejectFile(set, file)" Disabled="busy" data-testid="ws-reject-file">Reject</MudButton>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="@DecisionColor(file.Decision)">@file.Decision</MudChip>
+                        }
+                    </div>
+                    @if (file.Note != null) { <div class="rv-note">@file.Note</div> }
+                    @if (file.Decision == AiChangeDecision.Pending)
+                    {
+                        foreach (var h in file.Hunks)
+                        {
+                            var hunk = h;
+                            <div class="rv-hunk">
+                                @if (file.Hunks.Count > 1 && file.Kind == AiChangeKind.Modify)
+                                {
+                                    <MudCheckBox T="bool" Value="IsPicked(file, hunk.Index)" ValueChanged="v => Pick(file, hunk.Index, v)" Size="Size.Small" Dense="true" Label="@($"Hunk {hunk.Index + 1} (line {hunk.OldStart})")" />
+                                }
+                                <pre class="rv-diff mono">@foreach (var l in hunk.ContextBefore) { <span class="ctx">@(" " + l)</span>@("\n")}@foreach (var l in hunk.Removed) { <span class="del">@("-" + l)</span>@("\n")}@foreach (var l in hunk.Added) { <span class="add">@("+" + l)</span>@("\n")}@foreach (var l in hunk.ContextAfter) { <span class="ctx">@(" " + l)</span>@("\n")}</pre>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+    @if (!sets.Any(s => s.State == AiChangeSetState.Pending))
+    {
+        <MudText Typo="Typo.caption" Class="mud-text-secondary pa-2" data-testid="ws-no-changes">
+            @(mode?.Effective == AiEditMode.ApplyDirectly ? "Edits are applied directly; nothing waits for review." : "Nothing waiting for review. Proposed edits show up here.")
+        </MudText>
+    }
+    @foreach (var done in sets.Where(s => s.State == AiChangeSetState.Resolved).Take(3))
+    {
+        <div class="rv-done">Reviewed: @Cap(done.Prompt, 50), @done.Files.Count(f => f.Decision is AiChangeDecision.Accepted or AiChangeDecision.Partial) applied, @done.Files.Count(f => f.Decision == AiChangeDecision.Rejected) rejected@(done.Files.Any(f => f.Decision == AiChangeDecision.Conflict) ? ", " + done.Files.Count(f => f.Decision == AiChangeDecision.Conflict) + " conflict(s)" : "")</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string PublicId { get; set; } = "";
+
+    private List<AiChangeSetView> sets = [];
+    private AiModeInfo? mode;
+    private readonly Dictionary<int, HashSet<int>> picked = [];
+    private bool busy, forAll;
+    private string? error;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await RefreshAsync();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            sets = await Changes.ListAsync(PublicId, Me.Id);
+            mode = await Changes.GetModeInfoAsync(PublicId, Me.Id);
+        }
+        catch (InvalidOperationException) { sets = []; }
+    }
+
+    private async Task SetMode(AiEditMode value)
+    {
+        try { mode = await Changes.SetModeAsync(PublicId, Me.Id, value, forAll); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private bool IsPicked(AiChangeFileView f, int hunk) => !picked.TryGetValue(f.Id, out var set) || set.Contains(hunk);
+    private bool PartialSelection(AiChangeFileView f) => picked.TryGetValue(f.Id, out var set) && set.Count != f.Hunks.Count;
+
+    private void Pick(AiChangeFileView f, int hunk, bool on)
+    {
+        if (!picked.TryGetValue(f.Id, out var set)) picked[f.Id] = set = f.Hunks.Select(h => h.Index).ToHashSet();
+        if (on) set.Add(hunk); else set.Remove(hunk);
+    }
+
+    private Task AcceptFile(AiChangeSetView set, AiChangeFileView f) =>
+        Run(() => Changes.DecideFileAsync(PublicId, Me.Id, set.Id, f.Id, PartialSelection(f) ? picked[f.Id].ToList() : null));
+    private Task RejectFile(AiChangeSetView set, AiChangeFileView f) => Run(() => Changes.DecideFileAsync(PublicId, Me.Id, set.Id, f.Id, []));
+    private Task AcceptAll(AiChangeSetView set) => Run(() => Changes.AcceptAllAsync(PublicId, Me.Id, set.Id));
+    private Task RejectAll(AiChangeSetView set) => Run(() => Changes.RejectAllAsync(PublicId, Me.Id, set.Id));
+
+    private async Task Run(Func<Task<AiDecisionResult>> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var r = await action();
+            if (r.Conflicts > 0) error = $"{r.Conflicts} file(s) couldn't be applied because they changed in the workspace since the AI proposed them.";
+            else if (r.Applied > 0) Snackbar.Add($"Applied {r.Applied} file(s) to the workspace.", Severity.Success);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        finally { busy = false; }
+        await RefreshAsync();
+    }
+
+    private static Color DecisionColor(AiChangeDecision d) => d switch
+    {
+        AiChangeDecision.Accepted or AiChangeDecision.Partial => Color.Success, AiChangeDecision.Conflict => Color.Error, _ => Color.Default,
+    };
+
+    private static string Cap(string s, int n) => s.Length <= n ? s : s[..n] + "…";
+
+    public void Dispose() => timer?.Dispose();
+}

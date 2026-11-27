@@ -10,6 +10,7 @@
 @inject LinkedWorkService LinkedWork
 @inject WorkflowService Workflows
 @inject ByteBench.Services.ServiceDesk.ServiceDeskService Desk
+@inject ByteBench.Services.Workspaces.AiRunService AiRuns
 
 <PageTitle>@issue?.Key @issue?.Title</PageTitle>
 
@@ -290,6 +291,7 @@ else if (issue != null && project != null)
                 <ByteBench.Components.Fields.IssueFieldsPanel Issue="issue" />
                 <ByteBench.Components.Workbench.WorkbenchIssuePanel Issue="issue" Project="project" Perms="perms" />
                 <ByteBench.Components.Repositories.DevelopmentPanel Issue="issue" />
+                <ByteBench.Components.Pages.Workspaces.AiRunIssuePanel IssueId="issue.Id" ProjectId="project.Id" CanEdit="CanEdit" CanManage="@perms.Can(Permission.ManageMembers)" OnBotAdded="OnParametersSetAsync" />
                 @if (desk != null) { <ByteBench.Components.ServiceDesk.ServiceDeskIssuePanel Info="desk" /> }
                 <div class="id-reporter">
                     <div>Reporter: <Avatar User="issue.Reporter" Size="18" ShowName Link /></div>
@@ -353,6 +355,7 @@ else if (issue != null && project != null)
     {
         users = await Issues.GetUsersAsync();
         project = await Issues.GetProjectAsync(Key);
+        if (project != null && await AiRuns.GetAssignableBotAsync(project.Id) is { } aiBot) users.Add(aiBot); // the AI user can be assigned issues (it then starts a run)
         perms = project == null ? ProjectPermissions.None : await Access.GetPermissionsAsync(project.Id);
         workflow = project == null ? ProjectWorkflow.Empty : await Workflows.GetAsync(project.Id);
         await Reload();

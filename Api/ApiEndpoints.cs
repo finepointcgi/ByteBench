@@ -110,6 +110,7 @@ public static class ApiEndpoints
         api.MapWorkspaceEndpoints(); // workspaces: list, start, stop, restart
         api.MapWorkspaceExtrasEndpoints(); // workspaces: local editor tunnel, ports, git bar, start from an issue or a pull request
         api.MapWorkspaceSharingEndpoints(); // workspace sharing, audit history, network policy
+        api.MapAiWorkspaceEndpoints(); // workspace AI review mode and task-driven AI runs on issues
         api.MapSignedCommitEndpoints(); // commit signature status
         api.MapTestEndpoints(); // test management: cases, plans, runs, results, report upload
         api.MapReleaseHubEndpoints(); // release hub: everything for a tag, auto-attach rules
