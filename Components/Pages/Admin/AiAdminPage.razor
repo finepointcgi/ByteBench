@@ -9,6 +9,8 @@
 @inject EditorAiService EditorAi
 @inject IOptions<EditorAiOptions> EditorOptions
 @inject IOptions<ClaudeCodeOptions> ClaudeOptions
+@inject ByteBench.Services.Workspaces.AiRunService AiRuns
+@inject IOptionsMonitor<ByteBench.Services.Workspaces.WorkspaceOptions> RunOptions
 @inject ISnackbar Snackbar
 
 @* Read-only status of the AI backends: the Anthropic API (AiClient) and Claude Code on the server (web editor). *@
@@ -62,6 +64,34 @@ else
         </MudText>
     </MudPaper>
 
+    <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px" data-testid="ai-runs-backend">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">AI runs (assigned issues)</MudText>
+        @if (runBackend != null)
+        {
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    <tr><td>Active backend</td><td data-testid="ai-runs-active">@runBackend.Label</td></tr>
+                    <tr><td>Why</td><td data-testid="ai-runs-why">@runBackend.Explanation</td></tr>
+                    <tr><td>Setting</td><td class="mono">@runBackend.Setting @(runBackend.FromSite ? "(site administrator)" : "(Workspaces:AiRuns:Backend)")</td></tr>
+                    <tr><td>Anthropic API</td><td>@(runBackend.ApiConfigured ? "key configured" : "no key")</td></tr>
+                    <tr><td>Claude Code CLI</td><td>@(runBackend.CliProblem == null ? $"usable ({runBackend.CliVersion})" : runBackend.CliProblem)</td></tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mt-3">
+                <MudSelect T="string" Label="Backend for runs" Dense="true" Style="max-width:360px" Value="@choice" ValueChanged="SetBackend" data-testid="ai-runs-select">
+                    <MudSelectItem Value="@("")">Use the configuration (@ByteBench.Services.Workspaces.AiRunBackendResolver.Normalize(RunOptions.CurrentValue.AiRuns.Backend))</MudSelectItem>
+                    <MudSelectItem Value="@("auto")">Automatic: API key first, else Claude Code CLI</MudSelectItem>
+                    <MudSelectItem Value="@("api")">Anthropic API only</MudSelectItem>
+                    <MudSelectItem Value="@("claude-cli")">Claude Code CLI only</MudSelectItem>
+                </MudSelect>
+            </MudStack>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                A CLI run starts <code>claude -p</code> on the server with no built-in tools; its only tools are the workspace's, served by ByteBench and executed
+                inside the run's container. The server's Claude login never enters the container.
+            </MudText>
+        }
+    </MudPaper>
+
     <MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px">
         <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Web editor</MudText>
         <MudSimpleTable Dense="true" Elevation="0">
@@ -78,6 +108,8 @@ else
 @code {
     private ClaudeCodeStatus? status;
     private IEditorAiBackend? backend;
+    private ByteBench.Services.Workspaces.AiRunBackendInfo? runBackend;
+    private string choice = "";
     private bool busy;
 
     protected override async Task OnInitializedAsync()
@@ -86,6 +118,24 @@ else
         if (Me.User?.IsAdmin != true) return;
         status = await ClaudeCode.GetAsync();
         backend = await EditorAi.SelectBackendAsync();
+        await LoadRunBackendAsync();
+    }
+
+    private async Task LoadRunBackendAsync(bool refresh = false)
+    {
+        runBackend = await AiRuns.GetBackendAsync(refresh);
+        choice = runBackend.FromSite ? runBackend.Setting : "";
+    }
+
+    private async Task SetBackend(string value)
+    {
+        try
+        {
+            await AiRuns.SetBackendSiteAsync(value, (await Access.ResolveUserIdAsync())!.Value);
+            await LoadRunBackendAsync();
+            Snackbar.Add("Saved. " + runBackend!.Explanation, runBackend.Available ? Severity.Success : Severity.Warning);
+        }
+        catch (Exception ex) when (ex is ForbiddenException or InvalidOperationException) { Snackbar.Add(ex.Message, Severity.Error); }
     }
 
     private async Task Recheck()
@@ -96,6 +146,7 @@ else
         {
             status = await ClaudeCode.GetAsync(refresh: true);
             backend = await EditorAi.SelectBackendAsync();
+            await LoadRunBackendAsync();
             Snackbar.Add(status.Installed ? $"Claude Code {status.Version} found." : "Claude Code wasn't found.", status.Installed ? Severity.Success : Severity.Warning);
         }
         finally { busy = false; }

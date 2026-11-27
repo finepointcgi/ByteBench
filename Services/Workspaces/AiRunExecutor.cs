@@ -27,7 +27,13 @@ public sealed class AiRunMeter
     /// <summary>Input plus output tokens, cache reads at a tenth (they are priced about that way).</summary>
     public long WeightedTokens => Input + Output + CacheWrite + CacheRead / 10;
 
-    public decimal Cost(AiRunOptions o) =>
+    /// <summary>A cost the backend itself reported (the Claude Code CLI's own estimate); replaces the one computed from the token prices.</summary>
+    public decimal? ReportedCostUsd;
+
+    /// <summary>Replaces the totals (the CLI reports running usage, not per-turn deltas).</summary>
+    public void SetUsage(long input, long output, long cacheRead, long cacheWrite) { Input = input; Output = output; CacheRead = cacheRead; CacheWrite = cacheWrite; }
+
+    public decimal Cost(AiRunOptions o) => ReportedCostUsd ??
         (Input * o.InputUsdPerMTok + Output * o.OutputUsdPerMTok + CacheRead * o.CacheReadUsdPerMTok + CacheWrite * o.CacheWriteUsdPerMTok) / 1_000_000m;
 }
 
@@ -171,8 +177,6 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         var access = sp.GetRequiredService<ProjectAccess>();
         var workspaces = sp.GetRequiredService<WorkspaceService>();
         var backend = sp.GetRequiredService<IWorkspaceBackend>();
-        var model = sp.GetRequiredService<IEditorChatModel>();
-        var ai = sp.GetRequiredService<AiClient>();
         int botId;
         await using (var db = await dbFactory.CreateDbContextAsync(ct)) botId = await AiBot.EnsureAsync(db, ct);
         access.ActAs(botId);
@@ -180,7 +184,9 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         // ----- gates, checked again now that the run starts (the world may have changed while it waited) -----
         var availability = await sp.GetRequiredService<AiRunService>().GetAvailabilityAsync(run.ProjectId);
         if (!availability.Available) return Fail("not available", availability.Reason ?? "AI runs aren't available.");
-        if (!model.IsConfigured) return Fail("not available", "AI isn't set up: configure a Claude API key (ANTHROPIC_API_KEY or Ai:ApiKey).");
+        var backendInfo = await sp.GetRequiredService<AiRunBackendResolver>().ResolveAsync(ct);
+        if (!backendInfo.Available) return Fail("not available", backendInfo.Explanation);
+        await AddEventAsync(run.Id, "status", $"Backend: {backendInfo.Label}. {backendInfo.Explanation}");
         if (await sp.GetRequiredService<IssueService>().GetIssueAsync(project.Key, issue.Number) is not { } current)
         {
             // The issue service filters by the acting user (the AI user); an issue it can't read can't be worked on.
@@ -218,48 +224,12 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
         var tools = new WorkspaceAiTools(backend, live.ContainerId, repo.Slug, runAi, new WorkspaceAiService.TaskAdapter(sp.GetRequiredService<WorkspaceTasks>(), live, session, dir));
         var boundary = EditorAiPrompts.NewBoundary();
         var user = await BuildTaskMessageAsync(sp, current, repo, run.BaseBranch!, branch, tools.Root, boundary, WorkspaceAiService.TaskContext(session));
-        var conversation = model.Begin(new EditorChatSetup(SystemPrompt, WorkspaceAiTools.Definitions, [], user, runAi.MaxTokensPerTurn));
-
-        var final = new StringBuilder();
-        string? stopReason = null, stopNote = null;
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            live.Touch();
-            if (await IsCancelRequestedAsync(run.Id)) { cancel.MarkByUser(); ct.ThrowIfCancellationRequested(); }
-            if (meter.Steps >= o.MaxSteps) { stopReason = "step limit"; stopNote = $"it used all {o.MaxSteps} steps"; break; }
-
-            var turnText = new StringBuilder();
-            var turn = await conversation.NextAsync(delta => { turnText.Append(delta); return Task.CompletedTask; }, ct);
-            meter.Add(turn);
-            await ai.RecordUsageAsync(Feature, run.RequestedById, run.ProjectId, turn.InputTokens, turn.OutputTokens, turn.CacheReadTokens, turn.CacheWriteTokens, CancellationToken.None);
-            await SaveMeterAsync(run.Id, meter, o);
-            if (turnText.Length > 0) final.Clear().Append(turnText);
-            await AddEventAsync(run.Id, "step", $"Step {meter.Steps}: {meter.WeightedTokens:N0} tokens, about ${meter.Cost(o):0.00}");
-
-            if (turn.StopReason == "refusal") { stopReason = "refused"; stopNote = "the model declined the task"; break; }
-            if (turn.ToolCalls.Count == 0 || turn.StopReason is not ("tool_use" or null))
-            {
-                if (turn.StopReason == "max_tokens") { stopReason = "length limit"; stopNote = "the model's reply hit the length limit"; }
-                break;
-            }
-            if (meter.WeightedTokens >= o.MaxTokens) { stopReason = "token budget"; stopNote = $"it used its token budget ({o.MaxTokens:N0})"; break; }
-            if (o.MaxCostUsd > 0 && meter.Cost(o) >= o.MaxCostUsd) { stopReason = "cost budget"; stopNote = $"it reached its cost budget (${o.MaxCostUsd:0.00})"; break; }
-            if (meter.ToolCalls + turn.ToolCalls.Count > o.MaxToolCalls) { stopReason = "tool call limit"; stopNote = $"it used all {o.MaxToolCalls} tool calls"; break; }
-
-            var results = new List<EditorToolResult>();
-            foreach (var call in turn.ToolCalls)
-            {
-                meter.ToolCalls++;
-                await AddEventAsync(run.Id, "tool", M(WorkspaceAiTools.Describe(call.Name, call.Input)));
-                var (content, isError) = await tools.ExecuteAsync(call.Name, call.Input, ct);
-                results.Add(new EditorToolResult(call.Id, M(content), isError));
-                live.Touch();
-            }
-            conversation.AddToolResults(results);
-        }
+        var loopResult = backendInfo.Active == AiRunBackendKind.ClaudeCli
+            ? await RunCliLoopAsync(sp, run, tools, user, M, live, meter, cancel, ct)
+            : await RunApiLoopAsync(sp, run, tools, user, runAi, M, live, meter, cancel, ct);
+        var (stopReason, stopNote) = (loopResult.StopReason, loopResult.StopNote);
         await SaveMeterAsync(run.Id, meter, o);
-        var summary = M(final.ToString().Trim());
+        var summary = M(loopResult.Final.Trim());
 
         // ----- commit, push, pull request -----
         var status = await backend.ExecAsync(live.ContainerId, new ExecSpec(["git", "status", "--porcelain"]) { WorkDir = dir, Timeout = TimeSpan.FromSeconds(30) }, ct);
@@ -300,6 +270,58 @@ public sealed partial class AiRunExecutor(IServiceScopeFactory scopes, IDbContex
             : new Outcome(AiRunStatus.Succeeded, null, null, summary, pr.Id, branch);
 
         Outcome Fail(string reason, string error, string? b = null) => new(AiRunStatus.Failed, reason, error, null, null, b);
+    }
+
+    private sealed record LoopResult(string Final, string? StopReason, string? StopNote);
+
+    /// <summary>The Anthropic API backend: ByteBench runs the tool loop itself, one model turn at a time.</summary>
+    private async Task<LoopResult> RunApiLoopAsync(IServiceProvider sp, AiRun run, WorkspaceAiTools tools, string user, WorkspaceAiOptions runAi, Func<string, string> M,
+        LiveWorkspace live, AiRunMeter meter, Cancel cancel, CancellationToken ct)
+    {
+        var o = Opts;
+        var model = sp.GetRequiredService<IEditorChatModel>();
+        var ai = sp.GetRequiredService<AiClient>();
+        var conversation = model.Begin(new EditorChatSetup(SystemPrompt, WorkspaceAiTools.Definitions, [], user, runAi.MaxTokensPerTurn));
+
+        var final = new StringBuilder();
+        string? stopReason = null, stopNote = null;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            live.Touch();
+            if (await IsCancelRequestedAsync(run.Id)) { cancel.MarkByUser(); ct.ThrowIfCancellationRequested(); }
+            if (meter.Steps >= o.MaxSteps) { stopReason = "step limit"; stopNote = $"it used all {o.MaxSteps} steps"; break; }
+
+            var turnText = new StringBuilder();
+            var turn = await conversation.NextAsync(delta => { turnText.Append(delta); return Task.CompletedTask; }, ct);
+            meter.Add(turn);
+            await ai.RecordUsageAsync(Feature, run.RequestedById, run.ProjectId, turn.InputTokens, turn.OutputTokens, turn.CacheReadTokens, turn.CacheWriteTokens, CancellationToken.None);
+            if (turnText.Length > 0) final.Clear().Append(turnText);
+            await AddEventAsync(run.Id, "step", $"Step {meter.Steps}: {meter.WeightedTokens:N0} tokens, about ${meter.Cost(o):0.00}");
+
+            if (turn.StopReason == "refusal") { stopReason = "refused"; stopNote = "the model declined the task"; break; }
+            if (turn.ToolCalls.Count == 0 || turn.StopReason is not ("tool_use" or null))
+            {
+                if (turn.StopReason == "max_tokens") { stopReason = "length limit"; stopNote = "the model's reply hit the length limit"; }
+                break;
+            }
+            if (meter.WeightedTokens >= o.MaxTokens) { stopReason = "token budget"; stopNote = $"it used its token budget ({o.MaxTokens:N0})"; break; }
+            if (o.MaxCostUsd > 0 && meter.Cost(o) >= o.MaxCostUsd) { stopReason = "cost budget"; stopNote = $"it reached its cost budget (${o.MaxCostUsd:0.00})"; break; }
+            if (meter.ToolCalls + turn.ToolCalls.Count > o.MaxToolCalls) { stopReason = "tool call limit"; stopNote = $"it used all {o.MaxToolCalls} tool calls"; break; }
+
+            var results = new List<EditorToolResult>();
+            foreach (var call in turn.ToolCalls)
+            {
+                meter.ToolCalls++;
+                await AddEventAsync(run.Id, "tool", M(WorkspaceAiTools.Describe(call.Name, call.Input)));
+                var (content, isError) = await tools.ExecuteAsync(call.Name, call.Input, ct);
+                results.Add(new EditorToolResult(call.Id, M(content), isError));
+                live.Touch();
+            }
+            conversation.AddToolResults(results);
+        }
+        await SaveMeterAsync(run.Id, meter, o);
+        return new LoopResult(final.ToString(), stopReason, stopNote);
     }
 
     // ---------- helpers: workspace, branch, prompt ----------

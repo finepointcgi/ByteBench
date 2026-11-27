@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace ByteBench.Services.Workspaces;
 
-public sealed record AiRunAvailability(bool Available, string? Reason, bool BotIsMember);
+public sealed record AiRunAvailability(bool Available, string? Reason, bool BotIsMember, string? Backend = null);
 
 public sealed record AiRunView(AiRun Run, string ProjectKey, int IssueNumber, string IssueTitle, string RepoSlug, string RequestedBy, int? PullRequestNumber)
 {
@@ -21,7 +21,7 @@ public sealed record AiRunView(AiRun Run, string ProjectKey, int IssueNumber, st
 /// flight, and the queue and the per-project daily limit have room. The work itself is <see cref="AiRunExecutor"/>, started by <see cref="AiRunWorker"/>.
 /// </summary>
 public sealed class AiRunService(IDbContextFactory<AppDbContext> dbFactory, ProjectAccess access, AiRunQueue queue, SiteSettings site,
-    IOptionsMonitor<WorkspaceOptions> options, WorkspaceAiService workspaceAi, MemberService members, AuditLog audit)
+    IOptionsMonitor<WorkspaceOptions> options, WorkspaceAiService workspaceAi, MemberService members, AuditLog audit, AiRunBackendResolver backends)
 {
     public const string EnabledKey = "workspaces.airuns.enabled";
 
@@ -36,6 +36,17 @@ public sealed class AiRunService(IDbContextFactory<AppDbContext> dbFactory, Proj
         await audit.RecordAsync("ai_run.admin_switch", "ai_runs", null, details: new { enabled = on }, actorId: adminId);
     }
 
+    public Task<AiRunBackendInfo> GetBackendAsync(bool refreshCli = false) => backends.ResolveAsync(default, refreshCli);
+
+    /// <summary>A site administrator's choice of backend (<c>auto</c>, <c>api</c>, <c>claude-cli</c>); null or empty goes back to <c>Workspaces:AiRuns:Backend</c>.</summary>
+    public async Task SetBackendSiteAsync(string? backend, int adminId)
+    {
+        if (!await access.IsAdminAsync(adminId)) throw new ForbiddenException("Only site administrators can do this.");
+        var value = string.IsNullOrWhiteSpace(backend) ? "" : AiRunBackendResolver.Normalize(backend);
+        await site.SetAsync(AiRunBackendResolver.SettingKey, value, adminId);
+        await audit.RecordAsync("ai_run.admin_backend", "ai_runs", null, details: new { backend = value.Length == 0 ? "(configuration)" : value }, actorId: adminId);
+    }
+
     /// <summary>Whether a run can be asked for in this project right now, and why not.</summary>
     public async Task<AiRunAvailability> GetAvailabilityAsync(int projectId)
     {
@@ -45,12 +56,14 @@ public sealed class AiRunService(IDbContextFactory<AppDbContext> dbFactory, Proj
         var member = role != null && await db.ProjectMembers.AnyAsync(m => m.ProjectId == projectId && m.UserId == botId);
         if (!Opts.Enabled) return new(false, "AI runs are turned off in the server's configuration (Workspaces:AiRuns:Enabled).", member);
         if (!await IsEnabledSiteAsync()) return new(false, "AI runs are turned off by a site administrator.", member);
-        var status = await workspaceAi.GetStatusAsync(projectId);
+        var status = await workspaceAi.GetStatusAsync(projectId, requireApiModel: false);
         if (!status.Enabled) return new(false, status.DisabledReason, member);
+        var backend = await backends.ResolveAsync();
+        if (!backend.Available) return new(false, backend.Explanation, member);
         if (role == null) return new(false, $"{AiBot.DisplayName} isn't a member of this project. Add it as a Developer to let it work on issues.", false);
         foreach (var (p, what) in new[] { (Permission.PushCode, "push branches"), (Permission.CreatePullRequest, "open pull requests"), (Permission.Comment, "comment on issues") })
             if (!RoleHas(role.Value, p)) return new(false, $"{AiBot.DisplayName} has the {role} role in this project, which can't {what}. Make it a Developer.", member);
-        return new(true, null, member);
+        return new(true, null, member, backend.Label);
     }
 
     private static bool RoleHas(ProjectRole role, Permission p) => ProjectAccess.RoleHas(role, p);

@@ -124,6 +124,12 @@ public class AiRunOptions
 {
     /// <summary>Turns task-driven runs on (also needs a site admin's switch, the workspace assistant and the AI user as a member of the project).</summary>
     public bool Enabled { get; set; } = true;
+    /// <summary>
+    /// What runs talk to: <c>auto</c> (default: the Anthropic API when a key is configured, else the Claude Code CLI when it is installed on the server),
+    /// <c>api</c> or <c>claude-cli</c>. A site administrator can override it under Admin → AI. The CLI is found through <c>Ai:ClaudeCode:Path</c> and uses the
+    /// server account's Claude login; it never runs inside the workspace container (see the workspaces documentation).
+    /// </summary>
+    public string Backend { get; set; } = "auto";
     /// <summary>Runs working at once across the server (each holds one workspace container).</summary>
     public int MaxConcurrent { get; set; } = 2;
     /// <summary>Runs waiting in the queue before new requests are refused.</summary>
