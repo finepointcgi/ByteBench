@@ -38,6 +38,7 @@ else
                     }
                 </MudMenu>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="() => showAi = !showAi" data-testid="ws-ai-toggle">AI</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Group" OnClick="() => showTools = !showTools" data-testid="ws-tools-toggle">Share &amp; history</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="OpenCommit" data-testid="ws-commit">Commit &amp; push</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.OpenInNew" OnClick="OpenIdeTab">New tab</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.RestartAlt" OnClick="Restart" data-testid="ws-restart">Restart</MudButton>
@@ -70,6 +71,14 @@ else
                         <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" OnClick="OpenPreviewTab" aria-label="Open the preview in a new tab" />
                         <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" OnClick="() => previewUrl = null" aria-label="Close the preview" /></div>
                     <iframe class="ws-frame" src="@previewUrl" title="Preview" data-testid="ws-preview"></iframe>
+                </div>
+            }
+            @if (showTools)
+            {
+                <div class="ws-side" data-testid="ws-tools-panel">
+                    <div class="ws-side-head"><b>Share, history, network</b><span class="flex-grow-1"></span>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" OnClick="() => showTools = false" aria-label="Close" /></div>
+                    <WorkspaceToolsPanel PublicId="@PublicId" Running="true" />
                 </div>
             }
             @if (showAi)
@@ -109,6 +118,7 @@ else
             This workspace is @ws.State.ToString().ToLowerInvariant()@(ws.StopReason != null ? $" ({ws.StopReason})" : "")@(ws.Error != null ? ": " + ws.Error : ".")
             <MudButton Href="@($"/p/{view.ProjectKey}/repos/{view.RepoSlug}/workspace?ref={Uri.EscapeDataString(ws.Ref)}")" Size="Size.Small" Variant="Variant.Outlined" Class="ml-3">Start a new one</MudButton>
         </MudAlert>
+        <div class="mt-3" style="max-width:1100px"><WorkspaceAuditTable PublicId="@PublicId" /></div>
     }
 }
 
@@ -119,7 +129,7 @@ else
     private string? ideUrl, previewUrl;
     private int previewPort;
     private List<int>? ports;
-    private bool showAi, aiBusy;
+    private bool showAi, aiBusy, showTools;
     private WorkspaceAiStatus? aiStatus;
     private string draft = "", aiNote = null!;
     private readonly List<EditorChatMessage> chat = [];

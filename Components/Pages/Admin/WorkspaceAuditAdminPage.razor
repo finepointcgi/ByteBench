@@ -1,0 +1,25 @@
+@page "/admin/workspaces/audit"
+@using ByteBench.Components.Pages.Workspaces
+@inject CurrentUser Me
+
+<PageTitle>Workspace audit · ByteBench</PageTitle>
+
+@if (Me.User?.IsAdmin != true)
+{
+    <Forbidden Message="Only site administrators can view the workspace audit log." />
+}
+else
+{
+    <div class="page-header mb-4">
+        <MudText Typo="Typo.h5" HtmlTag="h1">Workspace audit</MudText>
+        <MudText Class="mud-text-secondary" Typo="Typo.body2">
+            Lifecycle, sharing, secrets (names only), task runs, IDE ticket redemptions, blocked network requests and configuration changes of every workspace.
+            These are the <code>workspace.*</code> events of the <a href="/admin/audit">audit log</a>.
+        </MudText>
+    </div>
+    <WorkspaceAuditTable />
+}
+
+@code {
+    protected override Task OnInitializedAsync() => Me.EnsureLoadedAsync();
+}

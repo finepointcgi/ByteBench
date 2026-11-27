@@ -1,0 +1,30 @@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceSharingService Sharing
+
+@if (items.Count > 0)
+{
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mt-5 mb-2">Shared with you</MudText>
+    <MudSimpleTable Dense="true" Hover="true" Outlined="true" data-testid="ws-shared-table">
+        <thead><tr><th>Repository</th><th>Ref</th><th>Owner</th><th>Your role</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var w in items)
+        {
+            <tr>
+                <td>@w.ProjectKey/@w.RepoSlug</td><td class="mono">@w.Workspace.Ref</td><td>@w.OwnerName</td><td>@w.Role</td>
+                <td><MudButton Href="@($"/workspaces/shared/{w.Workspace.PublicId}")" Size="Size.Small" Variant="Variant.Outlined">Open</MudButton></td>
+            </tr>
+        }
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    private List<SharedWorkspaceInfo> items = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        items = await Sharing.SharedWithMeAsync(Me.Id);
+    }
+}

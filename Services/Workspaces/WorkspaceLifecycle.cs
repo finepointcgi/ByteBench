@@ -12,6 +12,45 @@ namespace ByteBench.Services.Workspaces;
 /// <summary>Records workspace audit events from singletons and background tasks (a scope per call; details never contain secrets).</summary>
 public sealed class WorkspaceAudit(IServiceScopeFactory scopes)
 {
+    /// <summary>
+    /// Records an event about a workspace by id (the proxy, the egress proxy and sharing know ids, not entities). Action names are listed in
+    /// <see cref="WorkspaceAuditActions"/>. <c>details</c> never holds secret values: secrets are recorded by name only.
+    /// </summary>
+    public async Task RecordAsync(string action, string publicId, int projectId, int? actorId, object? details = null)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<AuditLog>().RecordAsync(action, "workspace", publicId, projectId, WithoutValues(details), actorId: actorId, anonymous: actorId == null);
+    }
+
+    /// <summary>
+    /// Workspace events name secrets (<c>names</c>), never carry their values: properties called value(s), content, data or env are dropped on top of
+    /// the audit log's own scrubbing of password, token, secret and hash properties.
+    /// </summary>
+    internal static System.Text.Json.Nodes.JsonNode? WithoutValues(object? details)
+    {
+        if (details == null) return null;
+        var node = System.Text.Json.JsonSerializer.SerializeToNode(details);
+        Strip(node);
+        return node;
+
+        static void Strip(System.Text.Json.Nodes.JsonNode? n)
+        {
+            switch (n)
+            {
+                case System.Text.Json.Nodes.JsonObject o:
+                    foreach (var key in o.Select(p => p.Key).ToList())
+                    {
+                        if (key.ToLowerInvariant() is "value" or "values" or "content" or "data" or "env" or "plaintext") o.Remove(key);
+                        else Strip(o[key]);
+                    }
+                    break;
+                case System.Text.Json.Nodes.JsonArray a:
+                    foreach (var item in a) Strip(item);
+                    break;
+            }
+        }
+    }
+
     public async Task RecordAsync(string action, Workspace ws, int? actorId, object? details = null)
     {
         await using var scope = scopes.CreateAsyncScope();
@@ -26,7 +65,8 @@ public sealed class WorkspaceAudit(IServiceScopeFactory scopes)
 /// separate helper, only then are credentials and the repository put in, and the IDE starts last.
 /// </summary>
 public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
-    IOptionsMonitor<WorkspaceOptions> options, WorkspaceAudit audit, WorkspaceUrls urls, IServer server, ILogger<WorkspaceLifecycle> log)
+    IOptionsMonitor<WorkspaceOptions> options, WorkspaceAudit audit, WorkspaceUrls urls, IServer server, WorkspaceEgress egress, WorkspaceShareStore shares,
+    ILogger<WorkspaceLifecycle> log)
 {
     public const int IdePort = 3000;
     public const string WorkspaceRoot = "/workspace";
@@ -85,6 +125,9 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
                 ["BB_IDE_PORT"] = IdePort.ToString(),
             };
             if (urls.Mode == WorkspaceOriginMode.SharedPath) env["BB_IDE_BASE_PATH"] = $"/_ws/{ws.PublicId}/ide";
+            // The network policy: the admin's, narrowed by the repository's egress: (never widened). An allow-list points the tools at the filtering proxy.
+            var policy = await egress.ResolveAsync(db, ws);
+            foreach (var (k, v) in egress.Prepare(ws, policy, GitBase())) env[k] = v;
             var name = $"bb-ws-{ByteBench.Services.Ci.CiDocker.InstanceKey}-{ws.PublicId[..10]}";
             var container = await backend.StartAsync(new WorkspaceContainerSpec(ws.Id, name, ws.Image, o.Network, "host.docker.internal", IdePort, env,
                 new WorkspaceLimits(o.Memory, o.Cpus, o.PidsLimit, o.DiskLimit)) { PublishIdePort = !UseRelay() }, ct);
@@ -132,6 +175,16 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         var ip = git.HostNameType == UriHostNameType.Dns ? await ResolveInContainerAsync(containerId, git.Host, ct) : git.Host;
         if (ip != null) allow.Add($"{ip}:{git.Port}");
         else if (mode != "open") throw new InvalidOperationException($"The container can't resolve ByteBench's git host '{git.Host}' (Workspaces:GitBaseUrl).");
+        if (mode == WorkspaceEgressPolicy.Allowlist)
+        {
+            // Only the git endpoint and the filtering proxy stay reachable: no direct connections and no DNS (names are resolved by the proxy).
+            var (proxyHost, proxyPort) = egress.ProxyAddress(git);
+            var proxyIp = proxyHost.Equals(git.Host, StringComparison.OrdinalIgnoreCase) ? ip
+                : System.Net.IPAddress.TryParse(proxyHost, out _) ? proxyHost : await ResolveInContainerAsync(containerId, proxyHost, ct);
+            if (proxyIp == null) throw new InvalidOperationException($"The container can't resolve the egress proxy host '{proxyHost}' (Workspaces:Egress:ProxyHost).");
+            allow.Add($"{proxyIp}:{proxyPort}");
+            mode = WorkspaceEgressPolicy.None;
+        }
         await backend.ApplyEgressAsync(containerId, image, new EgressPolicy(mode, allow), ct);
     }
 
@@ -241,6 +294,8 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
     public async Task StopAsync(int workspaceId, string reason, int? actorId)
     {
         runtime.Forget(workspaceId); // no more proxying, whatever happens next
+        egress.Forget(workspaceId);
+        await shares.EndAllAsync(workspaceId, "workspace stopped", actorId); // sharing never outlives the workspace
         await using var db = await dbFactory.CreateDbContextAsync();
         var ws = await db.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId);
         if (ws == null || ws.State is WorkspaceState.Stopped or WorkspaceState.Failed) return;
@@ -267,6 +322,8 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
     private async Task FailAsync(int workspaceId, string? containerId, string error)
     {
         runtime.Forget(workspaceId);
+        egress.Forget(workspaceId);
+        await shares.EndAllAsync(workspaceId, "workspace failed", null);
         if (containerId != null) await RemoveQuietlyAsync(containerId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var ws = await db.Workspaces.Include(w => w.Repository).ThenInclude(r => r.Project).FirstOrDefaultAsync(w => w.Id == workspaceId);

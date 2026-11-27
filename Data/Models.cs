@@ -258,6 +258,9 @@ public enum NotificationKind
 
     /// <summary>A test run was closed or ingested (to the person who started it; Services/Tests).</summary>
     TestRunCompleted,
+
+    /// <summary>A workspace owner invited you to their workspace (Services/Workspaces).</summary>
+    WorkspaceShared,
 }
 
 /// <summary>An in-app notification for one user. Created by <see cref="ByteBench.Services.NotificationService"/>.</summary>

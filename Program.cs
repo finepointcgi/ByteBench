@@ -216,6 +216,7 @@ ByteBench.Services.ChatIntegrations.SlackEndpoints.MapSlackIntegration(app); // 
 ByteBench.Services.Attachments.AttachmentDownloads.MapAttachmentDownloads(app);
 ByteBench.Services.Wiki.WikiWebEndpoints.MapWikiAndSnippetDownloads(app); // /wiki-files, snippet raw & embed
 app.MapAuditExport();
+ByteBench.Services.Workspaces.WorkspaceAuditEndpoints.MapWorkspaceAuditExport(app); // CSV export of the workspace audit trail
 app.MapIssueCsvExport(); // /p/{key}/issues/export.csv, /issues/export.csv
 ByteBench.Services.Reports.ReportsServiceCollectionExtensions.MapReportDownloads(app); // /p/{key}/reports/{report}.csv
 ByteBench.Services.Email.UnsubscribeEndpoints.MapEmailUnsubscribe(app);

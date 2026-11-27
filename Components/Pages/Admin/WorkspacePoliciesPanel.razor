@@ -1,0 +1,76 @@
+@* Admin → Workspaces: sharing switch, network policy and audit retention. *@
+@using ByteBench.Services.Workspaces
+@inject CurrentUser Me
+@inject WorkspaceSharingService Sharing
+@inject WorkspaceEgressAdmin EgressAdmin
+@inject WorkspaceAuditService Audit
+@inject ISnackbar Snackbar
+
+<MudPaper Outlined="true" Class="pa-5 mb-4" Style="max-width: 820px" data-testid="ws-policies">
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mb-2">Sharing</MudText>
+    <MudSelect T="string" Value="sharing" ValueChanged="SetSharing" Label="Who can be invited to a workspace" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-sharing-mode">
+        <MudSelectItem Value="@WorkspaceSharingMode.Members">Project members only (default)</MudSelectItem>
+        <MudSelectItem Value="@WorkspaceSharingMode.Viewers">Anyone who can view the repository</MudSelectItem>
+        <MudSelectItem Value="@WorkspaceSharingMode.Off">Nobody: sharing is off</MudSelectItem>
+    </MudSelect>
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">Turning sharing off ends every active share. Collaborators get the owner's full IDE (including the git push token); viewers read files and terminals only.</MudText>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mt-5 mb-2">Network egress</MudText>
+    <MudSelect T="string" @bind-Value="mode" Label="Default network policy" Variant="Variant.Outlined" Margin="Margin.Dense" data-testid="ws-egress-mode">
+        <MudSelectItem Value="@WorkspaceEgressPolicy.PublicOnly">Public internet only (private networks and this server's host blocked)</MudSelectItem>
+        <MudSelectItem Value="@WorkspaceEgressPolicy.Allowlist">Allow-list (through the filtering proxy)</MudSelectItem>
+        <MudSelectItem Value="@WorkspaceEgressPolicy.None">Deny all (only ByteBench's git endpoint)</MudSelectItem>
+        <MudSelectItem Value="@WorkspaceEgressPolicy.Open">Allow all (not recommended)</MudSelectItem>
+    </MudSelect>
+    <MudTextField T="string" @bind-Value="entries" Lines="7" Label="Allow-list (one host[:port] per line; host:* for any port; *.example.com; @@preset)" Variant="Variant.Outlined"
+                  Margin="Margin.Dense" Class="mt-2" Disabled="@(mode != WorkspaceEgressPolicy.Allowlist)" data-testid="ws-egress-allow" />
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        Presets: @string.Join(", ", WorkspaceEgressPolicy.Presets.Select(p => $"@{p.Key}")). Entries without a port mean 80 and 443. ByteBench's own server is always reachable.
+        A repository's <code>egress:</code> in <code>.bytebench/workspace.yml</code> can only narrow this. Applies to workspaces started afterwards.
+    </MudText>
+    @foreach (var e in errors) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@e</MudAlert> }
+    <div class="mt-2"><MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveEgress" data-testid="ws-egress-save">Save network policy</MudButton></div>
+
+    <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mt-5 mb-2">Audit</MudText>
+    <div class="d-flex gap-2 align-center">
+        <MudNumericField T="int" @bind-Value="retention" Min="0" Max="3650" Label="Keep workspace events (days, 0 = site default)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:320px" data-testid="ws-audit-retention" />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="SaveRetention">Save</MudButton>
+        <MudButton Variant="Variant.Text" Size="Size.Small" Href="/admin/workspaces/audit" data-testid="ws-audit-link">Open the workspace audit log</MudButton>
+    </div>
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">The site-wide audit retention (<code>Audit:RetentionDays</code>) still applies, so this can only shorten it.</MudText>
+</MudPaper>
+
+@code {
+    private string sharing = WorkspaceSharingMode.Members, mode = WorkspaceEgressPolicy.PublicOnly, entries = "";
+    private List<string> errors = [];
+    private int retention;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        sharing = await Sharing.GetModeAsync();
+        var policy = await EgressAdmin.GetAsync();
+        mode = policy.Mode;
+        entries = await EgressAdmin.GetEntriesTextAsync();
+        retention = await Audit.GetRetentionDaysAsync();
+    }
+
+    private async Task SetSharing(string value)
+    {
+        await Sharing.SetModeAsync(value, Me.Id);
+        sharing = value;
+        Snackbar.Add("Sharing policy saved.", Severity.Success);
+    }
+
+    private async Task SaveEgress()
+    {
+        errors = await EgressAdmin.SetAsync(mode, entries, Me.Id);
+        if (errors.Count == 0) Snackbar.Add("Network policy saved. It applies to workspaces started from now on.", Severity.Success);
+    }
+
+    private async Task SaveRetention()
+    {
+        try { await Audit.SetRetentionDaysAsync(retention, Me.Id); Snackbar.Add("Retention saved.", Severity.Success); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+}

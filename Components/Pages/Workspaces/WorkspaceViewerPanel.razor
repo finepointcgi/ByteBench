@@ -1,0 +1,116 @@
+@* The viewer's read-only window: files and shared terminal output, read through ByteBench. There is no input that reaches a shell or the IDE. *@
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceSharingService Sharing
+
+<div class="d-flex gap-3" style="min-height:420px" data-testid="viewer-panel">
+    <div style="width:280px;flex:none">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Read-only · <span class="mono">/@path</span></MudText>
+        @if (path.Length > 0) { <div><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Up">.. (up)</MudButton></div> }
+        @foreach (var e in entries)
+        {
+            var entry = e;
+            <div><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => Open(entry)" data-testid="viewer-entry">@(entry.IsDirectory ? entry.Name + "/" : entry.Name)</MudButton></div>
+        }
+        <MudText Typo="Typo.subtitle2" Class="mt-3">Terminals</MudText>
+        @if (sessions.Count == 0) { <MudText Typo="Typo.caption" Class="mud-text-secondary">None shared. The owner can share one with <code>tmux new -s main</code>.</MudText> }
+        @foreach (var s in sessions)
+        {
+            var name = s;
+            <div><MudButton Size="Size.Small" Variant="@(name == session ? Variant.Filled : Variant.Text)" OnClick="() => ShowTerminal(name)" data-testid="viewer-session">@name</MudButton></div>
+        }
+    </div>
+    <div style="flex:1;min-width:0">
+        @if (error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@error</MudAlert> }
+        @if (session != null)
+        {
+            <MudText Typo="Typo.subtitle2">Terminal: @session (live, read-only)</MudText>
+            <pre class="mono" style="max-height:60vh;overflow:auto;font-size:12px" data-testid="viewer-terminal">@terminal</pre>
+        }
+        else if (file != null)
+        {
+            <MudText Typo="Typo.subtitle2">@file.Path</MudText>
+            @if (file.Binary) { <div class="empty">Binary file.</div> }
+            else
+            {
+                <pre class="mono" style="max-height:60vh;overflow:auto;font-size:12px" data-testid="viewer-file">@file.Text</pre>
+                @if (file.Truncated) { <MudText Typo="Typo.caption" Class="mud-text-secondary">Only the first 256 KB is shown.</MudText> }
+            }
+        }
+        else { <div class="empty">Choose a file or a terminal.</div> }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string PublicId { get; set; } = "";
+
+    private string path = "";
+    private List<ViewerEntry> entries = [];
+    private List<string> sessions = [];
+    private ViewerFile? file;
+    private string? session, terminal, error;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await LoadDir();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync())
+            {
+                try
+                {
+                    sessions = await Sharing.TerminalSessionsAsync(PublicId, Me.Id);
+                    if (session != null) terminal = await Sharing.TerminalOutputAsync(PublicId, Me.Id, session);
+                }
+                catch (InvalidOperationException ex) { error = ex.Message; }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task LoadDir()
+    {
+        try { error = null; entries = await Sharing.ListDirectoryAsync(PublicId, Me.Id, path); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Open(ViewerEntry e)
+    {
+        var rel = path.Length == 0 ? e.Name : path + "/" + e.Name;
+        session = null;
+        try
+        {
+            error = null;
+            if (e.IsDirectory) { path = rel; file = null; await LoadDir(); }
+            else file = await Sharing.ReadFileAsync(PublicId, Me.Id, rel);
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Up()
+    {
+        path = path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
+        file = null;
+        await LoadDir();
+    }
+
+    private async Task ShowTerminal(string name)
+    {
+        session = name;
+        file = null;
+        try { error = null; terminal = await Sharing.TerminalOutputAsync(PublicId, Me.Id, name); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

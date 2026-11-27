@@ -43,6 +43,10 @@
 </ul>
 <p>Limits: the policy is IPv4 and IP-based (a hostname that resolves to a private address is blocked by its address); it does not stop data leaving to the internet in <code>public-only</code> mode; and it is only as strong as the Docker host's kernel and Docker itself, so use a dedicated Docker host for untrusted code.</p>
 
+<h3 id="allowlist">Allow-list egress and repository rules</h3>
+<p>Besides the modes above, an administrator can choose <code>allowlist</code> under <strong>Admin &rarr; Workspaces</strong>: the container can then reach only ByteBench's git endpoint and a filtering proxy inside ByteBench. The list holds hosts with optional ports (<code>registry.npmjs.org</code>, <code>git.example.com:2222</code>, <code>*.example.com</code>) and presets (<code>@git</code>, <code>@npm</code>, <code>@nuget</code>, <code>@pypi</code>, <code>@crates</code>, <code>@go</code>, <code>@maven</code>); without a port, 80 and 443 are meant. A repository can add <code>egress:</code> to <code>.bytebench/workspace.yml</code> (<code>egress: none</code> or <code>egress: [registry.npmjs.org]</code>), but it can only <em>narrow</em> what the administrator allows: anything wider is dropped and shown as a warning on the workspace's <strong>Network</strong> tab, which also lists blocked requests (they are audited too).</p>
+<p>Limits: tools must use the proxy environment variables (git, npm, pip, cargo, go, curl and dotnet do; Maven needs a <code>settings.xml</code>); raw TCP such as an SSH git remote cannot connect; HTTPS is tunnelled, so the host name is what is enforced, not the content.</p>
+
 <h3 id="origins">The IDE and previews are only reachable through ByteBench</h3>
 <p>The only thing a container publishes is the IDE port on <code>127.0.0.1</code> of the Docker host (or nothing at all with <code>IdeTransport: Relay</code>, which relays through the container and is chosen automatically when ByteBench itself runs in a container or <code>DOCKER_HOST</code> is set). ByteBench's proxy handles HTTP and WebSocket and checks that the signed-in user owns the workspace.</p>
 <ul>
@@ -53,11 +57,20 @@
 <h3 id="git">Git access</h3>
 <p>The container clones from ByteBench's own git endpoint with a token <code>gbw_&hellip;</code> made for that workspace: valid for that one repository, only while the workspace is starting or running, only for its owner, and revoked when it stops, fails or ByteBench restarts (only its SHA-256 is stored). It is not a personal access token and the REST API, MCP and the package registry do not accept it. It is written to <code>~/.git-credentials</code> (mode 600) through standard input, never a command line or environment variable. Pushing needs a token that was created with write access <em>and</em> the owner's current <code>PushCode</code>, archived and mirror checks and branch protection, all enforced by the git endpoint on every push. No personal tokens or passwords are put in the container.</p>
 
+<h2 id="sharing">Sharing a workspace</h2>
+<p>Open <strong>Share &amp; history</strong> on a running workspace and invite a ByteBench user who can already see the repository (by default a project member; an administrator can widen this to anyone who can view the repository, or turn sharing off).</p>
+<ul>
+  <li><strong>Collaborator</strong>: full IDE access for pair programming. OpenVSCode has no multi-user mode, so the collaborator opens their own browser window on the same IDE server, with their own single-use ticket. You share the files on disk and, if you start <code>tmux new -s main</code>, terminals; there are no live cursors. A collaborator acts as the container's user and can push with your git token, so invite people you trust like yourself.</li>
+  <li><strong>Viewer</strong>: read-only. They never get an IDE session; they browse files and read terminals you share through ByteBench. This is enforced on the server.</li>
+</ul>
+<p>The panel lists who is connected. Removing someone, <strong>End sharing</strong> and stopping the workspace cut access at once, including open IDE connections. Invitees are notified and find the workspace under <strong>Shared with you</strong>.</p>
+
 <h2 id="admin">Administration</h2>
 <ul>
   <li><strong>Admin &rarr; Workspaces</strong>: the health table, the workspaces switch, the assistant switch, every workspace (owner, repository, state, activity) with <strong>Stop</strong> and <strong>Stop all</strong>. Administrators can stop any workspace but cannot open one.</li>
   <li><strong>Project settings &rarr; Workspaces</strong> (Maintainer and Owner): allow workspaces and the assistant for the project.</li>
-  <li><strong>Audit log</strong>: <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
+  <li><strong>Workspace audit</strong> (<code>/admin/workspaces/audit</code>): search every workspace event by workspace, person, action, text and date; export CSV; set how long events are kept. Each workspace also has its own <strong>History</strong> tab. Secrets are only ever recorded by name. Also available over the REST API.</li>
+  <li><strong>Audit log</strong>: <code>workspace.created</code>, <code>workspace.shared</code>, <code>workspace.share_ended</code>, <code>workspace.ticket_redeemed</code>, <code>workspace.egress_blocked</code>, <code>workspace.started</code>, <code>workspace.stopped</code> (with reason and who), <code>workspace.failed</code>, <code>workspace.restarted</code>, <code>workspace.commit</code>, <code>workspace.ai_tools</code>, <code>workspace.admin_switch</code>, <code>workspace.admin_ai_switch</code> and <code>workspace.project_settings</code>.</li>
 </ul>
 
 <h2 id="configuration">Configuration</h2>
@@ -72,7 +85,8 @@
   <tr><td><code>MaxPerUser</code> / <code>MaxTotal</code></td><td>2 / 10</td><td>Concurrent workspaces.</td></tr>
   <tr><td><code>IdleTimeoutMinutes</code> / <code>MaxLifetimeHours</code></td><td>30 / 8</td><td>Automatic stops.</td></tr>
   <tr><td><code>Memory</code>, <code>Cpus</code>, <code>PidsLimit</code>, <code>DiskLimit</code></td><td>4g, 2, 2048, 10g</td><td>Container limits.</td></tr>
-  <tr><td><code>EgressMode</code></td><td>public-only</td><td>public-only, none or open.</td></tr>
+  <tr><td><code>EgressMode</code></td><td>public-only</td><td>Default network mode until an administrator sets one: public-only, allowlist, none or open.</td></tr>
+  <tr><td><code>Egress:ProxyHost</code>, <code>ProxyPort</code>, <code>BindAddress</code>, <code>AllowPrivateTargets</code></td><td>git host, free port, 0.0.0.0, false</td><td>The filtering proxy of allow-list mode.</td></tr>
   <tr><td><code>Workspaces:Ai:*</code></td><td>6 requests/min, 25 tool calls, 60 s commands</td><td>Assistant limits.</td></tr>
 </table>
 
@@ -86,6 +100,9 @@
   <tr><td><code>POST /api/v1/projects/{key}/repos/{slug}/workspaces</code></td><td>Start one: <code>{"ref": "main", "source": "pr:12"}</code>. Returns 202; poll until <code>state</code> is <code>Running</code> or <code>Failed</code>.</td></tr>
   <tr><td><code>GET /api/v1/workspaces/{id}</code></td><td>One of yours; 404 for anyone else's.</td></tr>
   <tr><td><code>POST /api/v1/workspaces/{id}/stop</code>, <code>/restart</code></td><td>Stop (deletes the container) or restart.</td></tr>
+  <tr><td><code>GET</code>/<code>POST /api/v1/workspaces/{id}/shares</code>, <code>DELETE …/shares/{user}</code>, <code>GET /api/v1/workspaces/shared</code></td><td>Invite (<code>{"user": "bob", "role": "collaborator"|"viewer"}</code>), list and remove people; workspaces shared with you.</td></tr>
+  <tr><td><code>GET /api/v1/workspaces/{id}/audit</code>, <code>/egress</code></td><td>The workspace's audit history and its network policy with blocked requests.</td></tr>
+  <tr><td><code>GET /api/v1/admin/workspaces/audit</code></td><td>Administrators: search all workspace events.</td></tr>
 </table>
 <p>The API never returns an IDE link or a credential; the IDE is opened from the workspace page in a browser.</p>
 

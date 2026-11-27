@@ -11,12 +11,21 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddSingleton<WorkspaceUrls>();
         services.AddSingleton<WorkspaceAudit>();
         services.AddSingleton<WorkspaceImage>();
+        services.AddSingleton<IEgressConnector, DnsEgressConnector>();
+        services.AddSingleton<WorkspaceEgress>();
+        services.AddSingleton<WorkspaceShareStore>();
         services.AddSingleton<WorkspaceLifecycle>();
         services.AddSingleton<WorkspaceReaper>();
         services.AddHostedService(sp => sp.GetRequiredService<WorkspaceReaper>());
         services.AddHostedService<WorkspaceImageStartup>();
         services.AddScoped<WorkspaceService>();
         services.AddScoped<WorkspaceAiService>();
+        services.AddScoped<WorkspaceSharingService>();
+        services.AddScoped<WorkspaceAuditService>();
+        services.AddScoped<WorkspaceEgressReader>();
+        services.AddScoped<WorkspaceEgressAdmin>();
+        services.AddSingleton<WorkspaceMaintenanceService>();
+        services.AddHostedService(sp => sp.GetRequiredService<WorkspaceMaintenanceService>());
         return services;
     }
 }

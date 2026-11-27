@@ -7034,6 +7034,76 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.ToTable("Workspaces");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.WorkspaceEgressRecord", b =>
+                {
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AdminMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("RepoNarrowed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("RulesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("WarningsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("WorkspaceId");
+
+                    b.ToTable("WorkspaceEgressRecords");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceShare", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("InvitedById")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "EndedAt");
+
+                    b.HasIndex("WorkspaceId", "UserId");
+
+                    b.ToTable("WorkspaceShares");
+                });
+
             modelBuilder.Entity("IssueComponents", b =>
                 {
                     b.Property<int>("ComponentsId")
@@ -9242,6 +9312,36 @@ namespace ByteBench.Data.MigrationsPostgres
                     b.Navigation("Owner");
 
                     b.Navigation("Repository");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceEgressRecord", b =>
+                {
+                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
+                        .WithOne()
+                        .HasForeignKey("ByteBench.Data.WorkspaceEgressRecord", "WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("ByteBench.Data.WorkspaceShare", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>

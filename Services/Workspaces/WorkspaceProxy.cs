@@ -74,14 +74,17 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         }
         var cookie = ctx.Request.Cookies[SessionCookie];
         var grant = cookie == null ? null : runtime.FindSession(cookie, live.Id, audience);
-        if (grant == null || grant.UserId != live.OwnerId || !await OwnerStillActiveAsync(live.OwnerId))
+        // The owner and collaborators have an IDE session; a viewer never does (they read files through ByteBench), and a role removed since the ticket
+        // was redeemed stops working at once.
+        if (grant == null || runtime.Access.RoleOf(live.Id, live.OwnerId, grant.UserId) < WorkspaceRole.Collaborator || !await OwnerStillActiveAsync(grant.UserId))
         {
             await Plain(ctx, 401, "Open this workspace from ByteBench (Workspaces → Open).");
             return;
         }
         live.Touch();
+        runtime.Access.Seen(live.Id, grant.UserId);
         var framing = $"frame-ancestors {grant.MainOrigin}";
-        await ForwardAsync(ctx, live, previewPort ?? live.IdePort, ctx.Request.PathBase + ctx.Request.Path + ctx.Request.QueryString, framing,
+        await ForwardAsync(ctx, live, grant.UserId, previewPort ?? live.IdePort, ctx.Request.PathBase + ctx.Request.Path + ctx.Request.QueryString, framing,
             stripAllCookies: false, injectToken: previewPort == null);
     }
 
@@ -91,7 +94,12 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         var nextPath = ctx.Request.Query["next"].ToString();
         if (!HttpMethods.IsGet(ctx.Request.Method) || ticket.Length == 0) { await Plain(ctx, 400, "Missing ticket."); return; }
         var session = runtime.RedeemTicket(ticket, live.Id, audience, out var userId);
-        if (session == null || userId != live.OwnerId) { await Plain(ctx, 401, "This link has expired. Open the workspace from ByteBench again."); return; }
+        if (session == null || runtime.Access.RoleOf(live.Id, live.OwnerId, userId) < WorkspaceRole.Collaborator)
+        {
+            await Plain(ctx, 401, "This link has expired. Open the workspace from ByteBench again.");
+            return;
+        }
+        await AuditRedeemedAsync(ctx, live, userId, audience);
         var secure = ctx.Request.IsHttps;
         // The IDE is framed by ByteBench's page, which may be another site: a cookie set there needs SameSite=None, which needs Secure
         // (https, or *.localhost for development, which browsers treat as secure), and is stored Partitioned (CHIPS) so it keeps working
@@ -109,6 +117,20 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         ctx.Response.Redirect(LocalPath(nextPath));
     }
 
+    private async Task AuditRedeemedAsync(HttpContext ctx, LiveWorkspace live, int userId, string audience)
+    {
+        try
+        {
+            var factory = ctx.RequestServices.GetRequiredService<IDbContextFactory<AppDbContext>>();
+            await using var db = await factory.CreateDbContextAsync();
+            var projectId = await db.Workspaces.AsNoTracking().Where(w => w.Id == live.Id).Select(w => w.ProjectId).FirstOrDefaultAsync();
+            var role = runtime.Access.RoleOf(live.Id, live.OwnerId, userId);
+            await ctx.RequestServices.GetRequiredService<WorkspaceAudit>().RecordAsync(WorkspaceAuditActions.TicketRedeemed, live.PublicId, projectId, userId,
+                new { audience, role = role.ToString() });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { log.LogDebug(ex, "Could not audit a ticket redemption"); }
+    }
+
     /// <summary>Only a path on this origin: starts with a single '/', no scheme-relative or backslash tricks.</summary>
     public static string LocalPath(string? p) =>
         p is { Length: > 0 } && p[0] == '/' && !p.StartsWith("//", StringComparison.Ordinal) && !p.Contains('\\') && !p.Any(char.IsControl) ? p : "/";
@@ -122,7 +144,7 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         if (segments.Length < 2 || !WorkspaceTokens.PublicIdPattern.IsMatch(segments[0])) { await Plain(ctx, 404, "Not found."); return; }
         var live = runtime.Find(segments[0]);
         var userId = int.TryParse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : 0;
-        if (live == null || userId == 0 || live.OwnerId != userId) { await Plain(ctx, 404, "Not found."); return; } // not revealed to others
+        if (live == null || userId == 0 || runtime.Access.RoleOf(live.Id, live.OwnerId, userId) < WorkspaceRole.Collaborator) { await Plain(ctx, 404, "Not found."); return; } // not revealed to others
         var isIde = segments[1] == "ide";
         int? port = null;
         if (!isIde)
@@ -131,13 +153,14 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
             port = p;
         }
         live.Touch();
+        runtime.Access.Seen(live.Id, userId);
         // The IDE was started with --server-base-path, so it keeps the whole path; a preview app doesn't know about the prefix.
         var prefixLength = "/_ws/".Length + segments[0].Length + 1 + segments[1].Length;
         var path = isIde ? ctx.Request.Path.Value! : ctx.Request.Path.Value![prefixLength..];
         if (path.Length == 0) path = "/";
         if (!isIde && path.Length > 0 && path[0] != '/') path = "/" + path;
         var csp = isIde ? "frame-ancestors 'self'" : "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; frame-ancestors 'self'";
-        await ForwardAsync(ctx, live, port ?? live.IdePort, path + ctx.Request.QueryString, csp, stripAllCookies: true, injectToken: isIde);
+        await ForwardAsync(ctx, live, userId, port ?? live.IdePort, path + ctx.Request.QueryString, csp, stripAllCookies: true, injectToken: isIde);
     }
 
     // ---------- relay ----------
@@ -171,14 +194,14 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         return ok;
     }
 
-    private async Task ForwardAsync(HttpContext ctx, LiveWorkspace live, int port, string pathAndQuery, string cspToAdd, bool stripAllCookies, bool injectToken)
+    private async Task ForwardAsync(HttpContext ctx, LiveWorkspace live, int userId, int port, string pathAndQuery, string cspToAdd, bool stripAllCookies, bool injectToken)
     {
         var upgrade = ctx.Request.Headers.Connection.ToString().Contains("upgrade", StringComparison.OrdinalIgnoreCase)
                       && string.Equals(ctx.Request.Headers.Upgrade.ToString(), "websocket", StringComparison.OrdinalIgnoreCase);
         var cookie = BuildCookie(ctx.Request.Headers.Cookie, stripAllCookies, injectToken ? live.ConnectionToken : null);
         try
         {
-            if (upgrade) await TunnelAsync(ctx, live, port, pathAndQuery, cookie);
+            if (upgrade) await TunnelAsync(ctx, live, userId, port, pathAndQuery, cookie);
             else await RelayAsync(ctx, live, port, pathAndQuery, cookie, cspToAdd);
         }
         catch (Exception ex) when (ex is IOException or SocketException or HttpRequestException or InvalidOperationException && !ctx.Response.HasStarted)
@@ -273,7 +296,7 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         return string.Join("; ", parts);
     }
 
-    private async Task TunnelAsync(HttpContext ctx, LiveWorkspace live, int port, string pathAndQuery, string? cookie)
+    private async Task TunnelAsync(HttpContext ctx, LiveWorkspace live, int userId, int port, string pathAndQuery, string? cookie)
     {
         var upgradeFeature = ctx.Features.Get<IHttpUpgradeFeature>();
         if (upgradeFeature is not { IsUpgradableRequest: true }) { await Plain(ctx, 400, "WebSocket upgrade is not available."); return; }
@@ -322,7 +345,9 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         using var client = await upgradeFeature.UpgradeAsync();
         if (filled > end + 4) await client.WriteAsync(buffer.AsMemory(end + 4, filled - end - 4), ctx.RequestAborted);
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+        // Counts as connected while open, and is cut the moment this person's access is revoked.
+        using var connection = runtime.Access.OpenConnection(live.Id, userId);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, connection.Token);
         var up = Pump(client, upstream, live, cts.Token);
         var down = Pump(upstream, client, null, cts.Token);
         await Task.WhenAny(up, down);

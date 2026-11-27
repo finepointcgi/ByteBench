@@ -1,0 +1,170 @@
+@* The owner's side panel in a workspace: sharing, history (audit) and network policy. *@
+@using ByteBench.Data
+@using ByteBench.Services.Workspaces
+@implements IDisposable
+@inject CurrentUser Me
+@inject WorkspaceService Workspaces
+@inject WorkspaceSharingService Sharing
+@inject WorkspaceEgressReader EgressReader
+@inject ISnackbar Snackbar
+
+<MudTabs Elevation="0" Rounded="false" TabPanelsClass="pa-2" data-testid="ws-tools">
+    <MudTabPanel Text="Sharing">
+        @if (sharingMode == WorkspaceSharingMode.Off)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">Sharing workspaces is turned off on this server.</MudAlert>
+        }
+        else if (!Running)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">Only a running workspace can be shared. Sharing ends when it stops.</MudAlert>
+        }
+        else
+        {
+            <div class="d-flex gap-2 align-center mb-2" data-testid="ws-invite">
+                <MudTextField T="string" @bind-Value="inviteUser" Label="Username" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" data-testid="ws-invite-user" />
+                <MudSelect T="WorkspaceShareRole" @bind-Value="inviteRole" Label="Role" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px" data-testid="ws-invite-role">
+                    <MudSelectItem Value="WorkspaceShareRole.Collaborator">Collaborator</MudSelectItem>
+                    <MudSelectItem Value="WorkspaceShareRole.Viewer">Viewer</MudSelectItem>
+                </MudSelect>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Invite" Disabled="@string.IsNullOrWhiteSpace(inviteUser)" data-testid="ws-invite-send">Invite</MudButton>
+            </div>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary" HtmlTag="div">
+                <b>Collaborator</b>: the full IDE in their own browser window on your workspace, and your git push token (invite people you trust like yourself).
+                <b>Viewer</b>: read-only view of files and shared terminals (<code>tmux new -s main</code>); no editing or commands. They must already see this repository.
+            </MudText>
+            @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert> }
+            @if (shares.Count > 0)
+            {
+                <MudSimpleTable Dense="true" Elevation="0" Class="mt-2" data-testid="ws-shares">
+                    <thead><tr><th>Person</th><th>Role</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var s in shares)
+                    {
+                        <tr>
+                            <td>@s.UserName</td>
+                            <td>@s.Role</td>
+                            <td>@(s.Connected ? "connected" : s.LastSeen != null ? "last seen " + s.LastSeen.Value.ToLocalTime().ToString("t") : "invited")</td>
+                            <td><MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text" OnClick="() => Revoke(s)">Remove</MudButton></td>
+                        </tr>
+                    }
+                    </tbody>
+                </MudSimpleTable>
+                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="mt-2" OnClick="EndAll" data-testid="ws-end-sharing">End sharing</MudButton>
+            }
+            else { <div class="empty mt-2">Nobody is invited.</div> }
+        }
+        @if (connected.Count > 0)
+        {
+            <MudText Typo="Typo.caption" Class="mt-3" HtmlTag="div"><b>In the workspace now:</b> @string.Join(", ", connected.Select(c => $"{c.UserName} ({c.Role.ToString().ToLowerInvariant()})"))</MudText>
+        }
+    </MudTabPanel>
+    <MudTabPanel Text="History">
+        <WorkspaceAuditTable PublicId="@PublicId" />
+    </MudTabPanel>
+    <MudTabPanel Text="Network">
+        @if (egress != null)
+        {
+            <div data-testid="ws-egress">
+                <MudText Typo="Typo.body2">Policy: <b>@egress.Mode</b>@(egress.RepoNarrowed ? " (narrowed by the repository's .bytebench/workspace.yml)" : "")</MudText>
+                @if (egress.Mode == "allowlist")
+                {
+                    <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary">Reachable (web ports 80/443 unless a port is shown), plus ByteBench itself:</MudText>
+                    <div class="mono" style="font-size:12px">@(egress.Rules.Count == 0 ? "(nothing)" : string.Join(", ", egress.Rules))</div>
+                }
+                else if (egress.Mode == "none") { <MudText Typo="Typo.caption" HtmlTag="div" Class="mud-text-secondary">No network except ByteBench's git endpoint.</MudText> }
+                @foreach (var w in egress.Warnings) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@w</MudAlert> }
+                @if (egress.Mode == "allowlist")
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-3">Blocked requests</MudText>
+                    @if (egress.Blocked.Count == 0) { <div class="empty">Nothing was blocked.</div> }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Elevation="0" data-testid="ws-egress-blocked">
+                            <thead><tr><th>Destination</th><th>Times</th><th>Last</th><th>Why</th></tr></thead>
+                            <tbody>
+                            @foreach (var b in egress.Blocked)
+                            {
+                                <tr><td class="mono">@b.Host:@b.Port</td><td>@b.Count</td><td>@b.At.ToLocalTime().ToString("T")</td><td>@b.Reason</td></tr>
+                            }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary" HtmlTag="div">Allowed so far: @egress.Allowed · blocked: @egress.BlockedTotal. Tools use the proxy through HTTP_PROXY/HTTPS_PROXY; programs that ignore it can't connect.</MudText>
+                }
+            </div>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    [Parameter, EditorRequired] public string PublicId { get; set; } = "";
+    [Parameter] public bool Running { get; set; } = true;
+
+    private string sharingMode = WorkspaceSharingMode.Members;
+    private string inviteUser = "";
+    private WorkspaceShareRole inviteRole = WorkspaceShareRole.Collaborator;
+    private string? error;
+    private List<ShareInfo> shares = [];
+    private List<(string UserName, WorkspaceRole Role, DateTime LastSeen)> connected = [];
+    private WorkspaceEgressView? egress;
+    private PeriodicTimer? timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Me.EnsureLoadedAsync();
+        await Load();
+        timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = LoopAsync();
+    }
+
+    private async Task LoopAsync()
+    {
+        try
+        {
+            while (await timer!.WaitForNextTickAsync()) { await Load(); await InvokeAsync(StateHasChanged); }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            sharingMode = await Sharing.GetModeAsync();
+            shares = await Sharing.ListAsync(PublicId, Me.Id);
+            connected = await Sharing.ConnectedAsync(PublicId, Me.Id);
+            var w = await Workspaces.GetMineAsync(PublicId, Me.Id);
+            if (w != null) egress = await EgressReader.GetAsync(w.Workspace);
+        }
+        catch (InvalidOperationException) { /* the workspace went away */ }
+    }
+
+    private async Task Invite()
+    {
+        error = null;
+        try
+        {
+            await Sharing.InviteAsync(PublicId, Me.Id, inviteUser, inviteRole);
+            Snackbar.Add($"{inviteUser.Trim()} was invited.", Severity.Success);
+            inviteUser = "";
+            await Load();
+        }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+    }
+
+    private async Task Revoke(ShareInfo s)
+    {
+        try { await Sharing.RevokeAsync(PublicId, Me.Id, s.UserId); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    private async Task EndAll()
+    {
+        try { await Sharing.EndSharingAsync(PublicId, Me.Id); }
+        catch (InvalidOperationException ex) { error = ex.Message; }
+        await Load();
+    }
+
+    public void Dispose() => timer?.Dispose();
+}
