@@ -1,0 +1,184 @@
+# Nightly (and on demand): the Docker tier (real workspace image and containers) and the AI exploratory tester.
+#
+#   docker   needs only a Docker daemon (ubuntu-latest has one). Builds the e2e workspace image (a few minutes), then runs the workspace suite.
+#   explore  the AI explorer against a fresh disposable server, with a hard budget. Needs the repository secret ANTHROPIC_API_KEY;
+#            without it the job is skipped (not failed).
+#   report   opens (or updates) ONE summary issue labelled "e2e-nightly" when something failed or the explorer found something, and closes it when a
+#            later night is green.
+#
+# On demand: Actions > E2E nightly > Run workflow (choose whether to run the explorer and its budget). Locally: e2e/run.sh docker, e2e/run.sh explore.
+# See docs/testing.md.
+name: E2E nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      explore:
+        description: Run the AI explorer (needs ANTHROPIC_API_KEY)
+        type: boolean
+        default: true
+      explore_usd:
+        description: Total USD budget for the explorer
+        default: "4"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    # Secrets are not available to `if:` on a job, so one tiny step turns "is the key set" into an output the other jobs can test.
+    runs-on: ubuntu-latest
+    outputs:
+      ai: ${{ steps.key.outputs.ai }}
+    steps:
+      - id: key
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then echo "ai=true" >> "$GITHUB_OUTPUT"; else echo "ai=false" >> "$GITHUB_OUTPUT"; echo "ANTHROPIC_API_KEY is not set: the AI jobs are skipped." >> "$GITHUB_STEP_SUMMARY"; fi
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Build the server
+        run: dotnet build ByteBench.csproj -warnaserror
+      - name: Install the e2e dependencies and Chromium
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run the docker tier
+        working-directory: e2e
+        env:
+          E2E_TIER: docker
+          E2E_NO_BUILD: "1"
+        run: npx playwright test --project=docker
+      - name: Remove anything the run left behind
+        if: always()
+        working-directory: e2e
+        run: npx tsx support/docker-clean.ts || true
+      - name: Upload traces, screenshots, videos and the server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-docker-results
+          path: |
+            e2e/test-results
+            e2e/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  explore:
+    needs: gate
+    if: needs.gate.outputs.ai == 'true' && (github.event_name == 'schedule' || inputs.explore)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Build the server
+        run: dotnet build ByteBench.csproj -warnaserror
+      - name: Install the e2e dependencies, Chromium and the Claude Code CLI
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm install -g @anthropic-ai/claude-code
+      - name: Explore
+        working-directory: e2e
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          E2E_NO_BUILD: "1"
+          TOTAL_USD: ${{ inputs.explore_usd || '4' }}
+        # The explorer has hard stops per goal (steps, minutes, USD) and for the whole run; see e2e/ai-explorer/explore.ts.
+        run: npx tsx ai-explorer/explore.ts --out reports/explore --max-steps 40 --max-minutes 8 --max-usd 1 --total-usd "$TOTAL_USD"
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f e2e/reports/explore/report.md ]; then cat e2e/reports/explore/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - name: Upload the report, screenshots and step logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-explore-report
+          path: e2e/reports/explore
+          if-no-files-found: ignore
+          retention-days: 30
+
+  report:
+    needs: [docker, explore]
+    if: always() && (needs.docker.result != 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-explore-report
+          path: explore
+        continue-on-error: true
+      - name: Open, update or close the summary issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          EXPLORE_RESULT: ${{ needs.explore.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          findings=0; serious=0
+          if [ -f explore/findings.json ]; then
+            findings=$(jq '.findings | length' explore/findings.json)
+            serious=$(jq '[.findings[] | select(.severity=="critical" or .severity=="high" or .severity=="medium")] | length' explore/findings.json)
+          fi
+          body="Nightly e2e run: $RUN_URL
+
+          | Part | Result |
+          |---|---|
+          | Docker tier (real workspaces) | $DOCKER_RESULT |
+          | AI explorer | $EXPLORE_RESULT, $findings finding(s), $serious medium or higher |
+
+          Traces, screenshots and the explorer report are attached to the run as artifacts."
+          if [ "$serious" -gt 0 ] && [ -f explore/findings.json ]; then
+            body="$body
+
+          Top explorer findings:
+          $(jq -r '.findings[] | select(.severity=="critical" or .severity=="high" or .severity=="medium") | "- [" + .severity + "] " + .title' explore/findings.json | head -15 | sed 's/@/@​/g')"
+          fi
+          gh label create e2e-nightly --color 5319e7 --description "Nightly e2e summary" 2>/dev/null || true
+          existing=$(gh issue list --label e2e-nightly --state open --json number --jq '.[0].number // empty')
+          problem=false
+          if [ "$DOCKER_RESULT" = "failure" ] || [ "$EXPLORE_RESULT" = "failure" ] || [ "$serious" -gt 0 ]; then problem=true; fi
+          if [ "$problem" = true ]; then
+            if [ -n "$existing" ]; then gh issue comment "$existing" --body "$body"; else gh issue create --label e2e-nightly --title "Nightly e2e: failures or findings" --body "$body"; fi
+          elif [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body
+
+          Everything is green again; closing."
+            gh issue close "$existing"
+          fi

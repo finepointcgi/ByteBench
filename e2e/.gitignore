@@ -1,0 +1,8 @@
+node_modules/
+test-results/
+playwright-report/
+.e2e-state.json
+.run/
+reports/
+.scratch/
+.dev-server.log

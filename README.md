@@ -31,6 +31,20 @@ BYTEBENCH_TEST_POSTGRES="Host=127.0.0.1;Port=55432;Username=postgres;Password=te
 
 The suite is in `tests/ByteBench.Tests` (xUnit, referenced from `ByteBench.sln`). Each test class boots the whole app with `WebApplicationFactory<Program>` (`Infrastructure/TestApp.cs`) on its own temp directory: a fresh SQLite database with the demo seed, bare repos and attachments, with AI and CI turned off. Tests sign in as the demo users or create their own projects and users. `GitHttpTests` runs real `git` against the app on a Kestrel port (`KestrelApp`), isolated from your git config and credential helpers, so `git` must be on `PATH`. `SshTests` (`[Trait("Category","Ssh")]`) does the same over the embedded SSH server on a free port with throw-away keys and the OpenSSH client (`ssh`, `ssh-keygen`); it is skipped when those aren't installed. `DockerPipelineTests` (`[Trait("Category","Docker")]`) turns CI on and runs pipelines in `alpine:3.20` (including artifacts passed through `needs`, a cache and a manual deploy); it is skipped when no Docker daemon is reachable. GitHub Actions runs the suite on Ubuntu (`.github/workflows/ci.yml`).
 
+### End-to-end tests and AI testing (`e2e/`)
+
+Beyond the in-process suite, `e2e/` (Playwright, TypeScript; not part of `ByteBench.sln`) drives the **real app in a real browser**, real Docker workspaces, the real git/SSH/proxy paths, and adds AI that explores the app and triages failures. Everything runs locally with one command; the full guide is [docs/testing.md](docs/testing.md).
+
+```bash
+e2e/run.sh smoke     # real server (temp DB, seeded accounts) + Chromium, no Docker, about a minute; runs on every PR
+e2e/run.sh docker    # builds the e2e workspace image and drives real workspaces: IDE via the proxy, tasks, preview, secrets, egress, Stop/Resume, prebuild, SSH tunnel
+e2e/run.sh explore   # AI exploratory tester (uses the local `claude` CLI, or ANTHROPIC_API_KEY): goals + invariants, hard budget, disposable instance, report with repro steps
+e2e/run.sh triage --run-id <id>   # AI triage of a failed CI run: real bug / flaky / test needs update / env problem, with a proposed fix
+e2e/run.sh generate --pr <n>      # draft Playwright tests for a change into e2e/tests/proposed/ (never merged automatically)
+```
+
+CI: `e2e-smoke.yml` on pull requests, `e2e-nightly.yml` (Docker tier + AI explorer + one summary issue), `ai-triage.yml` on failed runs. The AI jobs need the repository secret `ANTHROPIC_API_KEY` and are skipped (not failed) without it.
+
 ## UI
 
 The UI uses [MudBlazor](https://mudblazor.com) 9 (no Bootstrap).

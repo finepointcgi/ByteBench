@@ -1,0 +1,24 @@
+{
+  "name": "bytebench-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "End-to-end tests, AI explorer and AI triage for ByteBench (see docs/testing.md)",
+  "type": "module",
+  "scripts": {
+    "test:smoke": "playwright test --project=smoke",
+    "test:docker": "playwright test --project=docker",
+    "typecheck": "tsc --noEmit",
+    "explore": "tsx ai-explorer/explore.ts",
+    "triage": "tsx ai-triage/triage.ts",
+    "generate": "tsx ai-triage/generate-tests.ts"
+  },
+  "devDependencies": {
+    "@playwright/mcp": "0.0.86",
+    "@playwright/test": "1.65.1",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "ws": "^8.18.0"
+  }
+}

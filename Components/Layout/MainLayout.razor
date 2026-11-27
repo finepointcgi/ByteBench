@@ -67,7 +67,7 @@
             <NotificationBell />
             <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Account menu">
                 <ActivatorContent Context="menu">
-                    <button type="button" class="gb-user-activator" aria-label="Account menu" @onclick="menu.ToggleAsync"><Avatar User="Me.User" Size="28" /></button>
+                    <button type="button" class="gb-user-activator" aria-label="Account menu" data-testid="account-menu" @onclick="menu.ToggleAsync"><Avatar User="Me.User" Size="28" /></button>
                 </ActivatorContent>
                 <ChildContent>
                     <div class="px-4 py-2">
@@ -81,7 +81,7 @@
                     <MudDivider />
                     <form method="post" action="account/logout" class="gb-signout-form">
                         <AntiforgeryToken />
-                        <button type="submit" class="gb-signout"><MudIcon Icon="@Icons.Material.Outlined.Logout" Size="Size.Small" /> Sign out</button>
+                        <button type="submit" class="gb-signout" data-testid="sign-out"><MudIcon Icon="@Icons.Material.Outlined.Logout" Size="Size.Small" /> Sign out</button>
                     </form>
                 </ChildContent>
             </MudMenu>
