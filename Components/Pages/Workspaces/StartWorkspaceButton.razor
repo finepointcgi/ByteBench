@@ -37,7 +37,7 @@
         available = (await Workspaces.GetStatusAsync(ProjectId == 0 ? null : ProjectId)).Enabled;
         if (!available || WorkId == 0) return;
         var linked = IsPullRequest ? await Launch.ListForPullRequestAsync(WorkId, Me.Id) : await Launch.ListForIssueAsync(WorkId, Me.Id);
-        existing = linked.FirstOrDefault(w => w.Workspace.IsLive);
+        existing = linked.FirstOrDefault(w => w.Workspace.IsLive || w.Workspace.VolumesKept);
     }
 
     private async Task Go()

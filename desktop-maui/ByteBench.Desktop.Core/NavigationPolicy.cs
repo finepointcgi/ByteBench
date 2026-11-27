@@ -8,14 +8,15 @@ namespace ByteBench.Desktop.Core;
 /// </summary>
 public enum NavDecision { Internal, Workspace, External, Blocked }
 
+/// <summary>Which kind of workspace origin a URL is: the IDE (<c>ide-{id}.{base}</c>) or a forwarded-port preview (<c>p{port}-{id}.{base}</c>).</summary>
+public enum WorkspaceKind { None, Ide, Preview }
+
+/// <param name="Port">The forwarded port, for a preview.</param>
+public sealed record WorkspaceOrigin(WorkspaceKind Kind, int? Port, string WorkspaceId);
+
 /// <param name="ServerOrigin">The profile's origin (scheme://host[:port]).</param>
 /// <param name="AdvertisedWorkspaceBase">Workspace base domain from server-info, if any.</param>
 public sealed record NavContext(string ServerOrigin, string? AdvertisedWorkspaceBase = null);
-
-public enum WorkspaceOriginKind { Ide, Preview }
-
-/// <param name="Port">The forwarded port, for a preview.</param>
-public sealed record WorkspaceOrigin(WorkspaceOriginKind Kind, int? Port, string WorkspaceId);
 
 /// <summary>Navigation allow-list (mirrors desktop/src/main/allowlist.ts). The WebView hooks only act on the decision.</summary>
 public static partial class NavigationPolicy
@@ -40,21 +41,27 @@ public static partial class NavigationPolicy
         return bases;
     }
 
-    /// <summary>The single label in front of a workspace base domain (ide-... / p3000-...), or null when the host is not directly under one.</summary>
-    private static string? WorkspaceLabelOf(Uri target, Uri server, string? advertised)
+    public static bool IsWorkspaceUrl(Uri target, Uri server, string? advertised) => KindOf(target, server, advertised) != WorkspaceKind.None;
+
+    private static WorkspaceKind KindOf(Uri target, Uri server, string? advertised)
     {
-        if (target.Scheme != server.Scheme || target.Port != server.Port) return null;
+        if (target.Scheme != server.Scheme || target.Port != server.Port) return WorkspaceKind.None;
         var host = target.IdnHost.ToLowerInvariant();
         foreach (var b in WorkspaceBases(server.IdnHost, advertised))
         {
             if (!host.EndsWith("." + b, StringComparison.Ordinal)) continue;
             var label = host[..(host.Length - b.Length - 1)];
-            if (WorkspaceLabel().IsMatch(label)) return label; // exactly one label in front of the base
+            // exactly one label in front of the base
+            if (WorkspaceLabel().IsMatch(label)) return label.StartsWith("ide-", StringComparison.Ordinal) ? WorkspaceKind.Ide : WorkspaceKind.Preview;
         }
-        return null;
+        return WorkspaceKind.None;
     }
 
-    public static bool IsWorkspaceUrl(Uri target, Uri server, string? advertised) => WorkspaceLabelOf(target, server, advertised) is not null;
+    /// <summary>The workspace origin kind of <paramref name="raw"/> for this server, or None (also for the server's own pages and other sites).</summary>
+    public static WorkspaceKind WorkspaceKindOf(string? raw, NavContext ctx) =>
+        Uri.TryCreate(raw, UriKind.Absolute, out var target) && Uri.TryCreate(ctx.ServerOrigin, UriKind.Absolute, out var server) && target.UserInfo.Length == 0
+            ? KindOf(target, server, ctx.AdvertisedWorkspaceBase)
+            : WorkspaceKind.None;
 
     /// <summary>The exact labels ByteBench mints: ide-{id} and p{port}-{id}, an id being 20 characters of [a-z2-7].</summary>
     [GeneratedRegex(@"^(?:(?<ide>ide)|p(?<port>[0-9]{1,5}))-(?<id>[a-z2-7]{20})$")]
@@ -63,15 +70,18 @@ public static partial class NavigationPolicy
     /// <summary>Which workspace (and port) a URL on one of the server's workspace origins belongs to; null for anything else, including look-alike labels.</summary>
     public static WorkspaceOrigin? ParseWorkspaceOrigin(string? raw, NavContext ctx)
     {
-        if (Classify(raw, ctx) != NavDecision.Workspace) return null;
+        if (WorkspaceKindOf(raw, ctx) == WorkspaceKind.None) return null;
         if (!Uri.TryCreate(raw, UriKind.Absolute, out var target) || !Uri.TryCreate(ctx.ServerOrigin, UriKind.Absolute, out var server)) return null;
-        var label = WorkspaceLabelOf(target, server, ctx.AdvertisedWorkspaceBase);
-        var m = label is null ? null : StrictLabel().Match(label);
-        if (m is null || !m.Success) return null;
-        if (m.Groups["ide"].Success) return new WorkspaceOrigin(WorkspaceOriginKind.Ide, null, m.Groups["id"].Value);
-        return int.TryParse(m.Groups["port"].Value, out var port) && port is >= 1 and <= 65535
-            ? new WorkspaceOrigin(WorkspaceOriginKind.Preview, port, m.Groups["id"].Value)
-            : null;
+        var host = target.IdnHost.ToLowerInvariant();
+        foreach (var b in WorkspaceBases(server.IdnHost, ctx.AdvertisedWorkspaceBase))
+        {
+            if (!host.EndsWith("." + b, StringComparison.Ordinal)) continue;
+            var m = StrictLabel().Match(host[..(host.Length - b.Length - 1)]);
+            if (!m.Success) continue;
+            if (m.Groups["ide"].Success) return new WorkspaceOrigin(WorkspaceKind.Ide, null, m.Groups["id"].Value);
+            if (int.TryParse(m.Groups["port"].Value, out var port) && port is >= 1 and <= 65535) return new WorkspaceOrigin(WorkspaceKind.Preview, port, m.Groups["id"].Value);
+        }
+        return null;
     }
 
     /// <summary>
@@ -82,7 +92,7 @@ public static partial class NavigationPolicy
     public static bool IsPortEntryUrl(string? raw, NavContext ctx, string workspaceId, int port)
     {
         var o = ParseWorkspaceOrigin(raw, ctx);
-        if (o is not { Kind: WorkspaceOriginKind.Preview } || o.WorkspaceId != workspaceId || o.Port != port) return false;
+        if (o is not { Kind: WorkspaceKind.Preview } || o.WorkspaceId != workspaceId || o.Port != port) return false;
         if (!Uri.TryCreate(raw, UriKind.Absolute, out var u) || u.AbsolutePath != "/_bb/enter" || u.Fragment.Length > 0) return false;
         string? ticket = null, next = null;
         foreach (var pair in u.Query.TrimStart('?').Split('&'))
@@ -97,6 +107,46 @@ public static partial class NavigationPolicy
             }
         }
         return !string.IsNullOrEmpty(ticket) && next is not null && next.StartsWith('/') && !next.StartsWith("//", StringComparison.Ordinal) && !next.Contains('\\');
+    }
+
+    /// <summary>
+    /// A page of ByteBench (the server's own origin, not a workspace) is framing a workspace origin in an iframe. WebKit gives such a frame no
+    /// session cookie (third-party cookie blocking), so the app opens it as the top-level document instead. A frame inside a workspace page
+    /// (the IDE's own webviews) is never promoted, and neither is a frame of any other site.
+    /// </summary>
+    public static bool ShouldPromoteFrame(string? frameUrl, string? topUrl, NavContext ctx) =>
+        WorkspaceKindOf(frameUrl, ctx) != WorkspaceKind.None && Classify(topUrl, ctx) == NavDecision.Internal;
+
+    /// <summary>The id in <c>/workspaces/{id}</c> on the server's own origin, or null (also for the list <c>/workspaces</c> and other pages).</summary>
+    public static string? WorkspaceIdFromPage(string? raw, NavContext ctx)
+    {
+        if (Classify(raw, ctx) != NavDecision.Internal || !Uri.TryCreate(raw, UriKind.Absolute, out var u)) return null;
+        var parts = u.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 && parts[0].Equals("workspaces", StringComparison.OrdinalIgnoreCase) ? parts[1] : null;
+    }
+
+    /// <summary>Title for the native workspace bar: the ByteBench page title without the site suffix, else <paramref name="fallback"/>.</summary>
+    public static string WorkspaceTitle(string? pageTitle, string fallback = "Workspace")
+    {
+        var t = (pageTitle ?? "").Trim();
+        foreach (var sep in new[] { " - ByteBench", " | ByteBench", " \u2013 ByteBench" })
+            if (t.EndsWith(sep, StringComparison.OrdinalIgnoreCase)) t = t[..^sep.Length].Trim();
+        if (t.Length == 0 || t.Equals("ByteBench", StringComparison.OrdinalIgnoreCase)) return fallback;
+        return t.Length > 80 ? t[..80] + "..." : t;
+    }
+
+    /// <summary>
+    /// How many entries back the workspace bar's Back goes (1 = the entry just before the current one): the first earlier entry on a
+    /// different host than the current workspace page, and if that is the ByteBench page that framed the workspace (which would only
+    /// re-open it), the one before that. Null: nothing earlier, so the caller opens the workspace list. <paramref name="backList"/> is oldest first.
+    /// </summary>
+    public static int? WorkspaceBackSteps(string? currentUrl, IReadOnlyList<string> backList, string? framedFromUrl)
+    {
+        if (!Uri.TryCreate(currentUrl, UriKind.Absolute, out var cur)) return null;
+        var i = backList.Count - 1;
+        while (i >= 0 && Uri.TryCreate(backList[i], UriKind.Absolute, out var u) && string.Equals(u.IdnHost, cur.IdnHost, StringComparison.OrdinalIgnoreCase)) i--;
+        if (i >= 0 && framedFromUrl is not null && backList[i] == framedFromUrl) i--;
+        return i >= 0 ? backList.Count - i : null;
     }
 
     public static NavDecision Classify(string? raw, NavContext ctx)

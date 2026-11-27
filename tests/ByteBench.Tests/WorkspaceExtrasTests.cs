@@ -46,7 +46,7 @@ public class WorkspaceExtrasTests(WorkspaceApp app) : IClassFixture<WorkspaceApp
 
     private const string ProcNetTcp = """
           sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
-           0: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 11111 1 0000000000000000 100 0 0 10 0
+           0: 00000000:343A 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 11111 1 0000000000000000 100 0 0 10 0
            1: 0100007F:1435 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 22222 1 0000000000000000 100 0 0 10 0
            2: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 33333 1 0000000000000000 100 0 0 10 0
            3: 0100007F:9C40 0100007F:1435 01 00000000:00000000 00:00000000 00000000  1000        0 44444 1 0000000000000000 100 0 0 10 0
@@ -342,6 +342,37 @@ public class WorkspaceExtrasTests(WorkspaceApp app) : IClassFixture<WorkspaceApp
         }
         await using var db2 = app.Db();
         Assert.Equal(1, await db2.Workspaces.CountAsync(w => w.RepositoryId == repo.Id && w.Ref == branch));
+    }
+
+    [Fact]
+    public async Task Start_from_an_issue_resumes_a_stopped_workspace_with_kept_volumes_through_the_real_resume_path()
+    {
+        var user = await app.NewUserAsync();
+        var repo = await app.RepoWithMembersAsync((user, ProjectRole.Developer));
+        var key = app.ProjectKey(repo.ProjectId);
+        var issue = await app.CreateIssueAsync(repo.ProjectId, user, "Resume me");
+        LaunchResult first;
+        await using (var s = app.Scope(app.UserId(user)))
+        {
+            first = await s.Get<WorkspaceLaunchService>().StartForIssueAsync(key, issue.Number, null, app.UserId(user));
+            await app.WhenIdleAsync();
+            await s.Get<WorkspaceService>().StopAsync(first.Workspace.PublicId, app.UserId(user));
+        }
+        var stopped = await app.ReloadAsync(first.Workspace.PublicId);
+        Assert.Equal(WorkspaceState.Stopped, stopped.State);
+        Assert.True(stopped.VolumesKept);
+        var starts = app.Backend.Started.Count;
+
+        await using (var s = app.Scope(app.UserId(user)))
+        {
+            var again = await s.Get<WorkspaceLaunchService>().StartForIssueAsync(key, issue.Number, null, app.UserId(user));
+            await app.WhenIdleAsync();
+            Assert.True(again.Reused);
+            Assert.Equal(first.Workspace.PublicId, again.Workspace.PublicId);
+        }
+        Assert.Equal(WorkspaceState.Running, (await app.ReloadAsync(first.Workspace.PublicId)).State); // the same row, running again
+        await using var db = app.Db();
+        Assert.Equal(1, await db.Workspaces.CountAsync(w => w.RepositoryId == repo.Id && w.OwnerId == app.UserId(user)));
     }
 
     [Fact]

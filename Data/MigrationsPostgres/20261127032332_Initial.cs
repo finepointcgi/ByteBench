@@ -580,6 +580,26 @@ namespace ByteBench.Data.MigrationsPostgres
                 });
 
             migrationBuilder.CreateTable(
+                name: "UserWorkspaceSettings",
+                columns: table => new
+                {
+                    UserId = table.Column<int>(type: "integer", nullable: false),
+                    SettingsJson = table.Column<string>(type: "text", nullable: false),
+                    ShellSnippet = table.Column<string>(type: "text", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserWorkspaceSettings", x => x.UserId);
+                    table.ForeignKey(
+                        name: "FK_UserWorkspaceSettings_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "WebPushSubscriptions",
                 columns: table => new
                 {
@@ -2991,7 +3011,10 @@ namespace ByteBench.Data.MigrationsPostgres
                     IdleTimeoutMinutes = table.Column<int>(type: "integer", nullable: false),
                     StoppedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     StopReason = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    Error = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true)
+                    Error = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    EnvironmentSummary = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
+                    VolumesKept = table.Column<bool>(type: "boolean", nullable: false),
+                    SubmoduleRepoIdsJson = table.Column<string>(type: "text", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -3004,6 +3027,37 @@ namespace ByteBench.Data.MigrationsPostgres
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_Workspaces_Repositories_RepositoryId",
+                        column: x => x.RepositoryId,
+                        principalTable: "Repositories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "WorkspaceSecrets",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserId = table.Column<int>(type: "integer", nullable: true),
+                    RepositoryId = table.Column<int>(type: "integer", nullable: true),
+                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    EncryptedValue = table.Column<string>(type: "text", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedById = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_WorkspaceSecrets", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_WorkspaceSecrets_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_WorkspaceSecrets_Repositories_RepositoryId",
                         column: x => x.RepositoryId,
                         principalTable: "Repositories",
                         principalColumn: "Id",
@@ -6283,6 +6337,16 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "IX_Workspaces_State",
                 table: "Workspaces",
                 column: "State");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkspaceSecrets_RepositoryId_Name",
+                table: "WorkspaceSecrets",
+                columns: new[] { "RepositoryId", "Name" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WorkspaceSecrets_UserId_Name",
+                table: "WorkspaceSecrets",
+                columns: new[] { "UserId", "Name" });
         }
 
         /// <inheritdoc />
@@ -6586,6 +6650,9 @@ namespace ByteBench.Data.MigrationsPostgres
                 name: "UserNotificationSettings");
 
             migrationBuilder.DropTable(
+                name: "UserWorkspaceSettings");
+
+            migrationBuilder.DropTable(
                 name: "Watches");
 
             migrationBuilder.DropTable(
@@ -6617,6 +6684,9 @@ namespace ByteBench.Data.MigrationsPostgres
 
             migrationBuilder.DropTable(
                 name: "Workspaces");
+
+            migrationBuilder.DropTable(
+                name: "WorkspaceSecrets");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");

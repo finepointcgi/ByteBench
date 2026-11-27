@@ -22,6 +22,10 @@ public sealed class MainPage : ContentPage
     private readonly Dictionary<string, ProfileWebView> _views = [];
     private readonly Grid _browserHost = new();
     private readonly Label _banner;
+    private readonly Grid _wsBar;
+    private readonly Label _wsTitle;
+    private readonly Grid _diagBar;
+    private readonly Label _diagText;
     private readonly VerticalStackLayout _errorPanel;
     private readonly Label _errorText;
     private readonly ScrollView _serversPanel;
@@ -47,6 +51,33 @@ public sealed class MainPage : ContentPage
         _banner = Text("", 12);
         _banner.IsVisible = false;
         _banner.Padding = new Thickness(12, 6);
+
+        // Slim native bar shown only while a workspace (IDE or preview) is the web view's top-level page: Back, the title, Reload.
+        var wsBack = new Button { Text = "< Back", Padding = new Thickness(10, 0), HeightRequest = 30, VerticalOptions = LayoutOptions.Center };
+        wsBack.Clicked += (_, _) => ActiveView()?.GoBack();
+        var wsReload = new Button { Text = "Reload", Padding = new Thickness(10, 0), HeightRequest = 30, VerticalOptions = LayoutOptions.Center };
+        wsReload.Clicked += (_, _) => { HideError(); ActiveView()?.Reload(); };
+        _wsTitle = Text("", 14, bold: true);
+        _wsTitle.VerticalOptions = LayoutOptions.Center;
+        _wsTitle.LineBreakMode = LineBreakMode.TailTruncation;
+        _wsBar = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) }, Padding = new Thickness(8, 4), ColumnSpacing = 8, IsVisible = false };
+        _wsBar.Add(wsBack, 0, 0);
+        _wsBar.Add(_wsTitle, 1, 0);
+        _wsBar.Add(wsReload, 2, 0);
+        _wsBar.SetAppThemeColor(BackgroundColorProperty, Color.FromArgb("#ececf0"), Color.FromArgb("#2a2a30"));
+
+        // Web view problems that can explain a blank page: the URL and the reason, and the log file with the full detail.
+        _diagText = Text("", 12);
+        _diagText.VerticalOptions = LayoutOptions.Center;
+        var diagLog = new Button { Text = "Show log", Padding = new Thickness(8, 0), HeightRequest = 26 };
+        diagLog.Clicked += async (_, _) => await ShowLogAsync();
+        var diagClose = new Button { Text = "Dismiss", Padding = new Thickness(8, 0), HeightRequest = 26 };
+        diagClose.Clicked += (_, _) => _diagBar.IsVisible = false;
+        _diagBar = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto), new ColumnDefinition(GridLength.Auto) }, Padding = new Thickness(12, 4), ColumnSpacing = 6, IsVisible = false };
+        _diagBar.Add(_diagText, 0, 0);
+        _diagBar.Add(diagLog, 1, 0);
+        _diagBar.Add(diagClose, 2, 0);
+        _diagBar.SetAppThemeColor(BackgroundColorProperty, Color.FromArgb("#fff3cd"), Color.FromArgb("#4a3b10"));
 
         _errorText = Text("", 14);
         var retry = new Button { Text = "Try again" };
@@ -97,9 +128,11 @@ public sealed class MainPage : ContentPage
         };
         _serversPanel.SetAppThemeColor(BackgroundColorProperty, Colors.White, Color.FromArgb("#1b1b1f"));
 
-        var browserColumn = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star) } };
+        var browserColumn = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star) } };
         browserColumn.Add(_banner, 0, 0);
-        browserColumn.Add(_browserHost, 0, 1);
+        browserColumn.Add(_diagBar, 0, 1);
+        browserColumn.Add(_wsBar, 0, 2);
+        browserColumn.Add(_browserHost, 0, 3);
 
         var root = new Grid();
         root.Add(browserColumn);
@@ -149,7 +182,9 @@ public sealed class MainPage : ContentPage
         {
             view = new ProfileWebView(profile) { HorizontalOptions = LayoutOptions.Fill, VerticalOptions = LayoutOptions.Fill };
             view.Navigated += (v, _) => { if (v == ActiveView()) HideError(); };
-            view.NavigationFailed += (v, args) => { if (v == ActiveView()) ShowError(args.Message); };
+            view.NavigationFailed += (v, args) => { if (v == ActiveView()) ShowError($"{args.Message}\n\n{DiagnosticsLog.RedactUrl(args.Url)}"); };
+            view.Problem += (v, args) => { if (v == ActiveView()) { _diagText.Text = $"{args.Message}  {args.Url}"; _diagBar.IsVisible = true; } };
+            view.WorkspaceChanged += (v, _) => { if (v == ActiveView()) UpdateWorkspaceBar(); };
             _views[id] = view;
             _browserHost.Add(view);
             _ = LoadServerInfoAsync(profile, view);
@@ -166,6 +201,8 @@ public sealed class MainPage : ContentPage
         HideError();
         HideServers();
         _banner.IsVisible = !string.IsNullOrEmpty(_banner.Text) && _bannerFor == id;
+        _diagBar.IsVisible = false;
+        UpdateWorkspaceBar();
         UpdateTitle();
         RebuildMenu();
     }
@@ -190,6 +227,21 @@ public sealed class MainPage : ContentPage
     {
         var name = _activeId is { } id ? _store.Get(id)?.Name : null;
         if (Window is { } w) w.Title = (_totalUnread > 0 ? $"({_totalUnread}) " : "") + (name is null ? "ByteBench" : $"{name} - ByteBench");
+    }
+
+    private void UpdateWorkspaceBar()
+    {
+        var view = ActiveView();
+        _wsBar.IsVisible = view?.InWorkspace == true;
+        _wsTitle.Text = view?.WorkspaceTitle ?? "";
+    }
+
+    private async Task ShowLogAsync()
+    {
+        var path = DiagnosticsLog.Default?.Path;
+        if (path is null || !File.Exists(path)) { await DisplayAlert("Diagnostics log", "Nothing has been logged yet.", "OK"); return; }
+        try { await Launcher.Default.OpenAsync(new Uri(path)); }
+        catch (Exception) { await DisplayAlert("Diagnostics log", path, "OK"); }
     }
 
     private void ShowError(string message) { _errorText.Text = message; _errorPanel.IsVisible = true; }
@@ -366,6 +418,8 @@ public sealed class MainPage : ContentPage
         view.Add(Item("Reload", () => { HideError(); ActiveView()?.Reload(); }, "R"));
         view.Add(Item("Back", () => ActiveView()?.GoBack(), DeviceInfo.Platform == DevicePlatform.MacCatalyst ? "[" : "Left"));
         view.Add(Item("Forward", () => ActiveView()?.GoForward(), DeviceInfo.Platform == DevicePlatform.MacCatalyst ? "]" : "Right"));
+
+        view.Add(Item("Show Web View Log", () => _ = ShowLogAsync()));
 
         var serversMenu = new MenuBarItem { Text = "Servers" };
         for (var i = 0; i < profiles.Count; i++)

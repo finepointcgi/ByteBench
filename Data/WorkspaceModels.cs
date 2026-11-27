@@ -52,6 +52,18 @@ public class Workspace
     [MaxLength(100)] public string? StopReason { get; set; }
     [MaxLength(500)] public string? Error { get; set; }
 
+    /// <summary>
+    /// What the workspace was built from: <c>toolchain:node@22</c>, <c>image:…</c> or empty (the default image). Shown on the workspace page.
+    /// </summary>
+    [MaxLength(300)] public string? EnvironmentSummary { get; set; }
+    /// <summary>
+    /// The workspace's project and cache volumes exist (they outlive the container, so a stopped workspace can be resumed with its dependencies).
+    /// Deleting the workspace, or the retention period (<c>Workspaces:VolumeRetentionDays</c>), removes them.
+    /// </summary>
+    public bool VolumesKept { get; set; }
+    /// <summary>JSON array of repository ids on this server that the workspace token may additionally read (submodules; never write).</summary>
+    public string SubmoduleRepoIdsJson { get; set; } = "[]";
+
     public bool IsLive => State is WorkspaceState.Starting or WorkspaceState.Running or WorkspaceState.Stopping;
 }
 
@@ -62,5 +74,33 @@ public class ProjectWorkspaceSettings
     public bool Enabled { get; set; } = true;
     /// <summary>The AI assistant panel next to the IDE.</summary>
     public bool AiEnabled { get; set; } = true;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// A secret for workspaces: either one user's (<see cref="UserId"/> set: reaches every workspace of that user) or one repository's
+/// (<see cref="RepositoryId"/> set: reaches every workspace opened on it, managed by Maintainers and Owners). The value is encrypted
+/// with Data Protection and never returned by any API; it is injected as an environment variable inside the container when it starts.
+/// </summary>
+public class WorkspaceSecret
+{
+    public int Id { get; set; }
+    public int? UserId { get; set; }
+    public int? RepositoryId { get; set; }
+    [Required, MaxLength(100)] public string Name { get; set; } = "";
+    public string EncryptedValue { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public int? UpdatedById { get; set; }
+}
+
+/// <summary>A user's workspace preferences: extra VS Code settings.json content and a shell snippet, applied when their workspaces start.</summary>
+public class UserWorkspaceSettings
+{
+    [Key] public int UserId { get; set; }
+    /// <summary>A JSON object merged into the IDE's machine settings (size-capped).</summary>
+    public string SettingsJson { get; set; } = "";
+    /// <summary>Shell commands sourced by the user's terminals in their own workspaces (size-capped).</summary>
+    public string ShellSnippet { get; set; } = "";
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

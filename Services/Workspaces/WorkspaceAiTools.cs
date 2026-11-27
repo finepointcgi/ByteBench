@@ -6,6 +6,14 @@ using ByteBench.Services.Editor.Ai;
 
 namespace ByteBench.Services.Workspaces;
 
+/// <summary>Lets the assistant run the workspace's named tasks (<see cref="WorkspaceAiTools"/>); implemented over <see cref="WorkspaceTasks"/>.</summary>
+public interface IWorkspaceTaskRunner
+{
+    IReadOnlyList<string> TaskNames { get; }
+    /// <summary>Starts the task (if it isn't running), waits up to <paramref name="waitSeconds"/> for it to end, returns a status line, the end of its output (at most <paramref name="maxBytes"/>) and whether it failed.</summary>
+    Task<(string Status, string Output, bool Failed)> RunAsync(string name, int waitSeconds, int maxBytes, CancellationToken ct);
+}
+
 /// <summary>
 /// The assistant's tools for one workspace request: files and a shell, run inside the workspace container with <c>docker exec</c> as
 /// the unprivileged user <c>bbai</c> (same group as the developer, but no access to the developer's git credentials or git config).
@@ -13,7 +21,7 @@ namespace ByteBench.Services.Workspaces;
 /// resolved; every command has a timeout and its output is capped. Output is untrusted data and is wrapped as such. The tools can't commit
 /// or push: there are no credentials for <c>bbai</c>, and commands that try (<c>git commit/push/…</c>) are refused up front.
 /// </summary>
-public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string containerId, string slug, WorkspaceAiOptions options)
+public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string containerId, string slug, WorkspaceAiOptions options, IWorkspaceTaskRunner? taskRunner = null)
 {
     public const int MaxListed = 1000;
     public const int MaxCommandChars = 4000;
@@ -46,6 +54,9 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
         new("run_command", "Run a shell command in the workspace's repository directory (build, test, run a script, inspect). It runs as an unprivileged user with a time limit and its output is truncated. You cannot commit or push; leave that to the user.",
             Props(("command", new { type = "string", description = "The shell command line." }),
                   ("timeout_seconds", new { type = "integer", description = "Time limit in seconds (default and maximum come from the server's settings)." })), ["command"]),
+        new("run_task", "Run one of the workspace's named tasks (they are listed in the workspace context: e.g. 'test', 'build', 'run'). Starts it if it isn't running, waits up to wait_seconds for it to finish and returns its state, exit code and the end of its output. A task that serves an app keeps running: you then get its status and the output so far. Calling it again for a running task doesn't restart it.",
+            Props(("name", new { type = "string", description = "The task's name." }),
+                  ("wait_seconds", new { type = "integer", description = "How long to wait for it to finish (1-120, default 60)." })), ["name"]),
     ];
 
     public async Task<(string Content, bool IsError)> ExecuteAsync(string name, JsonElement input, CancellationToken ct)
@@ -62,6 +73,7 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
                 "edit_file" => await EditFileAsync(ReqString(input, "path"), ReqString(input, "find"), ReqString(input, "replace"), ct),
                 "search_code" => await SearchAsync(ReqString(input, "query"), OptBool(input, "regex") ?? false, ct),
                 "run_command" => await RunCommandAsync(ReqString(input, "command"), OptInt(input, "timeout_seconds"), ct),
+                "run_task" => await RunTaskAsync(ReqString(input, "name"), OptInt(input, "wait_seconds"), ct),
                 _ => ($"Unknown tool '{name}'.", true),
             };
         }
@@ -80,6 +92,7 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
             "edit_file" => $"Editing {S("path")}",
             "search_code" => $"Searching for \"{S("query")}\"",
             "run_command" => "Running: " + Trim(S("command") ?? "", 120),
+            "run_task" => "Running task " + Trim(S("name") ?? "", 60),
             _ => name,
         };
     }
@@ -216,6 +229,15 @@ public sealed partial class WorkspaceAiTools(IWorkspaceBackend backend, string c
         sb.AppendLine();
         sb.Append(EditorAiPrompts.Untrusted("COMMAND OUTPUT", Trim(command, 80), r.Output.TrimEnd('\n'), EditorAiPrompts.NewBoundary()));
         return (sb.ToString(), r.TimedOut || r.ExitCode != 0);
+    }
+
+    private async Task<(string, bool)> RunTaskAsync(string name, int? waitSeconds, CancellationToken ct)
+    {
+        if (taskRunner == null || taskRunner.TaskNames.Count == 0) return ("This workspace has no tasks. The repository's .bytebench/workspace.yml defines them under 'tasks:'.", true);
+        if (!taskRunner.TaskNames.Contains(name, StringComparer.Ordinal)) return ($"There is no task named '{Trim(name, 60)}'. Tasks: {string.Join(", ", taskRunner.TaskNames)}.", true);
+        CommandVerbs.Add("task:" + Trim(name, 30));
+        var (status, output, failed) = await taskRunner.RunAsync(name, Math.Clamp(waitSeconds ?? 60, 1, 120), options.MaxOutputBytes, ct);
+        return (status + "\n" + EditorAiPrompts.Untrusted("TASK OUTPUT", name, output, EditorAiPrompts.NewBoundary()), failed);
     }
 
     // ---------- input parsing ----------

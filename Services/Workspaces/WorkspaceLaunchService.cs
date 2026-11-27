@@ -146,6 +146,16 @@ public sealed class WorkspaceLaunchService(WorkspaceService workspaces, IDbConte
                                                                      && (w.State == WorkspaceState.Starting || w.State == WorkspaceState.Running))
                 .OrderByDescending(w => w.CreatedAt).FirstOrDefaultAsync();
             if (live != null) return new LaunchResult(live, branch, created, true);
+            // A stopped workspace on that branch whose volumes were kept (checkout, installed dependencies, caches) is resumed, not recreated:
+            // the real start path (plan, volumes, tokens, limits) is WorkspaceService.ResumeAsync.
+            var stopped = await db.Workspaces.AsNoTracking().Where(w => w.OwnerId == userId && w.RepositoryId == repo.Id && w.Ref == branch && w.VolumesKept
+                                                                        && (w.State == WorkspaceState.Stopped || w.State == WorkspaceState.Failed))
+                .OrderByDescending(w => w.CreatedAt).FirstOrDefaultAsync();
+            if (stopped != null)
+            {
+                await workspaces.ResumeAsync(stopped.PublicId, userId);
+                return new LaunchResult(stopped, branch, created, true);
+            }
         }
         var ws = await workspaces.StartAsync(repo.Project.Key, repo.Slug, branch, source, userId);
         return new LaunchResult(ws, branch, created, false);

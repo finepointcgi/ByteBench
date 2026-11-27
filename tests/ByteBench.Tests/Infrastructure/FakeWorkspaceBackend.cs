@@ -34,16 +34,94 @@ public sealed class FakeWorkspaceBackend : IWorkspaceBackend, IDisposable
     public Upstream Server => upstream;
 
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) => Task.FromResult(DockerAvailable);
-    public Task<bool> ImageExistsAsync(string image, CancellationToken ct) => Task.FromResult(ImageExists);
+    /// <summary>Images that don't exist until built (toolchain images).</summary>
+    public HashSet<string> Missing { get; } = [];
+    public Task<bool> ImageExistsAsync(string image, CancellationToken ct) { lock (Missing) return Task.FromResult(ImageExists && !Missing.Contains(image)); }
 
-    public Task<int> BuildImageAsync(string contextDir, string image, Action<string> onLine, CancellationToken ct)
+    public List<(string Image, IReadOnlyDictionary<string, string>? Args)> Built { get; } = [];
+
+    public Task<int> BuildImageAsync(string contextDir, string image, Action<string> onLine, CancellationToken ct, IReadOnlyDictionary<string, string>? buildArgs = null)
     {
         onLine("fake build of " + image);
+        lock (Built) Built.Add((image, buildArgs));
+        lock (Missing) Missing.Remove(image);
         ImageExists = true;
         return Task.FromResult(0);
     }
 
     public Task<int> PullImageAsync(string image, Action<string> onLine, CancellationToken ct) => BuildImageAsync("", image, onLine, ct);
+
+    public List<string> Volumes { get; } = [];
+    public List<string> VolumesRemoved { get; } = [];
+    public List<(string Network, int WorkspaceId)> Networks { get; } = [];
+    public List<(string Container, string Network)> Connected { get; } = [];
+    public List<WorkspaceSidecarSpec> Sidecars { get; } = [];
+    public List<int> AuxiliaryRemoved { get; } = [];
+    public Dictionary<string, long> VolumeSizes { get; } = [];
+    public ConcurrentQueue<ExecCall> Streams { get; } = new();
+    private readonly ConcurrentDictionary<string, int> volumeOwner = new();
+
+    public Task CreateVolumeAsync(string name, int workspaceId, CancellationToken ct)
+    {
+        lock (Volumes) { if (!Volumes.Contains(name)) Volumes.Add(name); }
+        volumeOwner[name] = workspaceId;
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveVolumesAsync(IEnumerable<string> names, CancellationToken ct)
+    {
+        foreach (var n in names)
+        {
+            lock (Volumes) Volumes.Remove(n);
+            lock (VolumesRemoved) VolumesRemoved.Add(n);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<ManagedVolume>> ListVolumesAsync(CancellationToken ct)
+    {
+        lock (Volumes) return Task.FromResult<IReadOnlyList<ManagedVolume>>(Volumes.Select(v => new ManagedVolume(v, volumeOwner.TryGetValue(v, out var id) ? id : null, VolumeSizes.GetValueOrDefault(v, 1024))).ToList());
+    }
+
+    public Task CreateInternalNetworkAsync(string name, int workspaceId, CancellationToken ct)
+    {
+        lock (Networks) Networks.Add((name, workspaceId));
+        return Task.CompletedTask;
+    }
+
+    public Task ConnectNetworkAsync(string containerId, string network, CancellationToken ct)
+    {
+        lock (Connected) Connected.Add((containerId, network));
+        return Task.CompletedTask;
+    }
+
+    public Task<WorkspaceSidecarContainer> StartSidecarAsync(WorkspaceSidecarSpec spec, Action<string> onLine, CancellationToken ct)
+    {
+        onLine("fake pull of " + spec.Image);
+        lock (Sidecars) Sidecars.Add(spec);
+        return Task.FromResult(new WorkspaceSidecarContainer("s" + Interlocked.Increment(ref counter).ToString("D4") + new string('0', 59), "10.99.0." + (10 + Sidecars.Count)));
+    }
+
+    public Task RemoveAuxiliaryAsync(int workspaceId, CancellationToken ct)
+    {
+        lock (AuxiliaryRemoved) AuxiliaryRemoved.Add(workspaceId);
+        return Task.CompletedTask;
+    }
+
+    public Task<string> SidecarLogsAsync(string containerId, CancellationToken ct) => Task.FromResult("(fake sidecar log)");
+
+    /// <summary>Streaming exec: the script's output (split into lines) is delivered to the callback; otherwise like <see cref="ExecAsync"/>.</summary>
+    public List<(Func<ExecSpec, bool> When, Func<ExecSpec, Action<string>, CancellationToken, Task<ExecResult>> Run)> StreamScripts { get; } = [];
+
+    public async Task<ExecResult> ExecStreamAsync(string containerId, ExecSpec spec, Action<string> onLine, CancellationToken ct)
+    {
+        Streams.Enqueue(new ExecCall(containerId, spec));
+        foreach (var (when, run) in StreamScripts.ToList())
+            if (when(spec)) return await run(spec, onLine, ct);
+        var result = await ExecAsync(containerId, spec, ct);
+        foreach (var line in result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)) onLine(line);
+        return result;
+    }
 
     public Task<WorkspaceContainer> StartAsync(WorkspaceContainerSpec spec, CancellationToken ct)
     {

@@ -14,8 +14,8 @@ public class WorkspacePortsTests
     [Fact]
     public void Workspace_origins_are_read_with_their_workspace_and_port()
     {
-        Assert.Equal(new WorkspaceOrigin(WorkspaceOriginKind.Preview, 5173, Id), NavigationPolicy.ParseWorkspaceOrigin($"https://p5173-{Id}.bb.example.com/", Ctx));
-        Assert.Equal(new WorkspaceOrigin(WorkspaceOriginKind.Ide, null, Id), NavigationPolicy.ParseWorkspaceOrigin($"https://ide-{Id}.bb.example.com/x", Ctx));
+        Assert.Equal(new WorkspaceOrigin(WorkspaceKind.Preview, 5173, Id), NavigationPolicy.ParseWorkspaceOrigin($"https://p5173-{Id}.bb.example.com/", Ctx));
+        Assert.Equal(new WorkspaceOrigin(WorkspaceKind.Ide, null, Id), NavigationPolicy.ParseWorkspaceOrigin($"https://ide-{Id}.bb.example.com/x", Ctx));
     }
 
     [Theory]
@@ -135,5 +135,18 @@ public class WorkspacePortsTests
         Assert.True(WorkspacePorts.ServerSupportsPorts(["notifications", "workspace-ports"]));
         Assert.False(WorkspacePorts.ServerSupportsPorts(["notifications"]));
         Assert.False(WorkspacePorts.ServerSupportsPorts(null));
+    }
+
+    [Fact]
+    public void An_opened_port_is_a_top_level_preview_that_the_workspace_bar_can_go_back_from()
+    {
+        var url = Entry($"p5173-{Id}");
+        Assert.Equal(WorkspaceKind.Preview, NavigationPolicy.WorkspaceKindOf(url, Ctx));
+        // Loaded top-level (from the app's menu, not framed by a ByteBench page), so the frame-promotion rule has nothing to do with it...
+        Assert.False(NavigationPolicy.ShouldPromoteFrame(url, url, Ctx));
+        // ...and Back from the preview returns to the ByteBench page it was opened from (a different host), not to the workspace's own pages.
+        var back = new List<string> { "https://bb.example.com/workspaces", $"https://bb.example.com/workspaces/{Id}" };
+        Assert.Equal(1, NavigationPolicy.WorkspaceBackSteps($"https://p5173-{Id}.bb.example.com/", back, null));
+        Assert.Null(NavigationPolicy.WorkspaceBackSteps(url, [], null));
     }
 }

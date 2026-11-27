@@ -13,7 +13,7 @@ namespace ByteBench.Tests;
 [Trait("Category", "Docker")]
 public sealed class WorkspaceDockerTests : IAsyncLifetime
 {
-    private static readonly string Image = Environment.GetEnvironmentVariable("BYTEBENCH_WORKSPACE_IMAGE") is { Length: > 0 } e ? e : "bytebench-workspace:1";
+    private static readonly string Image = Environment.GetEnvironmentVariable("BYTEBENCH_WORKSPACE_IMAGE") is { Length: > 0 } e ? e : "bytebench-workspace:2";
 
     private static readonly Lazy<bool> Ready = new(() =>
     {
@@ -164,6 +164,65 @@ public sealed class WorkspaceDockerTests : IAsyncLifetime
         // The process inside the container was really stopped, not just abandoned by the docker CLI.
         await Task.Delay(500);
         Assert.DoesNotContain("sleep 60", (await Sh(id, "ps -eo args")).Output);
+    }
+
+    [Fact]
+    public void Docker_sizes_are_parsed()
+    {
+        Assert.Equal(0, DockerWorkspaceBackend.ParseSize("0B"));
+        Assert.Equal(1_500_000_000, DockerWorkspaceBackend.ParseSize("1.5GB"));
+        Assert.Equal(300_000, DockerWorkspaceBackend.ParseSize("300kB".ToUpperInvariant().Replace("KB", "kB")));
+        Assert.Null(DockerWorkspaceBackend.ParseSize("n/a"));
+    }
+
+    [WorkspaceDockerFact]
+    public async Task Volumes_are_writable_by_the_workspace_user_survive_the_container_and_are_removed_on_request()
+    {
+        var work = "bb-wsv-test-" + Guid.NewGuid().ToString("N")[..8] + "-work";
+        var cache = work.Replace("-work", "-cache");
+        await backend.CreateVolumeAsync(work, 990_002, CancellationToken.None);
+        await backend.CreateVolumeAsync(cache, 990_002, CancellationToken.None);
+        try
+        {
+            WorkspaceContainerSpec Spec() => new(990_002, "bb-ws-test-" + Guid.NewGuid().ToString("N")[..10], Image, "bytebench-workspaces-test", "host.docker.internal", 3000,
+                new Dictionary<string, string>(), new WorkspaceLimits("1g", "1", 512, null)) { Mounts = [new(work, "/workspace"), new(cache, "/home/coder/.bbcache")] };
+            container = await backend.StartAsync(Spec(), CancellationToken.None);
+            var id = container.ContainerId;
+            await backend.WaitUntilWaitingAsync(id, CancellationToken.None);
+            var write = await Sh(id, "mkdir -p /workspace/app/node_modules/x && echo kept > /workspace/app/node_modules/x/f && echo cached > /home/coder/.bbcache/c && id -u");
+            Assert.True(write.Ok, write.Output);
+            await backend.RemoveAsync(id, CancellationToken.None);
+
+            container = await backend.StartAsync(Spec(), CancellationToken.None);
+            await backend.WaitUntilWaitingAsync(container.ContainerId, CancellationToken.None);
+            var read = await Sh(container.ContainerId, "cat /workspace/app/node_modules/x/f /home/coder/.bbcache/c");
+            Assert.Equal("kept\ncached", read.Output.Trim());
+
+            var listed = await backend.ListVolumesAsync(CancellationToken.None);
+            Assert.Contains(listed, v => v.Name == work && v.WorkspaceId == 990_002);
+            await backend.RemoveAsync(container.ContainerId, CancellationToken.None);
+            container = null;
+            await backend.RemoveVolumesAsync([work, cache], CancellationToken.None);
+            Assert.DoesNotContain(await backend.ListVolumesAsync(CancellationToken.None), v => v.Name == work || v.Name == cache);
+        }
+        finally { await backend.RemoveVolumesAsync([work, cache], CancellationToken.None); }
+    }
+
+    [WorkspaceDockerFact]
+    public async Task A_streamed_task_is_ended_with_its_whole_process_tree_by_the_stop_script()
+    {
+        var id = await StartAsync();
+        var tasks = new WorkspaceTasks(backend, Microsoft.Extensions.Options.Options.Create(new WorkspaceOptions()) is var o ? new StaticOptions(o.Value) : null!, NullLogger<WorkspaceTasks>.Instance);
+        var live = new LiveWorkspace(1, "abcdefghijklmnopqrst", 1, id, 0, 3000, "t");
+        var session = new WorkspaceSession(1) { Env = WorkspaceEnvFile.ParseYaml("tasks:\n  loop: \"(sleep 300 &) ; echo go-$((6*7)); sleep 300\"\n").Environment! };
+        var run = tasks.Start(live, session, "/workspace", "loop", out _);
+        for (var i = 0; i < 50 && !run.Log.Text().Contains("go-42"); i++) await Task.Delay(100);
+        Assert.Contains("go-42", run.Log.Text());
+        Assert.Contains("sleep 300", (await Sh(id, "ps -eo args")).Output);
+        Assert.True(await tasks.StopAsync(live, session, "loop"));
+        Assert.Equal(TaskState.Stopped, run.State);
+        await Task.Delay(500);
+        Assert.DoesNotContain("sleep 300", (await Sh(id, "ps -eo args")).Output); // the child and the grandchild too
     }
 
     [WorkspaceDockerFact]

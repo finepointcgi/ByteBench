@@ -7,8 +7,10 @@ namespace ByteBench.Api;
 
 public record EditorConnectRequest(string? PublicKey = null);
 
+/// <param name="Listening">Something is listening now; false for a port the environment file or a task declares that hasn't started yet.</param>
+/// <param name="Task">The environment task that serves this port (its preview), if any.</param>
 /// <param name="Origin">Where the port is served: <c>http://p3000-{id}.localhost:5108</c> (its own origin), or a path on ByteBench's origin in shared-origin mode. Opening it needs a ticket: see the open endpoint.</param>
-public record WorkspacePortDto(int Port, string? Origin);
+public record WorkspacePortDto(int Port, string? Origin, bool Listening = true, string? Task = null);
 
 /// <param name="Url">Single-use (60 s) entry URL on the port's origin: open it right away, never store or share it.</param>
 public record WorkspacePortOpenDto(int Port, string Url, string? Origin, int ExpiresInSeconds);
@@ -158,7 +160,12 @@ public static class WorkspaceExtrasEndpoints
     {
         await Mine(workspaces, caller, id);
         var mainBase = new Uri(Base(http) + "/");
-        return (await workspaces.ListeningPortsAsync(id, caller.Id)).Select(p => new WorkspacePortDto(p, PortOrigin(urls, mainBase, id, p))).ToList();
+        // The same data the workspace page's Preview menu uses: sockets that are listening, plus the ports the environment file and its tasks declare.
+        var listening = await workspaces.ListeningPortsAsync(id, caller.Id);
+        var env = await workspaces.GetEnvironmentAsync(id, caller.Id);
+        var tasks = env.Tasks.Where(t => t.Port is not null).GroupBy(t => t.Port!.Value).ToDictionary(g => g.Key, g => g.First().Name);
+        return listening.Concat(env.Ports).Concat(tasks.Keys).Where(p => p is >= 1 and <= 65535).Distinct().Order()
+            .Select(p => new WorkspacePortDto(p, PortOrigin(urls, mainBase, id, p), listening.Contains(p), tasks.GetValueOrDefault(p))).ToList();
     }
 
     private static async Task<WorkspacePortOpenDto> OpenPort(HttpContext http, ApiCaller caller, WorkspaceService workspaces, WorkspaceUrls urls, string id, string port)

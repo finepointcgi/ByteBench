@@ -9,6 +9,7 @@
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@using Microsoft.Extensions.Options
 
 <PageTitle>@(view?.RepositoryPath ?? "Workspace") · ByteBench</PageTitle>
 
@@ -19,8 +20,20 @@
 else
 {
     var ws = view.Workspace;
+    var full = fullscreen && ws.State == WorkspaceState.Running;
+    @* Full screen is a fixed layer over the whole viewport (above ByteBench's app bar and menu), so it needs no browser fullscreen API and works in embedded views. *@
+    @if (full)
+    {
+        @* ByteBench's app bar and menu are hidden (not just covered) and the page can't scroll while the IDE has the screen. *@
+        <style>.mud-appbar, .mud-drawer, .mud-drawer-overlay { display: none !important; } html, body { overflow: hidden !important; }</style>
+    }
+    <div class="ws-page @(full ? "ws-full" : "")" data-testid="ws-page" data-fullscreen="@(full ? "true" : "false")">
     <div class="ws-bar">
         <div class="ws-title">
+            @if (full)
+            {
+                <MudButton Href="@($"/p/{view.ProjectKey}/repos/{view.RepoSlug}")" Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" data-testid="ws-back">Back</MudButton>
+            }
             <MudText Typo="Typo.subtitle1" HtmlTag="h1"><b>@view.RepositoryPath</b> <span class="mono">@ws.Ref</span></MudText>
             <MudChip T="string" Size="Size.Small" Color="@StateColor()" data-testid="ws-state">@ws.State</MudChip>
             @if (!ws.CanPush) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">read-only</MudChip> }
@@ -29,18 +42,20 @@ else
             @if (ws.State == WorkspaceState.Running)
             {
                 <WorkspaceGitBar PublicId="@PublicId" Ref="@ws.Ref" />
-                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Laptop" OnClick="OpenEditorPanel" data-testid="ws-editor">Open in local editor</MudButton>
+                <MudTooltip Text="Open in your own editor (VS Code, JetBrains Gateway)">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Laptop" Size="Size.Small" OnClick="OpenEditorPanel" aria-label="Open in local editor" data-testid="ws-editor" />
+                </MudTooltip>
                 <MudMenu Label="Preview" Dense="true" StartIcon="@Icons.Material.Outlined.Preview" Size="Size.Small" Variant="Variant.Outlined" data-testid="ws-preview-menu">
                     @if (ports == null) { <MudMenuItem Disabled="true">Looking for ports…</MudMenuItem> }
-                    else if (ports.Count == 0) { <MudMenuItem Disabled="true">Nothing is listening yet. Start your app in the terminal.</MudMenuItem> }
-                    else foreach (var p in ports)
+                    else if (AllPorts().Count == 0) { <MudMenuItem Disabled="true">Nothing is listening yet. Start your app in the terminal, or run a task.</MudMenuItem> }
+                    else foreach (var p in AllPorts())
                     {
                         var port = p;
-                        <MudMenuItem OnClick="() => OpenPreview(port)">Port @port</MudMenuItem>
+                        <MudMenuItem OnClick="() => OpenPreview(port)">Port @port@(ports!.Contains(port) ? "" : " (not listening yet)")</MudMenuItem>
                     }
                 </MudMenu>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.PlayArrow" OnClick="() => showTasks = !showTasks" data-testid="ws-tasks-toggle">Tasks@(RunningCount() > 0 ? $" ({RunningCount()} running)" : "")</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="() => showAi = !showAi" data-testid="ws-ai-toggle">AI</MudButton>
-                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CallSplit" OnClick="OpenCommit" data-testid="ws-commit">Commit &amp; push</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.OpenInNew" OnClick="OpenIdeTab">New tab</MudButton>
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.RestartAlt" OnClick="Restart" data-testid="ws-restart">Restart</MudButton>
             }
@@ -48,18 +63,50 @@ else
             {
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Stop" OnClick="Stop" data-testid="ws-stop">Stop</MudButton>
             }
+            @if (ws.State == WorkspaceState.Running)
+            {
+                <MudTooltip Text="@(fullscreen ? "Leave full screen (show ByteBench's menu)" : "Full screen")">
+                    <MudIconButton Icon="@(fullscreen ? Icons.Material.Outlined.FullscreenExit : Icons.Material.Outlined.Fullscreen)" Size="Size.Small" OnClick="() => fullscreen = !fullscreen"
+                                   aria-label="@(fullscreen ? "Leave full screen" : "Enter full screen")" data-testid="ws-fullscreen-toggle" />
+                </MudTooltip>
+            }
         </div>
     </div>
 
     @if (ws.State == WorkspaceState.Starting)
     {
-        <MudPaper Outlined="true" Class="pa-5 mt-3" Style="max-width:640px">
+        <MudPaper Outlined="true" Class="pa-5 mt-3" Style="max-width:760px">
             <MudProgressLinear Indeterminate="true" Class="mb-3" />
-            Starting the container, locking down its network and checking out <span class="mono">@ws.Ref</span>… This takes a moment.
+            Starting the container, locking down its network and checking out <span class="mono">@ws.Ref</span>… This takes a moment@(ws.EnvironmentSummary is { Length: > 0 } es && es != "default image" ? $" (environment: {es}; the first start of a toolchain builds its image)" : "").
+            @if (env is { ProvisionLog.Length: > 0 }) { <pre class="mono ws-log" data-testid="ws-provision-log">@env.ProvisionLog</pre> }
         </MudPaper>
     }
     else if (ws.State == WorkspaceState.Running)
     {
+        <div class="ws-notices">
+        @if (env != null)
+        {
+            foreach (var e in env.Errors)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-1" data-testid="ws-env-error">@e</MudAlert>
+            }
+            @if (env.Errors.Count > 0) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-1">The environment file wasn't used; this workspace has the default setup. Edit the file, then <MudLink OnClick="ReloadEnv">reload the environment</MudLink>.</MudAlert> }
+            foreach (var w in env.Warnings.Where(w => !w.StartsWith("Environment file:", StringComparison.Ordinal) && !w.Contains("was not used because", StringComparison.Ordinal)))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-1" data-testid="ws-warning">@w</MudAlert>
+            }
+            @if (env.SetupState == "Failed")
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-1" data-testid="ws-setup-failed">
+                    @env.SetupMessage <MudLink OnClick="() => showTasks = true">Show the setup log</MudLink> · <MudLink OnClick="RerunSetup">Run setup again</MudLink>
+                </MudAlert>
+            }
+            else if (env.SetupState is "Running" or "Pending")
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-1" data-testid="ws-setup-running"><MudProgressLinear Indeterminate="true" Size="Size.Small" Class="mb-1" />Setup is running (installing dependencies…). <MudLink OnClick="() => showTasks = true">Show the log</MudLink></MudAlert>
+            }
+        }
+        </div>
         <div class="ws-body">
             @if (ideUrl != null)
             {
@@ -72,6 +119,49 @@ else
                         <MudIconButton Icon="@Icons.Material.Outlined.OpenInNew" Size="Size.Small" OnClick="OpenPreviewTab" aria-label="Open the preview in a new tab" />
                         <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" OnClick="() => previewUrl = null" aria-label="Close the preview" /></div>
                     <iframe class="ws-frame" src="@previewUrl" title="Preview" data-testid="ws-preview"></iframe>
+                </div>
+            }
+            @if (showTasks && env != null)
+            {
+                <div class="ws-side ws-tasks" data-testid="ws-tasks-panel">
+                    <div class="ws-side-head"><b>Tasks &amp; setup</b><span class="flex-grow-1"></span>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Refresh" Size="Size.Small" OnClick="ReloadEnv" aria-label="Reload the environment file" title="Reload .bytebench/workspace.yml" />
+                        <MudIconButton Icon="@Icons.Material.Outlined.Close" Size="Size.Small" OnClick="() => showTasks = false" aria-label="Close tasks" /></div>
+                    <div class="ws-tasks-body">
+                        <div class="mud-text-secondary" style="font-size:12px" data-testid="ws-env-summary">Environment: @env.Summary@(env.Services.Count > 0 ? " · services: " + string.Join(", ", env.Services) : "")</div>
+                        @if (env.SetupState is not "None")
+                        {
+                            <div class="ws-task" data-testid="ws-setup">
+                                <div class="ws-task-head"><b>Setup</b>
+                                    <MudChip T="string" Size="Size.Small" Color="@SetupColor(env.SetupState)" data-testid="ws-setup-state">@SetupLabel(env.SetupState)</MudChip>
+                                    <span class="flex-grow-1"></span>
+                                    @if (env.SetupState is not ("Running" or "Pending")) { <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="RerunSetup">Run again</MudButton> }
+                                </div>
+                                @if (env.SetupMessage != null) { <div class="mud-text-secondary" style="font-size:12px">@env.SetupMessage</div> }
+                                @if (env.SetupLog.Length > 0) { <pre class="mono ws-log" data-testid="ws-setup-log">@env.SetupLog</pre> }
+                            </div>
+                        }
+                        @if (env.Tasks.Count == 0)
+                        {
+                            <div class="mud-text-secondary" style="font-size:13px">No tasks. Define them under <code>tasks:</code> in <code>.bytebench/workspace.yml</code>.</div>
+                        }
+                        @foreach (var t in env.Tasks)
+                        {
+                            var task = t;
+                            <div class="ws-task" data-testid="@($"ws-task-{task.Name}")">
+                                <div class="ws-task-head"><b>@task.Name</b>
+                                    <MudChip T="string" Size="Size.Small" Color="@TaskColor(task.State)" data-testid="ws-task-state">@task.State</MudChip>
+                                    @if (task.ExitCode is { } exitCode && task.State != "Running") { <span class="mud-text-secondary" style="font-size:12px">exit @exitCode</span> }
+                                    <span class="flex-grow-1"></span>
+                                    @if (task.Port is { } p) { <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => OpenPreview(p)" data-testid="ws-task-open">:@p</MudButton> }
+                                    @if (task.State == "Running") { <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" OnClick="() => StopTask(task.Name)" data-testid="ws-task-stop">Stop</MudButton> }
+                                    else { <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="() => RunTask(task.Name)" data-testid="ws-task-run">Run</MudButton> }
+                                </div>
+                                <div class="mono mud-text-secondary" style="font-size:12px">@task.Command</div>
+                                @if (taskLogs.TryGetValue(task.Name, out var tl) && tl.Length > 0) { <pre class="mono ws-log" data-testid="ws-task-log">@tl</pre> }
+                            </div>
+                        }
+                    </div>
                 </div>
             }
             @if (showAi)
@@ -107,11 +197,19 @@ else
     }
     else
     {
-        <MudAlert Severity="@(ws.State == WorkspaceState.Failed ? Severity.Error : Severity.Info)" Class="mt-3" Style="max-width:720px">
+        <MudAlert Severity="@(ws.State == WorkspaceState.Failed ? Severity.Error : Severity.Info)" Class="mt-3" Style="max-width:760px">
             This workspace is @ws.State.ToString().ToLowerInvariant()@(ws.StopReason != null ? $" ({ws.StopReason})" : "")@(ws.Error != null ? ": " + ws.Error : ".")
+            @if (ws.VolumesKept)
+            {
+                <span> Its files and installed dependencies are kept; resume it to carry on where you stopped (they are deleted after @RetentionDays() days).</span>
+                <MudButton OnClick="Resume" Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Class="ml-3" data-testid="ws-resume">Resume</MudButton>
+                <MudButton OnClick="DeleteWorkspace" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Class="ml-1" data-testid="ws-delete">Delete</MudButton>
+            }
             <MudButton Href="@($"/p/{view.ProjectKey}/repos/{view.RepoSlug}/workspace?ref={Uri.EscapeDataString(ws.Ref)}")" Size="Size.Small" Variant="Variant.Outlined" Class="ml-3">Start a new one</MudButton>
         </MudAlert>
+        @if (env is { ProvisionLog.Length: > 0 } && ws.State == WorkspaceState.Failed) { <pre class="mono ws-log" style="max-width:760px" data-testid="ws-provision-log">@env.ProvisionLog</pre> }
     }
+    </div>
 }
 
 @code {
@@ -129,6 +227,85 @@ else
     private PeriodicTimer? timer;
     private WorkspaceState? lastState;
     private CancellationTokenSource? aiCts;
+    private WorkspaceService.WorkspaceEnvironmentView? env;
+    private bool showTasks, tasksShownOnce;
+    /// <summary>Full screen is the default while the workspace runs: the IDE gets the whole viewport under one slim bar.</summary>
+    private bool fullscreen = true;
+    private readonly Dictionary<string, string> taskLogs = [];
+    private readonly HashSet<string> autoPreviewed = [];
+    [Inject] private IOptionsMonitor<WorkspaceOptions> WsOptions { get; set; } = null!;
+
+    private int RetentionDays() => WsOptions.CurrentValue.VolumeRetentionDays;
+    private int RunningCount() => env?.Tasks.Count(t => t.State == "Running") ?? 0;
+    private List<int> AllPorts() => (ports ?? []).Concat(env?.Ports ?? []).Distinct().Order().ToList();
+
+    private static Color SetupColor(string s) => s switch { "Succeeded" or "UpToDate" => Color.Success, "Failed" => Color.Error, _ => Color.Info };
+    private static string SetupLabel(string s) => s switch { "UpToDate" => "up to date", "Pending" => "waiting", _ => s.ToLowerInvariant() };
+    private static Color TaskColor(string s) => s switch { "Running" => Color.Info, "Succeeded" => Color.Success, "Failed" => Color.Error, _ => Color.Default };
+
+    /// <summary>Environment, setup output and the logs of tasks that have run: refreshed with the page's poll while the workspace is starting or running.</summary>
+    private async Task RefreshEnvAsync()
+    {
+        if (view == null || view.Workspace.State is not (WorkspaceState.Starting or WorkspaceState.Running or WorkspaceState.Failed)) return;
+        try
+        {
+            env = await Workspaces.GetEnvironmentAsync(PublicId, Me.Id);
+            if (view.Workspace.State != WorkspaceState.Running) return;
+            if (!tasksShownOnce && (env.Tasks.Count > 0 || env.SetupState is not "None")) { tasksShownOnce = true; showTasks = true; } // the panel opens by itself once, when there is something to show
+            foreach (var t in env.Tasks.Where(t => t.State != "Idle"))
+            {
+                var (lines, _, _) = await Workspaces.TaskLogAsync(PublicId, Me.Id, t.Name, 0, 200);
+                taskLogs[t.Name] = string.Join('\n', lines);
+                // A task marked preview: true opens the preview beside the IDE once its port is listening.
+                if (t.Preview && t.Port is { } p && t.State == "Running" && ports?.Contains(p) == true && autoPreviewed.Add($"{t.Name}@{t.StartedAt:O}") && previewUrl == null)
+                    await OpenPreview(p);
+            }
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task RunTask(string name)
+    {
+        try { await Workspaces.RunTaskAsync(PublicId, Me.Id, name); await RefreshEnvAsync(); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
+    private async Task StopTask(string name)
+    {
+        try { await Workspaces.StopTaskAsync(PublicId, Me.Id, name); await RefreshEnvAsync(); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
+    private async Task RerunSetup()
+    {
+        try { await Workspaces.RerunSetupAsync(PublicId, Me.Id); await RefreshEnvAsync(); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
+    private async Task ReloadEnv()
+    {
+        try
+        {
+            var errors = await Workspaces.ReloadEnvironmentAsync(PublicId, Me.Id);
+            Snackbar.Add(errors.Count == 0 ? "Environment reloaded." : "The environment file has problems (shown on the page).", errors.Count == 0 ? Severity.Success : Severity.Warning);
+            await RefreshEnvAsync();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
+    private async Task Resume()
+    {
+        try { await Workspaces.ResumeAsync(PublicId, Me.Id); lastState = null; await RefreshAsync(); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task DeleteWorkspace()
+    {
+        var ok = await Dialogs.ShowMessageBoxAsync("Delete this workspace?", "Its saved files and installed dependencies are deleted for good. Push what you want to keep first.", yesText: "Delete", cancelText: "Cancel");
+        if (ok != true) return;
+        try { await Workspaces.DeleteAsync(PublicId, Me.Id); Nav.NavigateTo("/workspaces"); }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -146,6 +323,7 @@ else
             {
                 await RefreshAsync();
                 if (view?.Workspace.State == WorkspaceState.Running && ++tick % 3 == 1) await LoadPorts(); // the Preview menu's ports, every ~6 s
+                await RefreshEnvAsync();
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -199,7 +377,7 @@ else
     private async Task Stop()
     {
         var ok = await Dialogs.ShowMessageBoxAsync("Stop this workspace?",
-            "The container and everything in it is deleted. Push the work you want to keep first.", yesText: "Stop and delete", cancelText: "Cancel");
+            $"The container and its running processes end. Your files and installed dependencies are kept for {RetentionDays()} days so you can resume; push the work you want to keep anyway.", yesText: "Stop", cancelText: "Cancel");
         if (ok != true) return;
         try { await Workspaces.StopAsync(PublicId, Me.Id); Snackbar.Add("Workspace stopped.", Severity.Success); }
         catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Error); }
