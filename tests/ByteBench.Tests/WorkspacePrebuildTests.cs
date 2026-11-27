@@ -227,7 +227,8 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
 
         // A build is running; two more pushes arrive: the older queued one never starts.
         using var gate = new ManualResetEventSlim();
-        (Func<ExecSpec, bool>, Func<ExecSpec, ExecResult>) blocker = (s => s.Command.SequenceEqual(["sh", "-c", "make build"]), _ => { gate.Wait(TimeSpan.FromSeconds(20)); return new ExecResult(0, "ok"); });
+        using var entered = new ManualResetEventSlim();
+        (Func<ExecSpec, bool>, Func<ExecSpec, ExecResult>) blocker = (s => s.Command.SequenceEqual(["sh", "-c", "make build"]), _ => { entered.Set(); gate.Wait(TimeSpan.FromSeconds(20)); return new ExecResult(0, "ok"); });
         app.Backend.ExecScripts.Add(blocker);
         try
         {
@@ -237,7 +238,7 @@ public class WorkspacePrebuildTests(WorkspaceApp app) : IClassFixture<WorkspaceA
                 s.Get<PushCapture>().SetRefs([new PushedRef(PushedRef.ZeroSha, sha1, "refs/heads/main")]);
                 foreach (var l in s.Get<IEnumerable<IGitPushListener>>().OfType<PrebuildPushListener>()) await l.OnPushAsync(repo.Id, app.UserId("alice"), default);
             }
-            await Task.Delay(300); // the worker is now blocked inside build #3
+            Assert.True(await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(30))), "the worker never reached build #3"); // it is now blocked inside build #3
             var sha2 = app.Commit(repo, "main", "a.txt", "2");
             var sha3 = app.Commit(repo, "main", "a.txt", "3");
             await Service.EnqueueAsync(repo.Id, "main", sha2, "push", app.UserId("alice"));

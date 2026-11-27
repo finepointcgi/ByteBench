@@ -224,7 +224,7 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         var seconds = Math.Max(1, (int)Math.Ceiling(spec.Timeout.TotalSeconds));
         var args = new List<string> { "exec" };
         if (spec.Stdin != null) args.Add("-i");
-        args.AddRange(["-u", spec.User == "bbai" ? "1001:1000" : "1000:1000"]);
+        args.AddRange(["-u", ExecSpec.UserSpec(spec.User)]);
         if (spec.WorkDir != null) args.AddRange(["-w", spec.WorkDir]);
         if (spec.Env != null) foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
         args.AddRange([containerId, "timeout", "-k", "3", seconds.ToString(), .. spec.Command]);

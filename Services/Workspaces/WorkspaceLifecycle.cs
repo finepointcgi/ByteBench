@@ -66,7 +66,7 @@ public sealed class WorkspaceAudit(IServiceScopeFactory scopes)
 /// </summary>
 public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> dbFactory, IWorkspaceBackend backend, WorkspaceRuntime runtime,
     IOptionsMonitor<WorkspaceOptions> options, WorkspaceAudit audit, WorkspaceUrls urls, IServer server, WorkspaceEgress egress, WorkspaceShareStore shares, WorkspaceImage image, WorkspaceSecretStore secretStore,
-    SubmoduleResolver submodules, WorkspaceTasks tasks, Api.PublicBaseUrl publicBase, ILogger<WorkspaceLifecycle> log)
+    SubmoduleResolver submodules, WorkspaceTasks tasks, WorkspaceCollaborators collaborators, Api.PublicBaseUrl publicBase, ILogger<WorkspaceLifecycle> log)
 {
     /// <summary>The IDE's port inside the container. Deliberately unusual: 3000, 5000 and 8080 are what the apps people run there want.</summary>
     public const int IdePort = 13370;
@@ -214,6 +214,8 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
 
             if (!await StillStartingAsync(db, ws)) { await RemoveQuietlyAsync(containerId); return; } // stopped while starting
 
+            // The setup state is set before the workspace shows as Running: a task started the moment it opens must see "setup pending" and be refused.
+            session.Setup = plan.Env.Setup.Count > 0 ? SetupState.Pending : SetupState.None;
             ws.State = WorkspaceState.Running;
             ws.StartedAt = DateTime.UtcNow;
             ws.LastActivityAt = DateTime.UtcNow;
@@ -231,9 +233,8 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
             });
 
             // The repository's setup commands run now, in the background: the IDE is already usable and the output is on the page.
-            session.Setup = plan.Env.Setup.Count > 0 ? SetupState.Pending : SetupState.None;
             if (plan.Env.Setup.Count > 0)
-                runtime.Track(Task.Run(() => tasks.RunSetupAsync(live, session, WorkDir(ws.Repository.Slug), session.Lifetime.Token)));
+                runtime.TrackSetup(ws.Id, Task.Run(() => tasks.RunSetupAsync(live, session, WorkDir(ws.Repository.Slug), session.Lifetime.Token)));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -297,6 +298,8 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         var secrets = await secretStore.ResolveAsync(ws.OwnerId, ws.RepositoryId, includeRepository: ws.CanPush, ct);
         session.Redactor.SetValues(secrets.Values);
         var file = WorkspaceTasks.BuildEnvFile(plan.Env.Env, secrets);
+        // The developer's home is private to the developer: collaborators have their own OS user (in the same group) and must not read ~/.bb-env, the git credential or the IDE token.
+        await RunOrThrowAsync(containerId, new ExecSpec(["chmod", "700", "/home/coder"]), "securing the home directory", ct);
         await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c", "umask 077; cat > \"$HOME/.bb-env\""]) { Stdin = file }, "storing the environment", ct);
         if (secrets.Count > 0)
             await audit.RecordAsync(WorkspaceAuditActions.SecretInjected, ws, ws.OwnerId, new { names = secrets.Keys.Order(StringComparer.Ordinal).ToList(), count = secrets.Count });
@@ -516,11 +519,13 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
                 await ApplyEgressAsync(containerId, ws.Image, ws.EgressMode, ct, session.EgressAllow);
                 await WriteTokenAndStartAsync(containerId, live.ConnectionToken, ct);
                 await WaitHealthyAsync(containerId, ct);
+                var restarted = new LiveWorkspace(ws.Id, ws.PublicId, ws.OwnerId, containerId, container.IdeHostPort, IdePort, live.ConnectionToken);
+                await collaborators.RestoreAsync(restarted, ct); // the restart ended their IDE servers; their homes and credentials survived
                 ws.PortMapJson = JsonSerializer.Serialize(new Dictionary<string, int> { [IdePort.ToString()] = container.IdeHostPort });
                 ws.State = WorkspaceState.Running;
                 ws.LastActivityAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(CancellationToken.None);
-                runtime.Register(new LiveWorkspace(ws.Id, ws.PublicId, ws.OwnerId, containerId, container.IdeHostPort, IdePort, live.ConnectionToken));
+                runtime.Register(restarted);
                 await audit.RecordAsync("workspace.restarted", ws, actorId);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)

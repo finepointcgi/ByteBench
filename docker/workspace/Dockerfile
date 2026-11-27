@@ -57,7 +57,14 @@ RUN set -eu; \
     # bbai: the user ByteBench's AI assistant runs its commands as. Same group as coder (files are group-writable, see umask 002),
     # but it can't read coder's git credentials (mode 600) or ~/.gitconfig.
     useradd -m -u 1001 -g 1000 -s /bin/bash bbai; \
+    # bbc1..bbc10: one OS user per invited collaborator (uid 2001..2010, primary group coder). ByteBench runs a collaborator's own OpenVSCode server
+    # as one of them (bb-collab-ide), so their terminal is theirs: the shared /workspace is reachable through the group, everything else of the
+    # developer's (home, ~/.bb-env, ~/.git-credentials, the IDE token) is not. Every home is mode 700, including coder's and bbai's.
+    for i in 1 2 3 4 5 6 7 8 9 10; do useradd -m -u $((2000 + i)) -g 1000 -s /bin/bash "bbc$i"; chmod 700 "/home/bbc$i"; done; \
+    chmod 700 /home/coder /home/bbai; \
     git config --system safe.directory '*'; \
+    # Objects and refs git writes stay group-writable, so the developer and the collaborators can all commit in the same checkout.
+    git config --system core.sharedRepository group; \
     git config --system init.defaultBranch main; \
     # Mount points of ByteBench's named volumes (project and dependency caches). They must exist and belong to coder so a fresh volume
     # is writable by the unprivileged user.
@@ -66,6 +73,7 @@ RUN set -eu; \
 COPY --chmod=755 bb-entrypoint.sh /usr/local/bin/bb-entrypoint
 COPY --chmod=755 bb-apply-egress.sh /usr/local/bin/bb-apply-egress
 COPY --chmod=755 bb-healthcheck.sh /usr/local/bin/bb-healthcheck
+COPY --chmod=755 bb-collab-ide.sh /usr/local/bin/bb-collab-ide
 
 USER 1000:1000
 WORKDIR /workspace

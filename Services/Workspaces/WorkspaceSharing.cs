@@ -9,6 +9,33 @@ namespace ByteBench.Services.Workspaces;
 /// <summary>What someone may do in a workspace. Ordered: each role includes the one before.</summary>
 public enum WorkspaceRole { None = 0, Viewer = 1, Collaborator = 2, Owner = 3 }
 
+/// <summary>
+/// What a collaborator has inside the container: the OS user <c>bbc{Slot}</c> (own home, no access to the owner's), their own OpenVSCode server on
+/// loopback port <see cref="Port"/> with its own connection token, and, only when the owner ticked "may push", their own git credential.
+/// Held in memory like the rest of the sharing state: shares end with the workspace.
+/// </summary>
+public sealed class CollaboratorSession(int workspaceId, int slot, int userId, string userName, string containerId, string workDir)
+{
+    public int WorkspaceId { get; } = workspaceId;
+    public const int BasePort = 13400;
+    public const int MaxSlots = WorkspaceSharingService.MaxSharesPerWorkspace;
+    public int Slot { get; } = slot;
+    public int Port => BasePort + Slot;
+    public string OsUser => "bbc" + Slot;
+    public int UserId { get; } = userId;
+    public string UserName { get; } = userName;
+    public string ContainerId { get; } = containerId;
+    public string WorkDir { get; } = workDir;
+    /// <summary>Plaintext only here: it is written to the person's mode-600 token file and injected by the proxy; the browser never sees it.</summary>
+    public string ConnectionToken { get; } = WorkspaceTokens.NewConnectionToken();
+    public string? DisplayName { get; set; }
+    public string? Email { get; set; }
+    public bool AllowPush { get; set; }
+    /// <summary>The credential line (<c>scheme://user:token@host</c>) in this person's <c>~/.git-credentials</c>; null when they may not push.</summary>
+    public string? GitCredential { get; set; }
+    public byte[]? GitTokenHash { get; set; }
+}
+
 /// <summary>A person seen in a workspace (a proxied request in the last minute and a half, or an open IDE connection).</summary>
 public sealed record WorkspacePresence(int UserId, DateTime LastSeen, int OpenConnections);
 
@@ -27,6 +54,8 @@ public sealed class WorkspaceAccessRegistry
 
     private readonly ConcurrentDictionary<int, ConcurrentDictionary<int, WorkspaceShareRole>> shares = new();
     private readonly ConcurrentDictionary<(int Workspace, int User), Presence> presence = new();
+    private readonly ConcurrentDictionary<(int Workspace, int User), CollaboratorSession> collaborators = new();
+    private readonly object slotLock = new();
 
     public static readonly TimeSpan PresenceWindow = TimeSpan.FromSeconds(90);
 
@@ -40,7 +69,40 @@ public sealed class WorkspaceAccessRegistry
 
     public void Grant(int workspaceId, int userId, WorkspaceShareRole role) => shares.GetOrAdd(workspaceId, _ => new()).AddOrUpdate(userId, role, (_, _) => role);
 
-    /// <summary>Removes one person's access and cuts the connections they have open.</summary>
+    // ---------- collaborators' own IDE servers ----------
+
+    /// <summary>The collaborator's own OS user, IDE server and credentials in the container (null: none was prepared).</summary>
+    public CollaboratorSession? CollaboratorOf(int workspaceId, int userId) => collaborators.TryGetValue((workspaceId, userId), out var c) ? c : null;
+
+    public IReadOnlyList<CollaboratorSession> CollaboratorsOf(int workspaceId) => collaborators.Where(kv => kv.Key.Workspace == workspaceId).Select(kv => kv.Value).ToList();
+
+    /// <summary>True when this port in the container belongs to a collaborator's IDE server (never offered as a preview).</summary>
+    public static bool IsCollaboratorPort(int port) => port > CollaboratorSession.BasePort && port <= CollaboratorSession.BasePort + CollaboratorSession.MaxSlots;
+
+    /// <summary>
+    /// Gives the person a free slot (a pre-created OS user <c>bbc{slot}</c> in the image) and a fresh IDE connection token, or returns the slot they have.
+    /// Null when every slot is taken.
+    /// </summary>
+    public CollaboratorSession? AssignCollaborator(int workspaceId, int userId, string containerId, Func<int, CollaboratorSession> create)
+    {
+        lock (slotLock)
+        {
+            if (collaborators.TryGetValue((workspaceId, userId), out var existing)) return existing;
+            var used = collaborators.Where(kv => kv.Key.Workspace == workspaceId).Select(kv => kv.Value.Slot).ToHashSet();
+            for (var slot = 1; slot <= CollaboratorSession.MaxSlots; slot++)
+                if (!used.Contains(slot)) return collaborators[(workspaceId, userId)] = create(slot);
+            return null;
+        }
+    }
+
+    /// <summary>The collaborator whose own git credential (<c>gbw_…</c>) has this hash, for this user; null when there is none.</summary>
+    public CollaboratorSession? FindByGitToken(int userId, byte[] hash) =>
+        collaborators.Values.FirstOrDefault(c => c.UserId == userId && c.GitTokenHash is { } h && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(h, hash));
+
+    /// <summary>Forgets the person's collaborator session (the caller ends their processes in the container first).</summary>
+    public CollaboratorSession? RemoveCollaborator(int workspaceId, int userId) => collaborators.TryRemove((workspaceId, userId), out var c) ? c : null;
+
+    /// <summary>Removes one person's access and cuts the connections they have open. (Their collaborator session, if any, is ended by <see cref="WorkspaceCollaborators.ReleaseAsync"/>.)</summary>
     public void Revoke(int workspaceId, int userId)
     {
         if (shares.TryGetValue(workspaceId, out var m)) m.TryRemove(userId, out _);
@@ -98,7 +160,7 @@ public sealed class WorkspaceAccessRegistry
 /// Database side of sharing that needs no signed-in user (singleton, used by the lifecycle, the maintenance sweep and
 /// <see cref="WorkspaceSharingService"/>): loading shares into the live registry and ending them, with an audit record each.
 /// </summary>
-public sealed class WorkspaceShareStore(IDbContextFactory<AppDbContext> dbFactory, WorkspaceRuntime runtime, WorkspaceAudit audit)
+public sealed class WorkspaceShareStore(IDbContextFactory<AppDbContext> dbFactory, WorkspaceRuntime runtime, WorkspaceAudit audit, WorkspaceCollaborators collaborators)
 {
     /// <summary>Ends one share (it stays in the table as history), cuts the person's sessions and connections and records it.</summary>
     public async Task EndAsync(WorkspaceShare share, string workspacePublicId, int projectId, string reason, int? actorId)
@@ -109,8 +171,9 @@ public sealed class WorkspaceShareStore(IDbContextFactory<AppDbContext> dbFactor
         row.EndedAt = DateTime.UtcNow;
         row.EndReason = reason.Length > 100 ? reason[..100] : reason;
         await db.SaveChangesAsync();
-        runtime.Access.Revoke(row.WorkspaceId, row.UserId);
+        runtime.Access.Revoke(row.WorkspaceId, row.UserId); // first: no new request or connection gets through...
         runtime.RevokeUser(row.WorkspaceId, row.UserId);
+        await collaborators.ReleaseAsync(row.WorkspaceId, row.UserId); // ...then their processes end and their home is emptied
         await audit.RecordAsync("workspace.share_ended", workspacePublicId, projectId, actorId, new { userId = row.UserId, role = row.Role.ToString(), reason });
     }
 
@@ -118,6 +181,7 @@ public sealed class WorkspaceShareStore(IDbContextFactory<AppDbContext> dbFactor
     public async Task EndAllAsync(int workspaceId, string reason, int? actorId)
     {
         runtime.Access.RevokeAll(workspaceId);
+        await collaborators.ReleaseAllAsync(workspaceId);
         await using var db = await dbFactory.CreateDbContextAsync();
         var active = await db.WorkspaceShares.Where(s => s.WorkspaceId == workspaceId && s.EndedAt == null).ToListAsync();
         if (active.Count == 0) return;
@@ -162,9 +226,12 @@ public sealed record ViewerFile(string Path, string? Text, bool Binary, bool Tru
 /// <summary>
 /// Sharing a running workspace with other ByteBench users. The owner invites people who can already view the repository:
 /// <para>
-/// <b>Collaborator</b>: the same OpenVSCode server as the owner (it has no multi-user mode; each person opens their own browser window on it),
-/// reached through the proxy with their own single-use ticket and their own session. They see the same files, and share terminals through tmux.
-/// They act as the container's user, so they can also push with the owner's git token: invite people you trust like you.
+/// <b>Collaborator</b>: their own unprivileged OS user inside the container and their own OpenVSCode server running as that user (OpenVSCode
+/// has no multi-user mode), see <see cref="WorkspaceCollaborators"/>. They reach it through the proxy with their own single-use ticket and
+/// session; the proxy injects their own connection token. They work on the same /workspace files through group permissions, but cannot read the
+/// owner's home (<c>~/.bb-env</c> with the injected secrets, <c>~/.git-credentials</c>, the owner's IDE token). Git runs without credentials
+/// unless the owner ticked "may push": then the collaborator gets a credential of their own (their user name, one repository, this workspace only).
+/// Their terminals are their own (not the owner's tmux server).
 /// </para>
 /// <para>
 /// <b>Viewer</b>: never gets an IDE session (the proxy refuses their ticket and session; none is issued). They read files and terminal output
@@ -173,7 +240,8 @@ public sealed record ViewerFile(string Path, string? Text, bool Binary, bool Tru
 /// </para>
 /// </summary>
 public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbContext> dbFactory, WorkspaceRuntime runtime, IWorkspaceBackend backend, ProjectAccess access,
-    WorkspaceAudit audit, ByteBench.Services.Audit.AuditLog auditLog, WorkspaceShareStore store, NotificationService notifications, SiteSettings siteSettings)
+    WorkspaceAudit audit, ByteBench.Services.Audit.AuditLog auditLog, WorkspaceShareStore store, NotificationService notifications, SiteSettings siteSettings,
+    WorkspaceCollaborators collaborators, WorkspaceLifecycle lifecycle)
 {
     public const int MaxSharesPerWorkspace = 10;
     public const int MaxFileBytes = 256 * 1024;
@@ -233,9 +301,24 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         await db.SaveChangesAsync();
         if (role == WorkspaceShareRole.Viewer)
         {
-            // A downgrade drops any IDE session and connection they had.
+            // A downgrade drops any IDE session and connection they had, and their OS user in the container.
             runtime.Access.Revoke(ws.Id, invitee.Id);
             runtime.RevokeUser(ws.Id, invitee.Id);
+            await collaborators.ReleaseAsync(ws.Id, invitee.Id);
+        }
+        else
+        {
+            // The collaborator's own OS user, home, IDE server and (with "may push") own credential come first: access is granted only once they exist.
+            try { await collaborators.EnsureAsync(runtime.Find(ws.Id)!, ws, invitee, allowPush, lifecycle.GitBase()); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                existing.EndedAt = DateTime.UtcNow;
+                existing.EndReason = "could not prepare the workspace for them";
+                await db.SaveChangesAsync();
+                await collaborators.ReleaseAsync(ws.Id, invitee.Id);
+                runtime.Access.Revoke(ws.Id, invitee.Id);
+                throw new InvalidOperationException("Could not set up a separate user for the collaborator in the workspace: " + WorkspaceLifecycle.Safe(ex.Message), ex);
+            }
         }
         runtime.Access.Grant(ws.Id, invitee.Id, role);
 

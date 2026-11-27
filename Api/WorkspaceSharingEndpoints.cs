@@ -8,7 +8,7 @@ namespace ByteBench.Api;
 
 /// <param name="User">Username to invite (they must be able to view the repository).</param>
 /// <param name="Role"><c>collaborator</c> (full IDE access) or <c>viewer</c> (read-only).</param>
-/// <param name="AllowPush">Collaborators only: let the workspace's git token push while this person is invited (default false: the token is read-only).</param>
+/// <param name="AllowPush">Collaborators only: give this person a git credential of their own (their user name, this repository only) so they can push while invited (default false: git runs without credentials for them).</param>
 public record InviteToWorkspaceRequest(string User, string Role, bool AllowPush = false);
 
 public record WorkspaceShareDto(string User, string? DisplayName, string Role, DateTimeOffset InvitedAt, bool Connected, DateTimeOffset? LastSeen, bool AllowPush);

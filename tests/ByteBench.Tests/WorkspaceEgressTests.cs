@@ -326,9 +326,15 @@ public class WorkspaceEgressEnforcementTests(SharingApp app) : IClassFixture<Sha
         var (h2, _, c2) = await RawAsync(port, $"CONNECT evil.example.org:443 HTTP/1.1\r\nHost: x\r\n{Auth(token)}\r\n");
         using (c2) Assert.StartsWith("HTTP/1.1 403", h2);
         Assert.Equal(2, egress.Blocked(ws.PublicId).Single(b => b.Host == "evil.example.org").Count);
-        await Task.Delay(500);
+        List<AuditEvent> events = [];
+        for (var i = 0; i < 600; i++) // the audit rows are written in the background: wait for them, up to 30 s
+        {
+            await using var poll = app.Db();
+            events = await poll.AuditEvents.Where(a => a.Action == "workspace.egress_blocked" && a.TargetId == ws.PublicId).ToListAsync();
+            if (events.Count >= 4) break;
+            await Task.Delay(50);
+        }
         await using var db = app.Db();
-        var events = await db.AuditEvents.Where(a => a.Action == "workspace.egress_blocked" && a.TargetId == ws.PublicId).ToListAsync();
         Assert.Equal(4, events.Count);
         Assert.Contains(events, e => e.Details!.Contains("evil.example.org"));
 
