@@ -16,7 +16,7 @@
                 @if (availability.Available)
                 {
                     <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.AutoAwesome" OnClick="Start" Disabled="@(!CanEdit || busy)" data-testid="ai-run-start">Let AI work on this</MudButton>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">It works in its own workspace on a new branch and opens a pull request. You can also assign the issue to @ByteBench.Services.Ai.AiBot.DisplayName.</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">It works in its own workspace on a new branch and opens a pull request. You can also assign the issue to @ByteBench.Services.Ai.AiBot.DisplayName.@(availability.Backend != null ? " Runs use: " + availability.Backend + "." : "")</MudText>
                 }
                 else
                 {

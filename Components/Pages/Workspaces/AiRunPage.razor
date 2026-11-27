@@ -31,6 +31,7 @@ else if (view != null)
     @if (r.Error != null) { <MudAlert Severity="Severity.Error" Class="mb-3" data-testid="run-error">@r.Error</MudAlert> }
     <MudSimpleTable Dense="true" Outlined="true" Class="mb-4" Style="max-width:720px">
         <tbody>
+            @if (events.FirstOrDefault(e => e.Message.StartsWith("Backend: ")) is { } be) { <tr><td>Backend</td><td data-testid="run-backend">@be.Message["Backend: ".Length..].Split('.')[0]</td></tr> }
             <tr><td>Repository</td><td>@view.ProjectKey/@view.RepoSlug</td></tr>
             <tr><td>Requested by</td><td>@view.RequestedBy (@r.Trigger)</td></tr>
             <tr><td>Branch</td><td class="mono">@(r.Branch ?? "-")@(r.BaseBranch != null ? $" (from {r.BaseBranch})" : "")</td></tr>

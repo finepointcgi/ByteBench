@@ -47,6 +47,7 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddHostedService(sp => sp.GetRequiredService<WorkspaceMaintenanceService>());
         services.AddScoped<AiChangeService>(); // review mode: pending change sets, accept/reject, the per-user/workspace setting
         services.AddScoped<AiRunService>(); // task-driven AI runs: request, read, cancel
+        services.AddScoped<AiRunBackendResolver>(); // API or Claude Code CLI: which one runs use, and why not
         services.AddSingleton<AiRunQueue>();
         services.AddSingleton<AiRunExecutor>();
         services.AddSingleton<AiRunWorker>();
