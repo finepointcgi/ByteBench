@@ -18,6 +18,7 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
     /// with the command. <c>$1</c>: pid file, <c>$2</c>: the command.
     /// </summary>
     private const string RunScript = """
+        umask 002
         [ -f "$HOME/.bb-env" ] && . "$HOME/.bb-env"
         exec setsid --wait sh -c 'echo $$ > "$1"; exec bash -c "$2"' sh "$1" "$2"
         """;
@@ -57,18 +58,23 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
     {
         var env = session.Env;
         if (env.Setup.Count == 0) { session.Setup = SetupState.None; return; }
-        session.Setup = SetupState.Running;
         session.SetupMessage = null;
         session.SetupLog.Clear();
+        session.Setup = SetupState.Running;
+        // The state changes last: whoever sees Failed, Succeeded or UpToDate (the page, the API, a test) already finds its message and the end of the log.
+        void End(SetupState state, string message)
+        {
+            session.SetupMessage = message;
+            session.SetupLog.Append(message);
+            session.Setup = state;
+        }
         try
         {
             var hash = env.SetupHash;
             var existing = await backend.ExecAsync(live.ContainerId, new ExecSpec(["sh", "-c", "cat \"$1\" 2>/dev/null || true", "sh", SetupMarker]) { Timeout = TimeSpan.FromSeconds(10) }, ct);
             if (existing.Ok && existing.Output.Trim() == hash)
             {
-                session.Setup = SetupState.UpToDate;
-                session.SetupMessage = "Setup is up to date: its commands didn't change since they last succeeded, so the installed dependencies were kept.";
-                session.SetupLog.Append(session.SetupMessage);
+                End(SetupState.UpToDate, "Setup is up to date: its commands didn't change since they last succeeded, so the installed dependencies were kept.");
                 return;
             }
             var timeout = TimeSpan.FromMinutes(Math.Max(1, options.CurrentValue.SetupTimeoutMinutes));
@@ -80,32 +86,24 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
                 var result = await backend.ExecStreamAsync(live.ContainerId, Spec(workDir, pidFile, command, timeout), session.SetupLog.Append, ct);
                 if (!result.Ok)
                 {
-                    session.Setup = SetupState.Failed;
-                    session.SetupMessage = result.TimedOut
+                    End(SetupState.Failed, result.TimedOut
                         ? $"Setup command {i + 1} of {env.Setup.Count} took longer than {timeout.TotalMinutes:0} minutes and was stopped: {First(command)}"
-                        : $"Setup command {i + 1} of {env.Setup.Count} failed (exit code {result.ExitCode}): {First(command)}";
-                    session.SetupLog.Append(session.SetupMessage);
+                        : $"Setup command {i + 1} of {env.Setup.Count} failed (exit code {result.ExitCode}): {First(command)}");
                     return;
                 }
             }
             var write = await backend.ExecAsync(live.ContainerId, new ExecSpec(["sh", "-c", "mkdir -p \"$(dirname \"$1\")\" && printf '%s' \"$2\" > \"$1\"", "sh", SetupMarker, hash]) { Timeout = TimeSpan.FromSeconds(10) }, ct);
             if (!write.Ok) log.LogWarning("Could not record the setup hash for workspace {Id}: {Output}", live.PublicId, write.Output);
-            session.Setup = SetupState.Succeeded;
-            session.SetupMessage = "Setup finished.";
-            session.SetupLog.Append("Setup finished.");
+            End(SetupState.Succeeded, "Setup finished.");
         }
         catch (OperationCanceledException)
         {
-            session.Setup = SetupState.Failed;
-            session.SetupMessage = "Setup was interrupted because the workspace stopped.";
-            session.SetupLog.Append(session.SetupMessage);
+            End(SetupState.Failed, "Setup was interrupted because the workspace stopped.");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             log.LogWarning(ex, "Setup of workspace {Id} failed unexpectedly", live.PublicId);
-            session.Setup = SetupState.Failed;
-            session.SetupMessage = "Setup could not run: " + WorkspaceLifecycle.Safe(ex.Message);
-            session.SetupLog.Append(session.SetupMessage);
+            End(SetupState.Failed, "Setup could not run: " + WorkspaceLifecycle.Safe(ex.Message));
         }
     }
 
@@ -129,7 +127,7 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
         lock (session.Tasks)
         {
             if (session.Tasks.TryGetValue(def.Name, out var current) && current.State == TaskState.Running) { alreadyRunning = true; return current; }
-            if (session.Setup == SetupState.Running) throw new InvalidOperationException("Setup is still running; start the task when it has finished (see the setup log).");
+            if (session.Setup is SetupState.Running or SetupState.Pending) throw new InvalidOperationException("Setup is still running; start the task when it has finished (see the setup log).");
             if (session.Tasks.Values.Count(t => t.State == TaskState.Running) >= MaxRunningTasks) throw new InvalidOperationException($"{MaxRunningTasks} tasks are already running; stop one first.");
             var run = new WorkspaceTaskRun(def.Name, def.Command, def.Port, def.Preview, session.Redactor);
             session.Tasks[def.Name] = run;

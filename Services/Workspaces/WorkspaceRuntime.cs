@@ -120,7 +120,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public bool HasRunningTask(int workspaceId) =>
         (runningTasks.TryGetValue(workspaceId, out var n) && n > 0)
-        || (FindSession(workspaceId) is { } session && (session.Setup == SetupState.Running || session.Tasks.Values.Any(t => t.State == TaskState.Running)));
+        || (FindSession(workspaceId) is { } session && (session.Setup is SetupState.Running or SetupState.Pending || session.Tasks.Values.Any(t => t.State == TaskState.Running)));
 
     private sealed class TaskHandle(WorkspaceRuntime owner, int workspaceId) : IDisposable
     {
@@ -234,7 +234,23 @@ public sealed class WorkspaceRuntime
         _ = task.ContinueWith(t => background.TryRemove(t, out _), TaskScheduler.Default);
     }
 
+    /// <summary>
+    /// Completes when the tasks tracked so far have finished: provisioning (a start or resume), but not the repository's setup run that provisioning
+    /// kicks off at its very end (a setup can take minutes and the workspace is usable meanwhile): that one is awaited with <see cref="WhenSetupSettledAsync"/>.
+    /// </summary>
     public Task WhenIdleAsync() => Task.WhenAll(background.Keys.ToArray());
+
+    private readonly ConcurrentDictionary<int, Task> setupRuns = new();
+
+    /// <summary>Remembers the setup run provisioning started for a workspace (it is not part of <see cref="WhenIdleAsync"/>, see there).</summary>
+    public void TrackSetup(int workspaceId, Task run) => setupRuns[workspaceId] = run;
+
+    /// <summary>Completes when the latest setup run provisioning started for this workspace has ended, whatever its outcome (immediately when there was none).</summary>
+    public async Task WhenSetupSettledAsync(int workspaceId)
+    {
+        if (!setupRuns.TryGetValue(workspaceId, out var run)) return;
+        try { await run; } catch { /* the run records its own failure on the session */ }
+    }
 }
 
 /// <summary>Where a workspace is reachable: its own origin (<c>ide-{id}.{BaseDomain}</c>), or a path on ByteBench's origin when explicitly allowed.</summary>

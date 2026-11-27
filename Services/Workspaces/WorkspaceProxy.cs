@@ -84,8 +84,29 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         live.Touch();
         runtime.Access.Seen(live.Id, grant.UserId);
         var framing = $"frame-ancestors {grant.MainOrigin}";
-        await ForwardAsync(ctx, live, grant.UserId, previewPort ?? live.IdePort, ctx.Request.PathBase + ctx.Request.Path + ctx.Request.QueryString, framing,
-            stripAllCookies: false, injectToken: previewPort == null);
+        if (!TryUpstream(live, grant.UserId, previewPort, out var upstreamPort, out var token)) { await Plain(ctx, previewPort == null ? 503 : 404, previewPort == null ? "Your IDE in this workspace isn't ready. Ask the owner to invite you again." : "Not found."); return; }
+        await ForwardAsync(ctx, live, grant.UserId, upstreamPort, ctx.Request.PathBase + ctx.Request.Path + ctx.Request.QueryString, framing,
+            stripAllCookies: false, token);
+    }
+
+    /// <summary>
+    /// Where a person's IDE traffic goes: the owner to the workspace's IDE server with its connection token, a collaborator to their own server (their own
+    /// OS user in the container) with their own token, so a collaborator never touches the owner's IDE. A preview port goes to that port without a token, except
+    /// that nobody can "preview" a collaborator's IDE port and only the owner the owner's.
+    /// </summary>
+    private bool TryUpstream(LiveWorkspace live, int userId, int? previewPort, out int port, out string? token)
+    {
+        port = 0; token = null;
+        if (previewPort is { } p)
+        {
+            if (WorkspaceAccessRegistry.IsCollaboratorPort(p) || (p == live.IdePort && userId != live.OwnerId)) return false;
+            port = p;
+            return true;
+        }
+        if (userId == live.OwnerId) { port = live.IdePort; token = live.ConnectionToken; return true; }
+        if (runtime.Access.CollaboratorOf(live.Id, userId) is not { } c) return false;
+        port = c.Port; token = c.ConnectionToken;
+        return true;
     }
 
     private async Task EnterAsync(HttpContext ctx, LiveWorkspace live, string audience)
@@ -160,7 +181,8 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         if (path.Length == 0) path = "/";
         if (!isIde && path.Length > 0 && path[0] != '/') path = "/" + path;
         var csp = isIde ? "frame-ancestors 'self'" : "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; frame-ancestors 'self'";
-        await ForwardAsync(ctx, live, userId, port ?? live.IdePort, path + ctx.Request.QueryString, csp, stripAllCookies: true, injectToken: isIde);
+        if (!TryUpstream(live, userId, port, out var upstreamPort, out var token)) { await Plain(ctx, 404, "Not found."); return; }
+        await ForwardAsync(ctx, live, userId, upstreamPort, path + ctx.Request.QueryString, csp, stripAllCookies: true, token);
     }
 
     // ---------- relay ----------
@@ -194,11 +216,11 @@ public sealed class WorkspaceProxyMiddleware(RequestDelegate next, WorkspaceUrls
         return ok;
     }
 
-    private async Task ForwardAsync(HttpContext ctx, LiveWorkspace live, int userId, int port, string pathAndQuery, string cspToAdd, bool stripAllCookies, bool injectToken)
+    private async Task ForwardAsync(HttpContext ctx, LiveWorkspace live, int userId, int port, string pathAndQuery, string cspToAdd, bool stripAllCookies, string? connectionToken)
     {
         var upgrade = ctx.Request.Headers.Connection.ToString().Contains("upgrade", StringComparison.OrdinalIgnoreCase)
                       && string.Equals(ctx.Request.Headers.Upgrade.ToString(), "websocket", StringComparison.OrdinalIgnoreCase);
-        var cookie = BuildCookie(ctx.Request.Headers.Cookie, stripAllCookies, injectToken ? live.ConnectionToken : null);
+        var cookie = BuildCookie(ctx.Request.Headers.Cookie, stripAllCookies, connectionToken);
         try
         {
             if (upgrade) await TunnelAsync(ctx, live, userId, port, pathAndQuery, cookie);

@@ -25,8 +25,8 @@ public class WorkspaceShare
     public User User { get; set; } = null!;
     public WorkspaceShareRole Role { get; set; }
     /// <summary>
-    /// Collaborators only: the owner ticked "may push". A collaborator acts as the container's user and so could use the workspace's git token; while any
-    /// active collaborator lacks this, the token is read-only (<c>WorkspaceGitAuth</c>), whoever pushes. Off by default.
+    /// Collaborators only: the owner ticked "may push". A collaborator runs as their own OS user in the container with no access to the owner's git
+    /// credential; with this they get a credential of their own (<c>WorkspaceCollaborators</c>, validated by <c>WorkspaceGitAuth</c>). Off by default: no credential.
     /// </summary>
     public bool AllowPush { get; set; }
     public int InvitedById { get; set; }

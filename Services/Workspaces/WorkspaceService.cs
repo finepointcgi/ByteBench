@@ -317,7 +317,7 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
     {
         var (live, ws) = await RequireRunningAsync(publicId, userId);
         var session = runtime.Session(ws.Id);
-        if (session.Setup == SetupState.Running) throw new InvalidOperationException("Setup is already running.");
+        if (session.Setup is SetupState.Running or SetupState.Pending) throw new InvalidOperationException("Setup is already running.");
         live.Touch();
         await backend.ExecAsync(live.ContainerId, new ExecSpec(["rm", "-f", WorkspaceTasks.SetupMarker]), CancellationToken.None);
         runtime.Track(Task.Run(() => tasks.RunSetupAsync(live, session, WorkspaceLifecycle.WorkDir(ws.Repository.Slug), session.Lifetime.Token)));
@@ -346,7 +346,7 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
             {
                 var changedSetup = result.Environment.SetupHash != session.Env.SetupHash;
                 session.Env = result.Environment;
-                if (changedSetup && session.Setup != SetupState.Running)
+                if (changedSetup && session.Setup is not (SetupState.Running or SetupState.Pending))
                     runtime.Track(Task.Run(() => tasks.RunSetupAsync(live, session, dir, session.Lifetime.Token)));
             }
             return result.Errors;
@@ -465,6 +465,8 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         if (!await db.Workspaces.AnyAsync(w => w.Id == live.Id && w.State == WorkspaceState.Running)) return null;
         var audience = port is { } p ? WorkspaceUrls.PreviewAudience(p) : WorkspaceUrls.IdeAudience;
         if (port is < 1 or > 65535) return null;
+        // The IDE servers are not preview targets: a collaborator's is nobody's, the owner's only the owner's (the proxy enforces this too).
+        if (port is { } q && (WorkspaceAccessRegistry.IsCollaboratorPort(q) || (q == live.IdePort && userId != live.OwnerId))) return null;
         live.Touch();
         var ticket = urls.Mode == WorkspaceOriginMode.Subdomain ? runtime.IssueTicket(live.Id, userId, audience, mainBase.GetLeftPart(UriPartial.Authority)) : null;
         return urls.EntryUrl(mainBase, audience, publicId, ticket);
@@ -490,7 +492,7 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
             if (cols.Length < 4 || cols[3] != "0A") continue;
             var colon = cols[1].LastIndexOf(':');
             if (colon < 0 || !int.TryParse(cols[1][(colon + 1)..], System.Globalization.NumberStyles.HexNumber, null, out var port)) continue;
-            if (port is >= 1 and < 32768 && port != idePort) ports.Add(port);
+            if (port is >= 1 and < 32768 && port != idePort && !WorkspaceAccessRegistry.IsCollaboratorPort(port)) ports.Add(port);
         }
         return ports.ToList();
     }

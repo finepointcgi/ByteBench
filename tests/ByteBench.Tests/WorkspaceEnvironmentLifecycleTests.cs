@@ -39,7 +39,7 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
 
     private static async Task UntilAsync(Func<bool> condition, string what = "condition")
     {
-        for (var i = 0; i < 100 && !condition(); i++) await Task.Delay(50);
+        for (var i = 0; i < 600 && !condition(); i++) await Task.Delay(50); // a ceiling for a loaded machine, not a pause: it returns as soon as the condition holds
         Assert.True(condition(), "Timed out waiting for " + what);
     }
 
@@ -94,7 +94,8 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
         app.Backend.ExecScripts.Add((s => s.Command.Count > 0 && s.Command[^1] == "npm ci --fake-install", s => new ExecResult(0, "added 12 packages")));
         var (user, repo) = await RepoAsync("setup: npm ci --fake-install\n");
         var ws = await app.StartAsync(user, repo);
-        await UntilAsync(() => Session(ws).Setup == SetupState.Succeeded, "setup");
+        await app.Runtime.WhenSetupSettledAsync(ws.Id); // the setup run provisioning started: awaited, not polled for
+        Assert.Equal(SetupState.Succeeded, Session(ws).Setup);
         Assert.Contains("$ npm ci --fake-install", Session(ws).SetupLog.Text());
         Assert.Contains("added 12 packages", Session(ws).SetupLog.Text());
         Assert.Equal(WorkspaceEnvFile.ParseYaml("setup: npm ci --fake-install\n").Environment!.SetupHash, marker["hash"]);
@@ -108,7 +109,8 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
         Assert.Contains(ws.Id, app.Backend.AuxiliaryRemoved);
 
         await using (var s = app.Scope(app.UserId(user))) await s.Get<WorkspaceService>().ResumeAsync(ws.PublicId, app.UserId(user));
-        await app.WhenIdleAsync();
+        await app.WhenIdleAsync(); // provisioning has finished (and has started the setup check)...
+        await app.Runtime.WhenSetupSettledAsync(ws.Id); // ...whose outcome is awaited, so UpToDate is never read while it is still Pending
         var resumed = await app.ReloadAsync(ws.PublicId);
         Assert.Equal(WorkspaceState.Running, resumed.State);
         Assert.NotEqual(ws.ContainerId, resumed.ContainerId);
@@ -127,7 +129,8 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
             await s.Get<WorkspaceService>().ResumeAsync(ws.PublicId, app.UserId(user));
         }
         await app.WhenIdleAsync();
-        await UntilAsync(() => Session(ws).Setup == SetupState.Succeeded, "setup to run again");
+        await app.Runtime.WhenSetupSettledAsync(ws.Id);
+        Assert.Equal(SetupState.Succeeded, Session(ws).Setup);
         Assert.Contains(app.Backend.Streams, e => e.Spec.Command[^1] == "npm ci --fake-install --other");
     }
 
@@ -138,7 +141,8 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
         var (user, repo) = await RepoAsync("setup:\n  - echo first\n  - make boom\n  - echo never\n");
         var ws = await app.StartAsync(user, repo);
         Assert.Equal(WorkspaceState.Running, ws.State);
-        await UntilAsync(() => Session(ws).Setup == SetupState.Failed, "setup to fail");
+        await app.Runtime.WhenSetupSettledAsync(ws.Id);
+        Assert.Equal(SetupState.Failed, Session(ws).Setup);
         var session = Session(ws);
         Assert.Contains("Setup command 2 of 3 failed (exit code 2): make boom", session.SetupMessage);
         Assert.Contains("make: *** [boom] Error 1", session.SetupLog.Text());
@@ -261,7 +265,8 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
         Assert.Equal(".devcontainer/devcontainer.json", view.Source);
         Assert.Contains(4000, view.Ports);
         Assert.Contains(view.Warnings, w => w.Contains("features") && w.Contains("doesn't install"));
-        await UntilAsync(() => Session(ws).Setup == SetupState.Succeeded, "postCreateCommand");
+        await app.Runtime.WhenSetupSettledAsync(ws.Id);
+        Assert.Equal(SetupState.Succeeded, Session(ws).Setup);
         Assert.Contains(app.Backend.Streams, e => e.Spec.Command[^1] == "echo created");
         Assert.Contains(app.Backend.Execs.Select(e => e.Spec.Stdin), s => s != null && s.Contains("export A='b'"));
     }
@@ -442,7 +447,8 @@ public class WorkspaceEnvironmentLifecycleTests(WorkspaceApp app) : IClassFixtur
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => scope.Get<WorkspaceService>().RunTaskAsync(ws.PublicId, app.UserId(user), "test"));
         Assert.Contains("Setup is still running", ex.Message);
         gate.SetResult();
-        await UntilAsync(() => Session(ws).Setup == SetupState.Succeeded, "setup");
+        await app.Runtime.WhenSetupSettledAsync(ws.Id);
+        Assert.Equal(SetupState.Succeeded, Session(ws).Setup);
         await scope.Get<WorkspaceService>().RunTaskAsync(ws.PublicId, app.UserId(user), "test");
     }
 

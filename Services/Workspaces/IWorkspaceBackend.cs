@@ -33,8 +33,17 @@ public sealed record ExecSpec(IReadOnlyList<string> Command)
     public string? Stdin { get; init; }
     public IReadOnlyDictionary<string, string>? Env { get; init; }
     public string? WorkDir { get; init; }
-    /// <summary>"coder" (the developer) or "bbai" (the AI assistant: no access to the developer's git credentials).</summary>
+    /// <summary>"coder" (the developer), "bbai" (the AI assistant: no access to the developer's git credentials) or "bbc1".."bbc10" (a collaborator, see <see cref="CollaboratorUser"/>).</summary>
     public string User { get; init; } = "coder";
+    /// <summary>The OS user of collaborator slot <paramref name="slot"/> (1-10): own home, no access to the developer's files.</summary>
+    public static string CollaboratorUser(int slot) => "bbc" + slot;
+    /// <summary>The <c>uid:gid</c> an exec runs as: coder 1000, bbai 1001, collaborator slot n 2000+n (all in the group coder, 1000). Never root.</summary>
+    public static string UserSpec(string user) => user switch
+    {
+        "bbai" => "1001:1000",
+        _ when user.StartsWith("bbc", StringComparison.Ordinal) && int.TryParse(user.AsSpan(3), out var n) && n is >= 1 and <= 10 => $"{2000 + n}:1000",
+        _ => "1000:1000",
+    };
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(60);
     /// <summary>Output beyond this is dropped (the process is still drained).</summary>
     public int MaxOutputBytes { get; init; } = 64 * 1024;

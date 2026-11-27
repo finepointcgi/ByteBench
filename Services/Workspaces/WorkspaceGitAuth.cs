@@ -32,9 +32,24 @@ public static class WorkspaceGitAuth
         {
             IReadOnlyList<int> extra = [];
             try { extra = System.Text.Json.JsonSerializer.Deserialize<List<int>>(ws.SubmoduleRepoIdsJson) ?? []; } catch (System.Text.Json.JsonException) { }
-            // Collaborators share the container's credentials: unless the owner allowed them to push, the token stays read-only while they are invited.
-            var paused = ws.CanPush && await db.WorkspaceShares.AnyAsync(s => s.WorkspaceId == ws.Id && s.EndedAt == null && s.Role == WorkspaceShareRole.Collaborator && !s.AllowPush);
-            return (TokenScopes.ReadRepository | (ws.CanPush && !paused ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId, extra);
+            // Collaborators run as their own OS user and can't read this token (it lives in the owner's mode-700 home), so it needs no pausing while they are invited.
+            return (TokenScopes.ReadRepository | (ws.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), ws.RepositoryId, extra);
+        }
+
+        // A collaborator's own token (only exists when the owner ticked "may push"; kept in memory with their session, dies with the share, the workspace or
+        // the permission): this repository only, and the user it was issued to. The git endpoint still applies that user's own role and branch protection.
+        if (services.GetRequiredService<WorkspaceRuntime>().Access.FindByGitToken(userId, hash) is { } collaborator)
+        {
+            var shared = await db.WorkspaceShares.AsNoTracking()
+                .Where(s => s.WorkspaceId == collaborator.WorkspaceId && s.UserId == userId && s.EndedAt == null && s.Role == WorkspaceShareRole.Collaborator && s.AllowPush
+                            && (s.Workspace.State == WorkspaceState.Starting || s.Workspace.State == WorkspaceState.Running))
+                .Select(s => new { s.Workspace.RepositoryId, s.Workspace.CanPush, s.Workspace.SubmoduleRepoIdsJson }).FirstOrDefaultAsync();
+            if (shared != null)
+            {
+                IReadOnlyList<int> extra = [];
+                try { extra = System.Text.Json.JsonSerializer.Deserialize<List<int>>(shared.SubmoduleRepoIdsJson) ?? []; } catch (System.Text.Json.JsonException) { }
+                return (TokenScopes.ReadRepository | (shared.CanPush ? TokenScopes.WriteRepository : TokenScopes.None), shared.RepositoryId, extra);
+            }
         }
 
         // A prebuild's token: read-only, one repository (its submodule repositories are added by the build), only while that build runs.

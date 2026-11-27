@@ -16,6 +16,7 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddSingleton<WorkspaceImage>();
         services.AddSingleton<IEgressConnector, DnsEgressConnector>();
         services.AddSingleton<WorkspaceEgress>();
+        services.AddSingleton<WorkspaceCollaborators>();
         services.AddSingleton<WorkspaceShareStore>();
         services.AddSingleton<WorkspaceTasks>();
         services.AddSingleton<WorkspaceSecretStore>();
