@@ -168,26 +168,31 @@ public static partial class WorkspaceEgressPolicy
     {
         if (string.IsNullOrWhiteSpace(yaml)) return null;
         if (yaml.Length > 64 * 1024) return new RepoEgressSpec(null, null, ["workspace.yml is too large."]);
-        Dictionary<object, object?>? doc;
-        try { doc = Yaml.Deserialize<Dictionary<object, object?>>(yaml); }
+        object? doc;
+        try { doc = Yaml.Deserialize<object?>(yaml); }
         catch (YamlException ex) { return new RepoEgressSpec(null, null, ["workspace.yml isn't valid YAML: " + ex.Message]); }
-        if (doc == null || !doc.TryGetValue("egress", out var section) || section == null) return null;
+        if (doc is not IDictionary<object, object> map || !map.TryGetValue("egress", out var section) || section == null) return null;
+        return ParseSection(section);
+    }
 
+    /// <summary>The value of the <c>egress:</c> key (a mode, a list of hosts, or a map with mode and allow). Every problem is reported.</summary>
+    public static RepoEgressSpec ParseSection(object? section)
+    {
         var errors = new List<string>();
         string? mode = null;
         List<string>? allow = null;
         switch (section)
         {
             case string s: mode = s.Trim().ToLowerInvariant(); break;
-            case List<object> list: allow = list.Select(x => x?.ToString() ?? "").ToList(); break;
-            case Dictionary<object, object?> map:
-                foreach (var (k, v) in map)
+            case IList<object> list: allow = list.Select(x => x?.ToString() ?? "").ToList(); break;
+            case IDictionary<object, object> m:
+                foreach (var (k, v) in m)
                 {
                     switch (k?.ToString()?.ToLowerInvariant())
                     {
                         case "mode": mode = v?.ToString()?.Trim().ToLowerInvariant(); break;
-                        case "allow": allow = v is List<object> l ? l.Select(x => x?.ToString() ?? "").ToList() : v is string one ? SplitEntries(one) : []; break;
-                        default: errors.Add($"Unknown egress key '{k}'."); break;
+                        case "allow": allow = v is IList<object> l ? l.Select(x => x?.ToString() ?? "").ToList() : v is string one ? SplitEntries(one) : []; break;
+                        default: errors.Add($"Unknown egress key '{k}' (use mode or allow)."); break;
                     }
                 }
                 break;

@@ -151,7 +151,7 @@ public static class WorkspaceSharingMode
     public static string Normalize(string? value) => value is Off or Members or Viewers ? value : Members;
 }
 
-public sealed record ShareInfo(int UserId, string UserName, string? DisplayName, WorkspaceShareRole Role, DateTime CreatedAt, bool Connected, DateTime? LastSeen);
+public sealed record ShareInfo(int UserId, string UserName, string? DisplayName, WorkspaceShareRole Role, DateTime CreatedAt, bool Connected, DateTime? LastSeen, bool AllowPush = false);
 
 public sealed record SharedWorkspaceInfo(Workspace Workspace, string ProjectKey, string RepoSlug, string OwnerName, WorkspaceShareRole Role);
 
@@ -199,7 +199,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
     // ---------- invite & revoke ----------
 
     /// <summary>Invites a user (by username) to the owner's running workspace, or changes their role. They must be able to view the repository (and, by default, be a project member).</summary>
-    public async Task<ShareInfo> InviteAsync(string publicId, int ownerId, string userName, WorkspaceShareRole role)
+    public async Task<ShareInfo> InviteAsync(string publicId, int ownerId, string userName, WorkspaceShareRole role, bool allowPush = false)
     {
         var mode = await GetModeAsync();
         if (mode == WorkspaceSharingMode.Off) throw new InvalidOperationException("Sharing workspaces is turned off on this server.");
@@ -222,13 +222,14 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         var existing = active.FirstOrDefault(s => s.UserId == invitee.Id);
         if (existing == null && active.Count >= MaxSharesPerWorkspace) throw new InvalidOperationException($"At most {MaxSharesPerWorkspace} people can be invited to one workspace.");
 
-        var changed = existing == null || existing.Role != role;
+        allowPush = allowPush && role == WorkspaceShareRole.Collaborator;
+        var changed = existing == null || existing.Role != role || existing.AllowPush != allowPush;
         if (existing == null)
         {
-            existing = new WorkspaceShare { WorkspaceId = ws.Id, UserId = invitee.Id, Role = role, InvitedById = ownerId };
+            existing = new WorkspaceShare { WorkspaceId = ws.Id, UserId = invitee.Id, Role = role, InvitedById = ownerId, AllowPush = allowPush };
             db.WorkspaceShares.Add(existing);
         }
-        else existing.Role = role;
+        else { existing.Role = role; existing.AllowPush = allowPush; }
         await db.SaveChangesAsync();
         if (role == WorkspaceShareRole.Viewer)
         {
@@ -240,7 +241,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
 
         if (changed)
         {
-            await audit.RecordAsync("workspace.shared", ws.PublicId, ws.ProjectId, ownerId, new { userId = invitee.Id, user = invitee.UserName, role = role.ToString() });
+            await audit.RecordAsync("workspace.shared", ws.PublicId, ws.ProjectId, ownerId, new { userId = invitee.Id, user = invitee.UserName, role = role.ToString(), allowPush });
             try
             {
                 var owner = await db.Users.Where(u => u.Id == ownerId).Select(u => u.UserName).FirstAsync();
@@ -249,7 +250,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
             }
             catch (Exception ex) when (ex is not OutOfMemoryException) { /* a notification must never undo an invitation */ }
         }
-        return new ShareInfo(invitee.Id, invitee.UserName!, invitee.DisplayName, existing.Role, existing.CreatedAt, false, null);
+        return new ShareInfo(invitee.Id, invitee.UserName!, invitee.DisplayName, existing.Role, existing.CreatedAt, false, null, existing.AllowPush);
     }
 
     private static async Task<bool> IsMemberAsync(AppDbContext db, int projectId, User user)
@@ -302,7 +303,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         var shares = await db.WorkspaceShares.AsNoTracking().Include(s => s.User).Where(s => s.WorkspaceId == ws.Id && s.EndedAt == null).OrderBy(s => s.CreatedAt).ToListAsync();
         var present = runtime.Access.Connected(ws.Id).ToDictionary(p => p.UserId);
         return shares.Select(s => new ShareInfo(s.UserId, s.User.UserName ?? "", s.User.DisplayName, s.Role, s.CreatedAt, present.ContainsKey(s.UserId),
-            present.TryGetValue(s.UserId, out var p) ? p.LastSeen : null)).ToList();
+            present.TryGetValue(s.UserId, out var p) ? p.LastSeen : null, s.AllowPush)).ToList();
     }
 
     /// <summary>Everyone seen in the workspace right now, the owner included: name and role.</summary>
@@ -352,6 +353,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         p=$(realpath -e -- "$root/$rel") || { echo "No such file or directory." >&2; exit 3; }
         case "$p" in "$root"|"$root"/*) ;; *) echo "Outside the workspace." >&2; exit 4 ;; esac
         case "$p" in */.git|*/.git/*) echo "Not available." >&2; exit 4 ;; esac
+        case "$p" in */.env|*/.env.*|*.pem|*.key|*.p12|*.pfx|*.jks|*/id_*|*/.bb-env|*/.git-credentials|*/.netrc|*/.npmrc|*/.pypirc|*/secrets|*/secrets/*|*/.secrets|*/.secrets/*|*/secret|*/secret/*) echo "Not available to viewers." >&2; exit 4 ;; esac
         [ -d "$p" ] || { echo "Not a directory." >&2; exit 5; }
         find "$p" -mindepth 1 -maxdepth 1 -not -name .git -printf '%y\t%s\t%f\n' | sort -t "$(printf '\t')" -k1,1 -k3,3 | head -n 2000
         """;
@@ -362,6 +364,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         p=$(realpath -e -- "$root/$rel") || { echo "No such file or directory." >&2; exit 3; }
         case "$p" in "$root"/*) ;; *) echo "Outside the workspace." >&2; exit 4 ;; esac
         case "$p" in */.git|*/.git/*) echo "Not available." >&2; exit 4 ;; esac
+        case "$p" in */.env|*/.env.*|*.pem|*.key|*.p12|*.pfx|*.jks|*/id_*|*/.bb-env|*/.git-credentials|*/.netrc|*/.npmrc|*/.pypirc|*/secrets|*/secrets/*|*/.secrets|*/.secrets/*|*/secret|*/secret/*) echo "Not available to viewers." >&2; exit 4 ;; esac
         [ -f "$p" ] || { echo "Not a file." >&2; exit 5; }
         if [ "$(head -c 8192 -- "$p" | tr -cd '\000' | wc -c)" -gt 0 ]; then echo "BB-BINARY"; exit 0; fi
         head -c "$max" -- "$p"
@@ -378,10 +381,19 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         return (live, ws);
     }
 
+    /// <summary>File names viewers never see: environment files, keys and certificates, git/npm credentials, anything called secret(s). Also enforced after symlink resolution in the container.</summary>
+    public static bool IsHiddenFromViewers(string name)
+    {
+        var n = name.ToLowerInvariant();
+        return n == ".env" || n.StartsWith(".env.") || n.EndsWith(".pem") || n.EndsWith(".key") || n.EndsWith(".p12") || n.EndsWith(".pfx") || n.EndsWith(".jks")
+               || n.StartsWith("id_") || n is ".bb-env" or ".git-credentials" or ".netrc" or ".npmrc" or ".pypirc" or "secrets" or ".secrets" or "secret";
+    }
+
     private static string CleanPath(string? rel)
     {
         rel = (rel ?? "").Trim().Trim('/');
         if (rel.Length > 500 || rel.Contains('\0') || rel.Contains('\\') || rel.Split('/').Any(s => s == "..")) throw new InvalidOperationException("That path isn't valid.");
+        if (rel.Split('/').Any(IsHiddenFromViewers)) throw new InvalidOperationException("Not available to viewers.");
         return rel;
     }
 
@@ -397,7 +409,7 @@ public sealed partial class WorkspaceSharingService(IDbContextFactory<AppDbConte
         foreach (var line in r.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             var parts = line.Split('\t', 3);
-            if (parts.Length == 3 && long.TryParse(parts[1], out var size)) list.Add(new ViewerEntry(parts[2], parts[0] == "d", size));
+            if (parts.Length == 3 && !IsHiddenFromViewers(parts[2]) && long.TryParse(parts[1], out var size)) list.Add(new ViewerEntry(parts[2], parts[0] == "d", size));
         }
         return list.OrderByDescending(e => e.IsDirectory).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }

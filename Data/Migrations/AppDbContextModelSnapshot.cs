@@ -6115,6 +6115,27 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("UserNotificationSettings");
                 });
 
+            modelBuilder.Entity("ByteBench.Data.UserWorkspaceSettings", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ShellSnippet")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserWorkspaceSettings");
+                });
+
             modelBuilder.Entity("ByteBench.Data.Watch", b =>
                 {
                     b.Property<int>("Id")
@@ -6688,6 +6709,10 @@ namespace ByteBench.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EnvironmentSummary")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Error")
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
@@ -6750,6 +6775,13 @@ namespace ByteBench.Data.Migrations
                     b.Property<DateTime?>("StoppedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SubmoduleRepoIdsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("VolumesKept")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PublicId")
@@ -6764,38 +6796,7 @@ namespace ByteBench.Data.Migrations
                     b.ToTable("Workspaces");
                 });
 
-            modelBuilder.Entity("ByteBench.Data.WorkspaceEgressRecord", b =>
-                {
-                    b.Property<int>("WorkspaceId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("AdminMode")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Mode")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("RepoNarrowed")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("RulesJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WarningsJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("WorkspaceId");
-
-                    b.ToTable("WorkspaceEgressRecords");
-                });
-
-            modelBuilder.Entity("ByteBench.Data.WorkspaceShare", b =>
+            modelBuilder.Entity("ByteBench.Data.WorkspaceSecret", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -6804,32 +6805,34 @@ namespace ByteBench.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("EndReason")
+                    b.Property<string>("EncryptedValue")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime?>("EndedAt")
+                    b.Property<int?>("RepositoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("InvitedById")
+                    b.Property<int?>("UpdatedById")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("Role")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("WorkspaceId")
+                    b.Property<int?>("UserId")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "EndedAt");
+                    b.HasIndex("RepositoryId", "Name");
 
-                    b.HasIndex("WorkspaceId", "UserId");
+                    b.HasIndex("UserId", "Name");
 
-                    b.ToTable("WorkspaceShares");
+                    b.ToTable("WorkspaceSecrets");
                 });
 
             modelBuilder.Entity("IssueComponents", b =>
@@ -8886,6 +8889,15 @@ namespace ByteBench.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ByteBench.Data.UserWorkspaceSettings", b =>
+                {
+                    b.HasOne("ByteBench.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ByteBench.Data.Watch", b =>
                 {
                     b.HasOne("ByteBench.Data.Issue", null)
@@ -9036,34 +9048,17 @@ namespace ByteBench.Data.Migrations
                     b.Navigation("Repository");
                 });
 
-            modelBuilder.Entity("ByteBench.Data.WorkspaceEgressRecord", b =>
+            modelBuilder.Entity("ByteBench.Data.WorkspaceSecret", b =>
                 {
-                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
-                        .WithOne()
-                        .HasForeignKey("ByteBench.Data.WorkspaceEgressRecord", "WorkspaceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                    b.HasOne("ByteBench.Data.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
-                    b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("ByteBench.Data.WorkspaceShare", b =>
-                {
-                    b.HasOne("ByteBench.Data.User", "User")
+                    b.HasOne("ByteBench.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ByteBench.Data.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-
-                    b.Navigation("Workspace");
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("IssueComponents", b =>

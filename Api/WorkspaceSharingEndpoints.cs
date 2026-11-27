@@ -8,9 +8,10 @@ namespace ByteBench.Api;
 
 /// <param name="User">Username to invite (they must be able to view the repository).</param>
 /// <param name="Role"><c>collaborator</c> (full IDE access) or <c>viewer</c> (read-only).</param>
-public record InviteToWorkspaceRequest(string User, string Role);
+/// <param name="AllowPush">Collaborators only: let the workspace's git token push while this person is invited (default false: the token is read-only).</param>
+public record InviteToWorkspaceRequest(string User, string Role, bool AllowPush = false);
 
-public record WorkspaceShareDto(string User, string? DisplayName, string Role, DateTimeOffset InvitedAt, bool Connected, DateTimeOffset? LastSeen);
+public record WorkspaceShareDto(string User, string? DisplayName, string Role, DateTimeOffset InvitedAt, bool Connected, DateTimeOffset? LastSeen, bool AllowPush);
 
 public record SharedWorkspaceDto(string Id, string Project, string Repository, string Ref, string Owner, string Role, string State, string Url);
 
@@ -58,7 +59,7 @@ public static class WorkspaceSharingEndpoints
         _ => throw ApiException.BadRequest("role must be 'collaborator' or 'viewer'."),
     };
 
-    private static WorkspaceShareDto ToDto(ShareInfo s) => new(s.UserName, s.DisplayName, s.Role.ToString().ToLowerInvariant(), Dto.Utc(s.CreatedAt), s.Connected, Dto.Utc(s.LastSeen));
+    private static WorkspaceShareDto ToDto(ShareInfo s) => new(s.UserName, s.DisplayName, s.Role.ToString().ToLowerInvariant(), Dto.Utc(s.CreatedAt), s.Connected, Dto.Utc(s.LastSeen), s.AllowPush);
 
     private static async Task<List<SharedWorkspaceDto>> SharedWithMe(ApiCaller caller, WorkspaceSharingService sharing) =>
         (await sharing.SharedWithMeAsync(caller.Id)).Select(w => new SharedWorkspaceDto(w.Workspace.PublicId, w.ProjectKey, $"{w.ProjectKey}/{w.RepoSlug}", w.Workspace.Ref, w.OwnerName,
@@ -74,7 +75,7 @@ public static class WorkspaceSharingEndpoints
     {
         if (await workspaces.GetMineAsync(id, caller.Id) == null) throw ApiException.NotFound("Workspace not found.");
         var body = await ApiResults.ReadBodyAsync<InviteToWorkspaceRequest>(http.Request);
-        var share = await sharing.InviteAsync(id, caller.Id, body.User, ParseRole(body.Role));
+        var share = await sharing.InviteAsync(id, caller.Id, body.User, ParseRole(body.Role), body.AllowPush);
         return TypedResults.Json(ToDto(share), statusCode: StatusCodes.Status201Created);
     }
 

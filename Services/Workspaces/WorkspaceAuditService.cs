@@ -24,8 +24,12 @@ public static class WorkspaceAuditActions
     // access
     public const string TicketRedeemed = "workspace.ticket_redeemed";
     // secrets (names only), tasks and images
-    public const string SecretCreated = "workspace.secret_created", SecretUpdated = "workspace.secret_updated", SecretDeleted = "workspace.secret_deleted",
-        SecretInjected = "workspace.secret_injected", TaskRun = "workspace.task_run", ImageOverride = "workspace.image_override";
+    // (the secret editor records workspace_secret.* itself, with the secret's name and scope, never its value)
+    public const string SecretCreated = "workspace_secret.created", SecretUpdated = "workspace_secret.updated", SecretDeleted = "workspace_secret.deleted",
+        SecretInjected = "workspace.secret_injected", TaskRun = "workspace.task_started", TaskStopped = "workspace.task_stopped", ImageOverride = "workspace.image_override",
+        UserSettings = "workspace.user_settings", AdminCustomImages = "workspace.admin_custom_images";
+    /// <summary>Everything the workspace audit views show: <c>workspace.*</c> and the secret editor's <c>workspace_secret.*</c>.</summary>
+    public const string SecretPrefix = "workspace_secret.";
     // network
     public const string EgressBlocked = "workspace.egress_blocked";
     // configuration (site and project)
@@ -64,7 +68,7 @@ public sealed class WorkspaceAuditService(IDbContextFactory<AppDbContext> dbFact
     {
         if (!await access.IsAdminAsync(adminId)) throw new ForbiddenException("Only site administrators can search the workspace audit log.");
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await RunAsync(db, db.AuditEvents.AsNoTracking().Where(e => e.Action.StartsWith(WorkspaceAuditActions.Prefix)), q, all);
+        return await RunAsync(db, db.AuditEvents.AsNoTracking().Where(e => e.Action.StartsWith(WorkspaceAuditActions.Prefix) || e.Action.StartsWith(WorkspaceAuditActions.SecretPrefix)), q, all);
     }
 
     /// <summary>One workspace's history: its owner and site admins. Other people get "not found".</summary>
@@ -122,7 +126,7 @@ public sealed class WorkspaceAuditService(IDbContextFactory<AppDbContext> dbFact
     {
         if (!await access.IsAdminAsync(adminId)) throw new ForbiddenException("Only site administrators can search the workspace audit log.");
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.AuditEvents.Where(e => e.Action.StartsWith(WorkspaceAuditActions.Prefix)).Select(e => e.Action).Distinct().OrderBy(a => a).ToListAsync();
+        return await db.AuditEvents.Where(e => e.Action.StartsWith(WorkspaceAuditActions.Prefix) || e.Action.StartsWith(WorkspaceAuditActions.SecretPrefix)).Select(e => e.Action).Distinct().OrderBy(a => a).ToListAsync();
     }
 
     /// <summary>Days workspace events are kept (0: as long as the site-wide audit retention, <c>Audit:RetentionDays</c>, allows).</summary>
@@ -179,7 +183,7 @@ public sealed class WorkspaceMaintenanceService(IServiceScopeFactory scopes, ILo
             {
                 var cutoff = DateTime.UtcNow.AddDays(-days);
                 await using var db = await sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContextAsync(ct);
-                var n = await db.AuditEvents.Where(e => e.Action.StartsWith(WorkspaceAuditActions.Prefix) && e.CreatedAt < cutoff).ExecuteDeleteAsync(ct);
+                var n = await db.AuditEvents.Where(e => (e.Action.StartsWith(WorkspaceAuditActions.Prefix) || e.Action.StartsWith(WorkspaceAuditActions.SecretPrefix)) && e.CreatedAt < cutoff).ExecuteDeleteAsync(ct);
                 if (n > 0) log.LogInformation("Workspace audit retention: deleted {Count} events older than {Days} days", n, days);
             }
         }

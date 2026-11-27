@@ -314,6 +314,14 @@
         <MudButton Href="account/ssh-keys" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.VpnKey">Manage SSH keys</MudButton>
     </section>
 
+    <section class="profile-section" id="workspace-settings">
+        <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="profile-section-title">Workspaces</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Secrets for your workspaces, your VS Code settings and a shell snippet.
+        </MudText>
+        <MudButton Href="account/workspace" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Terminal">Workspace settings</MudButton>
+    </section>
+
     <form class="profile-signout" method="post" action="account/logout">
         <AntiforgeryToken />
         <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Logout">Sign out</MudButton>

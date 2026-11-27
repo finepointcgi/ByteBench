@@ -408,6 +408,28 @@ else if (Repo != null && ctx != null)
 
     private bool ShowEditor => activeTab is { Kind: TabKind.File, Message: null };
 
+    [SupplyParameterFromQuery(Name = "suggest")] public string? Suggest { get; set; }
+
+    /// <summary>
+    /// "Add .bytebench/workspace.yml" (from the workspace pages) opens this editor on that path with <c>?suggest=workspace</c>: the file is created in the
+    /// editor's workspace from what the repository looks like (nothing is committed until the user commits it), unless it already exists.
+    /// </summary>
+    private async Task CreateSuggestedWorkspaceFileAsync(string branch)
+    {
+        if (Suggest != "workspace" || ctx is not { CanEdit: true } || !string.Equals(FilePath, ByteBench.Services.Workspaces.WorkspaceEnvFile.Path, StringComparison.Ordinal)) return;
+        try
+        {
+            var existing = await Workspace.ReadFileAsync(ctx.WorkspaceId, ctx.UserId, ByteBench.Services.Workspaces.WorkspaceEnvFile.Path);
+            if (existing.Exists) return;
+            var path = Repos.PathOf(Repo!);
+            var suggestion = await Task.Run(() => ByteBench.Services.Workspaces.WorkspaceEnvironmentLoader.Suggest(path, branch));
+            var yaml = suggestion != null ? ByteBench.Services.Workspaces.WorkspaceEnvironmentLoader.ToYaml(suggestion)
+                : "# ByteBench workspace environment. Docs: /docs/workspaces\ntoolchain: node@22\nsetup:\n  - \"npm install\"\ntasks:\n  run:\n    command: \"npm start\"\n    port: 3000\n    preview: true\n";
+            await Workspace.CreateFileAsync(ctx.WorkspaceId, ctx.UserId, ByteBench.Services.Workspaces.WorkspaceEnvFile.Path, yaml);
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         if (!await LoadRepoAsync()) return;
@@ -442,6 +464,7 @@ else if (Repo != null && ctx != null)
             await LoadDirAsync("");
             await RefreshChanges();
             aiStatus = await Ai.GetStatusAsync(Repo.ProjectId);
+            await CreateSuggestedWorkspaceFileAsync(branch);
         }
         if (!string.IsNullOrEmpty(FilePath) && monacoReady) await OpenFile(Uri.UnescapeDataString(FilePath));
     }

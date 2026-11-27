@@ -149,6 +149,23 @@ public class WorkspaceEgressPolicyTests
     }
 
     [Fact]
+    public void The_environment_file_parser_validates_egress_strictly_and_keeps_the_rest()
+    {
+        var ok = WorkspaceEnvFile.ParseYaml("ports: [3000]\negress:\n  allow: [registry.npmjs.org, \"@pypi\"]\n");
+        Assert.True(ok.Ok);
+        Assert.Equal("allowlist", ok.Environment!.Egress!.Mode);
+        Assert.Equal(3, ok.Environment.Egress.Allow!.Count);
+        Assert.Equal("none", WorkspaceEnvFile.ParseYaml("egress: none").Environment!.Egress!.Mode);
+        Assert.Null(WorkspaceEnvFile.ParseYaml("ports: [3000]").Environment!.Egress);
+        foreach (var bad in new[] { "egress: sideways", "egress:\n  allow: [\"https://x.com\"]", "egress:\n  frob: 1", "egress: 42", "egress:\n  allow: [\"*.com\"]" })
+        {
+            var r = WorkspaceEnvFile.ParseYaml(bad);
+            Assert.False(r.Ok);
+            Assert.Contains(r.Errors, e => e.StartsWith("egress:"));
+        }
+    }
+
+    [Fact]
     public void Only_public_addresses_are_ever_connected_to()
     {
         foreach (var ip in new[] { "127.0.0.1", "10.0.0.5", "172.16.3.4", "172.31.255.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "::1", "fe80::1", "fc00::1", "::ffff:10.0.0.1" })
@@ -340,7 +357,7 @@ public class WorkspaceEgressEnforcementTests(SharingApp app) : IClassFixture<Sha
     public async Task A_repository_file_narrows_the_policy_at_start_and_cannot_widen_it()
     {
         var yaml = """
-            image: ignored
+            ports: [3000]
             egress:
               allow:
                 - registry.npmjs.org

@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 # ByteBench workspace image: OpenVSCode Server (gitpod-io/openvscode-server) plus a small toolbox (git, node, python).
 #
-#   docker build -t bytebench-workspace:1 docker/workspace
+#   docker build -t bytebench-workspace:2 docker/workspace
 #   # with the .NET SDK too (any Debian-based SDK image works as the base):
-#   docker build -t bytebench-workspace:1-dotnet --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 docker/workspace
+#   docker build -t bytebench-workspace:2-dotnet --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 docker/workspace
 #
 # Set Workspaces:Image to the tag you built. The container is started by ByteBench with everything locked down
 # (non-root, no capabilities, no-new-privileges, resource limits, a private network); see the README, "Workspaces".
@@ -57,7 +57,10 @@ RUN set -eu; \
     # but it can't read coder's git credentials (mode 600) or ~/.gitconfig.
     useradd -m -u 1001 -g 1000 -s /bin/bash bbai; \
     git config --system safe.directory '*'; \
-    git config --system init.defaultBranch main
+    git config --system init.defaultBranch main; \
+    # Mount points of ByteBench's named volumes (project and dependency caches). They must exist and belong to coder so a fresh volume
+    # is writable by the unprivileged user.
+    mkdir -p /home/coder/.bbcache && chown coder:coder /home/coder/.bbcache
 
 COPY --chmod=755 bb-entrypoint.sh /usr/local/bin/bb-entrypoint
 COPY --chmod=755 bb-apply-egress.sh /usr/local/bin/bb-apply-egress

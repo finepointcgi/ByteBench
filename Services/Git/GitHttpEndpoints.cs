@@ -101,7 +101,7 @@ public static class GitHttpEndpoints
         var storage = ctx.RequestServices.GetRequiredService<RepoStorage>();
         var dbFactory = ctx.RequestServices.GetRequiredService<IDbContextFactory<AppDbContext>>();
         var found = await GitRepoLookup.FindAsync(dbFactory, projectKey, slug, ctx.RequestAborted);
-        if (found is null || ByteBench.Services.Workspaces.WorkspaceGitAuth.WrongRepository(ctx, found.Id)) { await NotFound(ctx); return; }
+        if (found is null || ByteBench.Services.Workspaces.WorkspaceGitAuth.WrongRepository(ctx, found.Id, writing: service == ReceivePack)) { await NotFound(ctx); return; }
 
         // Project permissions. Not viewable → 404 so the repo's existence isn't revealed.
         var access = ctx.RequestServices.GetRequiredService<ByteBench.Services.ProjectAccess>();
@@ -241,6 +241,7 @@ public static class GitHttpEndpoints
                     return (null, null, null);
                 }
                 ctx.Items[ByteBench.Services.Workspaces.WorkspaceGitAuth.RepositoryKey] = ws.RepositoryId;
+                ctx.Items[ByteBench.Services.Workspaces.WorkspaceGitAuth.ReadOnlyRepositoriesKey] = ws.ReadOnlyRepositoryIds;
                 return (user, ws.Scopes, null);
             }
             if (password.StartsWith(ByteBench.Services.AccessTokenService.TokenPrefix, StringComparison.Ordinal)

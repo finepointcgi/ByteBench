@@ -24,6 +24,11 @@ public class WorkspaceShare
     public int UserId { get; set; }
     public User User { get; set; } = null!;
     public WorkspaceShareRole Role { get; set; }
+    /// <summary>
+    /// Collaborators only: the owner ticked "may push". A collaborator acts as the container's user and so could use the workspace's git token; while any
+    /// active collaborator lacks this, the token is read-only (<c>WorkspaceGitAuth</c>), whoever pushes. Off by default.
+    /// </summary>
+    public bool AllowPush { get; set; }
     public int InvitedById { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EndedAt { get; set; }

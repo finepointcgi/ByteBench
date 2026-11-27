@@ -295,10 +295,10 @@ public class WorkspaceSharingTests(SharingApp app) : IClassFixture<SharingApp>
     {
         var s = await SetupAsync();
         await InviteAsync(s, s.Viewer, WorkspaceShareRole.Viewer);
-        app.Backend.ExecScripts.Add((spec => spec.User == "bbai" && spec.Command.Any(a => a.Contains("find \"$p\"")), _ => new ExecResult(0, "d\t4096\tsrc\nf\t12\tREADME.md\n")));
-        app.Backend.ExecScripts.Add((spec => spec.User == "bbai" && spec.Command.Any(a => a.Contains("head -c \"$max\"")), _ => new ExecResult(0, "# hello\n")));
-        app.Backend.ExecScripts.Add((spec => spec.Command.Contains("tmux") && spec.Command.Contains("list-sessions"), _ => new ExecResult(0, "main\n")));
-        app.Backend.ExecScripts.Add((spec => spec.Command.Contains("tmux") && spec.Command.Contains("capture-pane"), _ => new ExecResult(0, "$ npm test\nok\n")));
+        app.Backend.ExecScripts.Insert(0, (spec => spec.User == "bbai" && spec.Command.Any(a => a.Contains("find \"$p\"")), _ => new ExecResult(0, "d\t4096\tsrc\nf\t12\tREADME.md\n")));
+        app.Backend.ExecScripts.Insert(0, (spec => spec.User == "bbai" && spec.Command.Any(a => a.Contains("head -c \"$max\"")), _ => new ExecResult(0, "# hello\n")));
+        app.Backend.ExecScripts.Insert(0, (spec => spec.Command.Contains("tmux") && spec.Command.Contains("list-sessions"), _ => new ExecResult(0, "main\n")));
+        app.Backend.ExecScripts.Insert(0, (spec => spec.Command.Contains("tmux") && spec.Command.Contains("capture-pane"), _ => new ExecResult(0, "$ npm test\nok\n")));
         var viewerId = app.UserId(s.Viewer);
         await using var scope = app.Scope(viewerId);
         var sharing = scope.Get<WorkspaceSharingService>();
@@ -358,6 +358,69 @@ public class WorkspaceSharingTests(SharingApp app) : IClassFixture<SharingApp>
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/v1/workspaces/{s.Ws.PublicId}/shares/{s.Viewer}")).StatusCode);
         Assert.DoesNotContain(s.Ws.PublicId, await viewer.GetStringAsync("/api/v1/workspaces/shared"));
         Assert.Equal(HttpStatusCode.NotFound, (await owner.DeleteAsync($"/api/v1/workspaces/{s.Ws.PublicId}/shares/{s.Viewer}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Collaborators_make_the_git_token_read_only_unless_the_owner_allowed_pushing()
+    {
+        var s = await SetupAsync();
+        var credential = app.Backend.Execs.Where(e => e.ContainerId == s.Ws.ContainerId).Select(e => e.Spec.Stdin).First(x => x != null && x.Contains("gbw_"))!.Trim();
+        var token = credential[(credential.IndexOf(':', credential.IndexOf("://") + 3) + 1)..credential.IndexOf('@')];
+        var ownerId = app.UserId(s.Owner);
+        async Task<TokenScopes?> ScopesAsync() => (await WorkspaceGitAuth.ValidateAsync(app.Services, ownerId, token))?.Scopes;
+        Assert.True((await ScopesAsync())!.Value.HasFlag(TokenScopes.WriteRepository)); // alone: as before
+        await InviteAsync(s, s.Viewer, WorkspaceShareRole.Viewer);
+        Assert.True((await ScopesAsync())!.Value.HasFlag(TokenScopes.WriteRepository)); // viewers never touch the container's user
+        await using (var scope = app.Scope(ownerId))
+            await scope.Get<WorkspaceSharingService>().InviteAsync(s.Ws.PublicId, ownerId, s.Collaborator, WorkspaceShareRole.Collaborator);
+        var paused = await ScopesAsync();
+        Assert.True(paused!.Value.HasFlag(TokenScopes.ReadRepository));
+        Assert.False(paused.Value.HasFlag(TokenScopes.WriteRepository)); // default: no push for collaborators
+        await using (var scope = app.Scope(ownerId))
+            await scope.Get<WorkspaceSharingService>().InviteAsync(s.Ws.PublicId, ownerId, s.Collaborator, WorkspaceShareRole.Collaborator, allowPush: true);
+        Assert.True((await ScopesAsync())!.Value.HasFlag(TokenScopes.WriteRepository));
+        await using (var scope = app.Scope(ownerId))
+            await scope.Get<WorkspaceSharingService>().RevokeAsync(s.Ws.PublicId, ownerId, app.UserId(s.Collaborator));
+        Assert.True((await ScopesAsync())!.Value.HasFlag(TokenScopes.WriteRepository));
+    }
+
+    [Fact]
+    public async Task Viewers_never_see_environment_files_keys_or_secret_folders()
+    {
+        var s = await SetupAsync();
+        await InviteAsync(s, s.Viewer, WorkspaceShareRole.Viewer);
+        app.Backend.ExecScripts.Insert(0, (spec => spec.User == "bbai" && spec.Command.Any(a => a.Contains("find \"$p\"")), _ => new ExecResult(0, "f\t5\t.env\nf\t5\t.env.local\nf\t5\tserver.pem\nf\t5\tid_rsa\nd\t0\tsecrets\nf\t3\tapp.cs\n")));
+        var viewerId = app.UserId(s.Viewer);
+        await using var scope = app.Scope(viewerId);
+        var sharing = scope.Get<WorkspaceSharingService>();
+        Assert.Equal(["app.cs"], (await sharing.ListDirectoryAsync(s.Ws.PublicId, viewerId, "")).Select(e => e.Name));
+        foreach (var path in new[] { ".env", "sub/.env.production", "certs/server.pem", ".ssh/id_ed25519", "secrets/db.txt", ".bb-env", "x/.git-credentials" })
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sharing.ReadFileAsync(s.Ws.PublicId, viewerId, path));
+            Assert.Contains("viewers", ex.Message);
+        }
+        // the container-side check (after symlinks are resolved) carries the same deny-list
+        Assert.All(app.Backend.Execs.Where(e => e.Spec.User == "bbai" && e.Spec.Command.Any(a => a.Contains("realpath"))), e => Assert.Contains("*/.env", string.Join(' ', e.Spec.Command)));
+        Assert.True(WorkspaceSharingService.IsHiddenFromViewers("ID_RSA"));
+        Assert.False(WorkspaceSharingService.IsHiddenFromViewers("environment.cs"));
+    }
+
+    [Fact]
+    public async Task Viewers_and_collaborators_cannot_run_tasks_or_reach_the_environment()
+    {
+        var s = await SetupAsync();
+        await InviteAsync(s, s.Collaborator, WorkspaceShareRole.Collaborator);
+        await InviteAsync(s, s.Viewer, WorkspaceShareRole.Viewer);
+        foreach (var user in new[] { s.Collaborator, s.Viewer })
+        {
+            await using var scope = app.Scope(app.UserId(user));
+            var svc = scope.Get<WorkspaceService>();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.RunTaskAsync(s.Ws.PublicId, app.UserId(user), "test"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.StopTaskAsync(s.Ws.PublicId, app.UserId(user), "test"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.GetEnvironmentAsync(s.Ws.PublicId, app.UserId(user)));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.StopAsync(s.Ws.PublicId, app.UserId(user)));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CommitAsync(s.Ws.PublicId, app.UserId(user), "x", false, null));
+        }
     }
 
     // ---------- audit ----------
@@ -423,7 +486,7 @@ public class WorkspaceSharingTests(SharingApp app) : IClassFixture<SharingApp>
             new { names = new[] { "DATABASE_URL" }, value = "hunter2", secret = "hunter2", token = "hunter2" });
         await audit.RecordAsync(WorkspaceAuditActions.SecretInjected, s.Ws.PublicId, s.Ws.ProjectId, app.UserId(s.Owner), new { names = new[] { "DATABASE_URL", "API_KEY" }, count = 2 });
         await using var db = app.Db();
-        var rows = await db.AuditEvents.Where(a => a.TargetId == s.Ws.PublicId && a.Action.StartsWith("workspace.secret")).ToListAsync();
+        var rows = await db.AuditEvents.Where(a => a.TargetId == s.Ws.PublicId && a.Action.Contains("secret")).ToListAsync();
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.DoesNotContain("hunter2", r.Details));
         Assert.Contains(rows, r => r.Details!.Contains("DATABASE_URL"));

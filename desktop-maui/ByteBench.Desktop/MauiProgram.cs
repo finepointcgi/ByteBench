@@ -26,6 +26,8 @@ public static class MauiProgram
             });
 
         var dataDir = FileSystem.AppDataDirectory;
+        DiagnosticsLog.Default = new DiagnosticsLog(Path.Combine(dataDir, "logs", "bytebench-desktop-webview.log"));
+        DiagnosticsLog.Default.Info("app started");
         builder.Services.AddSingleton(new ProfileStore(Path.Combine(dataDir, "profiles.json")));
         builder.Services.AddSingleton<ITokenStore, SecureTokenStore>();
         builder.Services.AddSingleton(NotificationPoller.CreateDefaultClient());

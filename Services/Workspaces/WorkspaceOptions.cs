@@ -4,7 +4,7 @@ namespace ByteBench.Services.Workspaces;
 public class WorkspaceOptions
 {
     /// <summary>The workspace image (build it from docker/workspace/).</summary>
-    public string Image { get; set; } = "bytebench-workspace:1";
+    public string Image { get; set; } = "bytebench-workspace:2";
     /// <summary>Directory with the image's Dockerfile (default: docker/workspace beside the app). If the image is missing it is built from here automatically; with no Dockerfile it is pulled.</summary>
     public string? BuildContext { get; set; }
     public string DockerExecutable { get; set; } = "docker";
@@ -61,6 +61,15 @@ public class WorkspaceOptions
     public WorkspaceEgressOptions Egress { get; set; } = new();
 
     public int ReaperIntervalSeconds { get; set; } = 30;
+
+    /// <summary>A stopped workspace keeps its project and cache volumes (so it can be resumed with its dependencies) this many days; then they are deleted.</summary>
+    public int VolumeRetentionDays { get; set; } = 14;
+    /// <summary>The repository's <c>setup:</c> commands may run this long, each.</summary>
+    public int SetupTimeoutMinutes { get; set; } = 20;
+    /// <summary>Each submodule may take this long to fetch before it is reported as failed (the workspace still opens).</summary>
+    public int SubmoduleTimeoutSeconds { get; set; } = 180;
+    /// <summary>A sidecar service must accept connections within this time or the workspace fails with the service's last output.</summary>
+    public int ServiceStartTimeoutSeconds { get; set; } = 120;
 
     /// <summary>The AI assistant next to the IDE.</summary>
     public WorkspaceAiOptions Ai { get; set; } = new();

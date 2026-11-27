@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
 namespace ByteBench.Services.Workspaces;
 
 public static class WorkspaceServiceCollectionExtensions
@@ -14,6 +16,12 @@ public static class WorkspaceServiceCollectionExtensions
         services.AddSingleton<IEgressConnector, DnsEgressConnector>();
         services.AddSingleton<WorkspaceEgress>();
         services.AddSingleton<WorkspaceShareStore>();
+        services.AddSingleton<WorkspaceTasks>();
+        services.AddSingleton<WorkspaceSecretStore>();
+        services.AddSingleton<SubmoduleResolver>();
+        services.AddScoped<WorkspaceSecretService>();
+        services.AddScoped<UserWorkspaceSettingsService>();
+        services.TryAddSingleton<Api.PublicBaseUrl>();
         services.AddSingleton<WorkspaceLifecycle>();
         services.AddSingleton<WorkspaceReaper>();
         services.AddHostedService(sp => sp.GetRequiredService<WorkspaceReaper>());

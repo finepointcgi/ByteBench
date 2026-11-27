@@ -26,10 +26,11 @@
                     <MudSelectItem Value="WorkspaceShareRole.Collaborator">Collaborator</MudSelectItem>
                     <MudSelectItem Value="WorkspaceShareRole.Viewer">Viewer</MudSelectItem>
                 </MudSelect>
+                <MudCheckBox T="bool" @bind-Value="invitePush" Label="May push" Disabled="@(inviteRole != WorkspaceShareRole.Collaborator)" Dense="true" data-testid="ws-invite-push" />
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="Invite" Disabled="@string.IsNullOrWhiteSpace(inviteUser)" data-testid="ws-invite-send">Invite</MudButton>
             </div>
             <MudText Typo="Typo.caption" Class="mud-text-secondary" HtmlTag="div">
-                <b>Collaborator</b>: the full IDE in their own browser window on your workspace, and your git push token (invite people you trust like yourself).
+                <b>Collaborator</b>: the full IDE in their own browser window on your workspace. They work as the container's user, so they can read its files and environment; git pushes stay switched off while a collaborator without <i>May push</i> is invited.
                 <b>Viewer</b>: read-only view of files and shared terminals (<code>tmux new -s main</code>); no editing or commands. They must already see this repository.
             </MudText>
             @if (error != null) { <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@error</MudAlert> }
@@ -42,7 +43,7 @@
                     {
                         <tr>
                             <td>@s.UserName</td>
-                            <td>@s.Role</td>
+                            <td>@s.Role@(s.AllowPush ? " (may push)" : "")</td>
                             <td>@(s.Connected ? "connected" : s.LastSeen != null ? "last seen " + s.LastSeen.Value.ToLocalTime().ToString("t") : "invited")</td>
                             <td><MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text" OnClick="() => Revoke(s)">Remove</MudButton></td>
                         </tr>
@@ -102,6 +103,7 @@
 
     private string sharingMode = WorkspaceSharingMode.Members;
     private string inviteUser = "";
+    private bool invitePush;
     private WorkspaceShareRole inviteRole = WorkspaceShareRole.Collaborator;
     private string? error;
     private List<ShareInfo> shares = [];
@@ -144,7 +146,7 @@
         error = null;
         try
         {
-            await Sharing.InviteAsync(PublicId, Me.Id, inviteUser, inviteRole);
+            await Sharing.InviteAsync(PublicId, Me.Id, inviteUser, inviteRole, invitePush);
             Snackbar.Add($"{inviteUser.Trim()} was invited.", Severity.Success);
             inviteUser = "";
             await Load();

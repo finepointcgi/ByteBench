@@ -87,6 +87,49 @@ public sealed class WorkspaceImage(IWorkspaceBackend backend, IOptionsMonitor<Wo
         }
     }
 
+    // ---------- toolchain and custom base images ----------
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> derivedGates = new(StringComparer.Ordinal);
+
+    /// <summary>The tag of the image built for a toolchain: the configured image's tag plus the toolchain (<c>bytebench-workspace:2-node22</c>).</summary>
+    public string TagFor(WorkspaceToolchain toolchain) => Derive(toolchain.Alias);
+
+    /// <summary>The tag of the image built on a repository's own base image (<c>image:</c>, if the administrator allows them).</summary>
+    public string TagFor(string baseImage) => Derive("img-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(baseImage)))[..12].ToLowerInvariant());
+
+    private string Derive(string suffix)
+    {
+        var image = Image;
+        var colon = image.LastIndexOf(':');
+        var slash = image.LastIndexOf('/');
+        return colon > slash ? $"{image}-{suffix}" : $"{image}:{suffix}";
+    }
+
+    /// <summary>
+    /// Makes sure an image exists that is the workspace image's toolbox (OpenVSCode Server, git, the entrypoint) on top of <paramref name="baseImage"/>,
+    /// building it from the same Dockerfile (<c>--build-arg BASE_IMAGE</c>) when it is missing. The base image comes from the server's toolchain
+    /// table, or from a repository file only when an administrator allowed that. Builds of one tag never run twice at once.
+    /// </summary>
+    public async Task EnsureDerivedAsync(string tag, string baseImage, Action<string> onLine, CancellationToken ct)
+    {
+        if (!await backend.IsAvailableAsync(ct)) throw new InvalidOperationException("Docker isn't reachable from ByteBench.");
+        var gate = derivedGates.GetOrAdd(tag, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (await backend.ImageExistsAsync(tag, ct)) return;
+            var context = BuildContext() ?? throw new InvalidOperationException("The workspace Dockerfile (docker/workspace) isn't available, so an image for this toolchain can't be built.");
+            onLine($"Building the workspace image {tag} on {baseImage} (first use of this toolchain; this takes a few minutes)…");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(45));
+            var code = await backend.BuildImageAsync(context, tag, onLine, timeout.Token, new Dictionary<string, string> { ["BASE_IMAGE"] = baseImage });
+            if (code != 0 || !await backend.ImageExistsAsync(tag, ct))
+                throw new InvalidOperationException($"Building the workspace image on {baseImage} failed (exit {code}). The base image must be Debian or Ubuntu based.");
+            onLine("Image ready.");
+        }
+        finally { gate.Release(); }
+    }
+
     /// <summary>A sentence for the UI about the image, or null when it is ready.</summary>
     public string? Problem => State switch
     {

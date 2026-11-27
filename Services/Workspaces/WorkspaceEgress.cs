@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using ByteBench.Data;
 using ByteBench.Services.Accounts;
-using ByteBench.Services.Git;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -36,7 +35,7 @@ public class WorkspaceEgressOptions
 /// refuses non-public addresses. Denied requests are counted, kept in a short log for the UI and audited (first time per host and port).
 /// </para>
 /// </summary>
-public sealed class WorkspaceEgress(IDbContextFactory<AppDbContext> dbFactory, RepoStorage storage, IOptionsMonitor<WorkspaceOptions> options,
+public sealed class WorkspaceEgress(IDbContextFactory<AppDbContext> dbFactory, IOptionsMonitor<WorkspaceOptions> options,
     IEgressConnector connector, WorkspaceAudit audit, ILogger<WorkspaceEgress> log) : IDisposable
 {
     public const string ModeKey = "workspaces.egress.mode";
@@ -63,14 +62,12 @@ public sealed class WorkspaceEgress(IDbContextFactory<AppDbContext> dbFactory, R
     // ---------- start ----------
 
     /// <summary>
-    /// Combines the admin policy with the repository's <c>egress:</c> at the workspace's commit (it can only narrow), sets
-    /// <see cref="Workspace.EgressMode"/> and stores the record in <paramref name="db"/> (the caller saves). Never throws: an unreadable
-    /// <c>workspace.yml</c> is a warning and the admin policy stands.
+    /// Combines the admin policy with the repository's <c>egress:</c> (already parsed and validated with the rest of <c>.bytebench/workspace.yml</c>; it can
+    /// only narrow), sets <see cref="Workspace.EgressMode"/> and stores the record in <paramref name="db"/> (the caller saves).
     /// </summary>
-    public async Task<EffectiveEgress> ResolveAsync(AppDbContext db, Workspace ws)
+    public async Task<EffectiveEgress> ResolveAsync(AppDbContext db, Workspace ws, RepoEgressSpec? repo)
     {
         var admin = await GetAdminPolicyAsync();
-        var repo = ReadRepoSpec(ws);
         var effective = WorkspaceEgressPolicy.Narrow(admin, repo);
         ws.EgressMode = effective.Mode;
         var record = await db.WorkspaceEgressRecords.FirstOrDefaultAsync(r => r.WorkspaceId == ws.Id);
@@ -83,26 +80,11 @@ public sealed class WorkspaceEgress(IDbContextFactory<AppDbContext> dbFactory, R
         return effective;
     }
 
-    private RepoEgressSpec? ReadRepoSpec(Workspace ws)
-    {
-        try
-        {
-            var path = storage.PathFor(ws.Repository.Project.Key, ws.Repository.Slug);
-            var blob = GitOps.GetBlob(path, ws.CommitSha ?? ws.Ref, ".bytebench/workspace.yml");
-            return blob is { Text: { } text } ? WorkspaceEgressPolicy.ParseRepoSpec(text) : null;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            log.LogDebug(ex, "Could not read .bytebench/workspace.yml for workspace {Id}", ws.PublicId);
-            return null;
-        }
-    }
-
     /// <summary>
     /// For an <c>allowlist</c> workspace: starts the proxy if needed, registers the workspace and returns the environment that points its tools at the
     /// proxy. Empty for every other mode.
     /// </summary>
-    public IReadOnlyDictionary<string, string> Prepare(Workspace ws, EffectiveEgress policy, Uri gitBase)
+    public IReadOnlyDictionary<string, string> Prepare(Workspace ws, EffectiveEgress policy, Uri gitBase, IEnumerable<string>? directHosts = null)
     {
         if (!policy.UsesProxy) return new Dictionary<string, string>();
         var port = EnsureProxy();
@@ -113,7 +95,8 @@ public sealed class WorkspaceEgress(IDbContextFactory<AppDbContext> dbFactory, R
         byToken[Hash(token)] = entry;
         tokenOf[ws.Id] = Hash(token);
         var url = $"http://bytebench:{token}@{ProxyHost(gitBase)}:{port}";
-        var noProxy = $"localhost,127.0.0.1,{gitBase.Host}";
+        // Reached directly, not through the proxy: ByteBench's git endpoint and the repository's own services (private, no way out).
+        var noProxy = string.Join(",", new[] { "localhost", "127.0.0.1", gitBase.Host }.Concat(directHosts ?? []));
         return new Dictionary<string, string>
         {
             ["HTTP_PROXY"] = url, ["HTTPS_PROXY"] = url, ["http_proxy"] = url, ["https_proxy"] = url,
