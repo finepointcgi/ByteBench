@@ -1,0 +1,78 @@
+# AI triage of a failed e2e run: classifies each failed test (real bug / flaky / test needs update / env problem), checks the run history for known
+# flakiness, proposes a minimal fix and posts it as a pull request comment (or commit comment, and always the job summary).
+#
+# Needs the repository secret ANTHROPIC_API_KEY; without it the job is skipped, not failed.
+#
+# Security: workflow_run workflows run with this repository's secrets, so this one never checks out or executes the pull request's code. It uses
+# the default branch's scripts and passes the run's logs, artifacts and diff to a model that has no tools, as untrusted data.
+# Locally: e2e/run.sh triage --run-id <id>  (or --dir e2e/test-results for a local run). See docs/testing.md.
+name: AI triage
+
+on:
+  workflow_run:
+    workflows: ["E2E smoke", "E2E nightly"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    outputs:
+      ai: ${{ steps.key.outputs.ai }}
+    steps:
+      - id: key
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then echo "ai=true" >> "$GITHUB_OUTPUT"; else echo "ai=false" >> "$GITHUB_OUTPUT"; echo "ANTHROPIC_API_KEY is not set: AI triage is skipped." >> "$GITHUB_STEP_SUMMARY"; fi
+
+  triage:
+    needs: gate
+    if: needs.gate.outputs.ai == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      # The default branch (never the pull request's head): the scripts that run here are trusted.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Fetch the failing commit as data (never checked out)
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          git fetch --no-tags origin "$SHA" 2>/dev/null || { [ -n "$PR" ] && git fetch --no-tags origin "pull/$PR/head" 2>/dev/null; } || echo "The commit is not fetchable (a fork?): the triage works without the diff."
+      - name: Install the dependencies and the Claude Code CLI
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npm install -g @anthropic-ai/claude-code
+      - name: Triage
+        working-directory: e2e
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: npx tsx ai-triage/triage.ts --run-id "$RUN_ID" --repo "${{ github.repository }}" --sha "$SHA" ${PR:+--pr "$PR"} --post auto --max-usd 1.5
+      - name: Upload the triage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-triage-report
+          path: e2e/reports/triage/triage.*
+          if-no-files-found: ignore
+          retention-days: 14

@@ -81,7 +81,9 @@ export async function cleanupDockerTier(t: DockerTier): Promise<void> {
   docker(['network', 'rm', t.network], { allowFail: true });
   const vols = ids(['volume', 'ls', '-q', '--filter', `name=^bb-wsv-${k}-`]);
   if (vols.length) docker(['volume', 'rm', '-f', ...vols], { allowFail: true });
-  // Prebuild images made by this run (labelled by the server) are small and tagged under the e2e repository.
+  // Prebuild snapshots this server instance committed (bytebench-prebuild:<first 8 of instance key>-r<repo>-p<id>).
+  const prebuilds = ids(['images', '--format', '{{.Repository}}:{{.Tag}}', '--filter', `reference=bytebench-prebuild:${k.slice(0, 8)}-*`]);
+  if (prebuilds.length) docker(['rmi', '-f', ...prebuilds], { allowFail: true });
 }
 
 /** Runs `docker` against the workspace of a given public id: returns the container name. */
