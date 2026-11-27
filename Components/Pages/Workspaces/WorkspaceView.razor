@@ -20,8 +20,20 @@
 else
 {
     var ws = view.Workspace;
+    var full = fullscreen && ws.State == WorkspaceState.Running;
+    @* Full screen is a fixed layer over the whole viewport (above ByteBench's app bar and menu), so it needs no browser fullscreen API and works in embedded views. *@
+    @if (full)
+    {
+        @* ByteBench's app bar and menu are hidden (not just covered) and the page can't scroll while the IDE has the screen. *@
+        <style>.mud-appbar, .mud-drawer, .mud-drawer-overlay { display: none !important; } html, body { overflow: hidden !important; }</style>
+    }
+    <div class="ws-page @(full ? "ws-full" : "")" data-testid="ws-page" data-fullscreen="@(full ? "true" : "false")">
     <div class="ws-bar">
         <div class="ws-title">
+            @if (full)
+            {
+                <MudButton Href="@($"/p/{view.ProjectKey}/repos/{view.RepoSlug}")" Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" data-testid="ws-back">Back</MudButton>
+            }
             <MudText Typo="Typo.subtitle1" HtmlTag="h1"><b>@view.RepositoryPath</b> <span class="mono">@ws.Ref</span></MudText>
             <MudChip T="string" Size="Size.Small" Color="@StateColor()" data-testid="ws-state">@ws.State</MudChip>
             @if (!ws.CanPush) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">read-only</MudChip> }
@@ -48,6 +60,13 @@ else
             {
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Stop" OnClick="Stop" data-testid="ws-stop">Stop</MudButton>
             }
+            @if (ws.State == WorkspaceState.Running)
+            {
+                <MudTooltip Text="@(fullscreen ? "Leave full screen (show ByteBench's menu)" : "Full screen")">
+                    <MudIconButton Icon="@(fullscreen ? Icons.Material.Outlined.FullscreenExit : Icons.Material.Outlined.Fullscreen)" Size="Size.Small" OnClick="() => fullscreen = !fullscreen"
+                                   aria-label="@(fullscreen ? "Leave full screen" : "Enter full screen")" data-testid="ws-fullscreen-toggle" />
+                </MudTooltip>
+            }
         </div>
     </div>
 
@@ -61,6 +80,7 @@ else
     }
     else if (ws.State == WorkspaceState.Running)
     {
+        <div class="ws-notices">
         @if (env != null)
         {
             foreach (var e in env.Errors)
@@ -83,6 +103,7 @@ else
                 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-1" data-testid="ws-setup-running"><MudProgressLinear Indeterminate="true" Size="Size.Small" Class="mb-1" />Setup is running (installing dependencies…). <MudLink OnClick="() => showTasks = true">Show the log</MudLink></MudAlert>
             }
         }
+        </div>
         <div class="ws-body">
             @if (ideUrl != null)
             {
@@ -185,6 +206,7 @@ else
         </MudAlert>
         @if (env is { ProvisionLog.Length: > 0 } && ws.State == WorkspaceState.Failed) { <pre class="mono ws-log" style="max-width:760px" data-testid="ws-provision-log">@env.ProvisionLog</pre> }
     }
+    </div>
 }
 
 @code {
@@ -204,6 +226,8 @@ else
     private CancellationTokenSource? aiCts;
     private WorkspaceService.WorkspaceEnvironmentView? env;
     private bool showTasks, tasksShownOnce;
+    /// <summary>Full screen is the default while the workspace runs: the IDE gets the whole viewport under one slim bar.</summary>
+    private bool fullscreen = true;
     private readonly Dictionary<string, string> taskLogs = [];
     private readonly HashSet<string> autoPreviewed = [];
     [Inject] private IOptionsMonitor<WorkspaceOptions> WsOptions { get; set; } = null!;

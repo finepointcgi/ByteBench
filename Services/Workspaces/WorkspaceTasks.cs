@@ -19,8 +19,7 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
     /// </summary>
     private const string RunScript = """
         [ -f "$HOME/.bb-env" ] && . "$HOME/.bb-env"
-        echo $$ > "$1"
-        exec bash -c "$2"
+        exec setsid --wait sh -c 'echo $$ > "$1"; exec bash -c "$2"' sh "$1" "$2"
         """;
 
     /// <summary>Ends the process tree of the pid in <c>$1</c>: TERM, a moment to exit, then KILL.</summary>
@@ -28,8 +27,11 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
         pid=$(cat "$1" 2>/dev/null) || exit 0
         [ -n "$pid" ] || exit 0
         kill_tree() { for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c" "$2"; done; kill "-$2" "$1" 2>/dev/null || true; }
+        # The task is a session leader (setsid): its whole process group goes first, which also reaches processes it backgrounded.
+        kill -s TERM -- "-$pid" 2>/dev/null || true
         kill_tree "$pid" TERM
         sleep 2
+        kill -s KILL -- "-$pid" 2>/dev/null || true
         kill_tree "$pid" KILL
         rm -f "$1"
         exit 0
