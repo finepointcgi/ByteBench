@@ -146,6 +146,7 @@
             browser = await module.InvokeAsync<BrowserState>("state");
         }
         catch (JSDisconnectedException) { return; }
+        catch (ObjectDisposedException) { return; } // the page went away while the call was being sent
         catch (JSException) { browser = new BrowserState { Supported = false }; }
         StateHasChanged();
     }

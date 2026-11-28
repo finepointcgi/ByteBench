@@ -87,6 +87,19 @@ public static class Display
     }
 
     /// <summary>
+    /// Markdown shown inside a page that already has its own h1 (a README under the repository's name): every heading moves down one level,
+    /// so the page keeps a single h1 and the document outline stays valid.
+    /// </summary>
+    public static MarkupString MarkdownUnderPageTitle(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return new("");
+        var doc = Markdig.Markdown.Parse(text, Pipeline);
+        NeutralizeUnsafeUrls(doc);
+        foreach (var h in doc.Descendants<Markdig.Syntax.HeadingBlock>()) h.Level = Math.Min(6, h.Level + 1);
+        return new(Markdig.Markdown.ToHtml(doc, Pipeline));
+    }
+
+    /// <summary>
     /// Link and image destinations (including reference links and &lt;scheme:…&gt; autolinks) that name a scheme other than
     /// http, https or mailto become "#": DisableHtml stops raw HTML, but not <c>[x](javascript:…)</c>, which runs on click
     /// wherever there is no CSP (notification emails, or the CSP switched off).

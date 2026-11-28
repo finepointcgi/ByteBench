@@ -69,6 +69,7 @@
     private ElementReference root;
     private IJSObjectReference? acModule;
     private DotNetObjectReference<MarkdownEditor>? acRef;
+    private bool disposed;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -77,10 +78,12 @@
         try
         {
             acModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/mention-autocomplete.js");
+            if (disposed) return; // the page went away while the module loaded: DisposeAsync has already released the reference
             await acModule.InvokeVoidAsync("attach", root, acRef);
         }
         catch (JSException) { }
         catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { } // disposed between the check and the call
     }
 
     /// <summary>Called by the JS module (debounced). <paramref name="kind"/> is "user" or "issue"; <paramref name="key"/> a typed project key.</summary>
@@ -93,6 +96,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        disposed = true;
         if (acModule != null)
         {
             try

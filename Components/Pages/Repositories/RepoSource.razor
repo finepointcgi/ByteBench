@@ -161,7 +161,7 @@ else if (Repo != null)
                     }
                     else if (IsMarkdown && !showSource)
                     {
-                        <div class="markdown readme-body">@Display.Markdown(blob.Text)</div>
+                        <div class="markdown readme-body">@Display.MarkdownUnderPageTitle(blob.Text)</div>
                     }
                     else
                     {
@@ -183,7 +183,7 @@ else if (Repo != null)
         {
             <div class="readme-card">
                 <div class="readme-head"><MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Small" /> @readme.Path.Split('/').Last()</div>
-                <div class="markdown readme-body">@Display.Markdown(readme.Text)</div>
+                <div class="markdown readme-body">@Display.MarkdownUnderPageTitle(readme.Text)</div>
             </div>
         }
     }

@@ -47,6 +47,7 @@ public sealed partial class AiRunExecutor
         args.AddRange(["--allowedTools", "mcp__" + AiRunToolBridge.ServerName]);
         args.AddRange(["--disallowedTools", CliDisallowedTools]);
         args.AddRange(["--permission-mode", "dontAsk"]);
+        Flag("--setting-sources", "project"); // not the server account's own settings, hooks, plugins or memory: the run directory is empty
         Flag("--no-session-persistence");
         Flag("--disable-slash-commands");
         Flag("--max-turns", o.MaxSteps.ToString(CultureInfo.InvariantCulture));

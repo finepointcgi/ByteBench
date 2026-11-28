@@ -26,6 +26,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     docker = await prepareDockerTier(port);
     listenAll = true;
     Object.assign(env, docker.serverEnv);
+    if (process.env.E2E_REAL_AI === '1') {
+      // The opt-in real AI run (tests/docker/ai-run.spec.ts): the local Claude Code CLI as the backend, with small limits so a run costs cents.
+      env.Workspaces__AiRuns__Backend = 'claude-cli';
+      env.Workspaces__AiRuns__MaxSteps = process.env.E2E_AI_MAX_STEPS ?? '20';
+      env.Workspaces__AiRuns__MaxCostUsd = process.env.E2E_AI_MAX_USD ?? '1.5';
+      env.Workspaces__AiRuns__MaxDurationMinutes = '12';
+      env.Workspaces__AiRuns__PollSeconds = '2';
+    }
   }
 
   server = await startServer({ env, listenAll, port });

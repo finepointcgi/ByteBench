@@ -67,14 +67,16 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
 
         try
         {
-            if (o.ListenAddress is { Length: > 0 } addr)
-                listener = new TcpListener(IPAddress.Parse(addr), o.Port);
-            else
+            try { listener = Listen(o, o.Port); }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse && env.IsDevelopment() && o.Port != 0)
             {
-                listener = new TcpListener(IPAddress.IPv6Any, o.Port);
-                listener.Server.DualMode = true;
+                // Development ships Ssh:Port 2222, so a second dev server (or a test server) on the same machine would never start its SSH side.
+                // Take a free port instead (the clone URLs shown in the UI follow it) and say so; production keeps the configured port or fails loudly.
+                listener = Listen(o, 0);
+                var chosen = ((IPEndPoint)listener.LocalEndpoint).Port;
+                log.LogWarning("Port {Port} for git over SSH is already in use (another ByteBench on this machine?); listening on port {Chosen} instead. Set Ssh:Port to choose one.", o.Port, chosen);
+                if (o.PublicPort == null) o.Port = chosen;
             }
-            listener.Start();
         }
         catch (Exception ex) when (ex is SocketException or FormatException)
         {
@@ -85,6 +87,20 @@ public sealed partial class SshGitServer(IOptions<SshOptions> options, IServiceS
         BoundPort = ((IPEndPoint)listener.LocalEndpoint).Port;
         log.LogInformation("Git over SSH listening on port {Port} (host key {Fingerprint})", BoundPort, HostKeyFingerprint);
         return base.StartAsync(cancellationToken);
+    }
+
+    private static TcpListener Listen(SshOptions o, int port)
+    {
+        TcpListener l;
+        if (o.ListenAddress is { Length: > 0 } addr) l = new TcpListener(IPAddress.Parse(addr), port);
+        else
+        {
+            l = new TcpListener(IPAddress.IPv6Any, port);
+            l.Server.DualMode = true;
+        }
+        try { l.Start(); }
+        catch { l.Stop(); throw; }
+        return l;
     }
 
     /// <summary>Public-key auth only; RSA/ECDSA from the library plus ed25519; the library's ciphers, MACs and key exchanges.</summary>

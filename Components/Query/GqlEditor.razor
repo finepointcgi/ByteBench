@@ -99,6 +99,7 @@
         }
         catch (JSException) { }
         catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { } // the component was disposed while the module loaded
     }
 
     /// <summary>Focuses the editor with the caret at the end.</summary>

@@ -94,7 +94,7 @@ else if (Repo != null && ctx != null)
                             </button>
                             @if (ctx.CanEdit)
                             {
-                                <MudMenu Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Small" Dense="true" Class="we-row-menu" aria-label="@($"Actions for {e.Name}")"
+                                <MudMenu Icon="@Icons.Material.Outlined.MoreHoriz" Size="Size.Small" Dense="true" Class="we-row-menu" AriaLabel="@($"Actions for {e.Name}")"
                                          AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                                     @if (e.IsDirectory)
                                     {
@@ -496,6 +496,7 @@ else if (Repo != null && ctx != null)
             StateHasChanged();
         }
         catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { } // the page went away while Monaco was starting
     }
 
     // ---------- explorer ----------

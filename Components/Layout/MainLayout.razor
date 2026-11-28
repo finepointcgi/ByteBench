@@ -167,7 +167,7 @@
     </MudDrawer>
 
     <MudMainContent>
-        <div class="gb-content" id="main-content" role="main" tabindex="-1">
+        <main class="gb-content" id="main-content" tabindex="-1">
             @* Render once the user is loaded, even when signed out, so RedirectToLogin can run. *@
             @if (userLoaded)
             {
@@ -177,7 +177,7 @@
                 }
                 @Body
             }
-        </div>
+        </main>
     </MudMainContent>
 </MudLayout>
 

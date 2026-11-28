@@ -35,6 +35,8 @@ else
         var visible = await Access.VisibleProjectIdsAsync();
         await using var db = await DbFactory.CreateDbContextAsync();
         var k = Key.ToUpperInvariant();
+        // A project that doesn't exist and one the user can't see are the same: a real 404 (no half-built page).
+        if (!await db.Projects.AsNoTracking().AnyAsync(p => p.Key == k && visible.Contains(p.Id))) { Nav.NotFound(); return; }
         repos = await db.Repositories.AsNoTracking().Include(r => r.Project).Where(r => r.Project.Key == k && visible.Contains(r.ProjectId)).OrderBy(r => r.Name).ToListAsync();
         if (repos.Count == 1) Nav.NavigateTo(Url(repos[0]), replace: true);
     }
