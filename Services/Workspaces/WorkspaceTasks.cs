@@ -192,11 +192,14 @@ public sealed class WorkspaceTasks(IWorkspaceBackend backend, IOptionsMonitor<Wo
     {
         var sb = new StringBuilder();
         sb.Append("# Written by ByteBench when the workspace started (mode 600). Not part of the repository.\n");
+        // Sourced from ~/.bashrc, ~/.profile, BASH_ENV and the task shell: whichever comes first wins, the others are no-ops (PATH is not extended twice).
+        sb.Append("[ -n \"${BB_ENV_LOADED:-}\" ] && return 0\n");
         // Dependency caches live in a named volume, so they survive the container.
         foreach (var (k, v) in CacheEnvironment) sb.Append("export ").Append(k).Append('=').Append(Quote(v)).Append('\n');
         sb.Append("export PATH=\"$PATH:/home/coder/.bbcache/cargo/bin:/home/coder/.bbcache/go/bin\"\n");
         foreach (var (k, v) in repoEnv) sb.Append("export ").Append(k).Append('=').Append(Quote(v)).Append('\n');
         foreach (var (k, v) in secrets) sb.Append("export ").Append(k).Append('=').Append(Quote(v)).Append('\n');
+        sb.Append("export BB_ENV_LOADED=1\n");
         return sb.ToString();
     }
 

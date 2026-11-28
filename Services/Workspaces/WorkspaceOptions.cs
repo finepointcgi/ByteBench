@@ -4,7 +4,7 @@ namespace ByteBench.Services.Workspaces;
 public class WorkspaceOptions
 {
     /// <summary>The workspace image (build it from docker/workspace/).</summary>
-    public string Image { get; set; } = "bytebench-workspace:2";
+    public string Image { get; set; } = "bytebench-workspace:3";
     /// <summary>Directory with the image's Dockerfile (default: docker/workspace beside the app). If the image is missing it is built from here automatically; with no Dockerfile it is pulled.</summary>
     public string? BuildContext { get; set; }
     public string DockerExecutable { get; set; } = "docker";

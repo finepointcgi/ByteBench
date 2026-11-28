@@ -1240,7 +1240,11 @@ On by default is bounded: Docker must be reachable, workspaces can only be opene
 
 ### The image (`docker/workspace/`)
 
-`Dockerfile` (Debian + git, node, python, make/g++, socat, iptables, and OpenVSCode Server **1.109.5**, downloaded in the build and verified against a pinned SHA-256 per architecture; the build fails on a mismatch), `bb-entrypoint.sh` (idles until ByteBench has locked the network down and checked the code out, then starts the IDE), `bb-apply-egress.sh` (the network policy) and `bb-healthcheck.sh` (the image's `HEALTHCHECK`; ByteBench waits for `healthy`). Build by hand with `docker build -t bytebench-workspace:2 docker/workspace`; with the .NET SDK: `--build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0`. Set `Workspaces:Image` for another tag or registry image.
+`Dockerfile` (Debian + git, node, python, make/g++, socat, iptables, and OpenVSCode Server **1.109.5**, downloaded in the build and verified against a pinned SHA-256 per architecture; the build fails on a mismatch), `bb-entrypoint.sh` (idles until ByteBench has locked the network down and checked the code out, then starts the IDE), `bb-apply-egress.sh` (the network policy) and `bb-healthcheck.sh` (the image's `HEALTHCHECK`; ByteBench waits for `healthy`). Build by hand with `docker build -t bytebench-workspace:3 docker/workspace`; with the .NET SDK: `--build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0`. Set `Workspaces:Image` for another tag or registry image.
+
+**Variables and secrets in every shell.** The repository's `env:` and your secrets are written to `~/.bb-env` (mode 600) and loaded by the developer's bash however it is started: interactive and login shells and `ssh host command` (a guarded hook at the *top* of `~/.bashrc`, before Debian's early return for non-interactive shells, and in `~/.profile`), `bash -c` / scripts / tasks / `docker exec ... bash -c` (`BASH_ENV` in the image points at `/usr/local/lib/bb-env.sh`) and login `sh -lc`. The file loads once per process tree (`BB_ENV_LOADED`, so `PATH` is not extended twice). A plain `sh -c` (dash) reads no startup file by POSIX design and does not see them; use `bash -c`. The collaborators' users and the AI user cannot read the file, so for them these hooks do nothing, and values are never in `docker inspect`, container logs or the server log.
+
+**Image versions.** The tag is the image's compatibility version (`bytebench-workspace:3`; toolchain images are `bytebench-workspace:3-node22` and so on, built on first use). The tag is bumped whenever the image's contents change in a way ByteBench depends on (`:3`: OpenSSH server, tmux, the `bbc1`..`bbc10` collaborator users, private homes, `BASH_ENV` hook). On upgrade the server finds no `:3` image and builds it itself in the background (the Docker build cache makes this fast); `:2` and older images are left alone, workspaces that are already running keep running from the image they started from, and **nothing is migrated**: such a workspace (and a prebuild, which are tied to the exact image tag and so become unusable) has to be recreated, i.e. stopped and started again, to get the new features. Inviting a collaborator into a workspace from an older image fails with a clear message instead of half working.
 
 ### Where the IDE and previews live (read this before exposing ByteBench)
 
@@ -1286,7 +1290,7 @@ Assigning an issue to `bytebench-ai` (or **Let AI work on this**, or `POST /api/
 
 ```json
 "Workspaces": {
-  "Image": "bytebench-workspace:2", "BaseDomain": null, "AllowSharedOrigin": false, "GitBaseUrl": null, "IdeTransport": "Auto",
+  "Image": "bytebench-workspace:3", "BaseDomain": null, "AllowSharedOrigin": false, "GitBaseUrl": null, "IdeTransport": "Auto",
   "MaxPerUser": 2, "MaxTotal": 10, "IdleTimeoutMinutes": 30, "MaxLifetimeHours": 8, "StartupTimeoutSeconds": 180,
   "Memory": "4g", "Cpus": "2", "PidsLimit": 2048, "DiskLimit": "10g", "EgressMode": "public-only",
   "IdleMaxMinutes": 480, "IdleWarningMinutes": 5, "Prebuilds": { "Enabled": true, "BuildTimeoutMinutes": 30, "MaxLogBytes": 65536, "KeepHistory": 30, "CleanupIntervalMinutes": 30 },

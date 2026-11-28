@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 # ByteBench workspace image: OpenVSCode Server (gitpod-io/openvscode-server) plus a small toolbox (git, node, python).
 #
-#   docker build -t bytebench-workspace:2 docker/workspace
+#   docker build -t bytebench-workspace:3 docker/workspace
 #   # with the .NET SDK too (any Debian-based SDK image works as the base):
-#   docker build -t bytebench-workspace:2-dotnet --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 docker/workspace
+#   docker build -t bytebench-workspace:3-dotnet --build-arg BASE_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0 docker/workspace
 #
 # Set Workspaces:Image to the tag you built. The container is started by ByteBench with everything locked down
 # (non-root, no capabilities, no-new-privileges, resource limits, a private network); see the README, "Workspaces".
@@ -74,13 +74,15 @@ COPY --chmod=755 bb-entrypoint.sh /usr/local/bin/bb-entrypoint
 COPY --chmod=755 bb-apply-egress.sh /usr/local/bin/bb-apply-egress
 COPY --chmod=755 bb-healthcheck.sh /usr/local/bin/bb-healthcheck
 COPY --chmod=755 bb-collab-ide.sh /usr/local/bin/bb-collab-ide
+COPY --chmod=644 bb-env.sh /usr/local/lib/bb-env.sh
 
 USER 1000:1000
 WORKDIR /workspace
 ENV HOME=/home/coder \
     SHELL=/bin/bash \
     BB_IDE_PORT=3000 \
-    OPENVSCODE_SERVER_ROOT=/opt/openvscode-server
+    OPENVSCODE_SERVER_ROOT=/opt/openvscode-server \
+    BASH_ENV=/usr/local/lib/bb-env.sh
 
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 CMD ["/usr/local/bin/bb-healthcheck"]

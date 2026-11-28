@@ -52,6 +52,20 @@ export async function createFixtures(page: Page, baseURL: string): Promise<Fixtu
   return { token, api, git, fixtureUrl, libUrl, workDir: work };
 }
 
+/** A small repository (no submodule, no network in setup) from e2e/fixtures/<dir>, pushed to `main`, created through the UI as the signed-in user. */
+export async function createSimpleRepo(page: Page, baseURL: string, slug: string, fixtureDir: string): Promise<Fixtures> {
+  const token = await createToken(page, 'e2e-' + slug);
+  const api = await apiFor(baseURL, token);
+  const git = new Git();
+  await createRepoViaUi(page, slug);
+  const url = git.url(baseURL, PROJECT, slug, 'alice', token);
+  git.run(null, 'clone', url, 'work');
+  const work = path.join(git.home, 'work');
+  cpSync(path.join(E2E_ROOT, 'fixtures', fixtureDir), work, { recursive: true });
+  git.run(work, 'add', '-A'); git.run(work, 'commit', '-m', 'Fixture'); git.run(work, 'push', 'origin', 'main');
+  return { token, api, git, fixtureUrl: url, libUrl: '', workDir: work };
+}
+
 export async function startWorkspace(api: APIRequestContext, slug = FIXTURE_SLUG, ref?: string): Promise<WorkspaceDto> {
   const r = await api.post(`/api/v1/projects/${PROJECT}/repos/${slug}/workspaces`, { data: ref ? { ref } : {} });
   expect(r.status(), await r.text()).toBe(202);
@@ -88,6 +102,14 @@ export async function stopAndDelete(api: APIRequestContext, id: string): Promise
 export function sh(id: string, cmd: string, user = 'coder'): { code: number; out: string } {
   const r = spawnSync('docker', ['exec', '-u', user, containerFor(id), 'bash', '-c', `[ -f "$HOME/.bb-env" ] && . "$HOME/.bb-env"; ${cmd}`], { encoding: 'utf8' });
   return { code: r.status ?? -1, out: (r.stdout ?? '') + (r.stderr ?? '') };
+}
+
+/** `docker exec` as any user in the workspace's container with explicit argv (no shell added): what an operator or `ssh host cmd` runs. */
+export function exec(id: string, user: string, ...argv: string[]): { code: number; out: string; stdout: string } {
+  // The image sets HOME=/home/coder; like ByteBench's own exec path, give the other users their own home.
+  const home = user === 'coder' || user === 'root' ? [] : ['-e', `HOME=/home/${user}`];
+  const r = spawnSync('docker', ['exec', '-u', user, ...home, containerFor(id), ...argv], { encoding: 'utf8' });
+  return { code: r.status ?? -1, out: (r.stdout ?? '') + (r.stderr ?? ''), stdout: r.stdout ?? '' };
 }
 
 /** Runs a command in an *interactive* bash as the workspace user: what a terminal in the IDE gets (~/.bashrc, which loads ~/.bb-env). stdout only. */
