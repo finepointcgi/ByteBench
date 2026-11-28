@@ -29,10 +29,13 @@ export function dockerAvailable(): boolean {
   return r.status === 0 && !!r.stdout.trim();
 }
 
-/** Same as CiDocker.InstanceKey in the server: first 12 hex chars of SHA-256 of AppContext.BaseDirectory (with trailing slash). */
+/**
+ * The instance key the e2e server runs under (passed to it as BYTEBENCH_INSTANCE_KEY). It is NOT the server's default key (a hash of its build folder):
+ * a development server running from the same build folder would share that key, and its orphan reaper and this tier's cleanup would remove each
+ * other's containers. Stable per checkout, so the global setup, the specs and `docker-clean` all agree on it.
+ */
 export function instanceKey(): string {
-  const baseDir = path.dirname(appDll()) + path.sep;
-  return createHash('sha256').update(baseDir, 'utf8').digest('hex').slice(0, 12);
+  return 'e2e' + createHash('sha256').update(REPO_ROOT, 'utf8').digest('hex').slice(0, 9);
 }
 
 function contextHash(): string {
@@ -57,6 +60,7 @@ export async function prepareDockerTier(port: number): Promise<DockerTier> {
   return {
     tag, network, instanceKey: key,
     serverEnv: {
+      BYTEBENCH_INSTANCE_KEY: key,
       Workspaces__Image: tag,
       Workspaces__Network: network,
       Workspaces__GitBaseUrl: `http://host.docker.internal:${port}`,

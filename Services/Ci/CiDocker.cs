@@ -37,8 +37,19 @@ public class CiDocker(IOptionsMonitor<CiOptions> options, ILogger<CiDocker> log)
     /// Identifies this server instance (from its install path). Containers are labelled with it, so startup cleanup
     /// only removes this instance's leftovers when several ByteBench servers share one Docker daemon.
     /// </summary>
-    public static readonly string InstanceKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-        System.Text.Encoding.UTF8.GetBytes(AppContext.BaseDirectory)))[..12].ToLowerInvariant();
+    public static readonly string InstanceKey = ResolveInstanceKey();
+
+    /// <summary>
+    /// The install path's hash, unless <c>BYTEBENCH_INSTANCE_KEY</c> (4-24 lowercase letters or digits) names one. Two servers started from the same
+    /// build folder (a development server and an end-to-end test run) would otherwise share a key and clean up, or reap, each other's containers.
+    /// </summary>
+    private static string ResolveInstanceKey()
+    {
+        var named = Environment.GetEnvironmentVariable("BYTEBENCH_INSTANCE_KEY");
+        if (!string.IsNullOrEmpty(named) && System.Text.RegularExpressions.Regex.IsMatch(named, "^[a-z0-9]{4,24}$")) return named;
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(AppContext.BaseDirectory)))[..12].ToLowerInvariant();
+    }
 
     private static readonly string InstanceLabel = "bytebench-ci=" + InstanceKey;
 
