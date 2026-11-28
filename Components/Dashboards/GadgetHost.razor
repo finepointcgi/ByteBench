@@ -23,7 +23,7 @@
             @if (CanEdit)
             {
                 <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
-                         aria-label="@($"Gadget actions: {Title}")">
+                         AriaLabel="@($"Gadget actions: {Title}")">
                     <MudMenuItem Icon="@Icons.Material.Outlined.Tune" OnClick="() => Later(() => OnConfigure.InvokeAsync())">Configure…</MudMenuItem>
                     <MudMenuItem Icon="@Icons.Material.Outlined.ArrowBack" Disabled="@(Index == 0)" OnClick="() => Later(() => OnMove.InvokeAsync(-1))">Move earlier</MudMenuItem>
                     <MudMenuItem Icon="@Icons.Material.Outlined.ArrowForward" Disabled="@(Index >= Count - 1)" OnClick="() => Later(() => OnMove.InvokeAsync(1))">Move later</MudMenuItem>

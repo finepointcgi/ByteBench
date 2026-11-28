@@ -84,7 +84,7 @@ else if (project != null)
                         <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => Toggle(v.Id)" EndIcon="@(expanded.Contains(v.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)">Issues</MudButton>
                         @if (canManage)
                         {
-                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="@($"Actions for {v.Name}")" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="@($"Actions for {v.Name}")" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                                 <MudMenuItem OnClick="() => Edit(v)">Edit</MudMenuItem>
                                 <MudMenuItem OnClick="() => SetReleased(v, !v.IsReleased)">@(v.IsReleased ? "Mark unreleased" : "Mark released")</MudMenuItem>
                                 <MudMenuItem OnClick="() => Delete(vs)">Delete</MudMenuItem>

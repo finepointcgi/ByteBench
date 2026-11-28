@@ -30,8 +30,7 @@ test.describe('accessibility basics', () => {
       await open(url);
       expect((await page.title()).trim().length, 'document title').toBeGreaterThan(0);
       expect(await page.locator('html').getAttribute('lang'), 'html lang').toBeTruthy();
-      // Advisory (known debt, reported in the run's annotations rather than failing the build): a <main> landmark and a single <h1>.
-      if (await page.locator('main, [role=main]').count() === 0) test.info().annotations.push({ type: 'a11y-advisory', description: `${url}: no <main> landmark` });
+      expect(await page.locator('main, [role=main]').count(), 'exactly one <main> landmark').toBe(1);
       const problems = await page.evaluate(() => {
         const out: string[] = [];
         const name = (e: Element) => (e.getAttribute('aria-label') || e.getAttribute('aria-labelledby') || e.getAttribute('title') || (e as HTMLElement).innerText || e.textContent || '').trim();
@@ -39,8 +38,8 @@ test.describe('accessibility basics', () => {
         document.querySelectorAll('button, [role=button]').forEach((b) => {
           if ((b as HTMLElement).offsetParent === null) return;
           if (b.getAttribute('tabindex') === '-1') return; // decorative input adornments (not keyboard-reachable)
-          // KNOWN DEBT (reported as an advisory): MudMenu's icon activator ignores AriaLabel, so menus like "More list actions" have a nameless button.
-          if (!name(b) && !b.querySelector('img[alt]')) out.push((b.parentElement?.classList.contains('mud-menu') ? 'ADVISORY ' : '') + 'button without an accessible name: ' + b.outerHTML.slice(0, 100));
+          // (An icon-only MudMenu takes its name from AriaLabel=, not from an aria-label attribute, which lands on the wrapper.)
+          if (!name(b) && !b.querySelector('img[alt]')) out.push('button without an accessible name: ' + b.outerHTML.slice(0, 100));
         });
         document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]), textarea, select').forEach((i) => {
           if ((i as HTMLElement).offsetParent === null) return;
@@ -50,10 +49,8 @@ test.describe('accessibility basics', () => {
         });
         return out;
       });
-      const h1s = await page.locator('h1').count();
-      if (h1s !== 1) test.info().annotations.push({ type: 'a11y-advisory', description: `${url}: ${h1s} h1 elements` });
-      for (const a of problems.filter((p) => p.startsWith('ADVISORY '))) test.info().annotations.push({ type: 'a11y-advisory', description: `${url}: ${a}` });
-      expect(problems.filter((p) => !p.startsWith('ADVISORY '))).toEqual([]);
+      expect(await page.locator('h1').count(), 'exactly one <h1>').toBe(1);
+      expect(problems).toEqual([]);
     });
   }
 });

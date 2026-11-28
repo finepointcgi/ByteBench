@@ -26,7 +26,7 @@ else
     </MudAlert>
 }
 <div class="d-flex align-center justify-space-between flex-wrap gap-4 mb-5">
-    <MudText Typo="Typo.h5" Class="dash-title">Welcome back, @Me.User?.DisplayName.Split(' ')[0]</MudText>
+    <MudText Typo="Typo.h5" HtmlTag="h1" Class="dash-title">Welcome back, @Me.User?.DisplayName.Split(' ')[0]</MudText>
     <div class="d-flex align-center flex-wrap gap-2">
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.DashboardCustomize" OnClick="Customize">Customize</MudButton>
         <MudButton Href="/projects/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New project</MudButton>
