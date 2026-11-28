@@ -1,10 +1,16 @@
+@inject NavigationManager Nav
+@* Shown for a project (or something in it) that does not exist or that the user may not see: the two look the same on purpose.
+   NavigationManager.NotFound() makes the server answer 404 (while the page is first rendered) and swaps the page for the site's
+   own Not found page, with its title, so the half-built page (and a title such as "Issues · ") never reaches the browser. *@
 <div class="gb-empty-state">
     <MudIcon Class="mud-text-secondary" Icon="@Icons.Material.Outlined.SearchOff" Size="Size.Large" />
-    <MudText Typo="Typo.h6" HtmlTag="h2">Not found</MudText>
+    <MudText Typo="Typo.h5" HtmlTag="h1">Not found</MudText>
     <MudText Class="mud-text-secondary" Typo="Typo.body2">@Message</MudText>
     <MudButton Href="/" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Class="mt-2">Back to dashboard</MudButton>
 </div>
 
 @code {
     [Parameter] public string Message { get; set; } = "This project does not exist.";
+
+    protected override void OnInitialized() => Nav.NotFound();
 }

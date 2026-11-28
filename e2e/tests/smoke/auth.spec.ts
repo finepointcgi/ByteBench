@@ -35,10 +35,11 @@ test.describe('sign in and access control', () => {
     await open('/p/OPS');
     await expect(page.locator('body')).not.toContainText('Terraform and deployment scripts');
     await expect(page.getByText(/not found|don't have access|no access/i).first()).toBeVisible();
-    // Found by the AI explorer: the not-found page of an inaccessible project has a title like "Issues · " (nothing after the separator). Advisory, not failing.
+    // Found by the AI explorer, fixed: the not-found page of an inaccessible project answers 404 with the site's own title (see not-found.spec.ts for every page).
     for (const sub of ['issues', 'members']) {
       const resp = await page.goto(`/p/OPS/${sub}`);
-      if (/·\s*$/.test(await page.title()) || resp?.status() === 200) test.info().annotations.push({ type: 'ux-advisory', description: `/p/OPS/${sub} for a non-member: HTTP ${resp?.status()}, title "${await page.title()}"` });
+      expect(resp?.status(), `/p/OPS/${sub} for a non-member`).toBe(404);
+      expect(await page.title()).toMatch(/^Not found/);
     }
     // ...and the API says the same thing
     const r = await page.request.get('/api/v1/projects/OPS/issues');
