@@ -352,6 +352,7 @@
             }
             catch (JSException) { }
             catch (JSDisconnectedException) { }
+            catch (ObjectDisposedException) { } // the page went away while the call was being sent
         }
     }
 

@@ -496,6 +496,7 @@ else if (Repo != null && ctx != null)
             StateHasChanged();
         }
         catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { } // the page went away while Monaco was starting
     }
 
     // ---------- explorer ----------

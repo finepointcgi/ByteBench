@@ -60,6 +60,23 @@ test.describe('repositories and pull requests', () => {
     expect(git.run(`${check}/out`, 'log', '--oneline', 'main')).toContain('Add greeting');
   });
 
+  // Regression (the cause of the "flaky" test above): a page with a markdown editor, left while its JavaScript module was still loading, used to throw
+  // ObjectDisposedException inside the circuit, which ends it (the next click then waits for ever) and is logged as `fail:` (which fails the whole run).
+  test('leaving a page with a markdown editor right away does not break the circuit', async ({ page, open }) => {
+    await open('/p/WEB/issues/3');
+    const go = (u: string) => page.evaluate((url) => (window as unknown as { Blazor: { navigateTo(u: string): void } }).Blazor.navigateTo(url), u);
+    for (let i = 0; i < 40; i++) {
+      await go('/p/WEB/issues/3');
+      await page.waitForTimeout(5 + (i * 7) % 60); // leave at every moment of the editor's start-up
+      await go('/p/WEB/issues');
+      await page.waitForTimeout(20);
+    }
+    await go('/p/WEB/issues/3');
+    // The circuit still answers: an in-app navigation renders the issue list.
+    await go('/p/WEB/issues');
+    await expect(page.getByRole('heading', { level: 1, name: 'Issues' })).toBeVisible();
+  });
+
   test('a read-only member cannot push over git, and an anonymous clone is refused', async ({ baseURL }) => {
     const u = git.url(baseURL!, 'WEB', 'web-app', 'nobody', 'wrong-password');
     expect(() => git.run(null, 'ls-remote', u)).toThrow();
