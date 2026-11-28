@@ -489,3 +489,32 @@ public class SshKeyTests(TestApp app) : IClassFixture<TestApp>
     [InlineData("git-upload-pack 'a/b/c.git'")]
     public void Rejects_other_commands(string command) => Assert.Null(ByteBench.Services.Ssh.SshGitCommandParser.Parse(command));
 }
+
+/// <summary>Development configures Ssh:Port 2222: a second server on the machine must still start (on a free port) instead of losing git over SSH.</summary>
+public class SshPortBusyApp : KestrelApp
+{
+    // Held for the life of the app: the configured port is taken.
+    private static readonly System.Net.Sockets.TcpListener Holder = new(System.Net.IPAddress.Loopback, 0);
+    public static int BusyPort { get; private set; }
+
+    protected override void AddSettings(IDictionary<string, string?> settings)
+    {
+        lock (Holder) { if (BusyPort == 0) { Holder.Start(); BusyPort = ((System.Net.IPEndPoint)Holder.LocalEndpoint).Port; } }
+        settings["Ssh:Enabled"] = "true";
+        settings["Ssh:Port"] = BusyPort.ToString();
+        settings["Ssh:ListenAddress"] = "127.0.0.1";
+        settings["Ssh:HostKeyPath"] = Path.Combine(DataRoot, "keys", "ssh_host_rsa_key");
+    }
+}
+
+public class SshPortBusyTests(SshPortBusyApp app) : IClassFixture<SshPortBusyApp>
+{
+    [Fact]
+    public void A_busy_port_in_development_falls_back_to_a_free_one_and_the_clone_urls_follow()
+    {
+        var server = app.Services.GetRequiredService<SshGitServer>();
+        Assert.NotNull(server.BoundPort);
+        Assert.NotEqual(SshPortBusyApp.BusyPort, server.BoundPort);
+        Assert.Equal(server.BoundPort, app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SshOptions>>().Value.EffectivePublicPort);
+    }
+}
