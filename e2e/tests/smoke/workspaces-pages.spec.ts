@@ -254,7 +254,7 @@ test.describe('workspace pages (no Docker)', () => {
 
     // an unknown run and a run in a private project the user cannot see look the same: not found
     await open('/ai-runs/no-such-run');
-    await expect(page.getByText("This AI run doesn't exist.")).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible();
     const bc = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
     const bob = await bc.newPage();
     await bob.goto('/account/login');
@@ -263,7 +263,7 @@ test.describe('workspace pages (no Docker)', () => {
     await bob.getByRole('button', { name: 'Sign in' }).click();
     await bob.waitForURL((u) => !u.pathname.startsWith('/account/login'));
     await bob.goto(`/ai-runs/${priv.ok}`);
-    await expect(bob.getByText("This AI run doesn't exist.")).toBeVisible();
+    await expect(bob.getByRole('heading', { name: 'Not found' })).toBeVisible();
     await expect(bob.getByTestId('run-log')).toHaveCount(0);
     await bob.goto('/admin/ai');
     await expect(bob.getByText('Active backend')).toHaveCount(0);
@@ -273,8 +273,8 @@ test.describe('workspace pages (no Docker)', () => {
   test('shared-workspace and workspace pages for ids that are not yours say so', async ({ page, login, open }) => {
     await login('dan');
     await open('/workspaces/shared/nosuchworkspace');
-    await expect(page.getByText(/isn't shared with you/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible();
     await open('/workspaces/nosuchworkspace');
-    await expect(page.getByText("This workspace doesn't exist.")).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible();
   });
 });

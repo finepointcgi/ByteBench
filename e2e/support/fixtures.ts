@@ -88,10 +88,15 @@ export async function expectNoBlazorError(page: Page): Promise<void> {
 
 export async function loginAs(page: Page, user: string, password = DEMO_PASSWORD): Promise<void> {
   await page.goto('/account/login');
-  await page.locator('#login-user').fill(user);
-  await page.locator('#login-password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL((u) => !u.pathname.startsWith('/account/login'), { timeout: 20_000 });
+  // The sign-in post is occasionally lost when the click lands while Blazor is still wiring the page (the form then just re-renders): retry the whole
+  // step a few times instead of waiting out one long timeout.
+  await expect(async () => {
+    if (!new URL(page.url()).pathname.startsWith('/account/login')) return;
+    await page.locator('#login-user').fill(user);
+    await page.locator('#login-password').fill(password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL((u) => !u.pathname.startsWith('/account/login'), { timeout: 8_000 });
+  }).toPass({ timeout: 45_000 });
 }
 
 /** Creates a personal access token through the profile page (a static form) and returns it. */

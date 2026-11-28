@@ -267,13 +267,13 @@ test('sharing: a viewer sees the files read-only, a collaborator gets a prepared
   expect(await bob.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 'shared page fits a phone').toBeLessThanOrEqual(0);
   // A viewer cannot open the owner's page, and cannot reach the owner's actions through the API.
   await openReady(bob, `/workspaces/${ws.id}`);
-  await expect(bob.getByText("This workspace doesn't exist.")).toBeVisible();
+  await expect(bob.getByRole('heading', { name: 'Not found' })).toBeVisible();
   // dan was not invited: not shared with him.
   const dc = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
   const dan = await dc.newPage();
   await loginAs(dan, 'dan');
   await openReady(dan, `/workspaces/shared/${ws.id}`);
-  await expect(dan.getByText(/isn't shared with you/)).toBeVisible();
+  await expect(dan.getByRole('heading', { name: 'Not found' })).toBeVisible();
   await dc.close();
 
   // The viewer leaves; the owner ends sharing for the collaborator.
@@ -308,12 +308,13 @@ test('start workspace on an issue and a pull request: Resume while one is live, 
 test('the workspace audit page lists the lifecycle, filters it and exports CSV; non-admins are refused', async ({ browser }) => {
   await openReady(page, '/admin/workspaces/audit');
   const audit = page.getByTestId('ws-audit');
-  await expect(audit).toContainText('workspace.created');
+  // The table shows the newest 25 events: after a long serial run `workspace.created` is on a later page, so look for any lifecycle event here.
+  await expect(audit).toContainText(/workspace\.(created|started|stopped|ticket_redeemed|share_ended)/);
   await audit.getByRole('textbox', { name: 'Actor' }).fill('nobody-by-this-name');
   await page.getByTestId('ws-audit-filter').click();
   await expect(audit).toContainText('No events match');
   await audit.getByRole('button', { name: 'Reset' }).click();
-  await expect(audit).toContainText('workspace.created');
+  await expect(audit).toContainText(/workspace\.(created|started|stopped|ticket_redeemed|share_ended)/);
   const href = await page.getByTestId('ws-audit-export').getAttribute('href');
   const csv = await page.request.get(href!);
   expect(csv.status()).toBe(200);
