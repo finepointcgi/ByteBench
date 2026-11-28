@@ -15,7 +15,7 @@ export interface WorkspaceDto { id: string; project: string; repository: string;
 
 export interface Fixtures { token: string; api: APIRequestContext; git: Git; fixtureUrl: string; libUrl: string; workDir: string; }
 
-async function createRepoViaUi(page: Page, slug: string): Promise<void> {
+export async function createRepoViaUi(page: Page, slug: string): Promise<void> {
   await openReady(page, `/p/${PROJECT}/repos`);
   await page.getByRole('button', { name: 'Create repository' }).first().click();
   await page.getByLabel('Name', { exact: true }).fill(slug);

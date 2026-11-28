@@ -1,0 +1,3 @@
+# Environment of the real-AI e2e fixture (see docs/testing.md).
+tasks:
+  test: node test.js

@@ -202,6 +202,7 @@ public sealed partial class ClaudeCodeEditorBackend : IEditorAiBackend, IStructu
         Flag("--permission-prompts", "none");
         Flag("--restricted");
         Flag("--strict-mcp-config");
+        Flag("--setting-sources", "project"); // not the server account's own settings, hooks, plugins or memory (the directory is a copy of the workspace)
         Flag("--no-session-persistence");
         Flag("--disable-slash-commands");
         Flag("--max-turns", opts.MaxTurns.ToString(System.Globalization.CultureInfo.InvariantCulture));

@@ -73,7 +73,7 @@ public class AiRunCliApp : AiRunApp
             echo "Usage: claude [options] [command] [prompt]"
             echo "  -p, --print  --output-format <format>  --verbose  --mcp-config <configs...>  --strict-mcp-config"
             echo "  --tools <tools...>  --allowedTools, --allowed-tools <tools...>  --disallowedTools, --disallowed-tools <tools...>"
-            echo "  --permission-mode <mode>  --no-session-persistence  --disable-slash-commands  --max-turns <n>  --max-budget-usd <amount>"
+            echo "  --permission-mode <mode>  --setting-sources <sources>  --no-session-persistence --disable-slash-commands  --max-turns <n>  --max-budget-usd <amount>"
             echo "  --append-system-prompt <prompt>  --model <model>"
             exit 0;;
         esac
