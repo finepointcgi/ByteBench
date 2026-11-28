@@ -38,10 +38,10 @@
                 {
                     <tr @key="e.Id">
                         <td class="mono" style="font-size:12px;white-space:nowrap">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td>@(e.ActorName ?? "system")</td>
-                        <td><code>@e.Action</code></td>
-                        @if (PublicId == null) { <td class="mono" style="font-size:12px">@(e.TargetType == "workspace" ? e.TargetId : "")</td> }
-                        <td class="mono" style="font-size:12px;word-break:break-all">@Compact(e.Details)</td>
+                        <td style="white-space:nowrap">@(e.ActorName ?? "system")</td>
+                        <td style="white-space:nowrap"><code>@e.Action</code></td>
+                        @if (PublicId == null) { <td class="mono" style="font-size:12px;white-space:nowrap">@(e.TargetType == "workspace" ? e.TargetId : "")</td> }
+                        <td class="mono" style="font-size:12px;word-break:break-all;min-width:260px">@Compact(e.Details)</td>
                     </tr>
                 }
                 </tbody>

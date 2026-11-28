@@ -63,6 +63,9 @@ export async function prepareDockerTier(port: number): Promise<DockerTier> {
       Workspaces__StartupTimeoutSeconds: '240',
       Workspaces__IdleTimeoutMinutes: '120',
       Workspaces__Prebuilds__Enabled: 'true',
+      // AI is "configured" with a key that is never sent anywhere unless a test asks the assistant something, so the AI panels (review, runs) render.
+      Ai__Enabled: 'true',
+      Ai__ApiKey: 'sk-ant-e2e-not-a-real-key',
     },
   };
 }

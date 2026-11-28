@@ -4,8 +4,8 @@
 @inject CurrentUser Me
 @inject WorkspaceSharingService Sharing
 
-<div class="d-flex gap-3" style="min-height:420px" data-testid="viewer-panel">
-    <div style="width:280px;flex:none">
+<div style="display:flex;flex-wrap:wrap;gap:12px;min-height:420px" data-testid="viewer-panel">
+    <div style="flex:0 1 280px;min-width:200px;max-width:100%">
         <MudText Typo="Typo.caption" Class="mud-text-secondary">Read-only · <span class="mono">/@path</span></MudText>
         @if (path.Length > 0) { <div><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Up">.. (up)</MudButton></div> }
         @foreach (var e in entries)
@@ -21,7 +21,7 @@
             <div><MudButton Size="Size.Small" Variant="@(name == session ? Variant.Filled : Variant.Text)" OnClick="() => ShowTerminal(name)" data-testid="viewer-session">@name</MudButton></div>
         }
     </div>
-    <div style="flex:1;min-width:0">
+    <div style="flex:1 1 300px;min-width:0">
         @if (error != null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@error</MudAlert> }
         @if (session != null)
         {

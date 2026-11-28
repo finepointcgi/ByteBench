@@ -85,7 +85,7 @@ public sealed class WorkspaceCollaborators(IWorkspaceBackend backend, WorkspaceR
     {
         var user = ExecSpec.CollaboratorUser(s.Slot);
         var prepare = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", PrepareScript, "sh", s.DisplayName ?? s.UserName, s.Email ?? "", s.GitCredential != null ? "1" : "0"])
-        { User = user, Stdin = s.GitCredential, Timeout = TimeSpan.FromSeconds(30) }, ct);
+        { User = user, Env = ExecSpec.CollaboratorEnv(s.Slot), Stdin = s.GitCredential, Timeout = TimeSpan.FromSeconds(30) }, ct);
         if (!prepare.Ok) throw new InvalidOperationException("Could not prepare the collaborator's home: " + WorkspaceLifecycle.Safe(prepare.Output));
         var start = await backend.ExecAsync(containerId, new ExecSpec([StartCommand, s.Port.ToString(), s.WorkDir])
         { User = user, Stdin = s.ConnectionToken, Timeout = TimeSpan.FromSeconds(60) }, ct);
@@ -131,8 +131,8 @@ public sealed class WorkspaceCollaborators(IWorkspaceBackend backend, WorkspaceR
         {
             var user = ExecSpec.CollaboratorUser(s.Slot);
             // The kill ends the exec's own shell too (exit 137): that is the expected result.
-            await backend.ExecAsync(s.ContainerId, new ExecSpec(["sh", "-c", KillScript]) { User = user, Timeout = TimeSpan.FromSeconds(15) }, CancellationToken.None);
-            var wipe = await backend.ExecAsync(s.ContainerId, new ExecSpec(["sh", "-c", WipeScript]) { User = user, Timeout = TimeSpan.FromSeconds(30) }, CancellationToken.None);
+            await backend.ExecAsync(s.ContainerId, new ExecSpec(["sh", "-c", KillScript]) { User = user, Env = ExecSpec.CollaboratorEnv(s.Slot), Timeout = TimeSpan.FromSeconds(15) }, CancellationToken.None);
+            var wipe = await backend.ExecAsync(s.ContainerId, new ExecSpec(["sh", "-c", WipeScript]) { User = user, Env = ExecSpec.CollaboratorEnv(s.Slot), Timeout = TimeSpan.FromSeconds(30) }, CancellationToken.None);
             if (!wipe.Ok) log.LogWarning("Workspace {Id}: could not empty the home of collaborator slot {Slot}: {Output}", workspaceId, s.Slot, WorkspaceLifecycle.Safe(wipe.Output));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
