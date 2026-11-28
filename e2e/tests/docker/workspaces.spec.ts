@@ -212,6 +212,16 @@ test('local editor: connect an SSH key, the tunnel handshakes and a real ssh log
     '-o', `ProxyCommand=${tsx} ${bridge} ${wsUrl} ${fx.token}`, 'coder@bytebench-ws', 'echo ssh-ok:$(id -un)',
   ], { encoding: 'utf8', timeout: 60_000 });
   expect(login.stdout + login.stderr).toContain('ssh-ok:coder');
+
+  // 4. `ssh host command` is a non-interactive shell too: it must see the repository env and the secrets.
+  const sshArgs = [
+    '-i', key, '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=30',
+    '-o', `ProxyCommand=${tsx} ${bridge} ${wsUrl} ${fx.token}`, 'coder@bytebench-ws',
+  ];
+  const viaSsh = spawnSync('ssh', [...sshArgs, `printf 'plain=%s secret=%s' "$E2E_PLAIN" "$${SECRET_NAME}"`], { encoding: 'utf8', timeout: 60_000 });
+  expect(viaSsh.stdout, 'ssh host command sees the injected environment').toBe(`plain=plain-value secret=${SECRET_VALUE}`);
+  const viaSshBash = spawnSync('ssh', [...sshArgs, `bash -c 'printf %s "$${SECRET_NAME}"'`], { encoding: 'utf8', timeout: 60_000 });
+  expect(viaSshBash.stdout, 'a nested bash -c over ssh too').toBe(SECRET_VALUE);
 });
 
 test('Stop and Resume keep the installed packages and do not re-run setup', async () => {

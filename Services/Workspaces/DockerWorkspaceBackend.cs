@@ -226,6 +226,9 @@ public sealed class DockerWorkspaceBackend(IOptionsMonitor<WorkspaceOptions> opt
         if (spec.Stdin != null) args.Add("-i");
         args.AddRange(["-u", ExecSpec.UserSpec(spec.User)]);
         if (spec.WorkDir != null) args.AddRange(["-w", spec.WorkDir]);
+        // The image sets HOME=/home/coder for everything, and a numeric uid:gid doesn't change it: the other users need their own home (collaborators: git config,
+        // credential, IDE token, shell history all belong in their home, which only they can write; /home/coder is mode 700).
+        if (spec.User != "coder" && spec.Env?.ContainsKey("HOME") != true) args.AddRange(["-e", $"HOME=/home/{spec.User}"]);
         if (spec.Env != null) foreach (var (k, v) in spec.Env) args.AddRange(["-e", $"{k}={v}"]);
         args.AddRange([containerId, "timeout", "-k", "3", seconds.ToString(), .. spec.Command]);
         return args;

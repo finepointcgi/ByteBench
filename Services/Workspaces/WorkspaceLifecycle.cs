@@ -287,6 +287,19 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         }
     }
 
+    internal const string ShellHookLine = "[ -f \"$HOME/.bb-env\" ] && . \"$HOME/.bb-env\"  # ByteBench env hook";
+    internal const string ShellRcLine = "[ -f \"$HOME/.bb-user-rc\" ] && . \"$HOME/.bb-user-rc\"  # ByteBench";
+
+    /// <summary>$1: the line that loads the environment, $2: the line that loads the user's snippet. Idempotent.</summary>
+    internal const string ShellHookScript = """
+        rc="$HOME/.bashrc"; pf="$HOME/.profile"
+        touch "$rc" "$pf"
+        if ! grep -q 'ByteBench env hook' "$rc"; then
+            { printf '%s\n' "$1"; cat "$rc"; printf '\n%s\n' "$2"; } > "$rc.bbnew" && cat "$rc.bbnew" > "$rc"; rm -f "$rc.bbnew"
+        fi
+        grep -q 'ByteBench env hook' "$pf" || printf '\n%s\n' "$1" >> "$pf"
+        """;
+
     /// <summary>
     /// Writes what the container needs before the IDE starts: the environment file (dependency cache locations, the repository's plain
     /// variables, secrets; mode 600 in the developer's home, unreadable to the AI assistant's user), the shell hook, and the user's own
@@ -304,10 +317,10 @@ public sealed partial class WorkspaceLifecycle(IDbContextFactory<AppDbContext> d
         if (secrets.Count > 0)
             await audit.RecordAsync(WorkspaceAuditActions.SecretInjected, ws, ws.OwnerId, new { names = secrets.Keys.Order(StringComparer.Ordinal).ToList(), count = secrets.Count });
         if (secrets.Count > 0) session.ProvisionLog.Append($"Injected {secrets.Count} secret(s) as environment variables: {string.Join(", ", secrets.Keys.Order(StringComparer.Ordinal))}");
-        await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c",
-            "touch \"$HOME/.bashrc\"; grep -q bb-env \"$HOME/.bashrc\" || printf '%s\\n' \"$1\" >> \"$HOME/.bashrc\"", "sh",
-            "[ -f ~/.bb-env ] && . ~/.bb-env; [ -f ~/.bb-user-rc ] && . ~/.bb-user-rc  # ByteBench"]), "configuring the shell", ct);
-
+        // The environment must reach every kind of shell, not only interactive ones: Debian's ~/.bashrc returns early for non-interactive shells, so the
+        // hook goes to the TOP of ~/.bashrc (also read by bash when sshd runs a command), and into ~/.profile (login shells, sh -l); BASH_ENV in the
+        // image covers `bash -c` (docker exec, tasks). The user's own snippet stays at the end of ~/.bashrc (interactive only).
+        await RunOrThrowAsync(containerId, new ExecSpec(["sh", "-c", ShellHookScript, "sh", ShellHookLine, ShellRcLine]), "configuring the shell", ct);
         UserWorkspaceSettings? prefs;
         await using (var db = await dbFactory.CreateDbContextAsync(ct))
             prefs = await db.UserWorkspaceSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == ws.OwnerId, ct);

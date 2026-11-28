@@ -304,6 +304,18 @@ public class WorkspaceStartTests(WorkspaceApp app) : IClassFixture<WorkspaceApp>
     }
 
     [Fact]
+    public void The_environment_file_loads_once_and_quotes_values()
+    {
+        var file = WorkspaceTasks.BuildEnvFile(new Dictionary<string, string> { ["A"] = "x'y" }, new Dictionary<string, string> { ["TOKEN"] = "$(rm -rf /)" });
+        var lines = file.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains("[ -n \"${BB_ENV_LOADED:-}\" ] && return 0", lines); // sourced from several hooks: later ones are no-ops, PATH is not extended twice
+        Assert.Equal("export BB_ENV_LOADED=1", lines[^1]);
+        Assert.Contains("export TOKEN='$(rm -rf /)'", lines);
+        Assert.Contains("export A='x'\\''y'", lines);
+        Assert.Single(lines, l => l.StartsWith("export PATH=", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Docker_run_arguments_are_locked_down()
     {
         var backend = new DockerWorkspaceBackend(new StaticOptions(new WorkspaceOptions()), Microsoft.Extensions.Logging.Abstractions.NullLogger<DockerWorkspaceBackend>.Instance);

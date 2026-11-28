@@ -84,6 +84,10 @@ public sealed class WorkspaceCollaborators(IWorkspaceBackend backend, WorkspaceR
     private async Task ApplyAsync(string containerId, CollaboratorSession s, CancellationToken ct)
     {
         var user = ExecSpec.CollaboratorUser(s.Slot);
+        // A workspace started from an image older than collaborator support has neither the users nor the starter script: say so, instead of a raw docker error.
+        var present = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", "[ -x \"$1\" ] && getent passwd \"$2\" >/dev/null", "sh", StartCommand, user]) { Timeout = TimeSpan.FromSeconds(15) }, ct);
+        if (!present.Ok)
+            throw new InvalidOperationException("This workspace was started from an older workspace image that has no collaborator support. Stop it and start a new workspace (the image is rebuilt on demand), then invite again.");
         var prepare = await backend.ExecAsync(containerId, new ExecSpec(["sh", "-c", PrepareScript, "sh", s.DisplayName ?? s.UserName, s.Email ?? "", s.GitCredential != null ? "1" : "0"])
         { User = user, Stdin = s.GitCredential, Timeout = TimeSpan.FromSeconds(30) }, ct);
         if (!prepare.Ok) throw new InvalidOperationException("Could not prepare the collaborator's home: " + WorkspaceLifecycle.Safe(prepare.Output));

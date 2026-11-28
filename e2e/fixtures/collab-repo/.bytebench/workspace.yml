@@ -1,0 +1,9 @@
+# Environment of the collaborator e2e fixture: no network-dependent setup, so a workspace is ready quickly.
+setup:
+  - echo setup-ran >> .setup-marker
+tasks:
+  hello: echo hello-from-task $E2E_PLAIN
+  secret: 'echo "task-sees:${E2E_SECRET:-unset}"'
+env:
+  E2E_PLAIN: plain-value
+submodules: false

@@ -16,8 +16,9 @@ umask 002 # files stay group-writable: the developer and the other collaborators
 
 base="${BB_IDE_BASE_PATH:-}"
 health() {
-    code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:${port}${base}/version" 2>/dev/null || echo 000)
-    [ "$code" != "000" ] && [ "$code" -lt 500 ]
+    # curl prints 000 itself when it cannot connect (and exits non-zero): do not append a second one.
+    code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:${port}${base}/version" 2>/dev/null) || code=000
+    [ "$code" -ge 100 ] 2>/dev/null && [ "$code" -lt 500 ]
 }
 
 if ! health; then

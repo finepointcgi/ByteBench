@@ -13,7 +13,7 @@ namespace ByteBench.Tests;
 [Trait("Category", "Docker")]
 public sealed class WorkspaceDockerTests : IAsyncLifetime
 {
-    private static readonly string Image = Environment.GetEnvironmentVariable("BYTEBENCH_WORKSPACE_IMAGE") is { Length: > 0 } e ? e : "bytebench-workspace:2";
+    private static readonly string Image = Environment.GetEnvironmentVariable("BYTEBENCH_WORKSPACE_IMAGE") is { Length: > 0 } e ? e : "bytebench-workspace:3";
 
     private static readonly Lazy<bool> Ready = new(() =>
     {

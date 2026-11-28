@@ -43,7 +43,7 @@ e2e/run.sh serve                  # the same disposable server, kept running, to
 
 ### Docker tier
 
-`e2e/tests/docker/workspaces.spec.ts` (serial, one fixture repository). It builds the real workspace image from `docker/workspace/` once as `bytebench-e2e-workspace:<hash of the context>` (cached afterwards; the first build downloads OpenVSCode Server and takes a few minutes), points the server at it (`Workspaces__Image`, a unique `Workspaces__Network`, `Workspaces__GitBaseUrl=http://host.docker.internal:<port>`, server listening on all interfaces) and then:
+`e2e/tests/docker/collaborators.spec.ts` (collaborator isolation and the shell environment, on a small fixture repository) and `e2e/tests/docker/workspaces.spec.ts` (serial, one fixture repository). It builds the real workspace image from `docker/workspace/` once as `bytebench-e2e-workspace:<hash of the context>` (cached afterwards; the first build downloads OpenVSCode Server and takes a few minutes), points the server at it (`Workspaces__Image`, a unique `Workspaces__Network`, `Workspaces__GitBaseUrl=http://host.docker.internal:<port>`, server listening on all interfaces) and then:
 
 1. reads `.bytebench/workspace.yml` on the start page; **Open in workspace** starts a real container;
 2. the IDE iframe is on its own `ide-<id>.localhost` origin, the single-use ticket exchange redirects (302) into it, the OpenVSCode workbench loads with no failing request, and the ByteBench session cookie is not sent to that origin;
@@ -68,8 +68,8 @@ Safety: the e2e image uses its own repository (`bytebench-e2e-workspace`), never
 
 Known behaviours worth knowing when reading the tests:
 
-* A workspace's repository and env are loaded from `~/.bb-env`, which `~/.bashrc` sources. Interactive terminals (the IDE terminal) see it; a plain non-interactive `bash -lc` does not (Debian's `.bashrc` returns early for non-interactive shells before the line ByteBench appends). Task shells source it explicitly. The tests use both on purpose.
-* A *collaborator* runs as the workspace user (documented), so file-level isolation of `~/.bb-env` is promised only against **viewers** and the AI user; that is what is tested.
+* A workspace's repository and env are loaded from `~/.bb-env`. Since image `:3` every bash start sees them: interactive, login, `bash -c` (`BASH_ENV`), `ssh host cmd` and tasks (a guarded hook at the top of `~/.bashrc`, in `~/.profile`, and `/usr/local/lib/bb-env.sh`). Only plain `sh -c` (dash) does not, by POSIX design. `collaborators.spec.ts` checks the whole matrix.
+* A *collaborator* has their own OS user (`bbc1`..`bbc10`), home and IDE server; `collaborators.spec.ts` asserts they cannot read `~/.bb-env`, `~/.git-credentials`, the owner's IDE token or process environment, that `/workspace` is shared through the group, that "May push" gives a user-scoped token (and revoke kills it), that End sharing / Stop wipe their home and processes, slot reuse, the cap of 10 and the clear error for a workspace from an older image.
 * The IDE and preview tickets are single-use, so the tests inspect what the iframe loaded instead of requesting the URL again.
 
 ## Layer 2: the AI explorer
@@ -126,6 +126,7 @@ e2e/run.sh triage --dir e2e/test-results --no-model  # only the facts and the fl
 | `E2E_TIER` | `smoke` or `docker` (set by `run.sh`) |
 | `E2E_NO_BUILD=1` | do not run `dotnet build` first (CI builds in an earlier step) |
 | `E2E_KEEP_DATA=1` | keep the temp data directory (database, repos, server log) |
+| `E2E_TOOLCHAINS=1` | also run `tests/docker/toolchains.spec.ts`: builds the six curated toolchain images (dotnet, node, python, go, java, rust; several GB, slow the first time) and runs a trivial task in each |
 | `E2E_KEEP_DOCKER=1` | leave workspace containers/volumes for debugging |
 | `E2E_ALLOW_SERVER_ERRORS=1` | do not fail the run on `fail:`/`crit:` log lines |
 | `ANTHROPIC_API_KEY` | used by the `claude` CLI for the explorer, triage and generation (otherwise its login is used) |
