@@ -234,15 +234,20 @@ ByteBench.Services.Scim.ScimEndpoints.MapScim(app); // /scim/v2 (bearer token fr
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// Sign-out is a POST (with antiforgery token, enforced because of the [FromForm] binding).
-app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit, [FromForm] string? returnUrl,
+// Sign-out is a POST with an antiforgery token, checked here by hand: nothing is bound from the form (a [FromForm] parameter would throw
+// BadHttpRequestException on a request without a form body, which the exception pages log as an error), and the antiforgery middleware skips
+// requests that aren't form posts, so a missing form or token must be refused explicitly (400, quietly).
+app.MapPost("/account/logout", async (SignInManager<User> signIn, AuditLog audit, Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery,
     HttpContext http, ByteBench.Services.Saml.SamlService saml) =>
 {
+    if (!http.Request.HasFormContentType) return Results.BadRequest("Sign out with the form on the site.");
+    try { await antiforgery.ValidateRequestAsync(http); }
+    catch (Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException) { return Results.BadRequest("The form expired. Reload the page and try again."); }
     await audit.RecordAsync("auth.sign_out");
     await signIn.SignOutAsync();
     // Signed in with SAML and the IdP has a logout URL: continue with SAML single logout.
-    return TypedResults.LocalRedirect(await saml.AfterLocalSignOutAsync(http) ?? "/account/login");
-});
+    return Results.LocalRedirect(await saml.AfterLocalSignOutAsync(http) ?? "/account/login");
+}).DisableAntiforgery();
 
 app.Run();
 return 0;

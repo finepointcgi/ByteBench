@@ -48,6 +48,17 @@ test.describe('sign in and access control', () => {
     await expect(page.locator('body')).not.toContainText('main.tf');
   });
 
+  test('a sign-out POST without a form body or token is a plain 400 (and not a server error in the log)', async ({ page, login }) => {
+    await login('bob');
+    // The run fails on any `fail:` line in the server log, so this also proves the bad request is not logged as an error.
+    expect((await page.request.post('/account/logout')).status()).toBe(400);
+    expect((await page.request.post('/account/logout', { form: {} })).status()).toBe(400);
+    expect((await page.request.post('/account/logout', { data: {} })).status()).toBe(400);
+    // still signed in: nothing was done
+    await page.goto('/');
+    await expect(page.getByTestId('account-menu')).toBeVisible();
+  });
+
   test('non-admins cannot open administration pages', async ({ page, login, open }) => {
     await login('bob');
     for (const url of ['/admin/users', '/admin/audit', '/admin/system', '/admin/workspaces']) {
