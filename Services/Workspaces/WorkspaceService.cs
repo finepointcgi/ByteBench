@@ -534,7 +534,15 @@ public sealed partial class WorkspaceService(IDbContextFactory<AppDbContext> dbF
         {
             // Re-check the live permission too: a role removed since the start must not push (the git endpoint checks again).
             if (!await access.CanAsync(ws.ProjectId, Permission.PushCode, userId)) throw new InvalidOperationException("You no longer have permission to push to this repository.");
-            branch = string.IsNullOrWhiteSpace(branch) ? (ws.Ref is var r0 && !IsCommitLike(r0) ? r0 : null) : branch.Trim();
+            // Blank: the branch that is checked out now (the developer may have switched or created one; pushing HEAD to the start ref would
+            // put the work on a different, possibly protected, branch), else the ref the workspace was opened on.
+            if (string.IsNullOrWhiteSpace(branch))
+            {
+                var head = await backend.ExecAsync(live.ContainerId, new ExecSpec(["git", "symbolic-ref", "--short", "-q", "HEAD"]) { WorkDir = WorkspaceLifecycle.WorkDir(ws.Repository.Slug), Timeout = TimeSpan.FromSeconds(15) }, CancellationToken.None);
+                var current = head.Ok ? head.Output.Trim() : "";
+                branch = current.Length > 0 ? current : (ws.Ref is var r0 && !IsCommitLike(r0) ? r0 : null);
+            }
+            else branch = branch.Trim();
             if (branch == null || !BranchPattern().IsMatch(branch) || branch.Contains("..") || branch.EndsWith('/') || branch.EndsWith(".lock"))
                 throw new InvalidOperationException("Give a branch name to push to.");
         }

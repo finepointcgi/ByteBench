@@ -197,3 +197,13 @@ a.gb-issue-row.gb-kb-selected { box-shadow: inset 3px 0 0 var(--mud-palette-prim
 .gb-skip-link { position: absolute; left: 8px; top: -48px; z-index: 2000; padding: 8px 14px; border-radius: 6px; background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); text-decoration: none; font-weight: 600; }
 .gb-skip-link:focus { top: 8px; }
 #main-content:focus { outline: none; }
+
+/* Alerts that hold a <pre> (workspace environment suggestions, prebuild logs): let the message shrink so long lines scroll inside the <pre>
+   instead of widening the page. */
+.mud-alert .mud-alert-message { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.mud-alert .mud-alert-message pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The workspace top bar is also used by the shared-workspace page (scoped styles of WorkspaceView do not reach it). */
+.ws-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0 8px; }
+.ws-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ws-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

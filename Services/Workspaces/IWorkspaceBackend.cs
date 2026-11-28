@@ -37,6 +37,8 @@ public sealed record ExecSpec(IReadOnlyList<string> Command)
     public string User { get; init; } = "coder";
     /// <summary>The OS user of collaborator slot <paramref name="slot"/> (1-10): own home, no access to the developer's files.</summary>
     public static string CollaboratorUser(int slot) => "bbc" + slot;
+    /// <summary>The environment of a collaborator's exec: <c>docker exec -u</c> keeps the container's <c>HOME=/home/coder</c>, which would send their git config, credential and wipe to the developer's (private) home.</summary>
+    public static IReadOnlyDictionary<string, string> CollaboratorEnv(int slot) => new Dictionary<string, string> { ["HOME"] = "/home/" + CollaboratorUser(slot) };
     /// <summary>The <c>uid:gid</c> an exec runs as: coder 1000, bbai 1001, collaborator slot n 2000+n (all in the group coder, 1000). Never root.</summary>
     public static string UserSpec(string user) => user switch
     {

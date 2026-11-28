@@ -32,7 +32,7 @@
     <div class="mt-2"><MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="SaveEgress" data-testid="ws-egress-save">Save network policy</MudButton></div>
 
     <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="mt-5 mb-2">Audit</MudText>
-    <div class="d-flex gap-2 align-center">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
         <MudNumericField T="int" @bind-Value="retention" Min="0" Max="3650" Label="Keep workspace events (days, 0 = site default)" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:320px" data-testid="ws-audit-retention" />
         <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="SaveRetention">Save</MudButton>
         <MudButton Variant="Variant.Text" Size="Size.Small" Href="/admin/workspaces/audit" data-testid="ws-audit-link">Open the workspace audit log</MudButton>

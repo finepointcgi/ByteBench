@@ -8,7 +8,7 @@
 
 @* The git part of the workspace top bar: branch and changed files, commit, push, open a pull request. *@
 
-<div class="d-flex align-center gap-2" style="flex-wrap:nowrap;white-space:nowrap" data-testid="ws-gitbar">
+<div class="d-flex align-center gap-2" style="flex-wrap:wrap;white-space:nowrap" data-testid="ws-gitbar">
     @if (status == null)
     {
         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">git…</MudChip>

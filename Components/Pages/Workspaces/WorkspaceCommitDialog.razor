@@ -11,7 +11,7 @@
             @if (CanPush)
             {
                 <MudTextField T="string" @bind-Value="branch" Immediate="true" Label="Push to branch" Variant="Variant.Outlined" Margin="Margin.Dense"
-                              HelperText="Leave it to push to the workspace's branch. A protected branch refuses the push: use a new branch name and open a pull request." />
+                              HelperText="Leave it empty to push the branch that is checked out. A protected branch refuses the push: use a new branch name and open a pull request." />
             }
             else
             {

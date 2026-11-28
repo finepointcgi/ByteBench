@@ -33,6 +33,9 @@ Selectors: roles, labels and `data-testid`. The existing Workspaces pages alread
 `e2e/tests/smoke/`: sign-in/out, wrong password, anonymous redirects, private-project isolation (UI and API), admin pages denied to non-admins; create project, repository and issue, comment, close; hostile input in the issue form; board; sprint planning from the backlog; issue filters; `git clone/push` with a personal access token, opening, reading and merging a pull request in the UI and checking the merge with real `git`; admin pages; CI pipeline/schedule/environment pages; workspace pages without Docker (start page explains the missing daemon, environment-file preview, admin switches, project switch, prebuild page); layout (no horizontal scroll) and accessibility basics (title, language, labelled controls) on ten pages at 1360 px and 390 px.
 
 Accessibility is asserted on ten pages: exactly one `<main>` landmark (the layouts render it), exactly one `<h1>` (a README is shown a heading level down), and an accessible name on every button (an icon-only `MudMenu` takes its name from `AriaLabel=`, not from an `aria-label` attribute, which lands on the wrapper). `not-found.spec.ts` checks every `/p/{key}/...` page: a private project the user cannot see and a project that does not exist both answer a real 404 with the site's own "Not found" title, and look the same.
+`workspaces-pages.spec.ts` (smoke) drives the workspace pages that need no container, with seeded AI runs written straight into the temp SQLite database through `node:sqlite`: usage panel and idle setting, the start page and its environment suggestion on a phone, prebuild settings and the readable "nothing to prebuild" error, Admin > Workspaces (limits, sharing mode, egress validation, retention, switches), the audit page (filters, CSV, non-admins refused), the AI run page and Admin > AI "AI runs" section, and "not yours" pages; the phone/dark layout check covers eight workspace pages.
+
+Accessibility *advisories* the suite knows about (a missing `<main>`, several `<h1>`, the `MudMenu` icon activator ignoring `AriaLabel`) are recorded as annotations in the report instead of failing the build; fix them and tighten the test.
 
 ```
 e2e/run.sh smoke                  # all of it
@@ -57,6 +60,8 @@ e2e/run.sh serve                  # the same disposable server, kept running, to
 10. **limits**: a start over the per-user cap is refused with a clear message;
 11. **prebuild**: after a prebuild is Ready, a fresh workspace's setup is `UpToDate` and the slow setup step is skipped, so the start is measurably faster than the first one;
 12. the audit trail has the lifecycle.
+
+`tests/docker/workspace-pages.spec.ts` is a second, serial file on the same server: the full-screen top bar at 1360 px/light and 390 px/dark (every action inside the viewport), the git bar (branch, changed files, commit & push to the *checked-out* branch, push, open a pull request), the ports menu and preview, the connect-from-editor dialog (off, on, bad key), the AI review panel with a seeded change set (per-hunk accept, reject, accept all, conflict), sharing (unknown user, viewer, collaborator with its own home and IDE, history and network tabs, who may open what) and the audit page with real lifecycle events. The docker tier starts the server with a placeholder AI key (never sent anywhere) so the AI panels render. `E2E_SERVE_DOCKER=1 e2e/run.sh serve` starts the same server to look around (`E2E_SERVE_ENV='{"Ai__Enabled":"true"}'` adds settings).
 
 ```
 e2e/run.sh docker                 # everything above

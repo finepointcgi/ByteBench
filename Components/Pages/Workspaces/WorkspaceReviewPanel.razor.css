@@ -1,4 +1,4 @@
-.rv { overflow: auto; border-top: 1px solid var(--mud-palette-lines-default); max-height: 55%; }
+.rv { overflow: auto; border-top: 1px solid var(--mud-palette-lines-default); max-height: 65%; flex: 0 1 auto; }
 .rv-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; }
 .rv-set { margin: 6px; padding: 4px; }
 .rv-set-head, .rv-file-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -12,3 +12,4 @@
 .rv-diff .del { background: rgba(248, 81, 73, 0.2); }
 .rv-diff .ctx { color: var(--mud-palette-text-secondary); }
 .rv-done { font-size: 12px; color: var(--mud-palette-text-secondary); padding: 2px 8px; }
+.rv-set-head > b { flex: 1 1 100%; word-break: break-word; }

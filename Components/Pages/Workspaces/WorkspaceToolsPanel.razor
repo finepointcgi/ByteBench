@@ -8,7 +8,7 @@
 @inject WorkspaceEgressReader EgressReader
 @inject ISnackbar Snackbar
 
-<MudTabs Elevation="0" Rounded="false" TabPanelsClass="pa-2" data-testid="ws-tools">
+<MudTabs Elevation="0" Rounded="false" TabPanelsClass="pa-2" MinimumTabWidth="90px" data-testid="ws-tools">
     <MudTabPanel Text="Sharing">
         @if (sharingMode == WorkspaceSharingMode.Off)
         {
@@ -20,8 +20,8 @@
         }
         else
         {
-            <div class="d-flex gap-2 align-center mb-2" data-testid="ws-invite">
-                <MudTextField T="string" @bind-Value="inviteUser" Label="Username" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" data-testid="ws-invite-user" />
+            <div class="mb-2" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px" data-testid="ws-invite">
+                <MudTextField T="string" @bind-Value="inviteUser" Label="Username" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" Style="flex:1 1 auto;min-width:150px" data-testid="ws-invite-user" />
                 <MudSelect T="WorkspaceShareRole" @bind-Value="inviteRole" Label="Role" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px" data-testid="ws-invite-role">
                     <MudSelectItem Value="WorkspaceShareRole.Collaborator">Collaborator</MudSelectItem>
                     <MudSelectItem Value="WorkspaceShareRole.Viewer">Viewer</MudSelectItem>
