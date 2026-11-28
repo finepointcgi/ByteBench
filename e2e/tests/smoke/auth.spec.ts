@@ -9,15 +9,21 @@ test.describe('sign in and access control', () => {
     await expect(page.getByRole('alert')).toContainText(/invalid|incorrect|wrong/i);
     await expect(page).toHaveURL(/\/account\/login/);
 
-    await page.locator('#login-user').fill('alice');
-    await page.locator('#login-password').fill('ByteBench123');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForURL((u) => !u.pathname.startsWith('/account/login'));
+    // Blazor's enhanced navigation may still be applying the error page when we type again, and the dashboard's account menu is interactive
+    // only once its circuit is up: a lost keystroke or click is retried instead of waited on for ever (this was the source of rare failures).
+    await expect(async () => {
+      await page.locator('#login-user').fill('alice');
+      await page.locator('#login-password').fill('ByteBench123');
+      await page.getByRole('button', { name: 'Sign in' }).click();
+      await page.waitForURL((u) => !u.pathname.startsWith('/account/login'), { timeout: 8_000 });
+    }).toPass({ timeout: 40_000 });
     await expect(page.getByText('Web Platform').first()).toBeVisible();
 
     // Sign out (a POST with an antiforgery token) returns to the sign-in page, and the session is gone.
-    await page.getByTestId('account-menu').click();
-    await page.getByTestId('sign-out').click();
+    await expect(async () => {
+      await page.getByTestId('account-menu').click();
+      await page.getByTestId('sign-out').click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
     await expect(page).toHaveURL(/\/account\/login/);
     await page.goto('/projects/new');
     await expect(page).toHaveURL(/\/account\/login/);

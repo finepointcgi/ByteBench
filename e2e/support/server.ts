@@ -87,7 +87,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     Pages__Root: path.join(dataDir, 'pages'),
     Backup__Directory: path.join(dataDir, 'backups'),
     Ssh__HostKeyPath: path.join(dataDir, 'ssh_host_key'),
-    Ssh__Port: String(await freePort()), // Development listens for git over SSH on 2222, which another server (or run) may hold
+    Ssh__Port: String(await freePort()), // Development listens for git over SSH on 2222; a busy port now falls back to a free one, but a fixed free port keeps runs independent
     // Seeded demo accounts: alice (admin), bob, carol, dan; password ByteBench123.
     Seed__DemoData: 'true',
     // Never let a test run send mail, call the Anthropic API or follow a developer's own user secrets.

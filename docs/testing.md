@@ -32,7 +32,7 @@ Selectors: roles, labels and `data-testid`. The existing Workspaces pages alread
 
 `e2e/tests/smoke/`: sign-in/out, wrong password, anonymous redirects, private-project isolation (UI and API), admin pages denied to non-admins; create project, repository and issue, comment, close; hostile input in the issue form; board; sprint planning from the backlog; issue filters; `git clone/push` with a personal access token, opening, reading and merging a pull request in the UI and checking the merge with real `git`; admin pages; CI pipeline/schedule/environment pages; workspace pages without Docker (start page explains the missing daemon, environment-file preview, admin switches, project switch, prebuild page); layout (no horizontal scroll) and accessibility basics (title, language, labelled controls) on ten pages at 1360 px and 390 px.
 
-Accessibility *advisories* the suite knows about (a missing `<main>`, several `<h1>`, the `MudMenu` icon activator ignoring `AriaLabel`) are recorded as annotations in the report instead of failing the build; fix them and tighten the test.
+Accessibility is asserted on ten pages: exactly one `<main>` landmark (the layouts render it), exactly one `<h1>` (a README is shown a heading level down), and an accessible name on every button (an icon-only `MudMenu` takes its name from `AriaLabel=`, not from an `aria-label` attribute, which lands on the wrapper). `not-found.spec.ts` checks every `/p/{key}/...` page: a private project the user cannot see and a project that does not exist both answer a real 404 with the site's own "Not found" title, and look the same.
 
 ```
 e2e/run.sh smoke                  # all of it
@@ -66,6 +66,16 @@ e2e/run.sh docker-clean           # remove leftovers of an aborted run (--images
 
 Safety: the e2e image uses its own repository (`bytebench-e2e-workspace`), never `bytebench-workspace:*`; the run removes only containers, volumes and networks carrying this checkout's instance key and its own `bb-e2e-*` network.
 
+### Real AI run (opt-in)
+
+`e2e/tests/docker/ai-run.spec.ts` drives the **local Claude Code CLI** end to end. It is skipped unless `E2E_REAL_AI=1` and `claude --version` works, and spends a few cents of the logged-in subscription:
+
+```
+E2E_REAL_AI=1 e2e/run.sh docker -g "real AI run|real editor assistant"      # E2E_AI_MAX_USD (default 1.5) and E2E_AI_MAX_STEPS (20) bound a run
+```
+
+The server is started with `Workspaces:AiRuns:Backend=claude-cli` and small limits (`support/global-setup.ts`). The tests: an AI run fixes a broken function in a real workspace (tools executed in the container as `bbai`, `run_task`, a pull request with only the fix, an issue comment, the workspace deleted, no token or key in the events, PR, comments or server log, and nothing of the host's Claude login inside the container); Cancel kills the CLI's whole process tree and leaves no branch; and the web editor's assistant (the `ClaudeCodeEditorBackend` path) proposes edits that are accepted and rejected per file, leaving no process or temp directory behind. Checked once by hand against Claude Code 2.1.323: `--tools ""` leaves only the run's MCP tools, `--max-turns` and `--max-budget-usd` end the stream with `error_max_turns` / `error_max_budget_usd`, the step and cost limits stop a run from the real stream, and `--setting-sources project` keeps the server account's own hooks, plugins and memory out of a run.
+
 Known behaviours worth knowing when reading the tests:
 
 * A workspace's repository and env are loaded from `~/.bb-env`, which `~/.bashrc` sources. Interactive terminals (the IDE terminal) see it; a plain non-interactive `bash -lc` does not (Debian's `.bashrc` returns early for non-interactive shells before the line ByteBench appends). Task shells source it explicitly. The tests use both on purpose.
@@ -92,7 +102,7 @@ What it does on every run:
 * **Output**: `e2e/reports/explore-<time>/report.md` (findings with severity, category, invariant, numbered repro steps, expected/actual, screenshots), `findings.json`, and per-goal folders. The browser profile (cookies) is deleted after each goal.
 * **Dogfooding (off by default)**: `--file-issues --issues-url <https://your-bytebench> --issues-project KEY` with `BYTEBENCH_EXPLORER_TOKEN` (a personal access token with `write_api`) files each medium-or-higher finding as an issue through the REST API.
 
-First run (small budget, tenant isolation as Bob): 12 steps, $0.39. It found no cross-tenant leak, reported one small bug (the not-found page of an inaccessible project has a title like `Issues · `, and answers HTTP 200), and recorded the planted injection as ignored.
+First run (small budget, tenant isolation as Bob): 12 steps, $0.39. It found no cross-tenant leak, reported one small bug (the not-found page of an inaccessible project had a title like `Issues · ` and answered HTTP 200; fixed, see `not-found.spec.ts`), and recorded the planted injection as ignored.
 
 ## Layer 3: AI triage and test generation
 
